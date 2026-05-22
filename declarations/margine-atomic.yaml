@@ -1,0 +1,411 @@
+schema_version: 0
+status: draft
+profile:
+  id: margine-fedora-atomic-gnome
+  name: Margine Fedora Atomic GNOME
+  phase: manual-lab
+  language: en
+
+base:
+  family: fedora-atomic-desktop
+  variant: silverblue
+  release: 44
+  desktop: gnome
+  architecture: x86_64
+  update_engine: rpm-ostree
+  image_workflow:
+    current: stock-silverblue-lab
+    future_candidates:
+      - bootc
+      - native-ostree-compose
+
+updates:
+  orchestrator: scripts/update-all
+  system:
+    command: rpm-ostree upgrade
+    hard_failure: true
+    require_reboot_judgment: true
+  accessory:
+    preferred: topgrade
+    config: config/topgrade.toml
+    topgrade_disabled_steps:
+      - system
+      - firmware
+    direct_flatpak_fallback: true
+    soft_failure: true
+  bootc:
+    phase: future-image-work
+    update_from_topgrade: false
+    update_from_scripts_update_all: false
+  firmware:
+    phase1_automatic: false
+    reason: requires-hardware-runbook
+  diagnostics:
+    pre_update: true
+    post_update: true
+  validators:
+    pre_update:
+      hard:
+        - scripts/validate-atomic-layout
+      soft:
+        - scripts/validate-hardware-media-stack
+        - scripts/validate-gaming-runtime
+    post_update:
+      hard:
+        - scripts/validate-atomic-layout
+      soft:
+        - scripts/validate-hardware-media-stack
+        - scripts/validate-gaming-runtime
+
+storage:
+  installer: fedora-anaconda
+  filesystem: btrfs
+  encryption:
+    required: true
+    format: luks2
+  expected_paths:
+    root: ostree-deployment
+    usr: read-only
+    etc: writable
+    var: writable
+    home: /var/home
+
+security:
+  secure_boot:
+    required: true
+    baseline: stock-fedora-shim-bootloader-kernel
+    custom_keys: deferred
+  tpm2_auto_unlock:
+    required: true
+    tool: systemd-cryptenroll
+    crypttab_option: tpm2-device=auto
+    keep_recovery_passphrase: true
+    pcr_policy: lab-decision-required
+  secrets_policy:
+    store_in_repo: false
+
+kernel:
+  baseline:
+    provider: fedora
+    required_fallback: true
+  experiment:
+    provider: cachyos-copr
+    repo: bieszczaders/kernel-cachyos
+    package: kernel-cachyos
+    target_compliant_only_with_secure_boot: true
+    force_as_default: false
+
+host_packages:
+  baseline: []
+  optional_after_validation:
+    fonts:
+      - adobe-source-code-pro-fonts
+      - adobe-source-sans-pro-fonts
+      - adobe-source-serif-pro-fonts
+      - atkinson-hyperlegible-next-fonts
+      - atkinson-hyperlegible-mono-fonts
+      - ibm-plex-sans-fonts
+      - ibm-plex-mono-fonts
+      - ibm-plex-serif-fonts
+      - google-carlito-fonts
+      - google-crosextra-caladea-fonts
+      - liberation-sans-fonts
+      - liberation-serif-fonts
+      - liberation-mono-fonts
+      - google-noto-color-emoji-fonts
+      - google-noto-sans-cjk-fonts
+      - jetbrains-mono-fonts
+    gtk3_compat:
+      - adw-gtk3-theme
+    hardware_media:
+      diagnostics:
+        - mesa-demos
+        - vulkan-tools
+        - libva-utils
+        - clinfo
+      open_mesa:
+        - mesa-dri-drivers
+        - mesa-vulkan-drivers
+        - mesa-va-drivers
+        - mesa-libOpenCL
+      intel:
+        - libva-intel-media-driver
+        - intel-compute-runtime
+        - intel-opencl
+        - igt-gpu-tools
+        - intel-vpl-gpu-rt
+      amd:
+        - rocm-opencl
+        - rocminfo
+        - radeontop
+      audio:
+        - pipewire-utils
+        - pipewire-pulseaudio
+        - pipewire-alsa
+        - wireplumber
+        - alsa-utils
+      media_codecs_free:
+        - ffmpeg-free
+        - gstreamer1-plugin-libav
+        - gstreamer1-plugin-openh264
+        - gstreamer1-plugins-base
+        - gstreamer1-plugins-good
+        - gstreamer1-plugins-bad-free
+        - gstreamer1-plugins-ugly-free
+        - gstreamer1-vaapi
+        - aom
+        - dav1d
+        - libavif
+        - libheif
+      framework_audio_optional:
+        - easyeffects
+        - lsp-plugins-lv2
+        - lsp-plugins-ladspa
+        - lsp-plugins-vst3
+    gaming_runtime:
+      desktop_host_helpers:
+        - gamescope
+        - mangohud
+        - vkBasalt
+        - gamemode
+        - goverlay
+        - steam-devices
+      diagnostics:
+        - vulkan-tools
+        - mesa-demos
+      capture_optional:
+        - obs-studio-plugin-vkcapture
+        - obs-studio-plugin-vaapi
+    virtualization:
+      - libvirt
+      - qemu-kvm
+      - edk2-ovmf
+      - swtpm
+      - dnsmasq
+
+flatpaks:
+  remotes:
+    - name: flathub
+      url: https://flathub.org/repo/flathub.flatpakrepo
+  default_apps:
+    - com.bitwarden.desktop
+    - org.mozilla.Thunderbird
+    - org.libreoffice.LibreOffice
+    - com.github.neithern.g4music
+  optional_apps:
+    photography:
+      - org.darktable.Darktable
+      - org.gimp.GIMP
+      - net.displaycal.DisplayCAL
+    media:
+      - org.audacityteam.Audacity
+      - com.obsproject.Studio
+      - com.github.wwmm.easyeffects
+      - fm.reaper.Reaper
+    gaming:
+      - com.valvesoftware.Steam
+      - net.lutris.Lutris
+      - com.heroicgameslauncher.hgl
+      - com.usebottles.bottles
+      - com.github.Matoking.protontricks
+      - net.davidotek.pupgui2
+    emulation_optional:
+      - org.libretro.RetroArch
+      - net.retrodeck.retrodeck
+      - page.kramo.Cartridges
+
+toolbox:
+  default:
+    image: fedora-toolbox:44
+    packages:
+      - git
+      - gh
+      - tmux
+      - ripgrep
+      - fd-find
+      - jq
+      - bat
+      - eza
+      - btop
+      - neovim
+
+gnome:
+  settings:
+    org.gnome.desktop.interface:
+      color-scheme: prefer-dark
+      accent-color: yellow
+      ui-font-candidates:
+        - IBM Plex Sans 10
+        - Atkinson Hyperlegible Next 10
+      monospace-font-candidates:
+        - JetBrains Mono 11
+        - IBM Plex Mono 11
+        - Source Code Pro 11
+      icon-theme: adwaita-first
+  gtk4_css_override: false
+  hyprland_theme_artifacts: false
+
+home:
+  roots:
+    - data
+    - dev
+    - scratch
+  xdg_user_dirs:
+    DESKTOP: "$HOME/"
+    DOWNLOAD: "$HOME/data/inbox/10-downloads"
+    TEMPLATES: "$HOME/data/templates"
+    PUBLICSHARE: "$HOME/data/shared"
+    DOCUMENTS: "$HOME/data/personal"
+    MUSIC: "$HOME/data/media/audio"
+    PICTURES: "$HOME/data/media/photos"
+    VIDEOS: "$HOME/data/media/video"
+    PROJECTS: "$HOME/data/projects"
+  bookmarks:
+    - path: "$HOME/data/personal"
+      label: Documents
+    - path: "$HOME/data/inbox/10-downloads"
+      label: Downloads
+    - path: "$HOME/data/media/photos"
+      label: Pictures
+    - path: "$HOME/data/media/audio"
+      label: Music
+    - path: "$HOME/data/media/video"
+      label: Videos
+    - path: "$HOME/data/shared"
+      label: Shared
+    - path: "$HOME/data/projects"
+      label: Projects
+    - path: "$HOME/dev"
+      label: Development
+    - path: "$HOME/scratch"
+      label: Scratch
+  folder_icons:
+    mechanism: gio-metadata
+    require_existing_icon_files: true
+    prefer_scalable_svg: true
+    raster_fallback: false
+
+hardware_media:
+  policy:
+    default_gpu_vendors:
+      - intel-open
+      - amd-open
+    nvidia_default: false
+    rpmfusion_codec_replacement_default: false
+    resolve_default: false
+    gaming_split_lock_override_default: false
+  validation:
+    require_pipewire: true
+    require_wireplumber: true
+    validate_opengl: true
+    validate_vulkan: true
+    validate_vaapi: true
+    validate_opencl_when_declared: true
+    validate_rocm_when_declared: true
+  application_channels:
+    creative_gui_default: flatpak
+    gaming_default: flatpak-optional
+    host_drivers: rpm-ostree-or-image
+  framework13_audio:
+    enabled_by_default: false
+    requires_dmi_match: true
+    target_output: internal-speakers-only
+    resolve_sink_at_runtime: true
+    channel_decision_required:
+      - rpm-easyeffects
+      - flatpak-easyeffects
+
+gaming_runtime:
+  policy:
+    target_profile: true
+    enable_after_hardware_media_validation: true
+    bazzite_rebase_default: false
+    steam_gaming_mode_default: false
+    split_lock_override_default: false
+    nvidia_gaming_default: false
+  layers:
+    desktop_runtime:
+      apps_channel: flatpak
+      host_helpers_channel: rpm-ostree-or-image
+    tools_overlays:
+      default: optional
+      host_helpers:
+        - gamescope
+        - mangohud
+        - vkBasalt
+        - gamemode
+        - goverlay
+        - steam-devices
+    gaming_mode_session:
+      phase: future-image-or-bootc
+      requires:
+        - desktop-runtime-validation
+        - gamescope-session-design
+        - controller-input-validation
+        - rollback-test
+        - secure-boot-tpm2-retest
+  validation:
+    require_vulkan_before_launchers: true
+    inspect_vulkan_layers: true
+    inspect_flatpak_permissions: true
+    validate_split_lock_not_disabled_by_default: true
+    validate_rpm_ostree_status: true
+
+services:
+  baseline_enabled: []
+  optional_after_validation:
+    - libvirtd
+    - sshd
+
+rejected_phase1:
+  package_managers:
+    - pacman
+    - yay
+    - aur
+  desktops:
+    - hyprland
+  panels_launchers:
+    - waybar
+    - walker
+    - fuzzel
+  boot_storage:
+    - root-on-zfs
+    - limine
+    - sbctl-bootstrap
+    - mkinitcpio
+  fonts_icons_themes:
+    - ttf-ms-fonts
+    - ttf-ioskeley-mono
+    - adwaita-colors-icon-theme
+    - morewaita-icon-theme
+  hardware_media:
+    - proprietary-nvidia-default
+    - akmods-default
+    - rpmfusion-codec-replacement-default
+    - davinci-resolve-default
+    - cachyos-gaming-metapackages
+    - implicit-kernel-split-lock-mitigate-0
+    - arch-opencl-runtime-names
+    - aur-media-apps
+  gaming_runtime:
+    - bazzite-rebase-default
+    - steam-gaming-mode-phase1-default
+    - gamescope-session-autostart
+    - cachyos-gaming-meta
+    - proton-cachyos-slr
+    - wine-cachyos-opt
+    - proton-ge-custom-bin-aur
+    - arch-lib32-package-names
+    - implicit-split-lock-disablement
+    - handheld-services-on-desktop
+
+validation:
+  scripts:
+    - scripts/update-all
+    - scripts/validate-atomic-layout
+    - scripts/validate-cachyos-kernel
+    - scripts/validate-hardware-media-stack
+    - scripts/validate-gaming-runtime
+    - scripts/collect-diagnostics
+  future:
+    - scripts/validate-declared-state

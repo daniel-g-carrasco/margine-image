@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+warnings=0
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+ok() {
+  printf 'OK: %s\n' "$1"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  printf 'WARN: %s\n' "$1"
+}
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+print_cmd() {
+  printf '$'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run_optional() {
+  local label=$1
+  shift
+
+  if "$@"; then
+    ok "$label"
+  else
+    warn "$label returned non-zero"
+  fi
+}
+
+run_if_present() {
+  local cmd=$1
+  shift
+
+  if have_cmd "$cmd"; then
+    print_cmd "$cmd" "$@"
+    run_optional "$cmd" "$cmd" "$@"
+  else
+    warn "missing command: $cmd"
+  fi
+}
+
+flatpak_info() {
+  local app_id=$1
+
+  if ! have_cmd flatpak; then
+    warn "missing command: flatpak"
+    return
+  fi
+
+  if flatpak info "$app_id" >/dev/null 2>&1; then
+    ok "Flatpak installed: $app_id"
+    flatpak info "$app_id" | sed -n '1,60p'
+  else
+    warn "Flatpak not installed: $app_id"
+  fi
+}
+
+section "Flatpak gaming applications"
+if have_cmd flatpak; then
+  print_cmd bash -c "flatpak list | grep -Ei 'Steam|Lutris|Heroic|Bottles|Proton|RetroArch|RetroDECK|Cartridges' || true"
+  flatpak list | grep -Ei 'Steam|Lutris|Heroic|Bottles|Proton|RetroArch|RetroDECK|Cartridges' || true
+  flatpak_info com.valvesoftware.Steam
+  flatpak_info net.lutris.Lutris
+  flatpak_info com.heroicgameslauncher.hgl
+  flatpak_info com.usebottles.bottles
+  flatpak_info com.github.Matoking.protontricks
+  flatpak_info net.davidotek.pupgui2
+
+  if flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then
+    section "Steam Flatpak permissions"
+    flatpak info --show-permissions com.valvesoftware.Steam || warn "could not read Steam Flatpak permissions"
+  fi
+else
+  warn "missing command: flatpak"
+fi
+
+section "Host gaming packages"
+if have_cmd rpm; then
+  print_cmd bash -c "rpm -qa | grep -Ei 'gamescope|mangohud|vkbasalt|gamemode|steam-devices|obs.*capture|goverlay|lact|wine|lutris|protontricks' | sort || true"
+  rpm -qa | grep -Ei 'gamescope|mangohud|vkbasalt|gamemode|steam-devices|obs.*capture|goverlay|lact|wine|lutris|protontricks' | sort || true
+else
+  warn "missing command: rpm"
+fi
+
+section "Core gaming commands"
+for cmd in gamescope mangohud vkbasalt gamemoded goverlay; do
+  if have_cmd "$cmd"; then
+    ok "command available: $cmd"
+  else
+    warn "missing command: $cmd"
+  fi
+done
+
+section "Gamescope"
+run_if_present gamescope --help
+
+section "MangoHud and vkBasalt"
+run_if_present mangohud --version
+run_if_present vkbasalt --version
+
+section "GameMode"
+run_if_present gamemoded -s
+if have_cmd systemctl; then
+  if systemctl --user list-unit-files gamemoded.service >/dev/null 2>&1; then
+    systemctl --user status gamemoded.service --no-pager || warn "gamemoded user service status returned non-zero"
+  else
+    warn "gamemoded user service not found or user systemd unavailable"
+  fi
+else
+  warn "missing command: systemctl"
+fi
+
+section "Vulkan baseline"
+run_if_present vulkaninfo --summary
+
+section "Vulkan layer files"
+for dir in /usr/share/vulkan /etc/vulkan "${HOME}/.local/share/vulkan"; do
+  if [[ -d "$dir" ]]; then
+    printf '== %s ==\n' "$dir"
+    find "$dir" -maxdepth 3 -type f | sort
+  else
+    warn "Vulkan layer directory not present: $dir"
+  fi
+done
+
+section "Controller and input hints"
+if have_cmd rpm; then
+  rpm -qa | grep -Ei 'steam-devices|game-devices|input-remapper|xone|xpad|dualsense|dualsensectl' | sort || true
+fi
+if have_cmd lsusb; then
+  lsusb | grep -Ei 'valve|steam|xbox|microsoft|sony|dualsense|dualshock|8bitdo|nintendo' || true
+else
+  warn "missing command: lsusb"
+fi
+
+section "Gaming split-lock policy"
+split_lock_path="/proc/sys/kernel/split_lock_mitigate"
+if [[ -r "$split_lock_path" ]]; then
+  runtime_value=$(cat "$split_lock_path" 2>/dev/null || true)
+  printf 'runtime kernel.split_lock_mitigate: %s\n' "${runtime_value:-unknown}"
+  case "$runtime_value" in
+    0) warn "split-lock mitigation is disabled at runtime" ;;
+    1) ok "split-lock mitigation is active" ;;
+    *) warn "unexpected split-lock mitigation value: ${runtime_value:-empty}" ;;
+  esac
+else
+  warn "kernel.split_lock_mitigate is not exposed"
+fi
+
+sysctl_hits=$(grep -RHsnE '^[[:space:]]*kernel\.split_lock_mitigate[[:space:]]*=[[:space:]]*0([[:space:]]*(#.*)?)?$' \
+  /etc/sysctl.d /usr/lib/sysctl.d 2>/dev/null || true)
+if [[ -n "$sysctl_hits" ]]; then
+  warn "persistent split-lock disablement entries found"
+  printf '%s\n' "$sysctl_hits"
+else
+  ok "no persistent split-lock disablement entries found"
+fi
+
+section "rpm-ostree status"
+run_if_present rpm-ostree status
+
+section "Summary"
+printf 'Warnings: %d\n' "$warnings"
+
+exit 0

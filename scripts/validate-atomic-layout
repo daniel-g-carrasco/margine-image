@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+failures=0
+warnings=0
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+ok() {
+  printf 'OK: %s\n' "$1"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  printf 'WARN: %s\n' "$1"
+}
+
+fail() {
+  failures=$((failures + 1))
+  printf 'FAIL: %s\n' "$1"
+}
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+require_cmd() {
+  if have_cmd "$1"; then
+    ok "command available: $1"
+  else
+    fail "missing command: $1"
+  fi
+}
+
+mount_field() {
+  local field=$1
+  local target=$2
+  findmnt -no "$field" "$target" 2>/dev/null || true
+}
+
+print_mount() {
+  local target=$1
+  if findmnt "$target" >/dev/null 2>&1; then
+    findmnt "$target"
+  else
+    warn "mount not found: $target"
+  fi
+}
+
+section "Required commands"
+require_cmd rpm-ostree
+require_cmd findmnt
+require_cmd lsblk
+require_cmd systemctl
+
+section "OS release"
+if [[ -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  printf 'PRETTY_NAME=%s\n' "${PRETTY_NAME:-unknown}"
+  printf 'ID=%s\n' "${ID:-unknown}"
+  printf 'VARIANT_ID=%s\n' "${VARIANT_ID:-unknown}"
+
+  if [[ "${ID:-}" == "fedora" ]]; then
+    ok "Fedora detected"
+  else
+    warn "ID is not fedora"
+  fi
+
+  if [[ "${VARIANT_ID:-}" == "silverblue" ]]; then
+    ok "Silverblue variant detected"
+  else
+    warn "VARIANT_ID is not silverblue; verify this is an Atomic Desktop target"
+  fi
+else
+  warn "/etc/os-release is not readable"
+fi
+
+section "rpm-ostree status"
+if have_cmd rpm-ostree; then
+  if rpm-ostree status; then
+    ok "rpm-ostree status completed"
+  else
+    fail "rpm-ostree status failed"
+  fi
+fi
+
+section "Mount layout"
+print_mount /
+print_mount /usr
+print_mount /var
+print_mount /var/home
+print_mount /sysroot
+
+root_opts=$(mount_field OPTIONS /)
+usr_opts=$(mount_field OPTIONS /usr)
+
+case ",${root_opts}," in
+  *,ro,*) ok "/ mount options include ro" ;;
+  *) warn "/ mount options do not include ro; inspect ostree layout manually" ;;
+esac
+
+case ",${usr_opts}," in
+  *,ro,*) ok "/usr mount options include ro" ;;
+  *) warn "/usr mount options do not include ro; inspect ostree layout manually" ;;
+esac
+
+section "Home layout"
+if [[ -L /home ]]; then
+  home_target=$(readlink /home)
+  printf '/home -> %s\n' "$home_target"
+  case "$home_target" in
+    /var/home|var/home) ok "/home points to /var/home" ;;
+    *) warn "/home symlink target is not /var/home" ;;
+  esac
+else
+  warn "/home is not a symlink; verify whether this is expected for this install"
+fi
+
+if [[ -d /var/home ]]; then
+  ok "/var/home exists"
+else
+  fail "/var/home does not exist"
+fi
+
+section "Btrfs backing"
+root_fstype=$(mount_field FSTYPE /)
+sysroot_fstype=$(mount_field FSTYPE /sysroot)
+var_fstype=$(mount_field FSTYPE /var)
+var_home_fstype=$(mount_field FSTYPE /var/home)
+
+printf '/ fstype: %s\n' "${root_fstype:-unknown}"
+printf '/sysroot fstype: %s\n' "${sysroot_fstype:-unknown}"
+printf '/var fstype: %s\n' "${var_fstype:-unknown}"
+printf '/var/home fstype: %s\n' "${var_home_fstype:-unknown}"
+
+if [[ "$root_fstype" == "btrfs" || "$sysroot_fstype" == "btrfs" || "$var_fstype" == "btrfs" || "$var_home_fstype" == "btrfs" ]]; then
+  ok "Btrfs detected in atomic layout backing mounts"
+else
+  warn "Btrfs not detected on /, /sysroot, /var, or /var/home"
+fi
+
+section "Block devices"
+lsblk -f
+
+section "Boot security"
+if have_cmd mokutil; then
+  if sb_state=$(mokutil --sb-state 2>&1); then
+    printf '%s\n' "$sb_state"
+    if printf '%s\n' "$sb_state" | grep -qi 'enabled'; then
+      ok "Secure Boot reports enabled"
+    else
+      warn "Secure Boot is not reported as enabled"
+    fi
+  else
+    warn "mokutil --sb-state returned non-zero"
+  fi
+else
+  warn "mokutil not installed; Secure Boot state not checked"
+fi
+
+if [[ -r /etc/crypttab ]]; then
+  crypttab_active=$(grep -Ev '^[[:space:]]*(#|$)' /etc/crypttab || true)
+  if [[ -n "$crypttab_active" ]]; then
+    printf '%s\n' "$crypttab_active"
+    ok "/etc/crypttab contains active entries"
+    if printf '%s\n' "$crypttab_active" | grep -q 'tpm2-device=auto'; then
+      ok "crypttab contains tpm2-device=auto"
+    else
+      warn "crypttab does not contain tpm2-device=auto"
+    fi
+  else
+    warn "/etc/crypttab has no active entries"
+  fi
+else
+  warn "/etc/crypttab is not readable"
+fi
+
+if have_cmd systemd-cryptenroll; then
+  systemd-cryptenroll --tpm2-device=list || warn "TPM2 device listing failed"
+else
+  warn "systemd-cryptenroll not installed; TPM2 state not checked"
+fi
+
+section "Failed units"
+if have_cmd systemctl; then
+  if systemctl --failed; then
+    ok "systemctl --failed completed"
+  else
+    warn "systemctl --failed returned non-zero"
+  fi
+fi
+
+section "Summary"
+printf 'Warnings: %d\n' "$warnings"
+printf 'Failures: %d\n' "$failures"
+
+if (( failures > 0 )); then
+  exit 1
+fi
+
+exit 0

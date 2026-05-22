@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+warnings=0
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+ok() {
+  printf 'OK: %s\n' "$1"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  printf 'WARN: %s\n' "$1"
+}
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+run_optional() {
+  local label=$1
+  shift
+
+  if "$@"; then
+    ok "$label"
+  else
+    warn "$label returned non-zero"
+  fi
+}
+
+print_cmd() {
+  printf '$'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run_if_present() {
+  local cmd=$1
+  shift
+
+  if have_cmd "$cmd"; then
+    print_cmd "$cmd" "$@"
+    run_optional "$cmd" "$cmd" "$@"
+  else
+    warn "missing command: $cmd"
+  fi
+}
+
+grep_modules() {
+  if have_cmd lsmod; then
+    print_cmd bash -c "lsmod | grep -E 'amdgpu|i915|xe|nvidia|nouveau|virtio_gpu|snd|snd_hda|snd_sof|kvm' || true"
+    lsmod | grep -E 'amdgpu|i915|xe|nvidia|nouveau|virtio_gpu|snd|snd_hda|snd_sof|kvm' || true
+    ok "kernel module scan completed"
+  else
+    warn "missing command: lsmod"
+  fi
+}
+
+show_rpm_matches() {
+  local pattern=$1
+
+  if have_cmd rpm; then
+    rpm -qa | grep -Ei "$pattern" | sort || true
+  else
+    warn "missing command: rpm"
+  fi
+}
+
+check_user_service() {
+  local service=$1
+
+  if ! have_cmd systemctl; then
+    warn "missing command: systemctl"
+    return
+  fi
+
+  if systemctl --user list-unit-files "$service" >/dev/null 2>&1; then
+    if systemctl --user is-active --quiet "$service"; then
+      ok "user service active: $service"
+    else
+      warn "user service not active: $service"
+    fi
+  else
+    warn "user service not found or user systemd unavailable: $service"
+  fi
+}
+
+section "Host identity"
+run_if_present uname -a
+if [[ -r /etc/os-release ]]; then
+  sed -n '1,80p' /etc/os-release
+else
+  warn "/etc/os-release is not readable"
+fi
+
+section "GPU and audio PCI devices"
+if have_cmd lspci; then
+  print_cmd bash -c "lspci -k | sed -n '/VGA compatible controller/,+6p;/3D controller/,+6p;/Display controller/,+6p;/Audio device/,+6p'"
+  lspci -k | sed -n '/VGA compatible controller/,+6p;/3D controller/,+6p;/Display controller/,+6p;/Audio device/,+6p'
+  ok "PCI device scan completed"
+else
+  warn "missing command: lspci"
+fi
+
+section "Kernel modules"
+grep_modules
+
+section "Relevant host packages"
+show_rpm_matches 'mesa|vulkan|libva|intel|rocm|opencl|clinfo|pipewire|wireplumber|alsa|easyeffects|gstreamer|ffmpeg|openh264|dav1d|libavif|libheif|aom|radeontop'
+
+section "Audio session"
+check_user_service pipewire.service
+check_user_service pipewire-pulse.service
+check_user_service wireplumber.service
+run_if_present pactl info
+run_if_present wpctl status
+
+section "OpenGL and EGL"
+run_if_present glxinfo -B
+run_if_present eglinfo -B
+
+section "Vulkan"
+run_if_present vulkaninfo --summary
+
+section "VA-API"
+run_if_present vainfo
+
+section "FFmpeg and GStreamer"
+run_if_present ffmpeg -hide_banner -hwaccels
+if have_cmd gst-inspect-1.0; then
+  print_cmd gst-inspect-1.0 va
+  tmp_gst=$(mktemp /tmp/margine-gst-va.XXXXXX)
+  if gst-inspect-1.0 va >"$tmp_gst" 2>&1; then
+    sed -n '1,120p' "$tmp_gst"
+    ok "GStreamer VA plugin is inspectable"
+  else
+    sed -n '1,120p' "$tmp_gst"
+    warn "GStreamer VA plugin is not inspectable"
+  fi
+  rm -f "$tmp_gst"
+else
+  warn "missing command: gst-inspect-1.0"
+fi
+
+section "OpenCL and ROCm"
+run_if_present clinfo
+run_if_present rocminfo
+
+section "Application compute exposure"
+if have_cmd darktable-cltest; then
+  print_cmd darktable-cltest
+  tmp_dt=$(mktemp /tmp/margine-darktable-cltest.XXXXXX)
+  if darktable-cltest >"$tmp_dt" 2>&1; then
+    sed -n '1,180p' "$tmp_dt"
+    if grep -qi 'opencl.*AVAILABLE and ENABLED' "$tmp_dt"; then
+      ok "darktable reports OpenCL available and enabled"
+    else
+      warn "darktable-cltest completed but did not report OpenCL enabled"
+    fi
+  else
+    sed -n '1,180p' "$tmp_dt"
+    warn "darktable-cltest returned non-zero"
+  fi
+  rm -f "$tmp_dt"
+else
+  warn "darktable-cltest not installed"
+fi
+
+section "Kernel and media logs"
+if have_cmd journalctl; then
+  print_cmd bash -c "journalctl -b --no-pager | grep -Ei 'drm|gpu|amdgpu|i915|xe|virtio_gpu|pipewire|wireplumber|snd_hda|snd_sof' || true"
+  journalctl -b --no-pager | grep -Ei 'drm|gpu|amdgpu|i915|xe|virtio_gpu|pipewire|wireplumber|snd_hda|snd_sof' || true
+  ok "journal scan completed"
+else
+  warn "missing command: journalctl"
+fi
+
+section "Summary"
+printf 'Warnings: %d\n' "$warnings"
+
+exit 0

@@ -119,6 +119,83 @@ If PCRs are explicitly selected during enrollment, record the matching
 Do not wipe the original passphrase slot in phase 1. A recovery path is part of
 the design, not a temporary crutch.
 
+## Lab-Validated Procedure (Fedora Silverblue 44 VM)
+
+These commands were proven in the phase 1 VM lab. Use them as the reference for
+the hardware lab and for documentation of any divergences.
+
+### PCR policy choice
+
+In a VM without Secure Boot, PCR 7 (Secure Boot state) is not stable. Use
+`--tpm2-pcrs=0` (Platform Firmware) only:
+
+```sh
+sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0 /dev/vda3
+```
+
+On real hardware with Secure Boot enabled, add PCR 7:
+
+```sh
+sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/sda3
+```
+
+Replace `/dev/vda3` / `/dev/sda3` with the actual LUKS2 block device from
+`lsblk -f`. The passphrase is prompted during enrollment.
+
+### Crypttab update
+
+After enrollment, add `tpm2-device=auto` and the matching `tpm2-pcrs` value to
+the options in `/etc/crypttab`:
+
+```sh
+sudoedit /etc/crypttab
+```
+
+The existing Anaconda-generated line looks like:
+
+```text
+luks-<uuid>  UUID=<uuid>  none  discard,x-initrd.attach
+```
+
+Append the TPM2 options:
+
+```text
+luks-<uuid>  UUID=<uuid>  none  discard,x-initrd.attach,tpm2-device=auto,tpm2-pcrs=0
+```
+
+Use `tpm2-pcrs=0+7` on hardware with Secure Boot.
+
+### Initramfs regeneration
+
+On Silverblue, `rpm-ostree initramfs` is **disabled by default**. The stock
+initramfs comes from the OSTree commit and does not include your local
+`/etc/crypttab` changes. Enable local initramfs regeneration to bake the
+updated crypttab into the next deployment:
+
+```sh
+sudo rpm-ostree initramfs --enable
+```
+
+This stages a new deployment. Reboot using the GNOME menu to enter it. After
+reboot the system should unlock automatically without prompting for a
+passphrase.
+
+### Verify TPM2 unlock is active
+
+```sh
+systemd-cryptenroll --tpm2-device=list
+sudo cat /etc/crypttab
+rpm-ostree initramfs
+rpm-ostree status
+```
+
+Expected:
+
+- `systemd-cryptenroll --tpm2-device=list` reports the enrolled TPM2 device;
+- `/etc/crypttab` contains `tpm2-device=auto`;
+- `rpm-ostree initramfs` reports `Initramfs regeneration: enabled`;
+- the system booted without a passphrase prompt.
+
 ## PCR Policy
 
 Do not choose the final PCR set from the old Arch system.

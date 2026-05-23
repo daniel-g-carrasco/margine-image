@@ -90,7 +90,6 @@ fi
 
 section "Mount layout"
 print_mount /
-print_mount /usr
 print_mount /var
 print_mount /var/home
 print_mount /sysroot
@@ -103,10 +102,23 @@ case ",${root_opts}," in
   *) warn "/ mount options do not include ro; inspect ostree layout manually" ;;
 esac
 
-case ",${usr_opts}," in
-  *,ro,*) ok "/usr mount options include ro" ;;
-  *) warn "/usr mount options do not include ro; inspect ostree layout manually" ;;
-esac
+# On Silverblue with composefs (Fedora 39+), /usr is embedded in the root
+# overlay and has no separate mountpoint. This is expected and correct.
+if findmnt /usr >/dev/null 2>&1; then
+  findmnt /usr
+  case ",${usr_opts}," in
+    *,ro,*) ok "/usr mount options include ro" ;;
+    *) warn "/usr mount options do not include ro; inspect ostree layout manually" ;;
+  esac
+else
+  root_fstype_inner=$(mount_field FSTYPE /)
+  if [[ "$root_fstype_inner" == "overlay" ]]; then
+    ok "/usr is embedded in the composefs root overlay (expected on Silverblue)"
+  else
+    warn "mount not found: /usr"
+    warn "/usr mount options not checked; no separate /usr mountpoint found"
+  fi
+fi
 
 section "Home layout"
 if [[ -L /home ]]; then
@@ -175,8 +187,10 @@ if [[ -r /etc/crypttab ]]; then
   else
     warn "/etc/crypttab has no active entries"
   fi
+elif [[ -e /etc/crypttab ]]; then
+  warn "/etc/crypttab exists but requires elevated privileges to read; run validator with sudo to inspect TPM2 enrollment"
 else
-  warn "/etc/crypttab is not readable"
+  warn "/etc/crypttab does not exist"
 fi
 
 if have_cmd systemd-cryptenroll; then

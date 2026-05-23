@@ -58,6 +58,12 @@ install guide is self-contained.
 | [adr/0003-fedora-native-boot-security.md](adr/0003-fedora-native-boot-security.md) | Why Fedora shim/systemd-cryptenroll and not Arch/Limine/sbctl patterns |
 | [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why rpm-ostree owns the base OS boundary and Topgrade is accessory-only |
 
+## Reference
+
+| Document | What it covers |
+| --- | --- |
+| [14-expected-behaviors.md](14-expected-behaviors.md) | Behaviors that look like errors but are normal on Silverblue; observed in the VM lab |
+
 ## Meta
 
 | Document | What it covers |

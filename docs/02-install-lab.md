@@ -69,8 +69,12 @@ Update before any experiment:
 
 ```sh
 sudo rpm-ostree upgrade
-sudo systemctl reboot
 ```
+
+Then reboot using the GNOME menu (top-right corner → Power → Restart). From a
+terminal in a GNOME session, `systemctl reboot` is blocked by the session
+inhibitor and `systemctl reboot -i` requires a polkit rule that is not present
+by default. The GNOME UI is the standard path.
 
 After reboot:
 

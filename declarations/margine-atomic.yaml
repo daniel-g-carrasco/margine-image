@@ -249,9 +249,11 @@ flatpaks:
     - org.libreoffice.LibreOffice
     - com.github.neithern.g4music
   optional_apps:
+    graphics:
+      - org.gimp.GIMP
+      - org.inkscape.Inkscape
     photography:
       - org.darktable.Darktable
-      - org.gimp.GIMP
       - net.displaycal.DisplayCAL
     media:
       - org.audacityteam.Audacity

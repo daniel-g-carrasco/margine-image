@@ -33,9 +33,14 @@ For a 64 GiB VM disk:
 
 | Partition | Size | Filesystem | Mount |
 |---|---|---|---|
-| `vda1` | 600 MiB | vfat (EFI) | `/boot/efi` |
+| `vda1` | 2 GiB | vfat (EFI) | `/boot/efi` |
 | `vda2` | 1 GiB | ext4 | `/boot` |
 | `vda3` | remainder | LUKS2 → Btrfs | see subvolumes |
+
+The EFI partition is sized at 2 GiB to avoid running out of space over time.
+On systems with multiple kernels, Secure Boot shim copies, and UKI experiments,
+512 MiB fills up quickly. 2 GiB is comfortable; 4 GiB is future-proof if the
+disk is large enough.
 
 Btrfs subvolumes inside the LUKS2 container:
 
@@ -68,9 +73,11 @@ At the top of the manual partitioning screen, set the partitioning scheme to
 Click **+** (add mount point):
 
 - Mount point: `/boot/efi`
-- Desired capacity: `600 MiB`
+- Desired capacity: `2048 MiB` (2 GiB) — or `4096 MiB` on larger disks
 
-Anaconda will create a vfat EFI System Partition automatically.
+Anaconda will create a vfat EFI System Partition automatically. The larger size
+prevents space issues as kernels, Secure Boot shim files, and future UKI entries
+accumulate over time.
 
 ### 5. Create the /boot partition
 

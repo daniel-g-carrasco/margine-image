@@ -161,3 +161,139 @@ Stop the experiment and return to the Fedora kernel if any of these appear:
 - GDM/GNOME regressions;
 - unexplained SELinux failures;
 - need for NVIDIA, ZFS, VirtualBox, or other out-of-tree modules.
+
+## Lab Results (Fedora Silverblue 44 VM)
+
+The CachyOS kernel experiment was run end-to-end in the phase 1 VM lab with
+TPM2 auto-unlock already configured (PCR 0 only — see
+[07-secure-boot-tpm2.md](07-secure-boot-tpm2.md)). All success criteria were
+met.
+
+### CPU
+
+The lab VM passes through an AMD Ryzen 5 7640U (Zen 4). Output of
+`/lib64/ld-linux-x86-64.so.2 --help`:
+
+```
+x86-64-v4 (supported, searched)
+x86-64-v3 (supported, searched)
+x86-64-v2 (supported, searched)
+```
+
+The `kernel-cachyos` main package (requires `x86-64-v3`) was used. The
+`-lts` variant was not needed.
+
+### Staging command
+
+```sh
+sudo rpm-ostree override remove \
+  kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra \
+  --install kernel-cachyos
+```
+
+Result: clean new deployment with `LayeredPackages: kernel-cachyos` and
+`RemovedBasePackages: kernel-modules-core kernel-modules-extra kernel-core
+kernel kernel-modules 7.0.9-205.fc44`. The pinned Fedora deployment was
+preserved as the fallback.
+
+### Boot into CachyOS
+
+| Check | Result |
+| --- | --- |
+| Running kernel | `7.0.8-cachyos1.fc44.x86_64` |
+| GNOME/GDM | works |
+| TPM2 auto-unlock | works without passphrase |
+| `systemctl --failed` | only `systemd-remount-fs` (expected on composefs) |
+| `scripts/validate-cachyos-kernel` | `Failures: 0` |
+| Kernel/initramfs/Btrfs/bootloader errors | none |
+
+`mcelog.service` was not in the failed-units list under CachyOS (it had
+been on Fedora kernel in the same VM). The reason is incidental; both
+states are acceptable in a VM.
+
+### TPM2 PCR behavior across kernel change
+
+The most important observation: **TPM2 auto-unlock survived the kernel
+change without re-enrollment**. The lab used `--tpm2-pcrs=0` (Platform
+Firmware only), which does not depend on the kernel binary, the
+initramfs, or Secure Boot state.
+
+This is consistent with the design rationale recorded in
+`07-secure-boot-tpm2.md`. On hardware with Secure Boot enabled and a
+broader PCR policy (e.g. `0+7`), the same change would invalidate the
+TPM2 token if the CachyOS kernel cannot be booted under the same Secure
+Boot trust as the Fedora kernel.
+
+### Rollback test
+
+```sh
+sudo rpm-ostree rollback
+# reboot via GNOME menu
+```
+
+After reboot:
+
+| Check | Result |
+| --- | --- |
+| Running kernel | `7.0.9-205.fc44.x86_64` (Fedora) |
+| TPM2 auto-unlock | works without passphrase |
+| CachyOS deployment | preserved as rollback (selectable from boot menu) |
+| Fedora kernel packages | present in current deployment |
+
+### Roll-forward test
+
+A second `rpm-ostree rollback` re-staged CachyOS as the next boot. After
+a second reboot, CachyOS was active again with TPM2 auto-unlock still
+working.
+
+### Lab default after the experiment
+
+The VM was left with the CachyOS deployment as `● Booted` and the Fedora
+pinned deployment preserved as the permanent fallback. This is a manual
+decision for the VM lab so subsequent experiments run on top of CachyOS;
+it is **not** a change to the project policy.
+
+The declared policy in `declarations/margine-atomic.yaml`
+(`kernel.experiment.force_as_default: false`) remains unchanged. Making
+CachyOS the booted deployment on hardware requires:
+
+- a documented Secure Boot trust path for the CachyOS kernel, or
+- an explicit decision to disable Secure Boot and re-evaluate the
+  TPM2 PCR policy (PCR 7 would no longer be stable).
+
+Neither is in scope for phase 1.
+
+### Key findings
+
+- **CachyOS kernel boots cleanly on Fedora Silverblue 44 with composefs.**
+  No special configuration was required beyond the documented `rpm-ostree
+  override remove ... --install kernel-cachyos` flow.
+- **TPM2 auto-unlock with PCR 0 only is robust to kernel change.**
+  The same enrollment continues to work across Fedora kernel ↔ CachyOS
+  kernel transitions, and across rpm-ostree rollback / roll-forward.
+- **The Fedora pinned deployment is the right safety net.**
+  Pinning the Fedora deployment before the experiment kept a known-good
+  boot entry available at all times during rollback testing.
+- **Secure Boot was disabled in this VM**, so the lab does **not** prove
+  Secure Boot compatibility. Any decision to make CachyOS the default on
+  hardware with Secure Boot enabled requires a separate analysis of the
+  CachyOS signing/trust path. This is out of scope for phase 1.
+
+### Out-of-tree module packages observed
+
+`validate-cachyos-kernel` flagged two RPMs as potential out-of-tree
+candidates:
+
+```
+nvidia-gpu-firmware-20260519-1.fc44.noarch
+virtualbox-guest-additions-7.2.8-1.fc44.x86_64
+```
+
+Neither is an out-of-tree module driver:
+- `nvidia-gpu-firmware` is part of `linux-firmware` and ships microcode
+  blobs, not a kernel module;
+- `virtualbox-guest-additions` here is the userspace tools package from
+  Fedora; the kernel-side `vboxguest`/`vboxsf` modules are in-tree in
+  CachyOS.
+
+The validator warning is conservative and not actionable in this case.

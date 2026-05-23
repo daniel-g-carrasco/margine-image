@@ -200,6 +200,7 @@ flatpaks:
     - name: flathub
       url: https://flathub.org/repo/flathub.flatpakrepo
   default_apps:
+    - io.github.zen_browser.zen
     - com.bitwarden.desktop
     - org.mozilla.Thunderbird
     - org.libreoffice.LibreOffice

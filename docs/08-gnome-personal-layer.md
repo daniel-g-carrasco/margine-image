@@ -207,7 +207,7 @@ Carry over:
 - GNOME/libadwaita accent color, starting with `yellow` if supported by the
   target GNOME release;
 - a single documented visual baseline file later, if automation is added;
-- Firefox/Thunderbird policy ideas that follow the GNOME color scheme.
+- Zen Browser and Thunderbird as the default browser and mail client.
 
 Do not carry over initially:
 

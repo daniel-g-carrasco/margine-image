@@ -151,7 +151,7 @@ from the Fedora/Flatpak reality.
 
 Good defaults from the old model:
 
-- Firefox for web;
+- Zen Browser for web;
 - Thunderbird for mail;
 - GNOME Papers for PDFs;
 - GNOME Loupe for images;
@@ -168,24 +168,23 @@ Required changes:
 
 ### Browser Policy Idea
 
-Carry over the policy idea, not blindly the file path.
+Default browser: **Zen Browser** (`io.github.zen_browser.zen`, Flatpak from Flathub).
+Zen is a Firefox fork with a distinct UI and strong privacy defaults. The
+underlying engine is Gecko, so Firefox policy concepts transfer.
 
-The old Firefox policy is moderate and useful:
+Policy ideas to carry over (verify in the VM — Flatpak policy paths differ from RPM):
 
 - disable telemetry and studies;
 - remove Pocket and sponsored suggestions;
-- avoid default-browser prompts;
-- set DuckDuckGo;
+- set DuckDuckGo as default search;
 - install uBlock Origin.
 
-Required decision:
+Do not migrate browser profiles. Do not use the system Firefox RPM as the
+default browser — it duplicates the role and creates two browser installations
+to maintain.
 
-- if Firefox remains the Fedora/Silverblue RPM/base browser, `/etc/firefox/policies/policies.json`
-  is a reasonable host policy path;
-- if Firefox is Flatpak, policy handling must be revalidated for the Flatpak
-  deployment model before enforcing it.
-
-Do not migrate browser profiles.
+If Zen Browser is unavailable or becomes unmaintained, the fallback is
+`org.mozilla.firefox` (Flatpak), not the base system RPM.
 
 ### Photography and Color Management Assets
 
@@ -413,7 +412,8 @@ Confirmed Flathub candidates during this review:
 | Purpose | Flatpak ID |
 | --- | --- |
 | Bitwarden | `com.bitwarden.desktop` |
-| Firefox | `org.mozilla.firefox` |
+| Zen Browser | `io.github.zen_browser.zen` |
+| Firefox (fallback) | `org.mozilla.firefox` |
 | Thunderbird | `org.mozilla.Thunderbird` / `org.mozilla.thunderbird` |
 | LibreOffice | `org.libreoffice.LibreOffice` |
 | darktable | `org.darktable.Darktable` |
@@ -438,14 +438,11 @@ Confirmed Flathub candidates during this review:
 
 Initial recommendation:
 
-- default Flatpaks: Bitwarden, Thunderbird, LibreOffice, Gapless;
+- default Flatpaks: Zen Browser, Bitwarden, Thunderbird, LibreOffice, Gapless;
 - photography optional Flatpaks: darktable, GIMP, DisplayCAL;
 - media optional Flatpaks: Audacity, OBS Studio, Easy Effects, Reaper;
 - gaming optional Flatpaks: Steam, Lutris, Heroic, Bottles, Protontricks,
   ProtonUp-Qt, RetroArch, RetroDECK, Cartridges.
-
-Firefox needs a channel decision because Fedora Silverblue may already include a
-browser and the policy path differs between RPM/base and Flatpak.
 
 ## Use Toolbox or Distrobox First
 

@@ -63,12 +63,24 @@ storage:
   encryption:
     required: true
     format: luks2
+  btrfs_subvolumes:
+    - name: "@root"
+      mount: "/"
+      note: ostree-managed; do not snapshot manually
+    - name: "@home"
+      mount: "/var/home"
+      note: home directories; user config and caches
+    - name: "@data"
+      mount: "/var/home/<user>/data"
+      note: personal data; independent snapshot target
+      phase: post-install
   expected_paths:
     root: ostree-deployment
     usr: read-only
     etc: writable
     var: writable
     home: /var/home
+    data: /var/home/<user>/data
 
 security:
   secure_boot:

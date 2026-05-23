@@ -69,6 +69,13 @@ surface:
 The top-level rule still fits Fedora Atomic because it writes only to user home.
 No mutable root filesystem is required.
 
+On the Margine Fedora Atomic install, `~/.cache`, `~/dev`, `~/scratch`, and
+`~/data` are realized as separate Btrfs subvolumes so that snapshots of
+`@home` capture only the dotfile area. The user-visible paths are identical;
+the snapshot scope is what changes. See
+[02a-custom-partitioning.md](02a-custom-partitioning.md) for the design and
+post-install steps.
+
 Initial XDG mapping:
 
 | XDG directory | Target |

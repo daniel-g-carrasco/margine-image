@@ -91,8 +91,8 @@ capture_shell repo-files.txt "find /etc/yum.repos.d -maxdepth 1 -type f -print -
 
 if command -v btrfs >/dev/null 2>&1; then
   capture btrfs-filesystem-show.txt btrfs filesystem show
-  capture btrfs-filesystem-usage-root.txt btrfs filesystem usage /
-  capture btrfs-subvolume-list.txt btrfs subvolume list /
+  capture btrfs-filesystem-usage-sysroot.txt btrfs filesystem usage /sysroot
+  capture btrfs-subvolume-list.txt btrfs subvolume list /sysroot
 fi
 
 tar -C "${repo_root}/diagnostics" -czf "$archive" "$timestamp"

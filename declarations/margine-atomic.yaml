@@ -64,22 +64,65 @@ storage:
     required: true
     format: luks2
   btrfs_subvolumes:
-    - name: "@root"
-      mount: "/"
-      note: ostree-managed; do not snapshot manually
-    - name: "@home"
-      mount: "/var/home"
-      note: home directories; user config and caches
-    - name: "@data"
-      mount: "/var/home/<user>/data"
-      note: personal data; independent snapshot target
-      phase: post-install
+    naming_note: >
+      Anaconda on Fedora creates top-level subvolumes without the @ prefix
+      (root, home, var). The @data subvolume is our addition; the @ prefix
+      is kept only to visually mark it as not Anaconda-created in
+      `btrfs subvolume list`. Nested subvolumes have no separate name and
+      are identified by their path within the parent subvolume.
+    list:
+      - path: root
+        anaconda_created: true
+        mount: "/"
+        note: ostree-managed; do not snapshot manually
+      - path: home
+        anaconda_created: true
+        mount: "/var/home"
+        note: snapshot target; dotfiles and user state only
+        snapshot_intent: high-value-dotfiles
+      - path: var
+        anaconda_created: true
+        mount: "/var"
+        note: system writable state
+      - path: "home/<user>/.cache"
+        anaconda_created: false
+        parent: home
+        nested: true
+        mount: "/var/home/<user>/.cache"
+        phase: post-install
+        note: excluded from `home` snapshots; regenerable cache
+        snapshot_intent: none
+      - path: "home/<user>/dev"
+        anaconda_created: false
+        parent: home
+        nested: true
+        mount: "/var/home/<user>/dev"
+        phase: post-install
+        note: excluded from `home` snapshots; git is the source of truth
+        snapshot_intent: none
+      - path: "home/<user>/scratch"
+        anaconda_created: false
+        parent: home
+        nested: true
+        mount: "/var/home/<user>/scratch"
+        phase: post-install
+        note: excluded from `home` snapshots; disposable by contract
+        snapshot_intent: none
+      - path: "@data"
+        anaconda_created: false
+        mount: "/var/home/<user>/data"
+        phase: post-install
+        note: independent top-level subvolume; own backup policy (e.g. Koofr)
+        snapshot_intent: independent
   expected_paths:
     root: ostree-deployment
     usr: read-only
     etc: writable
     var: writable
     home: /var/home
+    home_cache: /var/home/<user>/.cache
+    home_dev: /var/home/<user>/dev
+    home_scratch: /var/home/<user>/scratch
     data: /var/home/<user>/data
 
 security:
@@ -200,7 +243,7 @@ flatpaks:
     - name: flathub
       url: https://flathub.org/repo/flathub.flatpakrepo
   default_apps:
-    - io.github.zen_browser.zen
+    - app.zen_browser.zen
     - com.bitwarden.desktop
     - org.mozilla.Thunderbird
     - org.libreoffice.LibreOffice

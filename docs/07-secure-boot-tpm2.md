@@ -196,6 +196,30 @@ Expected:
 - `rpm-ostree initramfs` reports `Initramfs regeneration: enabled`;
 - the system booted without a passphrase prompt.
 
+### Rollback and roll-forward test results (VM lab, Fedora 44)
+
+After TPM2 enrollment, a rollback/roll-forward cycle was tested:
+
+| Deployment | Initramfs | Result |
+| --- | --- | --- |
+| Current (local regenerated) | `Initramfs: regenerate` | Auto-unlock — no passphrase |
+| Previous (stock OSTree) | Stock Fedora initramfs | Auto-unlock — no passphrase |
+| Roll-forward (local regenerated) | `Initramfs: regenerate` | Auto-unlock — no passphrase |
+
+**Key finding.** TPM2 auto-unlock works on both the local and stock initramfs
+deployments. The Fedora stock initramfs includes the dracut TPM2 modules.
+systemd-cryptsetup reads the TPM2 token directly from the LUKS2 header and
+attempts auto-unlock automatically, regardless of whether `tpm2-device=auto`
+is present in the embedded crypttab.
+
+The `tpm2-device=auto` crypttab entry and local initramfs regeneration remain
+correct practice because they make the intent explicit, document the PCR policy,
+and ensure predictable behavior across systemd versions. They are not strictly
+required for basic auto-unlock to function.
+
+**Recovery path confirmed.** The passphrase enrolled in key slot 0 was not
+removed. It can be used to unlock the disk at any time regardless of TPM2 state.
+
 ## PCR Policy
 
 Do not choose the final PCR set from the old Arch system.

@@ -1,92 +1,103 @@
-# Margine Fedora Atomic
+<p align="center">
+  <img src="assets/branding/margine-logo-wide.png" alt="Margine" width="520">
+</p>
 
-Margine Fedora Atomic is an experimental Margine OS variant based on Fedora
-Atomic Desktop, starting with Fedora Silverblue and GNOME.
+<p align="center">
+  An experimental Margine OS variant built on Fedora Silverblue: validated Fedora Atomic
+  Desktop with reproducible system definition, recoverable updates, and inspectable operations.
+</p>
 
-This repository is intentionally separate from the existing Arch/CachyOS work.
-It does not depend on, import from, or modify:
+<p align="center">
+  <a href="docs/02-install-lab.md">Install</a>
+  ·
+  <a href="docs/04-validation.md">Validate</a>
+  ·
+  <a href="docs/05-known-risks.md">Risks</a>
+  ·
+  <a href="docs/adr">ADRs</a>
+  ·
+  <a href="docs/README.md">All docs</a>
+</p>
 
-- `/home/daniel/dev/margine-os`
-- `/home/daniel/dev/margine-os-personal`
+## Why Margine
+
+Margine is not a frozen distro spin and not a dotfiles dump. It is a versioned
+system definition: manifests describe intent, validators prove the result,
+recovery paths stay part of the normal workflow — not emergency procedures.
+
+This repository is the Fedora Atomic branch of that family. The existing
+Arch/CachyOS work lives in sister repositories. This branch does not depend on,
+import from, or modify them. The goal is to validate whether Fedora Atomic
+Desktop can carry the same reproducible, inspectable, recoverable properties
+that the Arch-based branch has built — using only Fedora-native mechanisms.
+
+## What Is This
+
+Margine Fedora Atomic starts with Fedora Silverblue 44 and GNOME, then
+validates the Fedora Atomic model from first principles before building
+anything on top of it:
+
+- rpm-ostree deployments, rollback, and override mechanics
+- Fedora Btrfs layout as the desktop storage default
+- Secure Boot through the Fedora-native shim and bootloader chain
+- TPM2 automatic disk unlock via systemd-cryptenroll and LUKS2
+- Intel and AMD open driver stacks, Mesa, VA-API, Vulkan, OpenCL, Rusticl
+- PipeWire and WirePlumber as the audio baseline
+- Flatpak-first GUI applications, toolbox for development environments
+- A desktop gaming runtime built from discrete validated layers
+- A declarative desired-state model that respects each channel's real mechanics
+
+Phase 1 is a VM lab. No image builds, no installer automation, no hidden
+assumptions imported from the Arch side. Every decision is recorded before
+it becomes a procedure.
 
 ## Current Phase
 
-Phase 1 is a manual VM lab.
+Phase 1 · Manual VM lab · Fedora Silverblue 44
 
-The goal is not to build an installable image yet. The goal is to understand and
-validate Fedora Atomic Desktop as it actually behaves: rpm-ostree deployments,
-the writable state model, Btrfs layout, Secure Boot, TPM2-based disk unlock,
-Flatpak/toolbox workflows, and rollback after an experimental kernel change.
+See [docs/roadmap.md](docs/roadmap.md) for the full phase plan.
 
-As of 2026-05-22, the current Fedora Silverblue target is Fedora Silverblue 44,
-released on 2026-04-28.
+## What You Get
 
-## Design Principles
+| Area | Margine Fedora Atomic |
+| --- | --- |
+| Desktop | GNOME stock baseline in phase 1; Hyprland is out of scope until the Atomic model is understood |
+| Updates | `update-all` orchestration with a hard rpm-ostree boundary; Topgrade for accessory channels only |
+| Recovery | rpm-ostree deployment rollback; CachyOS kernel experiment with a pinned Fedora kernel fallback |
+| Storage | LUKS2 + Fedora Btrfs layout; TPM2 auto-unlock via systemd-cryptenroll; passphrase recovery kept |
+| Hardware | Intel and AMD open stacks, Mesa, VA-API, Vulkan, PipeWire; no NVIDIA or proprietary default |
+| Gaming | Flatpak launchers, optional host runtime helpers, explicit split-lock policy |
+| Operations | Shell validators, YAML declarations, diagnostic bundles, ADRs, no installer magic |
+| Identity | Margine logo, ASCII terminal branding, `margine-fetch` |
 
-- Fedora Silverblue is the base, not Arch with different tooling.
-- GNOME stays stock in the first phase.
-- Root and `/usr` are owned by ostree/rpm-ostree.
-- `/etc` and `/var` are the writable host state.
-- `/home` is normally exposed through `/var/home`.
-- Btrfs must be validated in the Fedora layout, not treated like Margine's
-  previous root-on-ZFS work.
-- Secure Boot and TPM2 automatic disk unlock are target requirements, but they
-  must be implemented through Fedora-native boot, LUKS2, systemd, and rpm-ostree
-  mechanisms.
-- Intel and AMD graphics, audio, video, VA-API, Vulkan, OpenCL, Rusticl, and
-  ROCm support are Fedora-native host/media layers, not copied Arch package
-  manifests.
-- The CachyOS kernel from COPR is experimental and must have a Fedora kernel
-  fallback through rpm-ostree rollback.
-- NVIDIA, ZFS, akmods, and other out-of-tree modules are explicit risks, not
-  defaults.
-- Flatpak/Flathub, toolbox/distrobox, and rpm-ostree layering are separate
-  software channels.
-- The project should become declarative, but channel-aware: declarations are the
-  source of truth, while rpm-ostree, Flatpak, toolbox, dconf, systemd, and home
-  provisioners remain separate execution adapters.
-- Routine updates go through a Margine orchestrator. Topgrade is allowed only as
-  an accessory updater, not as the owner of rpm-ostree, bootc, firmware, Secure
-  Boot, TPM2, or rollback policy.
-- Hyprland, Lua, Waybar, and Walker are out of scope for phase 1.
+## Architecture At A Glance
 
-## Initial Roadmap
-
-1. Install Fedora Silverblue in a VM with the Fedora-provided layout.
-2. Record a clean baseline before third-party repositories.
-3. Validate the atomic filesystem model and Btrfs backing layout.
-4. Validate the stock Fedora Secure Boot path.
-5. Validate TPM2 automatic unlock while keeping passphrase recovery.
-6. Convert observed decisions into declarative profile files.
-7. Enable the CachyOS COPR only in the lab.
-8. Test a CachyOS kernel deployment with a pinned Fedora fallback.
-9. Prove rollback to the Fedora kernel.
-10. Only then evaluate a native atomic image, bootc image, or automation layer.
+```mermaid
+flowchart LR
+  repo[Repository] --> declarations[Declarations]
+  repo --> scripts[Scripts / validators]
+  declarations --> desired[Desired state]
+  scripts --> update[update-all]
+  update --> rpmos[rpm-ostree]
+  update --> flatpak[Flatpak / toolbox]
+  rpmos --> deploy[Active deployment]
+  deploy --> validate[Validators]
+  validate --> rollback[Rollback / recovery]
+  rollback --> deploy
+```
 
 ## Repository Layout
 
-- [docs/00-goals.md](docs/00-goals.md): goals, non-goals, and decision gates.
-- [docs/01-architecture.md](docs/01-architecture.md): Fedora Atomic model.
-- [docs/02-install-lab.md](docs/02-install-lab.md): manual VM lab flow.
-- [docs/03-cachyos-kernel.md](docs/03-cachyos-kernel.md): CachyOS COPR test plan.
-- [docs/04-validation.md](docs/04-validation.md): validation commands and pass criteria.
-- [docs/05-known-risks.md](docs/05-known-risks.md): known risks and mitigations.
-- [docs/06-personal-migration-assessment.md](docs/06-personal-migration-assessment.md): what can be carried over from Margine Personal.
-- [docs/07-secure-boot-tpm2.md](docs/07-secure-boot-tpm2.md): Secure Boot and TPM2 auto-unlock plan.
-- [docs/08-gnome-personal-layer.md](docs/08-gnome-personal-layer.md): fonts, themes, icons, and home layout plan.
-- [docs/09-declarative-model.md](docs/09-declarative-model.md): declarative operating model.
-- [docs/10-hardware-media-stack.md](docs/10-hardware-media-stack.md): drivers, audio, video, VA-API, Vulkan, OpenCL, Rusticl, and ROCm plan.
-- [docs/11-gaming-runtime.md](docs/11-gaming-runtime.md): desktop gaming runtime, Bazzite lessons, Gamescope, launchers, and validation.
-- [docs/12-update-orchestration.md](docs/12-update-orchestration.md): Atomic `update-all`, Topgrade, and bootc position.
-- [docs/13-ai-validation-prompt.md](docs/13-ai-validation-prompt.md): reusable AI audit prompt for all Margine repos.
-- [config/topgrade.toml](config/topgrade.toml): Topgrade accessory-update profile.
-- [declarations/](declarations/): draft desired-state declarations, not yet applied automatically.
-- [scripts/update-all](scripts/update-all): Fedora Atomic update orchestrator.
-- [scripts/validate-atomic-layout](scripts/validate-atomic-layout): read-only host layout checks.
-- [scripts/validate-cachyos-kernel](scripts/validate-cachyos-kernel): CachyOS kernel checks.
-- [scripts/validate-hardware-media-stack](scripts/validate-hardware-media-stack): read-only hardware, media, and compute checks.
-- [scripts/validate-gaming-runtime](scripts/validate-gaming-runtime): read-only gaming runtime checks.
-- [scripts/collect-diagnostics](scripts/collect-diagnostics): local diagnostic bundle.
+```
+assets/branding/        Margine logo and ASCII identity files
+config/topgrade.toml    Topgrade accessory-update profile
+declarations/           Draft desired-state declarations (YAML)
+docs/                   Architecture, procedures, risks, ADRs, roadmap
+files/                  Versioned user-layer files (fastfetch, personal config)
+scripts/                Validators, update orchestrator, diagnostics collector
+```
+
+Detailed documentation index: [docs/README.md](docs/README.md)
 
 ## Lab Usage
 
@@ -103,16 +114,22 @@ scripts/collect-diagnostics
 scripts/update-all --dry-run
 ```
 
-After the CachyOS kernel test:
+After the CachyOS kernel experiment:
 
 ```sh
 scripts/validate-cachyos-kernel
 scripts/collect-diagnostics
 ```
 
-The scripts are observational. They do not install packages, change boot
+Validation scripts are read-only. They do not install packages, change boot
 configuration, or modify rpm-ostree deployments. `collect-diagnostics` writes
-local output under `diagnostics/`, which is ignored by Git.
+local output under `diagnostics/`, which is excluded from version control.
+
+## Related
+
+- [`margine-os`](../margine-os/): Arch/Hyprland public baseline
+- [`docs/06-personal-migration-assessment.md`](docs/06-personal-migration-assessment.md): what carries over from Margine Personal
+- [`docs/README.md`](docs/README.md): documentation map and reading order
 
 ## Primary References
 
@@ -125,27 +142,11 @@ local output under `diagnostics/`, which is ignored by Git.
 - rpm-ostree: https://coreos.github.io/rpm-ostree/
 - rpm-ostree administrator handbook: https://coreos.github.io/rpm-ostree/administrator-handbook/
 - Fedora Btrfs wiki: https://fedoraproject.org/wiki/Btrfs
-- Fedora Btrfs by default change: https://fedoraproject.org/wiki/Changes/BtrfsByDefault
 - Fedora Secure Boot: https://fedoraproject.org/wiki/Secureboot
 - systemd-cryptenroll manual: https://www.freedesktop.org/software/systemd/man/latest/systemd-cryptenroll.html
-- crypttab manual: https://www.freedesktop.org/software/systemd/man/latest/crypttab.html
-- Fedora Magazine TPM2/systemd-cryptenroll guide: https://fedoramagazine.org/use-systemd-cryptenroll-with-fido-u2f-or-tpm2-to-decrypt-your-disk/
 - Mesa Rusticl documentation: https://docs.mesa3d.org/rusticl.html
-- Fedora `mesa-libOpenCL`: https://packages.fedoraproject.org/pkgs/mesa/mesa-libOpenCL/index.html
-- Fedora `libva-intel-media-driver`: https://packages.fedoraproject.org/pkgs/intel-media-driver-free/libva-intel-media-driver/
-- Fedora `intel-compute-runtime`: https://packages.fedoraproject.org/pkgs/intel-compute-runtime/intel-compute-runtime/fedora-44.html
-- Fedora `rocminfo`: https://packages.fedoraproject.org/pkgs/rocminfo/rocminfo/index.html
-- Fedora `pipewire`: https://packages.fedoraproject.org/pkgs/pipewire/pipewire/
-- Fedora `wireplumber`: https://packages.fedoraproject.org/pkgs/wireplumber/wireplumber/
 - Bazzite and Fedora Atomic comparison: https://docs.bazzite.gg/General/Fedora_Atomic_Comparison/
-- Bazzite package layering guidance: https://docs.bazzite.gg/Installing_and_Managing_Software/rpm-ostree/
-- Bazzite Steam Gaming Mode overview: https://docs.bazzite.gg/Handheld_and_HTPC_edition/Steam_Gaming_Mode/
-- Bazzite repository: https://github.com/ublue-os/bazzite
-- Fedora Gamescope documentation: https://docs.fedoraproject.org/en-US/gaming/gamescope/
-- Topgrade repository and example config: https://github.com/topgrade-rs/topgrade
+- Topgrade repository: https://github.com/topgrade-rs/topgrade
 - Fedora/CentOS bootc docs: https://fedora.gitlab.io/bootc/docs/bootc/
-- bootc project: https://bootc.dev/
 - COPR docs: https://docs.copr.fedorainfracloud.org/
-- COPR enable docs: https://docs.pagure.org/copr.copr/how_to_enable_repo.html
 - CachyOS Fedora COPR packaging: https://github.com/CachyOS/copr-linux-cachyos
-- CachyOS kernel docs: https://wiki.cachyos.org/features/kernel/

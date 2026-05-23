@@ -1,5 +1,13 @@
 # Goals
 
+Margine is a versioned system definition: manifests describe intent, validators
+prove the result, and recovery paths stay part of the normal workflow. This
+repository is the Fedora Atomic branch of that project family.
+
+This document defines what this branch is trying to accomplish and the gates
+that must pass before each phase advances. For architectural decisions, see
+[docs/adr/](adr/). For the phase plan, see [docs/roadmap.md](roadmap.md).
+
 This project explores a Fedora Atomic variant of Margine OS without reusing the
 existing Arch/CachyOS architecture as a hidden default.
 

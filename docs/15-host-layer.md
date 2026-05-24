@@ -195,6 +195,223 @@ gnome-tweaks --version
 If any of these fail, check `rpm-ostree status -v` for transaction errors
 and `journalctl -b -p warning..alert` for boot-time complaints.
 
+## Using the baseline
+
+The baseline doesn't just put packages on disk — each group unlocks
+something practical. This section is a usage cookbook grouped by area.
+
+### Multimedia: full codec + hardware-accelerated video
+
+After `apply-host-layer`, `ffmpeg` is the full RPMFusion build and
+`mesa-va-drivers-freeworld` exposes the patented codec entrypoints.
+
+Confirm the upgrade took:
+
+```sh
+ffmpeg -version | head -1            # expect "ffmpeg version N.N" without "free"
+vainfo | grep -i 'h264\|hevc\|av1'   # expect VAEntrypointEncSlice / VLD entries
+```
+
+Hardware-accelerated video encode (AMD example, H.264):
+
+```sh
+ffmpeg -hwaccel vaapi -vaapi_device /dev/dri/renderD128 \
+       -i input.mov \
+       -vf 'format=nv12|vaapi,hwupload' \
+       -c:v h264_vaapi -b:v 5M output.mp4
+```
+
+Hardware decode in browsers happens automatically once
+`mesa-va-drivers-freeworld` is present (Firefox/Zen → check
+`about:support` → "Compositing"; YouTube → playback stats → "Codecs").
+
+OBS Studio: enable VA-API output via `Settings → Output → Encoder`
+(pick `H.264 VA-API`). The encoder appears in the list because
+`gstreamer1-vaapi` and `mesa-va-drivers-freeworld` are present.
+
+darktable / GIMP / Reaper: standard CPU codec paths work end-to-end
+because `ffmpeg` and `gstreamer1-plugins-bad-freeworld` cover the
+patented formats they need.
+
+### Virtualization: virt-manager and friends
+
+The host stack matches what we use to validate Margine itself in VMs.
+
+First-time setup (one-time):
+
+```sh
+# Add yourself to the libvirt group so virsh / virt-manager work without sudo
+sudo usermod -aG libvirt "$USER"
+# Log out / log back in for group change to take effect
+
+# Start the libvirtd socket
+sudo systemctl enable --now libvirtd.socket
+
+# Bring up the default NAT network if not already
+sudo virsh net-autostart default
+sudo virsh net-start default
+```
+
+Launch the GUI:
+
+```sh
+virt-manager
+```
+
+Create a VM with UEFI + virtual TPM 2.0 (same profile as the Margine
+lab VM):
+
+- New VM → Local install media → ISO path
+- Choose memory / disk
+- **Customize configuration before install** → Overview
+  - Firmware: `UEFI x86_64: /usr/share/edk2/ovmf/OVMF_CODE.fd`
+- Add Hardware → TPM
+  - Type: `Emulated`, Model: `TIS`, Version: `2.0`
+- Begin Installation
+
+Useful `virsh` commands:
+
+```sh
+virsh list --all                              # list all domains
+virsh start <name>                            # start a VM
+virsh shutdown <name>                         # graceful shutdown
+virsh destroy <name>                          # hard stop
+virsh snapshot-create-as <name> snap1         # take snapshot
+virsh snapshot-revert <name> snap1            # revert
+virsh net-list                                # list networks
+virsh net-dhcp-leases default                 # see VM IPs on default net
+```
+
+Storage pool under `~/data` (separate from default
+`/var/lib/libvirt/images`):
+
+```sh
+sudo virsh pool-define-as data-vms dir --target /var/home/<user>/data/vms
+sudo virsh pool-autostart data-vms
+sudo virsh pool-start data-vms
+```
+
+### Hardware diagnostics
+
+#### Sensors (temperature, fan, voltage)
+
+```sh
+sudo sensors-detect            # first time only; answer YES to safe probes
+sensors                        # current readings
+watch -n 1 sensors             # live monitor
+```
+
+#### Power profiling
+
+```sh
+sudo powertop                  # interactive TUI; Tab to navigate
+sudo powerstat -d 5 -t 10      # 5s delay, 10 readings
+```
+
+`powertop` "Tunables" tab shows what's running at non-default power
+levels; "Calibrate" mode (run once on a battery) refines estimates.
+
+#### Firmware updates (Framework 13, laptops, NVMe firmware)
+
+```sh
+fwupdmgr refresh               # refresh metadata
+fwupdmgr get-devices           # see what fwupd can update
+fwupdmgr get-updates           # what's available
+fwupdmgr update                # apply (reboot often required)
+```
+
+Framework 13: BIOS / EC firmware ship via LVFS, so this is the standard
+update path. Same goes for NVMe firmware where the vendor publishes
+through LVFS.
+
+#### Monitor control via DDC/CI
+
+```sh
+ddcutil detect                                    # list DDC-capable monitors
+ddcutil getvcp 10                                 # current brightness
+ddcutil setvcp 10 50                              # set brightness to 50%
+ddcutil setvcp 12 70                              # set contrast
+ddcutil capabilities | less                       # what the monitor supports
+```
+
+VCP code 10 is brightness, 12 is contrast, 14 is color preset. Useful
+on external monitors that don't expose hardware buttons or for
+scripted brightness switching.
+
+#### SMART drive health
+
+```sh
+sudo smartctl -a /dev/nvme0n1                     # full attribute dump
+sudo smartctl -t short /dev/nvme0n1               # run short self-test
+sudo smartctl -l selftest /dev/nvme0n1            # results
+```
+
+#### Hardware enumeration
+
+```sh
+lsusb -t                                          # USB tree
+lspci -nnk                                        # PCI with kernel module
+lscpu                                             # CPU details
+lsblk -f                                          # block devices + filesystems
+```
+
+### GNOME Tweaks and AppIndicator
+
+```sh
+gnome-tweaks                  # launches the GUI
+```
+
+What you'll typically configure first:
+
+- **Appearance** → Legacy Applications: pick `adw-gtk3-dark` so GTK3
+  apps inherit the libadwaita dark look
+- **Fonts** → Interface / Document / Monospace: pick from the curated
+  font set (e.g. `IBM Plex Sans 10`, `JetBrains Mono 11`)
+- **Keyboard & Mouse** → Additional Layout Options: compose key, caps
+  remap, etc.
+- **Top Bar**: enable Battery Percentage, Weekday, Date
+- **Window Titlebars**: enable Maximize / Minimize buttons if the
+  GNOME default of close-only is not your preference
+
+AppIndicator support is provided by `gnome-shell-extension-appindicator`
++ `libappindicator-gtk3`. Legacy tray apps (Bitwarden, Steam in tray,
+Slack desktop, etc.) appear in the top bar without extra setup. If a
+new extension is needed, install `gnome-extensions-app` later from
+Flatpak or use the Extensions Manager Flatpak (`com.mattjakeman.ExtensionManager`).
+
+### Fonts: applying the curated set
+
+The baseline installs Cascadia Code, IBM Plex (sans/mono/serif),
+JetBrains Mono, Adobe Source (code/sans/serif), Atkinson Hyperlegible
+Next/Mono, Carlito + Caladea (MS Office compatibility), Liberation
+family, Noto color emoji, Noto CJK.
+
+Pick them through `gnome-tweaks` → Fonts, or via `gsettings`:
+
+```sh
+gsettings set org.gnome.desktop.interface font-name           'IBM Plex Sans 10'
+gsettings set org.gnome.desktop.interface document-font-name  'IBM Plex Serif 11'
+gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 11'
+```
+
+Query what fontconfig actually resolves:
+
+```sh
+fc-match 'IBM Plex Sans'                          # what gets used as fallback
+fc-list | grep -i 'jetbrains' | head              # which JetBrains weights are installed
+pango-view --font='JetBrains Mono 12' --text='Mg 1l0 → ✓'    # render preview
+```
+
+For accessibility:
+
+```sh
+gsettings set org.gnome.desktop.interface font-name 'Atkinson Hyperlegible Next 11'
+```
+
+User-added fonts (Nerd Fonts, custom families) go under
+`~/.local/share/fonts/margine/` and become visible after
+`fc-cache -fv ~/.local/share/fonts`.
+
 ## Relationship to phase 2 (bootc)
 
 The host layer baseline is the **layered** path. The phase 2 roadmap

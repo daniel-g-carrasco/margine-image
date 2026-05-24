@@ -97,7 +97,7 @@ For codecs and GStreamer:
 | OpenH264 plugin | `gstreamer1-plugin-openh264` |
 | GStreamer base/good/bad free plugins | `gstreamer1-plugins-base`, `gstreamer1-plugins-good`, `gstreamer1-plugins-bad-free` |
 | GStreamer ugly free plugins | `gstreamer1-plugins-ugly-free` |
-| VA-API GStreamer path | `gstreamer1-vaapi` |
+| VA-API GStreamer path | bundled in `gstreamer1-plugins-bad-free`/`-freeworld` on F44+ |
 | AV1/HEIF support | `aom`, `dav1d`, `libavif`, `libheif` |
 
 **Policy update (Bluefin-style baseline).** Full patent-encumbered multimedia
@@ -112,9 +112,10 @@ codec packages are replaced with the freeworld variants:
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
 Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`,
-`gstreamer1-vaapi`, `libavif`, `libheif`. (`gstreamer1-libav` is intentionally
-not added — `gstreamer1-plugin-libav` already provides the same capability
-from the Fedora base.)
+`libavif`, `libheif`. On Fedora 44, `gstreamer1-libav` and `gstreamer1-vaapi`
+are virtual provides only — the real packages are `gstreamer1-plugin-libav`
+(base) and the VA-API plugin merged into `gstreamer1-plugins-bad-*`, so they
+do not need explicit install.
 
 The replacement is the same pattern Bluefin/Bazzite use and is required for
 GPU-accelerated H.264 / H.265 / AV1 in browsers, OBS, darktable, Reaper, etc.

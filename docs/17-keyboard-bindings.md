@@ -79,17 +79,27 @@ F = Forge).
 
 ### Tiling actions (F — require Forge extension)
 
-| Hyprland | Forge key |
-| --- | --- |
-| `SUPER+T` (toggle floating) | `window-toggle-float` |
-| `SUPER+J` (toggle split orientation) | `window-rotate-split` |
-| `SUPER+arrows` (focus direction) | `window-focus-{left,right,up,down}` |
-| `SUPER SHIFT+arrows` (swap window) | `window-swap-{left,right,up,down}` |
-| `SUPER+equal` / `SUPER+minus` (width) | `window-resize-width-{increase,decrease}` |
-| `SUPER SHIFT+equal` / `SUPER SHIFT+minus` (height) | `window-resize-height-{increase,decrease}` |
-| `SUPER+G` (toggle group) | `con-stacked-layout-toggle` |
-| `SUPER ALT+TAB` (next in group) | `focus-next-window` |
-| `SUPER ALT SHIFT+TAB` (prev in group) | `focus-previous-window` |
+Key names below match the **Forge 89** gsettings schema (verified live
+with `gsettings list-keys org.gnome.shell.extensions.forge.keybindings`).
+The schema changed significantly across Forge versions; if you upgrade
+the extension and bindings stop working, list the keys again and
+compare with this table.
+
+| Hyprland | Forge 89 key | Notes |
+| --- | --- | --- |
+| `SUPER+T` (toggle floating) | `window-toggle-float` | |
+| `SUPER+J` (toggle split) | `con-split-layout-toggle` | renamed from `window-rotate-split` |
+| `SUPER+arrows` (focus direction) | `window-focus-{left,right,up,down}` | |
+| `SUPER SHIFT+arrows` (swap window) | `window-swap-{left,right,up,down}` | |
+| `SUPER+equal` / `SUPER+minus` (width) | `window-resize-right-{increase,decrease}` | Forge 89 is per-edge, not per-dim |
+| `SUPER SHIFT+equal` / `SUPER SHIFT+minus` (height) | `window-resize-bottom-{increase,decrease}` | per-edge, see above |
+| `SUPER+G` (toggle stacked layout) | `con-stacked-layout-toggle` | |
+| `SUPER SHIFT+G` (toggle tabbed layout) | `con-tabbed-layout-toggle` | extra, not in Hyprland source |
+| `SUPER ALT+TAB` (swap last active) | `window-swap-last-active` | Forge 89 has no list-cycle focus; this swaps with the previously-focused window |
+
+Skipped (no Forge 89 equivalent): list-cycle focus within a stacked
+container (`focus-next-window` / `focus-previous-window` from older Forge
+versions). Forge 89 only has directional focus inside containers.
 
 ### Shell + screenshot (S)
 

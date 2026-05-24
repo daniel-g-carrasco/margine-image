@@ -511,23 +511,31 @@ gnome:
         binding: '<Shift>Print'
         command: 'gnome-screenshot -ac'
     forge:
-      window_toggle_float:           '<Super>t'
-      window_rotate_split:           '<Super>j'
-      window_focus_left:             '<Super>Left'
-      window_focus_right:            '<Super>Right'
-      window_focus_up:               '<Super>Up'
-      window_focus_down:             '<Super>Down'
-      window_swap_left:              '<Super><Shift>Left'
-      window_swap_right:             '<Super><Shift>Right'
-      window_swap_up:                '<Super><Shift>Up'
-      window_swap_down:              '<Super><Shift>Down'
-      window_resize_width_increase:  '<Super>equal'
-      window_resize_width_decrease:  '<Super>minus'
-      window_resize_height_increase: '<Super><Shift>equal'
-      window_resize_height_decrease: '<Super><Shift>minus'
-      con_stacked_layout_toggle:     '<Super>g'
-      focus_next_window:             '<Super><Alt>Tab'
-      focus_previous_window:         '<Super><Alt><Shift>Tab'
+      # Names below match Forge 89 schema keys (verified live with
+      # `gsettings list-keys org.gnome.shell.extensions.forge.keybindings`).
+      # Forge 89 uses per-edge resize keys (right/bottom) rather than
+      # width/height, and a generic con-split-layout-toggle instead of
+      # the older window-rotate-split.
+      window_toggle_float:            '<Super>t'
+      con_split_layout_toggle:        '<Super>j'
+      window_focus_left:              '<Super>Left'
+      window_focus_right:             '<Super>Right'
+      window_focus_up:                '<Super>Up'
+      window_focus_down:              '<Super>Down'
+      window_swap_left:               '<Super><Shift>Left'
+      window_swap_right:              '<Super><Shift>Right'
+      window_swap_up:                 '<Super><Shift>Up'
+      window_swap_down:               '<Super><Shift>Down'
+      window_resize_right_increase:   '<Super>equal'
+      window_resize_right_decrease:   '<Super>minus'
+      window_resize_bottom_increase:  '<Super><Shift>equal'
+      window_resize_bottom_decrease:  '<Super><Shift>minus'
+      con_stacked_layout_toggle:      '<Super>g'
+      con_tabbed_layout_toggle:       '<Super><Shift>g'
+      window_swap_last_active:        '<Super><Alt>Tab'
+      # Skipped (no Forge 89 equivalent):
+      #   focus-next-window / focus-previous-window (list cycling within
+      #     a stacked container) — Forge 89 only has directional focus.
   app_folders:
     naming_note: >
       App folders are visible in the GNOME Activities app grid. Each folder

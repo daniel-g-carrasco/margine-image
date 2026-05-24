@@ -243,8 +243,10 @@ host_packages:
       - gnome-tweaks
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
+      - gnome-shell-extension-forge
       - adw-gtk3-theme
       - showtime
+      - kitty
     creative_apps_note: >
       darktable is installed as a host package (not Flatpak) so it picks
       up the host OpenCL ICD automatically. With ROCm (AMD) or
@@ -426,6 +428,106 @@ gnome:
     pdf_viewer: org.gnome.Papers.desktop
     text_editor: org.gnome.TextEditor.desktop
     archive_manager: org.gnome.FileRoller.desktop
+    terminal_emulator: kitty.desktop
+  workspaces:
+    note: >
+      Static workspace model (Hyprland-like) instead of GNOME's default
+      dynamic workspaces. Required for SUPER+1..0 direct-jump bindings
+      to make sense — with dynamic workspaces the count is variable.
+      Applied by scripts/configure-gnome-keybindings.
+    dynamic: false
+    count: 10
+  keybindings:
+    note: >
+      Hyprland-style keybindings ported from
+      margine-os-personal/files/home/.config/hypr/conf.d/60-binds.conf.
+      Mapped to GNOME native (org.gnome.desktop.wm.keybindings,
+      org.gnome.shell.keybindings, org.gnome.settings-daemon.plugins.media-keys),
+      custom-keybindings (for app-launcher slots), and Forge extension
+      keybindings (for tiling actions). Applied by
+      scripts/configure-gnome-keybindings.
+      Overrides vs the Hyprland source:
+        - SUPER+E      → file manager (Nautilus), instead of SUPER SHIFT+F
+        - terminal     = kitty (replaces ptyxis as the launch target)
+      Skipped (no GNOME equivalent or out of scope):
+        - SUPER+K      Hyprland binds help (use GNOME Settings → Keyboard)
+        - SUPER SHIFT+P  restart waybar (waybar not present)
+        - SUPER+P      pseudotile (Hyprland-specific concept)
+        - SUPER+S      scratchpad (Forge has no direct equivalent)
+    workspace:
+      switch_next:        '<Super>Tab'
+      switch_previous:    '<Super><Shift>Tab'
+      switch_last_used:   '<Super><Ctrl>Tab'
+      switch_to_1:        '<Super>1'
+      switch_to_2:        '<Super>2'
+      switch_to_3:        '<Super>3'
+      switch_to_4:        '<Super>4'
+      switch_to_5:        '<Super>5'
+      switch_to_6:        '<Super>6'
+      switch_to_7:        '<Super>7'
+      switch_to_8:        '<Super>8'
+      switch_to_9:        '<Super>9'
+      switch_to_10:       '<Super>0'
+      move_window_to_1:   '<Super><Shift>1'
+      move_window_to_2:   '<Super><Shift>2'
+      move_window_to_3:   '<Super><Shift>3'
+      move_window_to_4:   '<Super><Shift>4'
+      move_window_to_5:   '<Super><Shift>5'
+      move_window_to_6:   '<Super><Shift>6'
+      move_window_to_7:   '<Super><Shift>7'
+      move_window_to_8:   '<Super><Shift>8'
+      move_window_to_9:   '<Super><Shift>9'
+      move_window_to_10:  '<Super><Shift>0'
+    window:
+      close:              '<Super>w'
+      toggle_fullscreen:  '<Super>f'
+      always_on_top:      '<Super>o'
+    shell:
+      toggle_application_view: ['<Super>space', '<Super>r']
+      toggle_overview:    '<Super><Shift>space'
+      open_message_tray:  '<Super>n'
+      show_screenshot_ui: 'Print'
+      screenshot_window:  '<Ctrl>Print'
+      show_screen_recording_ui: '<Super>Print'
+    media_keys:
+      screensaver:        '<Super><Ctrl>l'
+    custom:
+      - name: terminal
+        binding: '<Super>Return'
+        command: 'kitty'
+      - name: browser
+        binding: '<Super><Shift>Return'
+        command: 'flatpak run app.zen_browser.zen'
+      - name: file_manager
+        binding: '<Super>e'
+        command: 'nautilus'
+      - name: btop
+        binding: '<Super><Ctrl>t'
+        command: 'kitty -e btop'
+      - name: session_actions_menu
+        binding: '<Super>Escape'
+        command: 'gnome-session-quit --logout'
+      - name: screenshot_region
+        binding: '<Shift>Print'
+        command: 'gnome-screenshot -ac'
+    forge:
+      window_toggle_float:           '<Super>t'
+      window_rotate_split:           '<Super>j'
+      window_focus_left:             '<Super>Left'
+      window_focus_right:            '<Super>Right'
+      window_focus_up:               '<Super>Up'
+      window_focus_down:             '<Super>Down'
+      window_swap_left:              '<Super><Shift>Left'
+      window_swap_right:             '<Super><Shift>Right'
+      window_swap_up:                '<Super><Shift>Up'
+      window_swap_down:              '<Super><Shift>Down'
+      window_resize_width_increase:  '<Super>equal'
+      window_resize_width_decrease:  '<Super>minus'
+      window_resize_height_increase: '<Super><Shift>equal'
+      window_resize_height_decrease: '<Super><Shift>minus'
+      con_stacked_layout_toggle:     '<Super>g'
+      focus_next_window:             '<Super><Alt>Tab'
+      focus_previous_window:         '<Super><Alt><Shift>Tab'
   app_folders:
     naming_note: >
       App folders are visible in the GNOME Activities app grid. Each folder

@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+Configure GNOME keybindings from gnome.keybindings in
+declarations/margine-atomic.yaml.
+
+Applies five groups, each via its own gsettings schema:
+
+  workspace   -> org.gnome.desktop.wm.keybindings
+  window      -> org.gnome.desktop.wm.keybindings
+  shell       -> org.gnome.shell.keybindings
+  media_keys  -> org.gnome.settings-daemon.plugins.media-keys
+  forge       -> org.gnome.shell.extensions.forge.keybindings
+  custom      -> custom-keybindings (relocatable schema slots)
+
+Also sets the static-workspaces model from gnome.workspaces.
+
+Usage:
+    configure-gnome-keybindings            # dry-run: print the plan
+    configure-gnome-keybindings --apply    # write via gsettings
+    configure-gnome-keybindings --reset    # remove custom slots
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required")
+
+REPO = Path(__file__).resolve().parent.parent
+YAML = REPO / "declarations" / "margine-atomic.yaml"
+
+WM_KEYS = {
+    "switch_next": "switch-to-workspace-right",
+    "switch_previous": "switch-to-workspace-left",
+    "switch_last_used": "switch-to-workspace-last",
+    "switch_to_1": "switch-to-workspace-1",
+    "switch_to_2": "switch-to-workspace-2",
+    "switch_to_3": "switch-to-workspace-3",
+    "switch_to_4": "switch-to-workspace-4",
+    "switch_to_5": "switch-to-workspace-5",
+    "switch_to_6": "switch-to-workspace-6",
+    "switch_to_7": "switch-to-workspace-7",
+    "switch_to_8": "switch-to-workspace-8",
+    "switch_to_9": "switch-to-workspace-9",
+    "switch_to_10": "switch-to-workspace-10",
+    "move_window_to_1": "move-to-workspace-1",
+    "move_window_to_2": "move-to-workspace-2",
+    "move_window_to_3": "move-to-workspace-3",
+    "move_window_to_4": "move-to-workspace-4",
+    "move_window_to_5": "move-to-workspace-5",
+    "move_window_to_6": "move-to-workspace-6",
+    "move_window_to_7": "move-to-workspace-7",
+    "move_window_to_8": "move-to-workspace-8",
+    "move_window_to_9": "move-to-workspace-9",
+    "move_window_to_10": "move-to-workspace-10",
+    "close": "close",
+    "toggle_fullscreen": "toggle-fullscreen",
+    "always_on_top": "always-on-top",
+}
+
+SHELL_KEYS = {
+    "toggle_application_view": "toggle-application-view",
+    "toggle_overview": "toggle-overview",
+    "open_message_tray": "open-message-tray",
+    "show_screenshot_ui": "show-screenshot-ui",
+    "screenshot_window": "screenshot-window",
+    "show_screen_recording_ui": "show-screen-recording-ui",
+}
+
+MEDIA_KEYS = {
+    "screensaver": "screensaver",
+}
+
+CUSTOM_BASE_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
+CUSTOM_LIST_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+
+
+def gvariant_strings(items: list[str]) -> str:
+    quoted = ", ".join(f"'{x}'" for x in items)
+    return f"[{quoted}]"
+
+
+def run(cmd: list[str], dry: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if not dry:
+        subprocess.run(cmd, check=True)
+
+
+def set_key(schema: str, key: str, value, dry: bool) -> None:
+    if isinstance(value, list):
+        gv = gvariant_strings(value)
+    elif isinstance(value, str):
+        gv = gvariant_strings([value])
+    else:
+        gv = str(value)
+    run(["gsettings", "set", schema, key, gv], dry)
+
+
+def apply_workspaces(ws: dict, dry: bool) -> None:
+    print("\n== Workspaces (static model) ==")
+    run(
+        [
+            "gsettings",
+            "set",
+            "org.gnome.mutter",
+            "dynamic-workspaces",
+            "false" if not ws.get("dynamic", False) else "true",
+        ],
+        dry,
+    )
+    run(
+        [
+            "gsettings",
+            "set",
+            "org.gnome.desktop.wm.preferences",
+            "num-workspaces",
+            str(ws.get("count", 4)),
+        ],
+        dry,
+    )
+
+
+def apply_group(
+    title: str, schema: str, mapping: dict[str, str], group_yaml: dict, dry: bool
+) -> None:
+    print(f"\n== {title}  ->  {schema} ==")
+    for yaml_key, value in group_yaml.items():
+        gset_key = mapping.get(yaml_key)
+        if gset_key is None:
+            print(f"  (skip unmapped key: {yaml_key})")
+            continue
+        set_key(schema, gset_key, value, dry)
+
+
+def apply_forge(forge_yaml: dict, dry: bool) -> None:
+    schema = "org.gnome.shell.extensions.forge.keybindings"
+    print(f"\n== Forge tiling  ->  {schema} ==")
+    print("  (Forge schema is loaded only after the extension is enabled;")
+    print("   if gsettings complains about an unknown schema, run:")
+    print("     gnome-extensions enable forge@jmmaranan.com")
+    print("   then re-run this script.)")
+    for yaml_key, value in forge_yaml.items():
+        gset_key = yaml_key.replace("_", "-")
+        set_key(schema, gset_key, value, dry)
+
+
+def apply_custom(custom_list: list[dict], dry: bool) -> None:
+    print("\n== Custom keybindings (app launchers) ==")
+    paths = [f"{CUSTOM_BASE_PATH}{c['name']}/" for c in custom_list]
+    run(
+        [
+            "gsettings",
+            "set",
+            CUSTOM_LIST_SCHEMA,
+            "custom-keybindings",
+            gvariant_strings(paths),
+        ],
+        dry,
+    )
+    for c in custom_list:
+        path = f"{CUSTOM_BASE_PATH}{c['name']}/"
+        schema = f"org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{path}"
+        print(f"  -- {c['name']}  ->  {c['binding']}  ->  {c['command']}")
+        set_key(schema, "name", c["name"], dry)
+        set_key(schema, "command", c["command"], dry)
+        set_key(schema, "binding", c["binding"], dry)
+
+
+def reset_custom(custom_list: list[dict], dry: bool) -> None:
+    print("\n== Reset custom keybindings ==")
+    run(["gsettings", "set", CUSTOM_LIST_SCHEMA, "custom-keybindings", "[]"], dry)
+    for c in custom_list:
+        path = f"{CUSTOM_BASE_PATH}{c['name']}/"
+        run(["dconf", "reset", "-f", path], dry)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes via gsettings (default: dry-run)",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="reset custom keybindings (does not touch native shortcuts)",
+    )
+    args = parser.parse_args()
+
+    if not YAML.is_file():
+        sys.exit(f"declarations file not found: {YAML}")
+    data = yaml.safe_load(YAML.read_text())
+    try:
+        ws = data["gnome"]["workspaces"]
+        kb = data["gnome"]["keybindings"]
+    except (KeyError, TypeError):
+        sys.exit("gnome.workspaces or gnome.keybindings missing from declarations")
+
+    dry = not args.apply
+
+    if not dry:
+        for tool in ("gsettings", "dconf"):
+            if not shutil.which(tool):
+                sys.exit(f"{tool} not found in PATH")
+
+    if args.reset:
+        reset_custom(kb.get("custom", []), dry)
+    else:
+        apply_workspaces(ws, dry)
+        apply_group(
+            "Workspace + window (WM keybindings)",
+            "org.gnome.desktop.wm.keybindings",
+            WM_KEYS,
+            {**kb.get("workspace", {}), **kb.get("window", {})},
+            dry,
+        )
+        apply_group(
+            "Shell",
+            "org.gnome.shell.keybindings",
+            SHELL_KEYS,
+            kb.get("shell", {}),
+            dry,
+        )
+        apply_group(
+            "Media keys",
+            "org.gnome.settings-daemon.plugins.media-keys",
+            MEDIA_KEYS,
+            kb.get("media_keys", {}),
+            dry,
+        )
+        apply_custom(kb.get("custom", []), dry)
+        apply_forge(kb.get("forge", {}), dry)
+
+    if dry:
+        print("\ndry-run only: no settings were changed")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. Log out / log back in for some shortcuts to take effect.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -164,30 +164,30 @@ host_packages:
     codec_replacement:
       override_remove:
         - ffmpeg-free
-        - mesa-va-drivers
-        - mesa-vdpau-drivers
       install:
         - ffmpeg
         - gstreamer1-plugins-bad-freeworld
         - gstreamer1-plugins-ugly
         - mesa-va-drivers-freeworld
-        - mesa-vdpau-drivers-freeworld
+        - mesa-vulkan-drivers-freeworld
       install_note: >
-        These symbols are intentionally NOT in the install list because on
-        Fedora 44 they are either virtual provides (rpm-ostree refuses with
-        "already provided by ... use --allow-inactive") or already in the
-        Silverblue base:
-          - gstreamer1-libav  -> virtual provides; real package is
-                                  gstreamer1-plugin-libav (base)
-          - gstreamer1-vaapi  -> merged into gstreamer1-plugins-bad-{free,
-                                  freeworld} in F44+; no separate package
-          - libavif           -> already in the Silverblue base for AVIF
-                                  support in Loupe / GIMP
-          - libheif           -> already in the Silverblue base for HEIF
-                                  support in Loupe / GIMP
-        All capabilities still work once gstreamer1-plugins-bad-freeworld,
-        mesa-va-drivers-freeworld, and mesa-vdpau-drivers-freeworld are
-        installed.
+        Validated against quay.io/fedora/fedora:44 + RPMFusion. On F44:
+          - mesa-va-drivers and mesa-vdpau-drivers do NOT exist as separate
+            packages: the VA-API driver bits are inside mesa-dri-drivers
+            (base) and VDPAU is deprecated upstream. Nothing to override
+            remove for either.
+          - mesa-vdpau-drivers-freeworld does not exist in RPMFusion F44
+            (upstream removed VDPAU). Skipped.
+          - mesa-va-drivers-freeworld + mesa-vulkan-drivers-freeworld are
+            additive supplements on top of mesa-dri-drivers /
+            mesa-vulkan-drivers — no override needed.
+        These symbols are intentionally NOT in the install list because
+        they are virtual provides or already in the base:
+          - gstreamer1-libav   -> base gstreamer1-plugin-libav provides it
+          - gstreamer1-vaapi   -> merged into gstreamer1-plugins-bad-*
+          - libavif / libheif  -> already in the Silverblue base
+        All capabilities still work once gstreamer1-plugins-bad-freeworld
+        and mesa-va-drivers-freeworld are installed.
     media_diagnostics:
       - mesa-demos
       - mesa-libGLU

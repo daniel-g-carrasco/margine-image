@@ -184,6 +184,11 @@ User-layer additions (no host, no container — directly under `~`):
 ## How to apply
 
 ```sh
+# Recommended: validate every baseline package against a clean
+# Fedora 44 + RPMFusion container before touching the host. Requires
+# podman; runs on any distro. Catches naming drift early.
+scripts/validate-baseline-packages
+
 # Dry-run: see what will be installed
 scripts/apply-host-layer
 

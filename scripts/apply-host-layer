@@ -78,6 +78,7 @@ mapfile -t VIRT            < <(read_list "host_packages.baseline.virtualization"
 mapfile -t HW_DIAG         < <(read_list "host_packages.baseline.hardware_diagnostics")
 mapfile -t GNOME_TOOLS     < <(read_list "host_packages.baseline.gnome_tools")
 mapfile -t FONTS           < <(read_list "host_packages.baseline.fonts")
+mapfile -t CREATIVE_APPS   < <(read_list "host_packages.baseline.creative_apps")
 
 if command -v rpm >/dev/null 2>&1; then
   FEDORA_VER="$(rpm -E %fedora)"
@@ -141,9 +142,9 @@ section "Step 3 — Media diagnostics + audio baseline + virtualization"
 run sudo rpm-ostree install \
     "${MEDIA_DIAG[@]}" "${AUDIO[@]}" "${VIRT[@]}"
 
-section "Step 4 — Hardware diagnostics + GNOME tools + fonts"
+section "Step 4 — Hardware diagnostics + GNOME tools + fonts + creative apps"
 run sudo rpm-ostree install \
-    "${HW_DIAG[@]}" "${GNOME_TOOLS[@]}" "${FONTS[@]}"
+    "${HW_DIAG[@]}" "${GNOME_TOOLS[@]}" "${FONTS[@]}" "${CREATIVE_APPS[@]}"
 
 if (( apply )); then
   section "Done"

@@ -98,11 +98,29 @@ DDC/CI monitor control (brightness from terminal), disk SMART.
 
 | Packages |
 | --- |
-| `gnome-tweaks`, `libappindicator-gtk3`, `gnome-shell-extension-appindicator`, `adw-gtk3-theme` |
+| `gnome-tweaks`, `libappindicator-gtk3`, `gnome-shell-extension-appindicator`, `adw-gtk3-theme`, `showtime` |
 
 `gnome-tweaks` for the settings GNOME core hides; AppIndicator for legacy
 tray-icon apps (Bitwarden, Steam, etc. running in the background);
-`adw-gtk3-theme` so GTK3 apps inherit the libadwaita look.
+`adw-gtk3-theme` so GTK3 apps inherit the libadwaita look; `showtime` as
+the GNOME-native video player ("Riproduttore video" / Videos), the
+default since GNOME 48 (Loupe is the matching image viewer and is
+already in the Silverblue base).
+
+### Creative apps (host-layered, not Flatpak)
+
+| Packages |
+| --- |
+| `darktable` |
+
+`darktable` is intentionally layered on the host instead of installed as
+a Flatpak. The Flatpak does not see the host OpenCL ICD by default, so
+the GPU-accelerated raw processing path is off. The host install sees
+ROCm (`rocm-opencl`) or `intel-compute-runtime` directly when those are
+added via `optional_after_validation.{amd,intel}_gpu_extras`.
+
+GIMP, Inkscape, OBS, Audacity, EasyEffects, Reaper, and the rest of the
+creative tooling stay as Flatpak — they don't need host-level OpenCL.
 
 ### Fonts
 
@@ -173,7 +191,33 @@ scripts/apply-host-layer
 scripts/apply-host-layer --apply
 
 # Reboot via GNOME menu (Power → Restart) to enter the new deployment
+
+# After reboot: register the default MIME and URL scheme handlers
+# (browser, mail, video, image, music, pdf, text editor, archive)
+scripts/configure-default-applications              # dry-run
+scripts/configure-default-applications --apply      # write ~/.config/mimeapps.list
 ```
+
+`configure-default-applications` reads `gnome.default_applications` from
+the YAML and writes the defaults via `xdg-mime` and `xdg-settings`. This
+is what "GNOME Settings → Default Applications" shows. Without this step,
+the top-row entries can end up wrong (e.g. Web=Firefox even though Zen
+is installed, or Email=Zen because no mailer is explicitly registered
+for the `mailto` scheme). The script makes the mapping deterministic.
+
+The current mapping:
+
+| Role | Application |
+| --- | --- |
+| Web browser | Zen Browser |
+| Mail reader | Thunderbird |
+| Calendar | GNOME Calendar |
+| Music player | Gapless (g4music) |
+| Video player | GNOME Showtime |
+| Image viewer | GNOME Loupe |
+| PDF viewer | GNOME Papers |
+| Text editor | GNOME Text Editor |
+| Archive manager | File Roller |
 
 The script runs four sequential rpm-ostree transactions:
 

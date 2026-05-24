@@ -223,6 +223,18 @@ host_packages:
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
       - adw-gtk3-theme
+      - showtime
+    creative_apps_note: >
+      darktable is installed as a host package (not Flatpak) so it picks
+      up the host OpenCL ICD automatically. With ROCm (AMD) or
+      intel-compute-runtime (Intel) installed via
+      optional_after_validation.{amd,intel}_gpu_extras, darktable's
+      "Preferences → Processing → OpenCL" lists the GPU device and uses
+      it for raw export, tone mapping, and denoise — 5–20× faster than
+      CPU-only mode. The Flatpak does not see the host ICD without an
+      explicit permission override, so we prefer the layered path here.
+    creative_apps:
+      - darktable
     fonts:
       - jetbrains-mono-fonts
       - ibm-plex-sans-fonts
@@ -291,8 +303,6 @@ flatpaks:
     graphics:
       - org.gimp.GIMP
       - org.inkscape.Inkscape
-    photography:
-      - org.darktable.Darktable
     multimedia:
       - com.github.neithern.g4music
       - org.audacityteam.Audacity
@@ -380,6 +390,21 @@ gnome:
       icon-theme: adwaita-first
   gtk4_css_override: false
   hyprland_theme_artifacts: false
+  default_applications:
+    note: >
+      Applied by scripts/configure-default-applications. Sets MIME
+      type and URL scheme handlers via xdg-mime and xdg-settings so
+      GNOME Settings → Default Applications shows the intended app
+      for every role, and "Open with" dialogs default correctly.
+    web_browser: app.zen_browser.zen.desktop
+    mail_reader: org.mozilla.Thunderbird.desktop
+    calendar: org.gnome.Calendar.desktop
+    music_player: com.github.neithern.g4music.desktop
+    video_player: org.gnome.Showtime.desktop
+    image_viewer: org.gnome.Loupe.desktop
+    pdf_viewer: org.gnome.Papers.desktop
+    text_editor: org.gnome.TextEditor.desktop
+    archive_manager: org.gnome.FileRoller.desktop
   app_folders:
     naming_note: >
       App folders are visible in the GNOME Activities app grid. Each folder

@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""
+Configure GNOME default applications by registering MIME type and URL scheme
+handlers for the desktop files declared in
+gnome.default_applications in declarations/margine-atomic.yaml.
+
+This is what GNOME Settings → Default Applications reads. It is also what
+"Open With" dialogs in Files / Nautilus default to.
+
+The script uses xdg-mime and xdg-settings — the standard tools that don't
+depend on running inside GNOME (they edit ~/.config/mimeapps.list).
+
+Usage:
+    configure-default-applications            # dry-run: print the plan
+    configure-default-applications --apply    # write via xdg-mime / xdg-settings
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required: pip install pyyaml")
+
+REPO = Path(__file__).resolve().parent.parent
+YAML = REPO / "declarations" / "margine-atomic.yaml"
+
+# role -> list of MIME types it claims
+MIME_BINDINGS: dict[str, list[str]] = {
+    "web_browser": [
+        "x-scheme-handler/http",
+        "x-scheme-handler/https",
+        "x-scheme-handler/about",
+        "x-scheme-handler/unknown",
+        "text/html",
+        "application/xhtml+xml",
+    ],
+    "mail_reader": [
+        "x-scheme-handler/mailto",
+        "message/rfc822",
+    ],
+    "calendar": [
+        "text/calendar",
+        "application/ics",
+    ],
+    "video_player": [
+        "video/mp4",
+        "video/x-matroska",
+        "video/webm",
+        "video/mpeg",
+        "video/quicktime",
+        "video/x-msvideo",
+        "video/x-ogm+ogg",
+        "video/x-flv",
+        "video/3gpp",
+    ],
+    "image_viewer": [
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "image/heif",
+        "image/tiff",
+        "image/bmp",
+        "image/svg+xml",
+        "image/x-tga",
+        "image/x-portable-pixmap",
+    ],
+    "music_player": [
+        "audio/mpeg",
+        "audio/flac",
+        "audio/ogg",
+        "audio/x-vorbis+ogg",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/aac",
+        "audio/x-opus+ogg",
+    ],
+    "pdf_viewer": [
+        "application/pdf",
+        "application/x-pdf",
+    ],
+    "text_editor": [
+        "text/plain",
+        "text/markdown",
+        "text/x-script",
+        "application/x-shellscript",
+    ],
+    "archive_manager": [
+        "application/zip",
+        "application/x-tar",
+        "application/x-compressed-tar",
+        "application/x-bzip-compressed-tar",
+        "application/x-xz-compressed-tar",
+        "application/x-7z-compressed",
+        "application/vnd.rar",
+        "application/x-rar",
+    ],
+}
+
+# Roles that also have an xdg-settings shortcut (visible in
+# GNOME Settings → Default Applications top entries).
+XDG_SETTINGS_KEYS: dict[str, str] = {
+    "web_browser": "default-web-browser",
+    "mail_reader": "default-url-scheme-handler mailto",
+}
+
+
+def load_defaults() -> dict[str, str]:
+    if not YAML.is_file():
+        sys.exit(f"declarations file not found: {YAML}")
+    data = yaml.safe_load(YAML.read_text())
+    try:
+        return data["gnome"]["default_applications"]
+    except (KeyError, TypeError):
+        sys.exit("gnome.default_applications missing from declarations")
+
+
+def run(cmd: list[str], dry_run: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if dry_run:
+        return
+    subprocess.run(cmd, check=True)
+
+
+def apply(defaults: dict[str, str], dry_run: bool) -> None:
+    for role, desktop in defaults.items():
+        if role == "note":
+            continue
+        print(f"\n== {role}  →  {desktop}")
+
+        # xdg-settings (high-level GNOME shortcut)
+        if role in XDG_SETTINGS_KEYS:
+            key_parts = XDG_SETTINGS_KEYS[role].split()
+            run(["xdg-settings", "set", *key_parts, desktop], dry_run)
+
+        # xdg-mime per MIME type
+        mimes = MIME_BINDINGS.get(role, [])
+        if not mimes:
+            print("  (no MIME bindings for this role)")
+            continue
+        run(["xdg-mime", "default", desktop, *mimes], dry_run)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes via xdg-mime / xdg-settings (default: dry-run)",
+    )
+    args = parser.parse_args()
+
+    defaults = load_defaults()
+    dry_run = not args.apply
+
+    if not dry_run:
+        for tool in ("xdg-mime", "xdg-settings"):
+            if not shutil.which(tool):
+                sys.exit(f"{tool} not found in PATH")
+
+    apply(defaults, dry_run)
+
+    if dry_run:
+        print("\ndry-run only: no files were changed")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. The new defaults are now in ~/.config/mimeapps.list")
+        print("GNOME Settings → Default Applications should reflect the change.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

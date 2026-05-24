@@ -214,8 +214,10 @@ Carry over:
 - GNOME/libadwaita accent color, starting with `yellow` if supported by the
   target GNOME release;
 - GTK3 compatibility through Fedora's `adw-gtk3-theme`;
-- conservative Forge appearance settings: tiling on, compact gaps, square
-  visual language, and muted amber/light borders inspired by the Hyprland host;
+- Bluefin-inspired GNOME polish: hot corners off, subpixel `rgba` font
+  antialiasing, dash-to-dock (fixed + dynamic transparency), Blur My
+  Shell on top bar + overview, Just Perfection trims (no app-menu, no
+  weather/world-clock noise);
 - Zen Browser and Thunderbird as the default browser and mail client.
 
 Do not carry over initially:
@@ -241,18 +243,28 @@ extensions, or modify the rpm-ostree deployment.
 
 ## GNOME Extensions
 
-The phase 1 GNOME extension policy uses Fedora-packaged extensions only:
+The phase 1 GNOME extension set:
 
-- `forge@jmmaranan.com` for tiling;
-- `workspace-indicator@gnome-shell-extensions.gcampax.github.com` for a
-  numeric top-bar workspace indicator.
+| Extension | Source | Role |
+| --- | --- | --- |
+| `appindicatorsupport@rgcjonas.gmail.com` | Fedora (`gnome-shell-extension-appindicator`) | legacy tray icons (Bitwarden, Steam, etc.) |
+| `blur-my-shell@aunetx` | Fedora (`gnome-shell-extension-blur-my-shell`) | transparent/blurred top bar + overview (Bluefin-style) |
+| `dash-to-dock@micxgx.gmail.com` | Fedora (`gnome-shell-extension-dash-to-dock`) | fixed semi-transparent dock with running-app dots |
+| `just-perfection-desktop@just-perfection` | Fedora (`gnome-shell-extension-just-perfection`) | trims shell elements (hot corner, app-menu, weather, etc.) |
+| `workspace-indicator@gnome-shell-extensions.gcampax.github.com` | Fedora (`gnome-shell-extension-workspace-indicator`) | numeric top-bar workspace indicator |
+| `tilingshell@ferrarodomenico.com` | user-install from extensions.gnome.org | tiling window manager (replaces Forge, which is unmaintained) |
 
-Enable declared extensions:
+Apply the full set:
 
 ```sh
-scripts/configure-gnome-extensions --apply
-scripts/configure-gnome-keybindings --apply
+scripts/install-user-extensions --apply       # downloads Tiling Shell
+scripts/configure-gnome-extensions --apply    # enables all listed
+scripts/configure-gnome-keybindings --apply   # workspace + tiling binds
+scripts/configure-gnome-appearance --apply    # dconf settings + ext-specific tweaks
 ```
+
+GNOME's native `SUPER+1..0` bindings only activate existing workspaces. They
+do not create arbitrary numbered workspaces like Hyprland.
 
 GNOME's native `SUPER+1..0` bindings only activate existing workspaces. They
 do not create arbitrary numbered workspaces like Hyprland.

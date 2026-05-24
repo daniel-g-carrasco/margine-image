@@ -84,35 +84,46 @@ F = Forge).
 | `SUPER+F` | `toggle-fullscreen` |
 | `SUPER+O` | `always-on-top` |
 
-### Tiling actions (F — require Forge extension)
+### Tiling actions (T — require Tiling Shell extension)
 
-Key names below match the **Forge 89** gsettings schema (verified live
-with `gsettings list-keys org.gnome.shell.extensions.forge.keybindings`).
-The schema changed significantly across Forge versions; if you upgrade
-the extension and bindings stop working, list the keys again and
-compare with this table.
+We use **Tiling Shell** (`tilingshell@ferrarodomenico.com`), not Forge.
+Forge is upstream-marked "Needs a new maintainer" and its gsettings
+schema is unstable across releases (the previous Margine baseline had
+to be patched for Forge 89). Tiling Shell is actively developed and
+ships native GNOME 48 support.
 
-| Hyprland | Forge 89 key | Notes |
+Tiling Shell is **not** in Fedora 44 repos. It is installed user-level
+by `scripts/install-user-extensions --apply`, which downloads the right
+release for the running GNOME Shell version from extensions.gnome.org
+and unzips it into `~/.local/share/gnome-shell/extensions/`. Enable
+afterwards with `scripts/configure-gnome-extensions --apply`.
+
+Mental model differs from Forge / i3:
+
+- Tiling Shell uses **layout zones**, not container trees. You don't
+  split / rotate / stack — you snap windows to predefined zones.
+- Focus / move / span work directionally relative to the current zone.
+- "span" extends a window across an adjacent zone (closest equivalent
+  to Forge's `window-resize-*-increase`).
+
+| Hyprland | Tiling Shell key | Notes |
 | --- | --- | --- |
-| `SUPER+T` (toggle floating) | `window-toggle-float` | |
-| `SUPER+J` (toggle split) | `con-split-layout-toggle` | renamed from `window-rotate-split` |
-| `SUPER+arrows` (focus direction) | `window-focus-{left,right,up,down}` | |
-| `SUPER SHIFT+arrows` (swap window) | `window-swap-{left,right,up,down}` | |
-| `SUPER+equal` / `SUPER+minus` (width) | `window-resize-right-{increase,decrease}` | Forge 89 is per-edge, not per-dim |
-| `SUPER SHIFT+equal` / `SUPER SHIFT+minus` (height) | `window-resize-bottom-{increase,decrease}` | per-edge, see above |
-| `SUPER+G` (toggle stacked layout) | `con-stacked-layout-toggle` | |
-| `SUPER SHIFT+G` (toggle tabbed layout) | `con-tabbed-layout-toggle` | extra, not in Hyprland source |
-| `SUPER ALT+TAB` (swap last active) | `window-swap-last-active` | Forge 89 has no list-cycle focus; this swaps with the previously-focused window |
+| `SUPER+arrows` (focus direction) | `focus-window-{left,right,up,down}` | |
+| `SUPER SHIFT+arrows` (move/swap window) | `move-window-{left,right,up,down}` | moves the window to the adjacent zone |
+| `SUPER+equal` / `SUPER+minus` (width) | `span-window-{right,left}` | extends/shrinks across right or left zone |
+| `SUPER SHIFT+equal` / `SUPER SHIFT+minus` (height) | `span-window-{up,down}` | extends/shrinks across up or down zone |
+| `SUPER+T` (untile / toggle floating) | `untile-window` | removes the window from its zone (effectively floating) |
 
-Skipped (no Forge 89 equivalent): list-cycle focus within a stacked
-container (`focus-next-window` / `focus-previous-window` from older Forge
-versions). Forge 89 only has directional focus inside containers.
+Skipped (no Tiling Shell equivalent): container layout toggles
+(`stacked` / `tabbed` from Forge). Tiling Shell doesn't have container
+trees, so they don't apply. Zone layouts are edited in Tiling Shell's
+preferences GUI (`gnome-extensions prefs tilingshell@ferrarodomenico.com`).
 
 ### Shell + screenshot (S)
 
 | Hyprland | GNOME key |
 | --- | --- |
-| `SUPER+N` (toggle notifications) | `open-message-tray` |
+| `SUPER+N` (toggle notifications) | `toggle-message-tray` (GNOME 48 name) |
 | `Print` (screenshot menu) | `show-screenshot-ui` |
 | `CTRL+Print` (screenshot active window) | `screenshot-window` |
 | `SUPER+Print` (recording menu) | `show-screen-recording-ui` |

@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""
+Install GNOME Shell extensions that are not in Fedora repos by downloading
+them from extensions.gnome.org into ~/.local/share/gnome-shell/extensions/.
+
+Reads gnome.extensions.user_install from declarations/margine-atomic.yaml
+(list of {uuid, ego_id, description}).
+
+Picks the right release for the running GNOME Shell version automatically
+by querying https://extensions.gnome.org/extension-info/.
+
+User-level only: never touches rpm-ostree, never asks for sudo. The
+extension UUID directory is overwritten on re-install, so the script is
+idempotent.
+
+Usage:
+    install-user-extensions             # dry-run: print the plan
+    install-user-extensions --apply     # download and install
+    install-user-extensions --remove    # remove the user-installed copies
+"""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import zipfile
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required")
+
+REPO = Path(__file__).resolve().parent.parent
+YAML = REPO / "declarations" / "margine-atomic.yaml"
+USER_EXT_DIR = Path.home() / ".local" / "share" / "gnome-shell" / "extensions"
+EGO_INFO_URL = "https://extensions.gnome.org/extension-info/"
+EGO_DOWNLOAD_URL = "https://extensions.gnome.org/download-extension/"
+
+
+def gnome_shell_version() -> str:
+    """Return the running GNOME Shell major version (e.g. '48')."""
+    try:
+        out = subprocess.run(
+            ["gnome-shell", "--version"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "48"  # sensible default for Margine target
+    # "GNOME Shell 48.2" -> "48"
+    parts = out.split()
+    if len(parts) >= 3:
+        return parts[2].split(".")[0]
+    return "48"
+
+
+def fetch_release_metadata(uuid: str, shell_version: str) -> dict:
+    """Query the EGO API for the right release."""
+    url = f"{EGO_INFO_URL}?uuid={uuid}&shell_version={shell_version}"
+    with urllib.request.urlopen(url, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+def download_zip(uuid: str, version_tag: int) -> bytes:
+    url = (
+        f"{EGO_DOWNLOAD_URL}{uuid}.shell-extension.zip"
+        f"?version_tag={version_tag}"
+    )
+    with urllib.request.urlopen(url, timeout=60) as resp:
+        return resp.read()
+
+
+def install_one(uuid: str, ego_id: int, dry: bool, shell_version: str) -> None:
+    print(f"\n== {uuid} (ego_id={ego_id}) ==")
+    try:
+        meta = fetch_release_metadata(uuid, shell_version)
+    except Exception as exc:
+        print(f"  (skip: cannot fetch EGO metadata: {exc})")
+        return
+
+    version_tag = meta.get("version_tag")
+    version = meta.get("version")
+    if not version_tag:
+        print(f"  (skip: no release for GNOME {shell_version})")
+        return
+
+    print(f"  GNOME Shell version: {shell_version}")
+    print(f"  Release: v{version}  (version_tag={version_tag})")
+    target_dir = USER_EXT_DIR / uuid
+    print(f"  Target: {target_dir}")
+
+    if dry:
+        return
+
+    try:
+        blob = download_zip(uuid, version_tag)
+    except Exception as exc:
+        print(f"  (skip: download failed: {exc})")
+        return
+
+    USER_EXT_DIR.mkdir(parents=True, exist_ok=True)
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True)
+
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        zf.extractall(target_dir)
+
+    print(f"  Installed: {target_dir}")
+    print(
+        "  Enable next with:  scripts/configure-gnome-extensions --apply"
+        f"  (or: gnome-extensions enable {uuid})"
+    )
+
+
+def remove_one(uuid: str, dry: bool) -> None:
+    target_dir = USER_EXT_DIR / uuid
+    print(f"\n== {uuid} ==")
+    if not target_dir.exists():
+        print(f"  (not present at {target_dir})")
+        return
+    print(f"  $ rm -rf {target_dir}")
+    if not dry:
+        shutil.rmtree(target_dir)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="actually download/extract")
+    parser.add_argument(
+        "--remove",
+        action="store_true",
+        help="remove user-installed copies instead of installing",
+    )
+    args = parser.parse_args()
+    dry = not args.apply
+
+    if not YAML.is_file():
+        sys.exit(f"declarations file not found: {YAML}")
+    data = yaml.safe_load(YAML.read_text())
+    try:
+        entries = data["gnome"]["extensions"]["user_install"] or []
+    except (KeyError, TypeError):
+        entries = []
+    if not entries:
+        print("No user_install extensions declared. Nothing to do.")
+        return 0
+
+    shell_version = gnome_shell_version()
+    print(f"Detected GNOME Shell version: {shell_version}")
+    print(f"User extension dir: {USER_EXT_DIR}")
+
+    for entry in entries:
+        uuid = entry["uuid"]
+        if args.remove:
+            remove_one(uuid, dry)
+        else:
+            ego_id = entry.get("ego_id", 0)
+            install_one(uuid, ego_id, dry, shell_version)
+
+    if dry:
+        print(f"\ndry-run only. Apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nDone. Log out / log back in for GNOME to pick up new extensions.")
+        print("Then enable them:  scripts/configure-gnome-extensions --apply")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

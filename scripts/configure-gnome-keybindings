@@ -198,15 +198,17 @@ def apply_group(
         set_key(schema, gset_key, value, dry)
 
 
-def apply_forge(forge_yaml: dict, dry: bool) -> None:
-    schema = "org.gnome.shell.extensions.forge.keybindings"
-    print(f"\n== Forge tiling  ->  {schema} ==")
-    print("  (Forge schema is loaded only after the extension is enabled;")
+def apply_tilingshell(ts_yaml: dict, dry: bool) -> None:
+    schema = "org.gnome.shell.extensions.tilingshell"
+    print(f"\n== Tiling Shell  ->  {schema} ==")
+    print("  (Tiling Shell schema is loaded only after the extension is enabled;")
     print("   if gsettings complains about an unknown schema, run:")
-    print("     gnome-extensions enable forge@jmmaranan.com")
+    print("     scripts/install-user-extensions --apply")
+    print("     gnome-extensions enable tilingshell@ferrarodomenico.com")
     print("   then re-run this script.)")
-    for yaml_key, value in forge_yaml.items():
-        gset_key = yaml_key.replace("_", "-")
+    for yaml_key, value in ts_yaml.items():
+        # YAML keys are already in dash-case for tilingshell
+        gset_key = yaml_key
         set_key(schema, gset_key, value, dry)
 
 
@@ -301,7 +303,7 @@ def main() -> int:
             dry,
         )
         apply_custom(kb.get("custom", []), dry)
-        apply_forge(kb.get("forge", {}), dry)
+        apply_tilingshell(kb.get("tilingshell", {}), dry)
 
     if dry:
         print("\ndry-run only: no settings were changed")

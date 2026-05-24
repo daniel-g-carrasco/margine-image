@@ -243,11 +243,27 @@ host_packages:
       - gnome-tweaks
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
-      - gnome-shell-extension-forge
+      - gnome-shell-extension-blur-my-shell
+      - gnome-shell-extension-dash-to-dock
+      - gnome-shell-extension-just-perfection
       - gnome-shell-extension-workspace-indicator
       - adw-gtk3-theme
       - showtime
       - kitty
+    gnome_tools_note: >
+      Tiling extension: we use Tiling Shell (tilingshell@ferrarodomenico.com),
+      not Forge. Forge is marked "Needs a new maintainer" upstream and its
+      gsettings schema breaks between releases. Tiling Shell is actively
+      maintained but is NOT in Fedora 44 repos, so it's installed user-level
+      by scripts/install-user-extensions (zip from extensions.gnome.org into
+      ~/.local/share/gnome-shell/extensions/). See docs/17-keyboard-bindings.md.
+
+      The other extensions are inspired by Bluefin's
+      zz0-bluefin-modifications.gschema.override: blur-my-shell adds the
+      Bluefin-style transparent/blurred top bar and overview; dash-to-dock
+      gives a fixed semi-transparent dock with running-app dots; just-perfection
+      provides polished GUI controls for hiding/customising shell elements
+      (search dialog, hot corners, activities button, etc.).
     creative_apps_note: >
       darktable is installed as a host package (not Flatpak) so it picks
       up the host OpenCL ICD automatically. With ROCm (AMD) or
@@ -408,6 +424,8 @@ gnome:
       icon-theme: Adwaita
       enable-hot-corners: false
       show-battery-percentage: true
+      clock-show-weekday: true
+      font-antialiasing: rgba
       ui-font-candidates:
         - IBM Plex Sans 10
         - Atkinson Hyperlegible Next 10
@@ -415,31 +433,91 @@ gnome:
         - JetBrains Mono 11
         - IBM Plex Mono 11
         - Source Code Pro 11
+    org.gnome.desktop.wm.preferences:
+      button-layout: ":minimize,maximize,close"
+    org.gnome.desktop.peripherals.keyboard:
+      numlock-state: true
+    org.gnome.mutter:
+      center-new-windows: true
+      check-alive-timeout: 20000
+    org.gtk.Settings.FileChooser:
+      sort-directories-first: true
+    org.gtk.gtk4.Settings.FileChooser:
+      sort-directories-first: true
+    org.gnome.desktop.sound:
+      allow-volume-above-100-percent: false
+    org.gnome.shell.extensions.dash-to-dock:
+      note: >
+        Borrowed from Bluefin's zz0-bluefin-modifications.gschema.override.
+        Fixed dock, semi-transparent, dynamic background, app dots.
+      dock-fixed: true
+      force-straight-corner: false
+      custom-theme-shrink: true
+      disable-overview-on-startup: true
+      transparency-mode: DYNAMIC
+      animation-time: 0.15
+      background-color: 'rgb(40,40,40)'
+      background-opacity: 0.8
+      custom-background-color: true
+      customize-alphas: true
+      max-alpha: 0.8
+      min-alpha: 0.5
+      running-indicator-style: DOTS
+      apply-custom-theme: true
+    org.gnome.shell.extensions.blur-my-shell:
+      note: >
+        Bluefin-style transparent/blurred shell. Defaults are good; we
+        only nudge the panel a bit to match Bluefin's look.
+      settings-version: 2
+    org.gnome.shell.extensions.blur-my-shell.panel:
+      blur: true
+      style-panel: 0
+      override-background: true
+      pipeline: pipeline_default
+    org.gnome.shell.extensions.blur-my-shell.overview:
+      blur: true
+      style-components: 0
+      pipeline: pipeline_default
+    org.gnome.shell.extensions.blur-my-shell.applications:
+      blur: false
+    org.gnome.shell.extensions.just-perfection:
+      note: >
+        Just Perfection lets you trim shell elements you don't want
+        (search box on activities, hot corner, accessibility menu, etc.)
+        without writing custom CSS.
+      activities-button: true
+      app-menu: false
+      clock-menu-position: 0
+      hot-corner: false
+      world-clock: false
+      weather: false
+      panel-in-overview: true
+      search: true
   gtk4_css_override: false
   hyprland_theme_artifacts: false
   extensions:
+    note: >
+      Enabled extensions list. Fedora-packaged ones are installed by
+      scripts/apply-host-layer (rpm-ostree). Tiling Shell is installed
+      user-level by scripts/install-user-extensions (zip from
+      extensions.gnome.org into ~/.local/share/gnome-shell/extensions/).
+      All enabled by scripts/configure-gnome-extensions.
     enable:
-      - forge@jmmaranan.com
+      - appindicatorsupport@rgcjonas.gmail.com
+      - blur-my-shell@aunetx
+      - dash-to-dock@micxgx.gmail.com
+      - just-perfection-desktop@just-perfection
       - workspace-indicator@gnome-shell-extensions.gcampax.github.com
-  forge:
-    settings:
-      note: >
-        User-level Forge appearance settings. These mirror the Margine
-        Hyprland host's dark, square, muted-amber visual language without
-        installing extra GNOME Shell extensions or custom shell themes.
-        Applied by scripts/configure-gnome-appearance.
-      tiling-mode-enabled: true
-      primary-layout-mode: tiling
-      window-gap-size: 4
-      window-gap-size-increment: 1
-      window-gap-hidden-on-single: true
-      focus-border-toggle: true
-      focus-border-size: 3
-      focus-border-color: 'rgba(234, 231, 219, 0.92)'
-      split-border-toggle: true
-      split-border-color: 'rgba(194, 161, 128, 0.95)'
-      preview-hint-enabled: true
-      quick-settings-enabled: true
+      - tilingshell@ferrarodomenico.com
+    user_install_note: >
+      These extensions are NOT in Fedora 44 repos. install-user-extensions
+      downloads them from extensions.gnome.org into
+      ~/.local/share/gnome-shell/extensions/. The shell_version query
+      is computed at runtime so the right release is fetched.
+    user_install:
+      - uuid: tilingshell@ferrarodomenico.com
+        ego_id: 7065
+        description: Tiling Shell — active, GNOME 48 supported
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -538,32 +616,31 @@ gnome:
       - name: screenshot_region
         binding: '<Shift>Print'
         command: 'gnome-screenshot -ac'
-    forge:
-      # Names below match Forge 89 schema keys (verified live with
-      # `gsettings list-keys org.gnome.shell.extensions.forge.keybindings`).
-      # Forge 89 uses per-edge resize keys (right/bottom) rather than
-      # width/height, and a generic con-split-layout-toggle instead of
-      # the older window-rotate-split.
-      window_toggle_float:            '<Super>t'
-      con_split_layout_toggle:        '<Super>j'
-      window_focus_left:              '<Super>Left'
-      window_focus_right:             '<Super>Right'
-      window_focus_up:                '<Super>Up'
-      window_focus_down:              '<Super>Down'
-      window_swap_left:               '<Super><Shift>Left'
-      window_swap_right:              '<Super><Shift>Right'
-      window_swap_up:                 '<Super><Shift>Up'
-      window_swap_down:               '<Super><Shift>Down'
-      window_resize_right_increase:   '<Super>equal'
-      window_resize_right_decrease:   '<Super>minus'
-      window_resize_bottom_increase:  '<Super><Shift>equal'
-      window_resize_bottom_decrease:  '<Super><Shift>minus'
-      con_stacked_layout_toggle:      '<Super>g'
-      con_tabbed_layout_toggle:       '<Super><Shift>g'
-      window_swap_last_active:        '<Super><Alt>Tab'
-      # Skipped (no Forge 89 equivalent):
-      #   focus-next-window / focus-previous-window (list cycling within
-      #     a stacked container) — Forge 89 only has directional focus.
+    tilingshell:
+      # Tiling Shell keybindings (org.gnome.shell.extensions.tilingshell).
+      # Schema keys verified against Tiling Shell v18+ on GNOME 48.
+      # Replaces Forge, which is unmaintained ("Needs a new maintainer").
+      # Tiling Shell uses span/move/resize verbs and a different mental
+      # model: instead of i3-like container splits, you choose a layout
+      # zone and windows snap to it; SUPER+ARROWS moves focus, SUPER+
+      # SHIFT+ARROWS moves the window across zones, SUPER+CTRL+ARROWS
+      # spans (resizes window to cover the next zone).
+      move-window-right:    '<Super><Shift>Right'
+      move-window-left:     '<Super><Shift>Left'
+      move-window-up:       '<Super><Shift>Up'
+      move-window-down:     '<Super><Shift>Down'
+      focus-window-right:   '<Super>Right'
+      focus-window-left:    '<Super>Left'
+      focus-window-up:      '<Super>Up'
+      focus-window-down:    '<Super>Down'
+      span-window-right:    '<Super>equal'
+      span-window-left:     '<Super>minus'
+      span-window-up:       '<Super><Shift>equal'
+      span-window-down:     '<Super><Shift>minus'
+      untile-window:        '<Super>t'
+      # Skipped (no Tiling Shell equivalent):
+      #   stacked/tabbed container layout toggles — Tiling Shell uses
+      #   layout zones, not container trees.
   app_folders:
     naming_note: >
       App folders are visible in the GNOME Activities app grid. Each folder

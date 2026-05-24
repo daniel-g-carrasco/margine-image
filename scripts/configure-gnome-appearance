@@ -46,10 +46,13 @@ def load() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
 
 
 def gvariant(value: Any) -> str:
+    # Order matters: bool is a subclass of int in Python, check it first
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, float):
+        return repr(value)
     if isinstance(value, str):
         return json.dumps(value)
     if isinstance(value, list) and all(isinstance(item, str) for item in value):
@@ -72,8 +75,13 @@ def schema_keys(schema: str) -> set[str] | None:
 
 def run(cmd: list[str], dry: bool) -> None:
     print("  $ " + " ".join(cmd))
-    if not dry:
-        subprocess.run(cmd, check=True)
+    if dry:
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        print(f"    (skipped: {first})")
 
 
 def apply_schema(schema: str, values: dict[str, Any], dry: bool) -> None:

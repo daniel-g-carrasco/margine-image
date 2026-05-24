@@ -165,8 +165,12 @@ host_packages:
       override_remove:
         - ffmpeg-free
         - libavcodec-free
+        - libavdevice-free
+        - libavfilter-free
+        - libavformat-free
         - libavutil-free
         - libswresample-free
+        - libswscale-free
       install:
         - ffmpeg
         - gstreamer1-plugins-bad-freeworld

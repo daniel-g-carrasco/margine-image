@@ -148,9 +148,10 @@ resolution="$(podman run --rm \
   -e REMOVE_PKGS="$override_remove_pkgs" \
   "$image" bash -c '
     set -e
-    # Simulate Silverblue stock: install conflicting base packages
-    dnf install -y --quiet libavcodec-free libavutil-free libswresample-free \
-                            mesa-vulkan-drivers mesa-dri-drivers >/dev/null 2>&1 || true
+    # Simulate Silverblue stock: install ffmpeg-free (drags in all its split
+    # libav*-free / libsw*-free subpackages) and core Mesa packages.
+    dnf install -y --quiet ffmpeg-free mesa-vulkan-drivers mesa-dri-drivers \
+                            >/dev/null 2>&1 || true
     # Enable RPMFusion
     dnf install -y --quiet \
       https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \

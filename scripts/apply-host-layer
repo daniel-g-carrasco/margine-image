@@ -139,11 +139,17 @@ done
 run sudo rpm-ostree override remove "${OVERRIDE_REMOVE[@]}" "${install_flags[@]}"
 
 section "Step 3 — Media diagnostics + audio baseline + virtualization"
-run sudo rpm-ostree install \
+# --allow-inactive: some packages (e.g. mesa-libGLU, pipewire-pulseaudio,
+# wireplumber) are already provided by the Silverblue base. Without the
+# flag rpm-ostree refuses to layer a request that doesn't change the
+# package set. With the flag they're recorded as explicitly requested
+# while becoming no-ops if already satisfied — exactly what we want for
+# a declarative baseline.
+run sudo rpm-ostree install --allow-inactive \
     "${MEDIA_DIAG[@]}" "${AUDIO[@]}" "${VIRT[@]}"
 
 section "Step 4 — Hardware diagnostics + GNOME tools + fonts + creative apps"
-run sudo rpm-ostree install \
+run sudo rpm-ostree install --allow-inactive \
     "${HW_DIAG[@]}" "${GNOME_TOOLS[@]}" "${FONTS[@]}" "${CREATIVE_APPS[@]}"
 
 if (( apply )); then

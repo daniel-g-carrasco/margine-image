@@ -254,7 +254,6 @@ flatpaks:
       - org.inkscape.Inkscape
     photography:
       - org.darktable.Darktable
-      - net.displaycal.DisplayCAL
     media:
       - org.audacityteam.Audacity
       - com.obsproject.Studio

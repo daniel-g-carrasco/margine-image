@@ -193,8 +193,8 @@ Carry over the photography intent and validated ICC profiles.
 What fits:
 
 - darktable workflow;
-- ArgyllCMS/DisplayCAL for calibration workflows;
-- `colord` as the system color service;
+- GNOME-native color management through Settings → Colour, backed by
+  `colord` as the system color service;
 - validated ICC assets for the Framework 13 panel and Dell P2415Q.
 
 Atomic changes:
@@ -203,9 +203,14 @@ Atomic changes:
 - for shared local assets, prefer `/usr/local/share/margine/icc` because
   `/usr/local` maps to writable local state on Silverblue;
 - do not install to `/usr/share/margine` in phase 1;
-- do not carry Hyprland compositor ICC rules into GNOME.
+- do not carry Hyprland compositor ICC rules into GNOME;
+- do not install DisplayCAL/ArgyllCMS by default: GNOME Colour assigns
+  pre-computed ICC profiles per display through `colord` natively, and
+  external calibration tools can be installed ad-hoc when a calibrator
+  device is actually being used.
 
-GNOME should own display color assignment through Settings/colord first.
+GNOME owns display color assignment through Settings → Colour. ICC
+profiles live where listed above and are activated through GNOME.
 
 ### Printing and Scanning Policy
 
@@ -434,15 +439,20 @@ Confirmed Flathub candidates during this review:
 | RetroDECK | `net.retrodeck.retrodeck` |
 | Cartridges | `page.kramo.Cartridges` |
 | Chromium | `org.chromium.Chromium` |
-| DisplayCAL | `net.displaycal.DisplayCAL` |
 
 Initial recommendation:
 
 - default Flatpaks: Zen Browser, Bitwarden, Thunderbird, LibreOffice, Gapless;
-- photography optional Flatpaks: darktable, GIMP, DisplayCAL;
+- graphics optional Flatpaks: GIMP, Inkscape;
+- photography optional Flatpaks: darktable;
 - media optional Flatpaks: Audacity, OBS Studio, Easy Effects, Reaper;
 - gaming optional Flatpaks: Steam, Lutris, Heroic, Bottles, Protontricks,
   ProtonUp-Qt, RetroArch, RetroDECK, Cartridges.
+
+Color calibration tooling (DisplayCAL, ArgyllCMS) is not in the default
+optional set: GNOME → Settings → Colour assigns pre-computed ICC profiles
+natively via `colord`. Calibration tools can be installed ad-hoc only when
+a calibrator device is in use.
 
 ## Use Toolbox or Distrobox First
 

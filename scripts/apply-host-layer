@@ -132,11 +132,36 @@ else
 fi
 
 section "Step 2 — Codec replacement (override + install)"
-install_flags=()
-for pkg in "${CODEC_INSTALL[@]}"; do
-  install_flags+=("--install=$pkg")
-done
-run sudo rpm-ostree override remove "${OVERRIDE_REMOVE[@]}" "${install_flags[@]}"
+codec_replacement_already_applied() {
+  # Returns 0 if ffmpeg (the sentinel for codec_replacement.install) is
+  # already layered in the staged or booted deployment.
+  command -v rpm-ostree >/dev/null 2>&1 || return 1
+  local status_json
+  status_json="$(rpm-ostree status --json 2>/dev/null)" || return 1
+  printf '%s' "$status_json" | python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(1)
+for d in data.get("deployments", [])[:2]:
+    layered = (d.get("requested-packages") or []) + (d.get("packages") or [])
+    blob = " ".join(str(p) for p in layered)
+    if "ffmpeg" in blob.split():
+        sys.exit(0)
+sys.exit(1)
+'
+}
+
+if codec_replacement_already_applied; then
+  echo "  Codec replacement already in staged or booted deployment — skip."
+else
+  install_flags=()
+  for pkg in "${CODEC_INSTALL[@]}"; do
+    install_flags+=("--install=$pkg")
+  done
+  run sudo rpm-ostree override remove "${OVERRIDE_REMOVE[@]}" "${install_flags[@]}"
+fi
 
 section "Step 3 — Media diagnostics + audio baseline + virtualization"
 # --allow-inactive: some packages (e.g. mesa-libGLU, pipewire-pulseaudio,

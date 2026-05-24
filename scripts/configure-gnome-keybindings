@@ -110,6 +110,8 @@ MARGINE_WORKSPACES_SCHEMA_DIR = (
 )
 
 DIRECT_WORKSPACE_RE = re.compile(r"^(switch_to|move_window_to)_([1-9]|10)$")
+EXTENSION_ACTIVE_RE = re.compile(r"'state': <1(?:\.0)?>")
+EXTENSION_ENABLED_RE = re.compile(r"'enabled': <true>")
 
 
 def gvariant_strings(items: list[str]) -> str:
@@ -221,8 +223,40 @@ def apply_group(
         set_key(schema, gset_key, value, dry)
 
 
-def split_workspace_bindings(workspace_yaml: dict, provider: str | None) -> dict:
-    if provider != MARGINE_EXTENSION_PROVIDER:
+def margine_extension_active() -> bool:
+    if not shutil.which("gdbus"):
+        return False
+
+    result = subprocess.run(
+        [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest",
+            "org.gnome.Shell.Extensions",
+            "--object-path",
+            "/org/gnome/Shell/Extensions",
+            "--method",
+            "org.gnome.Shell.Extensions.GetExtensionInfo",
+            "margine-workspaces@margine.local",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    return bool(
+        EXTENSION_ACTIVE_RE.search(result.stdout)
+        and EXTENSION_ENABLED_RE.search(result.stdout)
+    )
+
+
+def split_workspace_bindings(
+    workspace_yaml: dict,
+    provider: str | None,
+    extension_active: bool,
+) -> dict:
+    if provider != MARGINE_EXTENSION_PROVIDER or not extension_active:
         return workspace_yaml
 
     native = {}
@@ -328,12 +362,27 @@ def main() -> int:
         apply_workspaces(ws, dry)
         workspace_bindings = kb.get("workspace", {})
         workspace_provider = ws.get("binding_provider")
+        workspace_extension_active = (
+            workspace_provider == MARGINE_EXTENSION_PROVIDER
+            and margine_extension_active()
+        )
+        if workspace_provider == MARGINE_EXTENSION_PROVIDER:
+            if workspace_extension_active:
+                print("\n== Margine Workspaces provider: active ==")
+                print("   native direct workspace bindings will be cleared")
+            else:
+                print("\n== Margine Workspaces provider: inactive/error ==")
+                print("   keeping native direct workspace bindings as fallback")
         apply_group(
             "Workspace + window (WM keybindings)",
             "org.gnome.desktop.wm.keybindings",
             WM_KEYS,
             {
-                **split_workspace_bindings(workspace_bindings, workspace_provider),
+                **split_workspace_bindings(
+                    workspace_bindings,
+                    workspace_provider,
+                    workspace_extension_active,
+                ),
                 **kb.get("window", {}),
             },
             dry,

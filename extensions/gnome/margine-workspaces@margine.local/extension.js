@@ -23,12 +23,20 @@ class Indicator extends PanelMenu.Button {
         this._extension = extension;
         this._workspaceManager = global.workspace_manager;
         this._signals = [];
+        this._items = [];
 
         this._label = new St.Label({
             style_class: 'margine-workspaces-indicator-label',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this.add_child(this._label);
+
+        for (let i = 0; i < WORKSPACE_COUNT; i++) {
+            const item = new PopupMenu.PopupMenuItem(`${i + 1}`);
+            item.connect('activate', () => this._extension.jumpToWorkspace(i));
+            this.menu.addMenuItem(item);
+            this._items.push(item);
+        }
 
         this._connect(this._workspaceManager, 'active-workspace-changed',
             () => this._sync());
@@ -57,20 +65,12 @@ class Indicator extends PanelMenu.Button {
         const label = `${active + 1}`;
 
         this._label.set_text(label);
-        this.accessible_name = _('Workspace %s').format(label);
-        this._rebuildMenu(active);
-    }
-
-    _rebuildMenu(active) {
-        this.menu.removeAll();
-
-        for (let i = 0; i < WORKSPACE_COUNT; i++) {
-            const item = new PopupMenu.PopupMenuItem(`${i + 1}`);
-            if (i === active)
-                item.setOrnament(PopupMenu.Ornament.CHECK);
-            item.connect('activate', () => this._extension.jumpToWorkspace(i));
-            this.menu.addMenuItem(item);
-        }
+        this.accessible_name = `Workspace ${label}`;
+        this._items.forEach((item, i) => {
+            item.setOrnament(i === active
+                ? PopupMenu.Ornament.CHECK
+                : PopupMenu.Ornament.NONE);
+        });
     }
 
     destroy() {
@@ -82,8 +82,8 @@ class Indicator extends PanelMenu.Button {
 export default class MargineWorkspacesExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
-        this._indicator = new Indicator(this);
         this._bindings = [];
+        this._indicator = new Indicator(this);
 
         Main.panel.addToStatusArea(
             'margine-workspaces',

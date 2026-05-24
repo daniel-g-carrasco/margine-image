@@ -164,30 +164,47 @@ host_packages:
     codec_replacement:
       override_remove:
         - ffmpeg-free
+        - libavcodec-free
+        - libavutil-free
+        - libswresample-free
       install:
         - ffmpeg
         - gstreamer1-plugins-bad-freeworld
         - gstreamer1-plugins-ugly
-        - mesa-va-drivers-freeworld
-        - mesa-vulkan-drivers-freeworld
       install_note: >
-        Validated against quay.io/fedora/fedora:44 + RPMFusion. On F44:
-          - mesa-va-drivers and mesa-vdpau-drivers do NOT exist as separate
-            packages: the VA-API driver bits are inside mesa-dri-drivers
-            (base) and VDPAU is deprecated upstream. Nothing to override
-            remove for either.
-          - mesa-vdpau-drivers-freeworld does not exist in RPMFusion F44
-            (upstream removed VDPAU). Skipped.
-          - mesa-va-drivers-freeworld + mesa-vulkan-drivers-freeworld are
-            additive supplements on top of mesa-dri-drivers /
-            mesa-vulkan-drivers — no override needed.
-        These symbols are intentionally NOT in the install list because
-        they are virtual provides or already in the base:
-          - gstreamer1-libav   -> base gstreamer1-plugin-libav provides it
-          - gstreamer1-vaapi   -> merged into gstreamer1-plugins-bad-*
-          - libavif / libheif  -> already in the Silverblue base
-        All capabilities still work once gstreamer1-plugins-bad-freeworld
-        and mesa-va-drivers-freeworld are installed.
+        Validated against quay.io/fedora/fedora:44 + RPMFusion via
+        scripts/validate-baseline-packages (both existence and dependency
+        resolution simulation under Silverblue-like conditions).
+
+        ffmpeg pulls ffmpeg-libs, which conflicts with libavcodec-free /
+        libavutil-free / libswresample-free from the base. All four base
+        packages must be override-removed together so rpm-ostree can
+        complete the transaction.
+
+        The following Mesa freeworld supplements are intentionally
+        SKIPPED for now:
+          - mesa-va-drivers-freeworld
+          - mesa-vulkan-drivers-freeworld
+        Reason: at the time of this baseline, Mesa in Fedora updates is
+        26.0.6 while Mesa in RPMFusion is 26.0.3 / 26.0.7 (lagging behind).
+        dnf can reconcile via --allowerasing (downgrading the base Mesa
+        bits); rpm-ostree cannot do downgrade. They will be reintroduced
+        when RPMFusion catches up (usually 1-2 weeks after a Mesa point
+        release). Effect of skipping: H.264/HEVC hardware decode/encode
+        via VA-API GPU path is unavailable; fallbacks remain available:
+          - ffmpeg full handles software decode/encode of all patented codecs
+          - Mesa base (with mesa-dri-drivers) covers VP9 / AV1 hardware
+            decode where the GPU supports it
+          - Vulkan video (Mesa base) covers H.264/HEVC on newer GPUs
+        Re-add the two packages once the validator passes them.
+
+        Other symbols intentionally not listed:
+          - gstreamer1-libav      virtual provides; real package
+                                  gstreamer1-plugin-libav already in base
+          - gstreamer1-vaapi      merged into gstreamer1-plugins-bad-*
+          - libavif / libheif     already in the Silverblue base
+          - mesa-va-drivers       does not exist as separate package on F44
+          - mesa-vdpau-drivers    does not exist on F44 (VDPAU deprecated)
     media_diagnostics:
       - mesa-demos
       - mesa-libGLU

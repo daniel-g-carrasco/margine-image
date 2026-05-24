@@ -113,3 +113,66 @@ fi
 
 printf '\nAll baseline packages are available in Fedora %s + RPMFusion.\n' \
   "$(printf '%s' "$image" | awk -F: '{print $NF}')"
+
+# ----- Resolution check (Silverblue-like state) -----
+# Pre-install the codec base packages (libavcodec-free, mesa-vulkan-drivers,
+# mesa-dri-drivers) to simulate the conflicting state a real Silverblue
+# install has, then test the codec_replacement install with rpm-ostree-like
+# semantics: NO --allowerasing. dnf will fail with the same error rpm-ostree
+# would have on the real host.
+
+printf '\n== Dependency resolution check (Silverblue-like state) ==\n'
+
+install_pkgs="$(python3 - "$yaml" <<'PY'
+import sys, yaml
+data = yaml.safe_load(open(sys.argv[1]).read())
+b = data["host_packages"]["baseline"]
+cr = b.get("codec_replacement", {})
+print(" ".join(cr.get("install", [])))
+PY
+)"
+override_remove_pkgs="$(python3 - "$yaml" <<'PY'
+import sys, yaml
+data = yaml.safe_load(open(sys.argv[1]).read())
+b = data["host_packages"]["baseline"]
+cr = b.get("codec_replacement", {})
+print(" ".join(cr.get("override_remove", [])))
+PY
+)"
+
+printf '  override_remove: %s\n' "$override_remove_pkgs"
+printf '  install:         %s\n' "$install_pkgs"
+
+resolution="$(podman run --rm \
+  -e INSTALL_PKGS="$install_pkgs" \
+  -e REMOVE_PKGS="$override_remove_pkgs" \
+  "$image" bash -c '
+    set -e
+    # Simulate Silverblue stock: install conflicting base packages
+    dnf install -y --quiet libavcodec-free libavutil-free libswresample-free \
+                            mesa-vulkan-drivers mesa-dri-drivers >/dev/null 2>&1 || true
+    # Enable RPMFusion
+    dnf install -y --quiet \
+      https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+      https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm >/dev/null 2>&1
+    # Remove (override_remove equivalent) then install — no --allowerasing
+    # so we get the same depsolve behaviour as rpm-ostree
+    dnf remove -y --quiet $REMOVE_PKGS >/dev/null 2>&1 || true
+    if dnf install -y --setopt=tsflags=test $INSTALL_PKGS 2>&1 | tail -5; then
+      echo "RESOLUTION_OK"
+    else
+      echo "RESOLUTION_FAIL"
+    fi
+  ' 2>&1 | tail -10)"
+
+printf '%s\n' "$resolution"
+if printf '%s' "$resolution" | grep -q RESOLUTION_OK; then
+  printf '\nDependency resolution OK — apply-host-layer should succeed.\n'
+  exit 0
+else
+  printf '\nDependency resolution FAILED — apply-host-layer will fail.\n'
+  printf 'Look at the dnf output above to see which packages conflict;\n'
+  printf 'add the conflicting base packages to override_remove, or\n'
+  printf 'drop the install candidate that requires a downgrade.\n'
+  exit 2
+fi

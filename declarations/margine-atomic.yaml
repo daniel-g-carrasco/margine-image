@@ -151,17 +151,77 @@ kernel:
     force_as_default: false
 
 host_packages:
-  baseline: []
-  optional_after_validation:
+  baseline_note: >
+    Baseline = installed by scripts/apply-host-layer on every Margine
+    Fedora Atomic installation. Mirrors the Bluefin "common host layer"
+    intent but using rpm-ostree layering rather than image baking
+    (image-based variant is on the phase 2 roadmap as bootc).
+  baseline:
+    rpmfusion:
+      enable_free: true
+      enable_nonfree: true
+      install_release_rpms_from: https://mirrors.rpmfusion.org/{free,nonfree}/fedora/rpmfusion-{free,nonfree}-release-$(rpm -E %fedora).noarch.rpm
+    codec_replacement:
+      override_remove:
+        - ffmpeg-free
+        - mesa-va-drivers
+        - mesa-vdpau-drivers
+      install:
+        - ffmpeg
+        - gstreamer1-libav
+        - gstreamer1-plugins-bad-freeworld
+        - gstreamer1-plugins-ugly
+        - gstreamer1-vaapi
+        - mesa-va-drivers-freeworld
+        - mesa-vdpau-drivers-freeworld
+        - libavif
+        - libheif
+    media_diagnostics:
+      - mesa-demos
+      - mesa-libGLU
+      - vulkan-tools
+      - libva-utils
+      - clinfo
+    audio_baseline:
+      - pipewire-utils
+      - pipewire-pulseaudio
+      - pipewire-alsa
+      - wireplumber
+      - alsa-utils
+    virtualization:
+      - libvirt
+      - libvirt-nss
+      - qemu-kvm
+      - virt-manager
+      - virt-viewer
+      - edk2-ovmf
+      - swtpm
+      - dnsmasq
+    hardware_diagnostics:
+      - lm_sensors
+      - powertop
+      - powerstat
+      - fwupd
+      - ddcutil
+      - usbutils
+      - pciutils
+      - smartmontools
+    gnome_tools:
+      - gnome-tweaks
+      - libappindicator-gtk3
+      - gnome-shell-extension-appindicator
+      - adw-gtk3-theme
     fonts:
+      - jetbrains-mono-fonts
+      - ibm-plex-sans-fonts
+      - ibm-plex-mono-fonts
+      - ibm-plex-serif-fonts
+      - cascadia-code-fonts
       - adobe-source-code-pro-fonts
       - adobe-source-sans-pro-fonts
       - adobe-source-serif-pro-fonts
       - atkinson-hyperlegible-next-fonts
       - atkinson-hyperlegible-mono-fonts
-      - ibm-plex-sans-fonts
-      - ibm-plex-mono-fonts
-      - ibm-plex-serif-fonts
       - google-carlito-fonts
       - google-crosextra-caladea-fonts
       - liberation-sans-fonts
@@ -169,54 +229,22 @@ host_packages:
       - liberation-mono-fonts
       - google-noto-color-emoji-fonts
       - google-noto-sans-cjk-fonts
-      - jetbrains-mono-fonts
-    gtk3_compat:
-      - adw-gtk3-theme
-    hardware_media:
-      diagnostics:
-        - mesa-demos
-        - vulkan-tools
-        - libva-utils
-        - clinfo
-      open_mesa:
-        - mesa-dri-drivers
-        - mesa-vulkan-drivers
-        - mesa-va-drivers
-        - mesa-libOpenCL
-      intel:
-        - libva-intel-media-driver
-        - intel-compute-runtime
-        - intel-opencl
-        - igt-gpu-tools
-        - intel-vpl-gpu-rt
-      amd:
-        - rocm-opencl
-        - rocminfo
-        - radeontop
-      audio:
-        - pipewire-utils
-        - pipewire-pulseaudio
-        - pipewire-alsa
-        - wireplumber
-        - alsa-utils
-      media_codecs_free:
-        - ffmpeg-free
-        - gstreamer1-plugin-libav
-        - gstreamer1-plugin-openh264
-        - gstreamer1-plugins-base
-        - gstreamer1-plugins-good
-        - gstreamer1-plugins-bad-free
-        - gstreamer1-plugins-ugly-free
-        - gstreamer1-vaapi
-        - aom
-        - dav1d
-        - libavif
-        - libheif
-      framework_audio_optional:
-        - easyeffects
-        - lsp-plugins-lv2
-        - lsp-plugins-ladspa
-        - lsp-plugins-vst3
+  optional_after_validation:
+    intel_gpu_extras:
+      - libva-intel-media-driver
+      - intel-compute-runtime
+      - intel-opencl
+      - igt-gpu-tools
+      - intel-vpl-gpu-rt
+    amd_gpu_extras:
+      - rocm-opencl
+      - rocminfo
+      - radeontop
+    framework_audio_optional:
+      - easyeffects
+      - lsp-plugins-lv2
+      - lsp-plugins-ladspa
+      - lsp-plugins-vst3
     gaming_runtime:
       desktop_host_helpers:
         - gamescope
@@ -231,12 +259,11 @@ host_packages:
       capture_optional:
         - obs-studio-plugin-vkcapture
         - obs-studio-plugin-vaapi
-    virtualization:
-      - libvirt
-      - qemu-kvm
-      - edk2-ovmf
-      - swtpm
-      - dnsmasq
+    tailscale:
+      enabled_by_default: false
+      repo: https://pkgs.tailscale.com/stable/fedora/tailscale.repo
+      packages:
+        - tailscale
 
 flatpaks:
   remotes:
@@ -279,16 +306,52 @@ toolbox:
   default:
     image: fedora-toolbox:44
     packages:
-      - git
-      - gh
-      - tmux
-      - ripgrep
-      - fd-find
-      - jq
-      - bat
-      - eza
-      - btop
-      - neovim
+      core_cli:
+        - git
+        - git-credential-libsecret
+        - gh
+        - tmux
+        - ripgrep
+        - fd-find
+        - jq
+        - bat
+        - eza
+        - btop
+        - neovim
+        - fastfetch
+        - just
+        - glow
+        - gum
+      build_essentials:
+        - gcc
+        - gcc-c++
+        - make
+        - pkgconf
+        - python3-pip
+        - nodejs
+        - npm
+      container_tooling:
+        - podman-compose
+        - podman-tui
+        - distrobox
+      shells_optional:
+        - fish
+        - zsh
+  user_layer:
+    brew:
+      install_user_level: true
+      install_url: https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
+      install_path: ~/.linuxbrew
+      note: >
+        Homebrew on Linux installs into ~/.linuxbrew without touching the
+        host. Useful for languages and tools that move faster than Fedora
+        repos (e.g. starship, zellij, lazygit). Not a substitute for the
+        toolbox; complementary.
+    starship:
+      install: user-binary
+      url: https://github.com/starship/starship/releases/latest/download/starship-x86_64-unknown-linux-gnu.tar.gz
+      install_path: ~/.local/bin/starship
+      note: Single-binary prompt; can also come from brew if installed
 
 gnome:
   settings:
@@ -424,7 +487,7 @@ hardware_media:
       - intel-open
       - amd-open
     nvidia_default: false
-    rpmfusion_codec_replacement_default: false
+    rpmfusion_codec_replacement_default: true
     resolve_default: false
     gaming_split_lock_override_default: false
   validation:
@@ -514,7 +577,6 @@ rejected_phase1:
   hardware_media:
     - proprietary-nvidia-default
     - akmods-default
-    - rpmfusion-codec-replacement-default
     - davinci-resolve-default
     - cachyos-gaming-metapackages
     - implicit-kernel-split-lock-mitigate-0

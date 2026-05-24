@@ -100,10 +100,25 @@ For codecs and GStreamer:
 | VA-API GStreamer path | `gstreamer1-vaapi` |
 | AV1/HEIF support | `aom`, `dav1d`, `libavif`, `libheif` |
 
-Full patent-encumbered multimedia support is not a phase 1 default. If host
-codec replacement through RPM Fusion becomes necessary, it must be documented as
-a separate ostree/RPM Fusion decision with rollback notes, not hidden inside the
-driver stack.
+**Policy update (Bluefin-style baseline).** Full patent-encumbered multimedia
+support is now part of the Margine host layer baseline. RPM Fusion (free +
+nonfree) is enabled by `scripts/apply-host-layer`, and the stock Fedora
+codec packages are replaced with the freeworld variants:
+
+| Stock | Replaced by |
+| --- | --- |
+| `ffmpeg-free` | `ffmpeg` |
+| `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
+| `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
+
+Plus added: `gstreamer1-libav`, `gstreamer1-plugins-bad-freeworld`,
+`gstreamer1-plugins-ugly`, `gstreamer1-vaapi`, `libavif`, `libheif`.
+
+The replacement is the same pattern Bluefin/Bazzite use and is required for
+GPU-accelerated H.264 / H.265 / AV1 in browsers, OBS, darktable, Reaper, etc.
+
+The full rationale, including what we do not adopt from Bluefin, lives in
+[15-host-layer.md](15-host-layer.md).
 
 ## Intel Path
 
@@ -212,11 +227,16 @@ gst-inspect-1.0 va
 vainfo
 ```
 
-Fedora free codecs are acceptable lab candidates. RPM Fusion codec replacement is
-a separate risk because it changes the host deployment and may add repository
-coupling to every rpm-ostree upgrade. Flatpak applications from Flathub may
-carry their own runtime codec support, but host VA-API and Vulkan still need to
-be visible from the host.
+Fedora free codecs are the acceptable *fallback*; the Bluefin-style codec
+replacement (`scripts/apply-host-layer`) is the *default*. The trade-off is
+deliberate: adding RPM Fusion couples upgrades to a third-party repository,
+but it is the same trade-off Bluefin/Bazzite ship and is what makes
+GPU-accelerated video playback in browsers and editors work out of the box.
+See [15-host-layer.md](15-host-layer.md) for the full rationale and
+[09-declarative-model.md](09-declarative-model.md) for the underlying
+declarative model. Flatpak applications from Flathub may carry their own
+runtime codec support, but host VA-API and Vulkan still need to be visible
+from the host.
 
 ## GPU Compute
 

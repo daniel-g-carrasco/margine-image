@@ -40,6 +40,7 @@ install guide is self-contained.
 | [08-gnome-personal-layer.md](08-gnome-personal-layer.md) | Home layout, fonts, icons, GNOME theme, folder metadata |
 | [10-hardware-media-stack.md](10-hardware-media-stack.md) | Intel/AMD drivers, Mesa, VA-API, Vulkan, OpenCL, PipeWire, codecs |
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
+| [15-host-layer.md](15-host-layer.md) | Bluefin-style host baseline: codec replacement, virt, hw diag, fonts, gnome-tweaks; what `apply-host-layer` installs and the Bluefin mapping |
 
 ## System design
 

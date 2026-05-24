@@ -243,22 +243,26 @@ flatpaks:
     - name: flathub
       url: https://flathub.org/repo/flathub.flatpakrepo
   default_apps:
-    - app.zen_browser.zen
-    - com.bitwarden.desktop
-    - org.mozilla.Thunderbird
-    - org.libreoffice.LibreOffice
-    - com.github.neithern.g4music
-  optional_apps:
+    internet:
+      - app.zen_browser.zen
+    productivity:
+      - com.bitwarden.desktop
+      - org.mozilla.Thunderbird
+      - org.libreoffice.LibreOffice
     graphics:
       - org.gimp.GIMP
       - org.inkscape.Inkscape
     photography:
       - org.darktable.Darktable
-    media:
+    multimedia:
+      - com.github.neithern.g4music
       - org.audacityteam.Audacity
       - com.obsproject.Studio
       - com.github.wwmm.easyeffects
       - fm.reaper.Reaper
+    development:
+      - com.vscodium.codium
+  optional_apps:
     gaming:
       - com.valvesoftware.Steam
       - net.lutris.Lutris
@@ -301,6 +305,78 @@ gnome:
       icon-theme: adwaita-first
   gtk4_css_override: false
   hyprland_theme_artifacts: false
+  app_folders:
+    naming_note: >
+      App folders are visible in the GNOME Activities app grid. Each folder
+      can include apps by .desktop file id and/or by XDG category. Categories
+      are useful so the folder absorbs new compatible apps automatically when
+      they are installed. .desktop ids pin specific Flatpaks even if their
+      categories drift.
+    list:
+      - id: Internet
+        name: Internet
+        apps:
+          - app.zen_browser.zen.desktop
+      - id: Productivity
+        name: Productivity
+        apps:
+          - com.bitwarden.desktop.desktop
+          - org.mozilla.Thunderbird.desktop
+          - org.libreoffice.LibreOffice.desktop
+          - org.libreoffice.LibreOffice.writer.desktop
+          - org.libreoffice.LibreOffice.calc.desktop
+          - org.libreoffice.LibreOffice.impress.desktop
+          - org.libreoffice.LibreOffice.draw.desktop
+          - org.libreoffice.LibreOffice.base.desktop
+          - org.libreoffice.LibreOffice.math.desktop
+        categories:
+          - Office
+      - id: Graphics
+        name: Graphics
+        apps:
+          - org.gimp.GIMP.desktop
+          - org.inkscape.Inkscape.desktop
+        categories:
+          - Graphics
+          - 2DGraphics
+          - VectorGraphics
+          - RasterGraphics
+      - id: Photography
+        name: Photography
+        apps:
+          - org.darktable.Darktable.desktop
+        categories:
+          - Photography
+      - id: Multimedia
+        name: Multimedia
+        apps:
+          - com.github.neithern.g4music.desktop
+          - org.audacityteam.Audacity.desktop
+          - com.obsproject.Studio.desktop
+          - com.github.wwmm.easyeffects.desktop
+          - fm.reaper.Reaper.desktop
+        categories:
+          - AudioVideo
+          - Audio
+          - Video
+          - Music
+      - id: Development
+        name: Development
+        apps:
+          - com.vscodium.codium.desktop
+        categories:
+          - Development
+          - IDE
+      - id: Utilities
+        name: Utilities
+        categories:
+          - Utility
+          - Accessibility
+      - id: System
+        name: System
+        categories:
+          - System
+          - Settings
 
 home:
   roots:

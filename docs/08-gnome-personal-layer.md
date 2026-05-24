@@ -242,6 +242,59 @@ should stay close to upstream GNOME behavior in phase 1.
 | GUI apps | Flatpak |
 | development font/tool experiments | toolbox or user home |
 
+## App Grid Folders
+
+The GNOME Activities app grid can be organised into folders that group
+related applications. This makes a grid with many installed apps
+scannable instead of one long alphabetical list.
+
+The folder layout is declared in `gnome.app_folders.list` in
+`declarations/margine-atomic.yaml` and applied by
+`scripts/configure-gnome-app-folders --apply`. Each folder includes
+applications by:
+
+- **`apps`**: explicit `.desktop` file ids — pins specific Flatpaks
+  even if their XDG categories change upstream;
+- **`categories`**: XDG categories — absorbs new compatible apps
+  automatically when they are installed.
+
+The phase 1 layout:
+
+| Folder | Pinned apps | Auto-categories |
+| --- | --- | --- |
+| Internet | Zen Browser | — |
+| Productivity | Bitwarden, Thunderbird, LibreOffice suite | Office |
+| Graphics | GIMP, Inkscape | Graphics, 2DGraphics, VectorGraphics, RasterGraphics |
+| Photography | darktable | Photography |
+| Multimedia | Gapless, Audacity, OBS Studio, EasyEffects, Reaper | AudioVideo, Audio, Video, Music |
+| Development | VSCodium | Development, IDE |
+| Utilities | — | Utility, Accessibility |
+| System | — | System, Settings |
+
+The Utilities and System folders are category-only on purpose: they
+absorb whatever GNOME core apps the distribution ships (Files, Settings,
+Disks, Console, etc.) without naming each one. New installations that
+match those categories appear in the folder automatically.
+
+Apply the layout:
+
+```sh
+scripts/configure-gnome-app-folders         # dry-run: print plan
+scripts/configure-gnome-app-folders --apply # write via gsettings
+```
+
+After applying, restart GNOME Shell (Alt+F2 → type `r` → Enter on
+Xorg, or log out / log back in on Wayland) for the grid to refresh.
+
+Reset the folder configuration:
+
+```sh
+scripts/configure-gnome-app-folders --reset --apply
+```
+
+This removes all folder definitions; the grid returns to the flat
+alphabetical default.
+
 ## Validation Commands
 
 Run after the GNOME personal layer is applied:

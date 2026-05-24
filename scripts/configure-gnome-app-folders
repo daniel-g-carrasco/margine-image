@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""
+Configure GNOME Activities app-grid folders from declarations/margine-atomic.yaml.
+
+Reads the gnome.app_folders.list section of the declarative model and applies
+it via dconf/gsettings. App folders are visible in the GNOME Activities app
+grid and can include apps by .desktop id and/or by XDG category.
+
+Usage:
+    configure-gnome-app-folders            # dry-run: print the plan
+    configure-gnome-app-folders --apply    # write via gsettings
+    configure-gnome-app-folders --reset    # remove all configured folders
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required: pip install pyyaml")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DECLARATIONS = REPO_ROOT / "declarations" / "margine-atomic.yaml"
+FOLDERS_SCHEMA = "org.gnome.desktop.app-folders"
+FOLDER_SCHEMA = "org.gnome.desktop.app-folders.folder"
+FOLDER_PATH_PREFIX = "/org/gnome/desktop/app-folders/folders/"
+
+
+def load_folders() -> list[dict]:
+    if not DECLARATIONS.is_file():
+        sys.exit(f"declarations file not found: {DECLARATIONS}")
+    data = yaml.safe_load(DECLARATIONS.read_text())
+    try:
+        return data["gnome"]["app_folders"]["list"]
+    except (KeyError, TypeError):
+        sys.exit("gnome.app_folders.list missing from declarations")
+
+
+def gvariant_list(items: list[str]) -> str:
+    quoted = ", ".join(f"'{item}'" for item in items)
+    return f"[{quoted}]"
+
+
+def run(cmd: list[str], dry_run: bool) -> None:
+    if dry_run:
+        print("  " + " ".join(cmd))
+        return
+    subprocess.run(cmd, check=True)
+
+
+def apply(folders: list[dict], dry_run: bool) -> None:
+    if not shutil.which("gsettings") and not dry_run:
+        sys.exit("gsettings not found")
+
+    ids = [f["id"] for f in folders]
+    print(f"== Set top-level folders: {ids}")
+    run(
+        ["gsettings", "set", FOLDERS_SCHEMA, "folders", gvariant_list(ids)],
+        dry_run,
+    )
+
+    for folder in folders:
+        fid = folder["id"]
+        relocatable_path = f"{FOLDER_PATH_PREFIX}{fid}/"
+        relocatable = f"{FOLDER_SCHEMA}:{relocatable_path}"
+        print(f"\n== {fid}")
+
+        run(
+            ["gsettings", "set", relocatable, "name", folder["name"]],
+            dry_run,
+        )
+
+        apps = folder.get("apps", [])
+        run(
+            ["gsettings", "set", relocatable, "apps", gvariant_list(apps)],
+            dry_run,
+        )
+
+        categories = folder.get("categories", [])
+        run(
+            [
+                "gsettings",
+                "set",
+                relocatable,
+                "categories",
+                gvariant_list(categories),
+            ],
+            dry_run,
+        )
+
+        run(
+            ["gsettings", "set", relocatable, "translate", "false"],
+            dry_run,
+        )
+
+
+def reset(folders: list[dict], dry_run: bool) -> None:
+    print(f"== Reset top-level folders to []")
+    run(
+        ["gsettings", "set", FOLDERS_SCHEMA, "folders", "[]"],
+        dry_run,
+    )
+    for folder in folders:
+        relocatable_path = f"{FOLDER_PATH_PREFIX}{folder['id']}/"
+        print(f"== Reset relocatable schema at {relocatable_path}")
+        run(
+            ["dconf", "reset", "-f", relocatable_path],
+            dry_run,
+        )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes via gsettings (default: dry-run)",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="remove all configured folders instead of applying",
+    )
+    args = parser.parse_args()
+
+    folders = load_folders()
+    dry_run = not args.apply
+
+    if args.reset:
+        reset(folders, dry_run)
+    else:
+        apply(folders, dry_run)
+
+    if dry_run:
+        print("\ndry-run only: no changes written")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. Restart GNOME Shell (Alt+F2 'r') or log out/in to refresh the grid.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

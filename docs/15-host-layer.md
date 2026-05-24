@@ -52,8 +52,7 @@ with the freeworld variants from RPMFusion:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`,
-`libavif`, `libheif`.
+Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`.
 
 Two GStreamer symbols are intentionally **not** listed because on Fedora 44
 they are virtual provides, which `rpm-ostree override` rejects:
@@ -419,6 +418,103 @@ gsettings set org.gnome.desktop.interface font-name 'Atkinson Hyperlegible Next 
 User-added fonts (Nerd Fonts, custom families) go under
 `~/.local/share/fonts/margine/` and become visible after
 `fc-cache -fv ~/.local/share/fonts`.
+
+## Compatibility with creative apps: what's covered and what isn't
+
+The "Bluefin-style" baseline covers the **general multimedia stack** (codec
+replacement, Mesa freeworld for VA-API/VDPAU, GStreamer with patented
+codecs). That's enough for browsers, OBS, generic video playback, and
+simple ffmpeg pipelines. It is **not** automatically the right baseline
+for every creative app.
+
+### Inkscape — fully covered
+
+Vector graphics. No codec, no GPU compute (beyond standard 2D rendering).
+The Flatpak (`org.inkscape.Inkscape`, in `flatpaks.default_apps`) is the
+correct delivery channel. The host layer adds nothing specific here.
+
+### darktable — partially covered
+
+darktable has three runtime dependencies; only one is in the baseline:
+
+| Dependency | In baseline? | Why it matters |
+| --- | --- | --- |
+| Video codec for export (H.264/H.265) | ✅ `ffmpeg` + freeworld | Slideshow / video export to MP4 works |
+| VA-API / VDPAU for preview pipeline | ✅ `mesa-va-drivers-freeworld` | Smooth preview of imported video clips |
+| OpenCL runtime for GPU-accelerated processing | ❌ **not in baseline** | 5–20× faster raw → JPEG; tone mapping; denoise |
+
+OpenCL packages are in `host_packages.optional_after_validation.amd_gpu_extras`
+(`rocm-opencl`) and `intel_gpu_extras` (`intel-compute-runtime`,
+`intel-opencl`). They are not in the baseline because they're heavy and
+hardware-specific (installing the wrong one wastes ~1 GB of disk).
+
+There is also a Flatpak-specific issue: **`org.darktable.Darktable` from
+Flathub does not see the host OpenCL ICD by default**. The sandbox blocks
+`/etc/OpenCL/vendors/*.icd`. Options:
+
+- Install darktable via `rpm-ostree install darktable` (not Flatpak) — sees
+  ROCm / Intel compute natively. Cost: one more layered package, one more
+  reboot per upgrade.
+- Keep darktable Flatpak and add a permission override:
+  ```sh
+  flatpak --user override --filesystem=/etc/OpenCL --device=dri org.darktable.Darktable
+  ```
+  Then re-launch. darktable's "darktable preferences → Processing → OpenCL"
+  should now list a GPU device.
+- Skip OpenCL: darktable falls back to CPU. Fine for occasional use,
+  painful for batch raw work.
+
+The decision belongs at the hardware-install stage, not at the generic
+baseline level. Recommendation: when installing on the Framework 13 (AMD
+Ryzen 7640), add `amd_gpu_extras` to the host layer manually:
+
+```sh
+sudo rpm-ostree install rocm-opencl rocminfo radeontop
+```
+
+### DaVinci Resolve — not covered, on purpose
+
+Resolve is in `rejected_phase1.hardware_media` as `davinci-resolve-default`.
+The reasons are not about preference, they are structural:
+
+- BMD ships Resolve as a `.deb`/`.rpm` Linux installer (no Flatpak),
+  designed for Rocky/Ubuntu; on Fedora atomic it needs heavy lifting
+- It expects CUDA or AMD AMF for hardware encode — not VA-API
+- The Free Edition cannot import H.264 / H.265 from `.mp4` / `.mov`
+  containers (BMD's licensing). Resolve Studio (paid) does. Either way,
+  it doesn't rely on the host codec layer the way generic players do
+- It wants its own audio path (PipeWire bridge at 48 kHz, JACK-like
+  routing)
+- The Universal Blue community has Resolve work but only as a manual,
+  break-prone integration
+
+If you need Resolve eventually, the realistic options are (best to worst
+in terms of cleanliness):
+
+1. **Distrobox Ubuntu 22.04** — `distrobox create --image ubuntu:22.04
+   --name resolve` then install the BMD `.deb` inside. GUI export to host.
+   Resolve sees the GPU via render node passthrough. Host stays clean.
+2. **rpm-ostree layer** of the BMD `.rpm` + dependency chain (libcrypto
+   versions, librsvg, etc.). Doable, but the host gets a long tail of
+   layered packages that need maintenance through every Fedora upgrade.
+3. **Stick with Kdenlive / Reaper** — atomic-friendly, in the default
+   Flatpak set, covers most non-color-grading video work.
+
+The Margine baseline deliberately does not solve this so the project stays
+predictable on update; Resolve remains a manual decision per machine.
+
+### Quick reference
+
+| App | Default channel | Host extras needed |
+| --- | --- | --- |
+| Inkscape | Flatpak | none |
+| GIMP | Flatpak | none (uses host codec via Flatpak runtime) |
+| darktable | Flatpak (default) or rpm-ostree (for OpenCL) | OpenCL stack per GPU vendor |
+| Audacity | Flatpak | none |
+| OBS Studio | Flatpak | VA-API plugin (already pulled in by codec replacement) |
+| Reaper | Flatpak | none |
+| Kdenlive (alternative video editor) | Flatpak | host codec replacement (already in baseline) |
+| DaVinci Resolve | distrobox Ubuntu (recommended) | full BMD dependency chain — not in baseline |
 
 ## Relationship to phase 2 (bootc)
 

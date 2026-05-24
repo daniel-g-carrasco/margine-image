@@ -111,11 +111,12 @@ codec packages are replaced with the freeworld variants:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`,
-`libavif`, `libheif`. On Fedora 44, `gstreamer1-libav` and `gstreamer1-vaapi`
-are virtual provides only — the real packages are `gstreamer1-plugin-libav`
-(base) and the VA-API plugin merged into `gstreamer1-plugins-bad-*`, so they
-do not need explicit install.
+Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`.
+On Fedora 44 several symbols are intentionally skipped because they would be
+rejected by `rpm-ostree override` (already provided / already in base):
+`gstreamer1-libav` (virtual; real package is `gstreamer1-plugin-libav`),
+`gstreamer1-vaapi` (merged into `gstreamer1-plugins-bad-*`), `libavif` and
+`libheif` (both already in the Silverblue base).
 
 The replacement is the same pattern Bluefin/Bazzite use and is required for
 GPU-accelerated H.264 / H.265 / AV1 in browsers, OBS, darktable, Reaper, etc.

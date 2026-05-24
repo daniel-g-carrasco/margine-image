@@ -68,7 +68,7 @@ WM_KEYS = {
 SHELL_KEYS = {
     "toggle_application_view": "toggle-application-view",
     "toggle_overview": "toggle-overview",
-    "open_message_tray": "open-message-tray",
+    "toggle_message_tray": "toggle-message-tray",  # GNOME 48 name
     "show_screenshot_ui": "show-screenshot-ui",
     "screenshot_window": "screenshot-window",
     "show_screen_recording_ui": "show-screen-recording-ui",
@@ -93,6 +93,23 @@ def run(cmd: list[str], dry: bool) -> None:
         subprocess.run(cmd, check=True)
 
 
+def run_soft(cmd: list[str], dry: bool) -> None:
+    """Run a gsettings command but don't abort the script on failure.
+
+    Missing schemas (e.g. Forge before the extension is enabled) and
+    missing keys (e.g. a GNOME version where a shortcut was renamed)
+    are logged as 'skipped' rather than crashing the whole apply.
+    """
+    print("  $ " + " ".join(cmd))
+    if dry:
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        print(f"    (skipped: {first})")
+
+
 def set_key(schema: str, key: str, value, dry: bool) -> None:
     if isinstance(value, list):
         gv = gvariant_strings(value)
@@ -100,7 +117,7 @@ def set_key(schema: str, key: str, value, dry: bool) -> None:
         gv = gvariant_strings([value])
     else:
         gv = str(value)
-    run(["gsettings", "set", schema, key, gv], dry)
+    run_soft(["gsettings", "set", schema, key, gv], dry)
 
 
 def apply_workspaces(ws: dict, dry: bool) -> None:

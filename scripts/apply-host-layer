@@ -163,18 +163,53 @@ else
   run sudo rpm-ostree override remove "${OVERRIDE_REMOVE[@]}" "${install_flags[@]}"
 fi
 
-section "Step 3 — Media diagnostics + audio baseline + virtualization"
-# --allow-inactive: some packages (e.g. mesa-libGLU, pipewire-pulseaudio,
-# wireplumber) are already provided by the Silverblue base. Without the
-# flag rpm-ostree refuses to layer a request that doesn't change the
-# package set. With the flag they're recorded as explicitly requested
-# while becoming no-ops if already satisfied — exactly what we want for
-# a declarative baseline.
-run sudo rpm-ostree install --allow-inactive \
+filter_unrequested() {
+  # stdout: subset of given packages NOT already in requested-packages
+  # of the staged or booted deployment. Lets the install steps be safely
+  # re-runnable: rpm-ostree refuses "already requested" but lets us pass
+  # only the new ones.
+  if ! command -v rpm-ostree >/dev/null 2>&1; then
+    printf '%s\n' "$@"
+    return
+  fi
+  rpm-ostree status --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.loads(sys.stdin.read() or "{}")
+requested = set()
+for d in data.get("deployments", [])[:2]:
+    for p in (d.get("requested-packages") or []):
+        requested.add(str(p))
+for p in sys.argv[1:]:
+    if p not in requested:
+        print(p)
+' "$@"
+}
+
+install_step() {
+  local title="$1" ; shift
+  local -a pkgs=( "$@" )
+  section "$title"
+  # --allow-inactive: some packages (e.g. mesa-libGLU, pipewire-pulseaudio,
+  # wireplumber) are already provided by the Silverblue base. Without it
+  # rpm-ostree refuses to layer a request that doesn't change the package
+  # set. With it they're recorded as explicitly requested while becoming
+  # no-ops if already satisfied.
+  local -a to_install
+  mapfile -t to_install < <(filter_unrequested "${pkgs[@]}")
+  if [[ ${#to_install[@]} -eq 0 ]]; then
+    echo "  All packages already requested in staged/booted deployment — skip."
+    return
+  fi
+  if [[ ${#to_install[@]} -lt ${#pkgs[@]} ]]; then
+    echo "  Already requested (skipped): $(( ${#pkgs[@]} - ${#to_install[@]} )) package(s)"
+  fi
+  run sudo rpm-ostree install --allow-inactive "${to_install[@]}"
+}
+
+install_step "Step 3 — Media diagnostics + audio baseline + virtualization" \
     "${MEDIA_DIAG[@]}" "${AUDIO[@]}" "${VIRT[@]}"
 
-section "Step 4 — Hardware diagnostics + GNOME tools + fonts + creative apps"
-run sudo rpm-ostree install --allow-inactive \
+install_step "Step 4 — Hardware diagnostics + GNOME tools + fonts + creative apps" \
     "${HW_DIAG[@]}" "${GNOME_TOOLS[@]}" "${FONTS[@]}" "${CREATIVE_APPS[@]}"
 
 if (( apply )); then

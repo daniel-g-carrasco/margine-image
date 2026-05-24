@@ -485,7 +485,7 @@ gnome:
     shell:
       toggle_application_view: ['<Super>space', '<Super>r']
       toggle_overview:    '<Super><Shift>space'
-      open_message_tray:  '<Super>n'
+      toggle_message_tray: '<Super>n'
       show_screenshot_ui: 'Print'
       screenshot_window:  '<Ctrl>Print'
       show_screen_recording_ui: '<Super>Print'

@@ -52,8 +52,11 @@ with the freeworld variants from RPMFusion:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-libav`, `gstreamer1-plugins-bad-freeworld`,
-`gstreamer1-plugins-ugly`, `gstreamer1-vaapi`, `libavif`, `libheif`.
+Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`,
+`gstreamer1-vaapi`, `libavif`, `libheif`. (`gstreamer1-libav` is not added
+explicitly — the real Fedora 44 package is `gstreamer1-plugin-libav` and is
+already in the base; `gstreamer1-libav` is just a virtual provides that
+`rpm-ostree override` rejects.)
 
 This is the same pattern Bluefin uses (`build_files/base/04-packages.sh`)
 and unlocks: GPU-accelerated H.264/H.265/AV1 decode + encode in browsers,

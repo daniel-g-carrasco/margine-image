@@ -102,7 +102,33 @@ run() {
 section() { printf '\n== %s ==\n' "$1" ; }
 
 section "Step 1 — Enable RPMFusion (free + nonfree)"
-run sudo rpm-ostree install "$RPMFUSION_FREE" "$RPMFUSION_NONFREE"
+rpmfusion_already_layered() {
+  # Returns 0 if both rpmfusion-{free,nonfree}-release are already layered
+  # in the staged or booted deployment, 1 otherwise.
+  command -v rpm-ostree >/dev/null 2>&1 || return 1
+  local status_json
+  status_json="$(rpm-ostree status --json 2>/dev/null)" || return 1
+  printf '%s' "$status_json" | python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(1)
+needles = ("rpmfusion-free-release", "rpmfusion-nonfree-release")
+for d in data.get("deployments", [])[:2]:
+    pkgs = (d.get("requested-local-packages") or []) + (d.get("local-packages") or [])
+    blob = " ".join(str(p) for p in pkgs)
+    if all(n in blob for n in needles):
+        sys.exit(0)
+sys.exit(1)
+'
+}
+
+if rpmfusion_already_layered; then
+  echo "  RPMFusion already layered in staged or booted deployment — skip."
+else
+  run sudo rpm-ostree install "$RPMFUSION_FREE" "$RPMFUSION_NONFREE"
+fi
 
 section "Step 2 — Codec replacement (override + install)"
 install_flags=()

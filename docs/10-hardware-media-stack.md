@@ -111,8 +111,10 @@ codec packages are replaced with the freeworld variants:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-libav`, `gstreamer1-plugins-bad-freeworld`,
-`gstreamer1-plugins-ugly`, `gstreamer1-vaapi`, `libavif`, `libheif`.
+Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`,
+`gstreamer1-vaapi`, `libavif`, `libheif`. (`gstreamer1-libav` is intentionally
+not added — `gstreamer1-plugin-libav` already provides the same capability
+from the Fedora base.)
 
 The replacement is the same pattern Bluefin/Bazzite use and is required for
 GPU-accelerated H.264 / H.265 / AV1 in browsers, OBS, darktable, Reaper, etc.

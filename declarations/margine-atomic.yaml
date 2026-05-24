@@ -168,7 +168,6 @@ host_packages:
         - mesa-vdpau-drivers
       install:
         - ffmpeg
-        - gstreamer1-libav
         - gstreamer1-plugins-bad-freeworld
         - gstreamer1-plugins-ugly
         - gstreamer1-vaapi
@@ -176,6 +175,11 @@ host_packages:
         - mesa-vdpau-drivers-freeworld
         - libavif
         - libheif
+      install_note: >
+        gstreamer1-libav is intentionally not listed: on Fedora 44 the real
+        package is gstreamer1-plugin-libav (part of the base) and the symbol
+        gstreamer1-libav is only a virtual provides, which rpm-ostree
+        rejects with "already provided by ... use --allow-inactive".
     media_diagnostics:
       - mesa-demos
       - mesa-libGLU

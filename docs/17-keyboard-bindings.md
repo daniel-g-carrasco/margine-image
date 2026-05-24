@@ -24,15 +24,19 @@ GNOME distinguishes five surfaces, each with its own gsettings schema:
 | Extension | `org.gnome.shell.extensions.forge.keybindings` | Forge tiling actions |
 
 A 6th surface — `org.gnome.mutter` + `org.gnome.desktop.wm.preferences` —
-controls the workspace model (`dynamic-workspaces=false`, `num-workspaces=10`)
-required to make `SUPER+1..0` direct-jump sensible.
+controls the workspace model (`dynamic-workspaces=true`) and workspace names.
 
 ## Workspace model
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `dynamic-workspaces` | `false` | GNOME's default is dynamic (created on demand); a fixed count is needed for direct-jump bindings to make sense |
-| `num-workspaces` | `10` | Matches the Hyprland `SUPER+1..0` convention (`0` mapped to workspace 10) |
+| `dynamic-workspaces` | `true` | Avoids pre-creating ten empty workspaces; GNOME creates/removes them as windows move |
+| `workspace-names` | `1` ... `10` | Gives GNOME/extension UIs numeric labels where they expose workspace names |
+| `count` | `10` | Declarative static fallback; only written to `num-workspaces` if `dynamic=false` |
+
+The `SUPER+1..0` bindings are still declared. In dynamic mode they jump to
+existing workspaces; GNOME will not keep ten empty workspaces visible from
+login.
 
 ## Hyprland → GNOME mapping
 
@@ -165,8 +169,8 @@ gsettings get org.gnome.desktop.wm.keybindings close                   # ['<Supe
 gsettings get org.gnome.shell.keybindings toggle-application-view      # ['<Super>space', '<Super>r']
 gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
 gsettings get org.gnome.shell.extensions.forge.keybindings window-toggle-float
-gsettings get org.gnome.mutter dynamic-workspaces                      # false
-gsettings get org.gnome.desktop.wm.preferences num-workspaces          # 10
+gsettings get org.gnome.mutter dynamic-workspaces                      # true
+gsettings get org.gnome.desktop.wm.preferences workspace-names          # ['1', ...]
 ```
 
 GNOME Settings → Keyboard → View and Customize Shortcuts shows the same

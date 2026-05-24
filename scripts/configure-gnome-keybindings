@@ -12,7 +12,7 @@ Applies five groups, each via its own gsettings schema:
   forge       -> org.gnome.shell.extensions.forge.keybindings
   custom      -> custom-keybindings (relocatable schema slots)
 
-Also sets the static-workspaces model from gnome.workspaces.
+Also sets the GNOME workspace model from gnome.workspaces.
 
 Usage:
     configure-gnome-keybindings            # dry-run: print the plan
@@ -103,6 +103,11 @@ def gvariant_strings(items: list[str]) -> str:
     return f"[{quoted}]"
 
 
+def gvariant_string(item: str) -> str:
+    escaped = item.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
 def run(cmd: list[str], dry: bool) -> None:
     print("  $ " + " ".join(cmd))
     if not dry:
@@ -136,28 +141,49 @@ def set_key(schema: str, key: str, value, dry: bool) -> None:
     run_soft(["gsettings", "set", schema, key, gv], dry)
 
 
+def set_string_key(schema: str, key: str, value: str, dry: bool) -> None:
+    run_soft(["gsettings", "set", schema, key, gvariant_string(value)], dry)
+
+
 def apply_workspaces(ws: dict, dry: bool) -> None:
-    print("\n== Workspaces (static model) ==")
+    dynamic = bool(ws.get("dynamic", False))
+    model = "dynamic" if dynamic else "static"
+    print(f"\n== Workspaces ({model} model) ==")
     run(
         [
             "gsettings",
             "set",
             "org.gnome.mutter",
             "dynamic-workspaces",
-            "false" if not ws.get("dynamic", False) else "true",
+            "true" if dynamic else "false",
         ],
         dry,
     )
-    run(
-        [
-            "gsettings",
-            "set",
-            "org.gnome.desktop.wm.preferences",
-            "num-workspaces",
-            str(ws.get("count", 4)),
-        ],
-        dry,
-    )
+    if dynamic:
+        print("  (dynamic mode: GNOME creates/removes workspaces as needed)")
+    else:
+        run(
+            [
+                "gsettings",
+                "set",
+                "org.gnome.desktop.wm.preferences",
+                "num-workspaces",
+                str(ws.get("count", 4)),
+            ],
+            dry,
+        )
+    names = ws.get("names", [])
+    if names:
+        run(
+            [
+                "gsettings",
+                "set",
+                "org.gnome.desktop.wm.preferences",
+                "workspace-names",
+                gvariant_strings(names),
+            ],
+            dry,
+        )
 
 
 def apply_group(
@@ -201,9 +227,9 @@ def apply_custom(custom_list: list[dict], dry: bool) -> None:
         path = f"{CUSTOM_BASE_PATH}{c['name']}/"
         schema = f"org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{path}"
         print(f"  -- {c['name']}  ->  {c['binding']}  ->  {c['command']}")
-        set_key(schema, "name", c["name"], dry)
-        set_key(schema, "command", c["command"], dry)
-        set_key(schema, "binding", c["binding"], dry)
+        set_string_key(schema, "name", c["name"], dry)
+        set_string_key(schema, "command", c["command"], dry)
+        set_string_key(schema, "binding", c["binding"], dry)
 
 
 def reset_custom(custom_list: list[dict], dry: bool) -> None:

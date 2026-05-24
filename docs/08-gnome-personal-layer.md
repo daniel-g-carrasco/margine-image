@@ -213,20 +213,31 @@ Carry over:
 - `org.gnome.desktop.interface color-scheme` set to `prefer-dark`;
 - GNOME/libadwaita accent color, starting with `yellow` if supported by the
   target GNOME release;
-- a single documented visual baseline file later, if automation is added;
+- GTK3 compatibility through Fedora's `adw-gtk3-theme`;
+- conservative Forge appearance settings: tiling on, compact gaps, square
+  visual language, and muted amber/light borders inspired by the Hyprland host;
 - Zen Browser and Thunderbird as the default browser and mail client.
 
 Do not carry over initially:
 
 - generated GTK4 CSS;
 - Rewaita as a global GTK4 override;
-- Hyprland border/shadow/rounding tokens;
 - Waybar/Walker/Fuzzel/SwayNC theme artifacts;
 - forced Qt platform themes from the Hyprland session.
 
-GTK3 compatibility can be added with Fedora's `adw-gtk3-theme` if the lab shows
-legacy GTK3 applications looking out of place. GTK4/libadwaita applications
-should stay close to upstream GNOME behavior in phase 1.
+GTK4/libadwaita applications should stay close to upstream GNOME behavior in
+phase 1. The only shell-extension styling we apply is through Forge's own
+gsettings schema, not through a custom GNOME Shell theme.
+
+Apply the appearance baseline:
+
+```sh
+scripts/configure-gnome-appearance         # dry-run: print plan
+scripts/configure-gnome-appearance --apply # write via gsettings
+```
+
+The script is user-state only. It does not install extensions, enable
+extensions, or modify the rpm-ostree deployment.
 
 ## Channels
 
@@ -306,6 +317,10 @@ gsettings get org.gnome.desktop.interface font-name
 gsettings get org.gnome.desktop.interface monospace-font-name
 gsettings get org.gnome.desktop.interface gtk-theme
 gsettings get org.gnome.desktop.interface icon-theme
+gsettings get org.gnome.mutter dynamic-workspaces
+gsettings get org.gnome.desktop.wm.preferences workspace-names
+gsettings get org.gnome.shell.extensions.forge focus-border-color
+gsettings get org.gnome.shell.extensions.forge window-gap-hidden-on-single
 cat ~/.config/user-dirs.dirs
 sed -n '1,120p' ~/.config/gtk-3.0/bookmarks
 sed -n '1,120p' ~/.config/gtk-4.0/bookmarks

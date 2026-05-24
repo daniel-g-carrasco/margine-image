@@ -403,6 +403,10 @@ gnome:
     org.gnome.desktop.interface:
       color-scheme: prefer-dark
       accent-color: yellow
+      gtk-theme: adw-gtk3-dark
+      icon-theme: Adwaita
+      enable-hot-corners: false
+      show-battery-percentage: true
       ui-font-candidates:
         - IBM Plex Sans 10
         - Atkinson Hyperlegible Next 10
@@ -410,9 +414,27 @@ gnome:
         - JetBrains Mono 11
         - IBM Plex Mono 11
         - Source Code Pro 11
-      icon-theme: adwaita-first
   gtk4_css_override: false
   hyprland_theme_artifacts: false
+  forge:
+    settings:
+      note: >
+        User-level Forge appearance settings. These mirror the Margine
+        Hyprland host's dark, square, muted-amber visual language without
+        installing extra GNOME Shell extensions or custom shell themes.
+        Applied by scripts/configure-gnome-appearance.
+      tiling-mode-enabled: true
+      primary-layout-mode: tiling
+      window-gap-size: 4
+      window-gap-size-increment: 1
+      window-gap-hidden-on-single: true
+      focus-border-toggle: true
+      focus-border-size: 3
+      focus-border-color: 'rgba(234, 231, 219, 0.92)'
+      split-border-toggle: true
+      split-border-color: 'rgba(194, 161, 128, 0.95)'
+      preview-hint-enabled: true
+      quick-settings-enabled: true
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -431,12 +453,14 @@ gnome:
     terminal_emulator: kitty.desktop
   workspaces:
     note: >
-      Static workspace model (Hyprland-like) instead of GNOME's default
-      dynamic workspaces. Required for SUPER+1..0 direct-jump bindings
-      to make sense — with dynamic workspaces the count is variable.
+      GNOME dynamic workspace model, with Hyprland-style direct-jump
+      bindings retained for currently existing workspaces. This avoids
+      pre-creating ten empty workspaces while preserving SUPER+1..0 muscle
+      memory when those workspaces exist.
       Applied by scripts/configure-gnome-keybindings.
-    dynamic: false
+    dynamic: true
     count: 10
+    names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
   keybindings:
     note: >
       Hyprland-style keybindings ported from

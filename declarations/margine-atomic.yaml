@@ -482,17 +482,22 @@ gnome:
       blur: false
     org.gnome.shell.extensions.just-perfection:
       note: >
-        Just Perfection lets you trim shell elements you don't want
-        (search box on activities, hot corner, accessibility menu, etc.)
-        without writing custom CSS.
+        Just Perfection lets you trim shell elements (top-bar menus,
+        accessibility icon, weather, etc.) without writing custom CSS.
+        Keys here are verified against the v36 schema; app-menu and
+        hot-corner are handled elsewhere (the app menu doesn't exist in
+        GNOME 48+, and hot corners are off via
+        org.gnome.desktop.interface enable-hot-corners=false).
       activities-button: true
-      app-menu: false
       clock-menu-position: 0
-      hot-corner: false
       world-clock: false
       weather: false
       panel-in-overview: true
       search: true
+      accessibility-menu: false
+      show-apps-button: true
+      dash-app-running: true
+      double-super-to-appgrid: false
   gtk4_css_override: false
   hyprland_theme_artifacts: false
   extensions:

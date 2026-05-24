@@ -23,7 +23,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import subprocess
 import sys
@@ -97,21 +96,6 @@ MEDIA_KEYS = {
 
 CUSTOM_BASE_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
 CUSTOM_LIST_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
-MARGINE_WORKSPACES_SCHEMA = "org.gnome.shell.extensions.margine-workspaces"
-MARGINE_EXTENSION_PROVIDER = "margine-workspaces-extension"
-MARGINE_WORKSPACES_SCHEMA_DIR = (
-    Path.home()
-    / ".local"
-    / "share"
-    / "gnome-shell"
-    / "extensions"
-    / "margine-workspaces@margine.local"
-    / "schemas"
-)
-
-DIRECT_WORKSPACE_RE = re.compile(r"^(switch_to|move_window_to)_([1-9]|10)$")
-EXTENSION_ACTIVE_RE = re.compile(r"'state': <1(?:\.0)?>")
-EXTENSION_ENABLED_RE = re.compile(r"'enabled': <true>")
 
 
 def gvariant_strings(items: list[str]) -> str:
@@ -147,15 +131,6 @@ def run_soft(cmd: list[str], dry: bool) -> None:
         print(f"    (skipped: {first})")
 
 
-def gsettings_cmd(schema: str) -> list[str]:
-    if (
-        schema == MARGINE_WORKSPACES_SCHEMA
-        and (MARGINE_WORKSPACES_SCHEMA_DIR / "gschemas.compiled").is_file()
-    ):
-        return ["gsettings", "--schemadir", str(MARGINE_WORKSPACES_SCHEMA_DIR)]
-    return ["gsettings"]
-
-
 def set_key(schema: str, key: str, value, dry: bool) -> None:
     if isinstance(value, list):
         gv = gvariant_strings(value)
@@ -163,11 +138,11 @@ def set_key(schema: str, key: str, value, dry: bool) -> None:
         gv = gvariant_strings([value])
     else:
         gv = str(value)
-    run_soft([*gsettings_cmd(schema), "set", schema, key, gv], dry)
+    run_soft(["gsettings", "set", schema, key, gv], dry)
 
 
 def set_string_key(schema: str, key: str, value: str, dry: bool) -> None:
-    run_soft([*gsettings_cmd(schema), "set", schema, key, gvariant_string(value)], dry)
+    run_soft(["gsettings", "set", schema, key, gvariant_string(value)], dry)
 
 
 def apply_workspaces(ws: dict, dry: bool) -> None:
@@ -221,67 +196,6 @@ def apply_group(
             print(f"  (skip unmapped key: {yaml_key})")
             continue
         set_key(schema, gset_key, value, dry)
-
-
-def margine_extension_active() -> bool:
-    if not shutil.which("gdbus"):
-        return False
-
-    result = subprocess.run(
-        [
-            "gdbus",
-            "call",
-            "--session",
-            "--dest",
-            "org.gnome.Shell.Extensions",
-            "--object-path",
-            "/org/gnome/Shell/Extensions",
-            "--method",
-            "org.gnome.Shell.Extensions.GetExtensionInfo",
-            "margine-workspaces@margine.local",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return False
-    return bool(
-        EXTENSION_ACTIVE_RE.search(result.stdout)
-        and EXTENSION_ENABLED_RE.search(result.stdout)
-    )
-
-
-def split_workspace_bindings(
-    workspace_yaml: dict,
-    provider: str | None,
-    extension_active: bool,
-) -> dict:
-    if provider != MARGINE_EXTENSION_PROVIDER or not extension_active:
-        return workspace_yaml
-
-    native = {}
-    for yaml_key, value in workspace_yaml.items():
-        if DIRECT_WORKSPACE_RE.match(yaml_key):
-            native[yaml_key] = []
-        else:
-            native[yaml_key] = value
-    return native
-
-
-def apply_margine_workspaces_extension(workspace_yaml: dict, provider: str | None, dry: bool) -> None:
-    if provider != MARGINE_EXTENSION_PROVIDER:
-        return
-
-    print(f"\n== Margine Workspaces extension  ->  {MARGINE_WORKSPACES_SCHEMA} ==")
-    print("  (install/enable with scripts/configure-margine-workspaces-extension --apply;")
-    print("   if the schema is not present yet, these writes are skipped safely.)")
-    for yaml_key, value in workspace_yaml.items():
-        match = DIRECT_WORKSPACE_RE.match(yaml_key)
-        if not match:
-            continue
-        action, number = match.groups()
-        prefix = "jump-to-workspace" if action == "switch_to" else "move-to-workspace"
-        set_key(MARGINE_WORKSPACES_SCHEMA, f"{prefix}-{number}", value, dry)
 
 
 def apply_forge(forge_yaml: dict, dry: bool) -> None:
@@ -361,35 +275,11 @@ def main() -> int:
     else:
         apply_workspaces(ws, dry)
         workspace_bindings = kb.get("workspace", {})
-        workspace_provider = ws.get("binding_provider")
-        workspace_extension_active = (
-            workspace_provider == MARGINE_EXTENSION_PROVIDER
-            and margine_extension_active()
-        )
-        if workspace_provider == MARGINE_EXTENSION_PROVIDER:
-            if workspace_extension_active:
-                print("\n== Margine Workspaces provider: active ==")
-                print("   native direct workspace bindings will be cleared")
-            else:
-                print("\n== Margine Workspaces provider: inactive/error ==")
-                print("   keeping native direct workspace bindings as fallback")
         apply_group(
             "Workspace + window (WM keybindings)",
             "org.gnome.desktop.wm.keybindings",
             WM_KEYS,
-            {
-                **split_workspace_bindings(
-                    workspace_bindings,
-                    workspace_provider,
-                    workspace_extension_active,
-                ),
-                **kb.get("window", {}),
-            },
-            dry,
-        )
-        apply_margine_workspaces_extension(
-            workspace_bindings,
-            workspace_provider,
+            {**workspace_bindings, **kb.get("window", {})},
             dry,
         )
         print("\n== Clear conflicting shell.keybindings switch-to-application-N ==")

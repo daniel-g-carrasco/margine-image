@@ -98,7 +98,7 @@ DDC/CI monitor control (brightness from terminal), disk SMART.
 
 | Packages |
 | --- |
-| `gnome-tweaks`, `libappindicator-gtk3`, `gnome-shell-extension-appindicator`, `adw-gtk3-theme`, `showtime` |
+| `gnome-tweaks`, `libappindicator-gtk3`, `gnome-shell-extension-appindicator`, `gnome-shell-extension-workspace-indicator`, `adw-gtk3-theme`, `showtime` |
 
 `gnome-tweaks` for the settings GNOME core hides; AppIndicator for legacy
 tray-icon apps (Bitwarden, Steam, etc. running in the background);

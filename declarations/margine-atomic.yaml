@@ -244,6 +244,7 @@ host_packages:
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
       - gnome-shell-extension-forge
+      - gnome-shell-extension-workspace-indicator
       - adw-gtk3-theme
       - showtime
       - kitty
@@ -416,6 +417,10 @@ gnome:
         - Source Code Pro 11
   gtk4_css_override: false
   hyprland_theme_artifacts: false
+  extensions:
+    enable:
+      - forge@jmmaranan.com
+      - workspace-indicator@gnome-shell-extensions.gcampax.github.com
   forge:
     settings:
       note: >
@@ -453,17 +458,13 @@ gnome:
     terminal_emulator: kitty.desktop
   workspaces:
     note: >
-      GNOME dynamic workspace model, with Hyprland-style direct-jump
-      bindings handled by the local Margine Workspaces GNOME Shell extension.
-      This avoids pre-creating ten empty workspaces while preserving SUPER+1..0
-      muscle memory: the extension creates the target workspace first, then
-      activates it.
+      GNOME dynamic workspace model, with native SUPER+1..0 direct-jump
+      bindings. Native GNOME bindings only activate existing workspaces; they
+      do not create arbitrary numbered workspaces like Hyprland.
       Applied by scripts/configure-gnome-keybindings.
     dynamic: true
     count: 10
     names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
-    binding_provider: margine-workspaces-extension
-    extension_uuid: margine-workspaces@margine.local
   keybindings:
     note: >
       Hyprland-style keybindings ported from

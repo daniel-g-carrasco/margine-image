@@ -1,8 +1,0 @@
-{
-  "uuid": "margine-workspaces@margine.local",
-  "name": "Margine Workspaces",
-  "description": "Numeric workspace indicator and Hyprland-style workspace jumps for Margine GNOME.",
-  "shell-version": ["50"],
-  "settings-schema": "org.gnome.shell.extensions.margine-workspaces",
-  "version": 1
-}

@@ -42,7 +42,7 @@ install guide is self-contained.
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
 | [15-host-layer.md](15-host-layer.md) | Bluefin-style host baseline: codec replacement, virt, hw diag, fonts, gnome-tweaks; what `apply-host-layer` installs, Bluefin mapping, and a usage cookbook |
 | [16-developer-toolbox.md](16-developer-toolbox.md) | Daily-use guide for the developer surfaces: toolbox tools (just, glow, gum, fastfetch), distrobox for non-Fedora distros, Homebrew on Linux, starship prompt, GNOME app folders, daily workflow |
-| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces with Margine numeric jump extension, custom app launchers (kitty terminal, SUPER+E Nautilus), Forge tiling actions; full Hyprland→GNOME mapping |
+| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (kitty terminal, SUPER+E Nautilus), Forge tiling actions; full Hyprland→GNOME mapping |
 
 ## System design
 

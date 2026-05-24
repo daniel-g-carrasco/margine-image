@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""
+Enable GNOME Shell extensions declared in declarations/margine-atomic.yaml.
+
+This is user-level state only. Extensions must already be installed by the host
+layer (or otherwise present in GNOME's extension search path).
+
+Usage:
+    configure-gnome-extensions            # dry-run: print the plan
+    configure-gnome-extensions --apply    # enable installed extensions
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required")
+
+REPO = Path(__file__).resolve().parent.parent
+YAML = REPO / "declarations" / "margine-atomic.yaml"
+
+
+def load_extensions() -> list[str]:
+    if not YAML.is_file():
+        sys.exit(f"declarations file not found: {YAML}")
+    data = yaml.safe_load(YAML.read_text())
+    try:
+        return data["gnome"]["extensions"]["enable"]
+    except (KeyError, TypeError):
+        return []
+
+
+def installed_extensions() -> set[str]:
+    result = subprocess.run(
+        ["gnome-extensions", "list"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        raise SystemExit(f"gnome-extensions list failed: {first}")
+    return set(result.stdout.splitlines())
+
+
+def run(cmd: list[str], dry: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if dry:
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        print(f"    (skipped: {first})")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes via gnome-extensions (default: dry-run)",
+    )
+    args = parser.parse_args()
+    dry = not args.apply
+
+    if not dry and not shutil.which("gnome-extensions"):
+        sys.exit("gnome-extensions not found in PATH")
+
+    targets = load_extensions()
+    available = set() if dry else installed_extensions()
+
+    print("== GNOME Shell extensions ==")
+    for uuid in targets:
+        if not dry and uuid not in available:
+            print(f"  (skip missing: {uuid})")
+            continue
+        run(["gnome-extensions", "enable", uuid], dry)
+
+    if dry:
+        print("\ndry-run only: no settings were changed")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. Log out / log back in if GNOME Shell does not refresh immediately.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

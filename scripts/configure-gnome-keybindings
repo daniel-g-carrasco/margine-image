@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +97,10 @@ MEDIA_KEYS = {
 
 CUSTOM_BASE_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
 CUSTOM_LIST_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
+MARGINE_WORKSPACES_SCHEMA = "org.gnome.shell.extensions.margine-workspaces"
+MARGINE_EXTENSION_PROVIDER = "margine-workspaces-extension"
+
+DIRECT_WORKSPACE_RE = re.compile(r"^(switch_to|move_window_to)_([1-9]|10)$")
 
 
 def gvariant_strings(items: list[str]) -> str:
@@ -198,6 +203,35 @@ def apply_group(
         set_key(schema, gset_key, value, dry)
 
 
+def split_workspace_bindings(workspace_yaml: dict, provider: str | None) -> dict:
+    if provider != MARGINE_EXTENSION_PROVIDER:
+        return workspace_yaml
+
+    native = {}
+    for yaml_key, value in workspace_yaml.items():
+        if DIRECT_WORKSPACE_RE.match(yaml_key):
+            native[yaml_key] = []
+        else:
+            native[yaml_key] = value
+    return native
+
+
+def apply_margine_workspaces_extension(workspace_yaml: dict, provider: str | None, dry: bool) -> None:
+    if provider != MARGINE_EXTENSION_PROVIDER:
+        return
+
+    print(f"\n== Margine Workspaces extension  ->  {MARGINE_WORKSPACES_SCHEMA} ==")
+    print("  (install/enable with scripts/configure-margine-workspaces-extension --apply;")
+    print("   if the schema is not present yet, these writes are skipped safely.)")
+    for yaml_key, value in workspace_yaml.items():
+        match = DIRECT_WORKSPACE_RE.match(yaml_key)
+        if not match:
+            continue
+        action, number = match.groups()
+        prefix = "jump-to-workspace" if action == "switch_to" else "move-to-workspace"
+        set_key(MARGINE_WORKSPACES_SCHEMA, f"{prefix}-{number}", value, dry)
+
+
 def apply_forge(forge_yaml: dict, dry: bool) -> None:
     schema = "org.gnome.shell.extensions.forge.keybindings"
     print(f"\n== Forge tiling  ->  {schema} ==")
@@ -274,11 +308,21 @@ def main() -> int:
         reset_custom(kb.get("custom", []), dry)
     else:
         apply_workspaces(ws, dry)
+        workspace_bindings = kb.get("workspace", {})
+        workspace_provider = ws.get("binding_provider")
         apply_group(
             "Workspace + window (WM keybindings)",
             "org.gnome.desktop.wm.keybindings",
             WM_KEYS,
-            {**kb.get("workspace", {}), **kb.get("window", {})},
+            {
+                **split_workspace_bindings(workspace_bindings, workspace_provider),
+                **kb.get("window", {}),
+            },
+            dry,
+        )
+        apply_margine_workspaces_extension(
+            workspace_bindings,
+            workspace_provider,
             dry,
         )
         print("\n== Clear conflicting shell.keybindings switch-to-application-N ==")

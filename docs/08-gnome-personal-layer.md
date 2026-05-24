@@ -239,6 +239,31 @@ scripts/configure-gnome-appearance --apply # write via gsettings
 The script is user-state only. It does not install extensions, enable
 extensions, or modify the rpm-ostree deployment.
 
+## Margine Workspaces Extension
+
+GNOME's dynamic workspace model does not create arbitrary numbered
+workspaces from native `switch-to-workspace-N` bindings. The local
+`margine-workspaces@margine.local` extension fills that gap for the
+Margine keyboard model:
+
+- top-bar numeric workspace indicator;
+- `SUPER+1..0` creates the target workspace if needed, then switches to it;
+- `SUPER SHIFT+1..0` creates the target workspace if needed, then moves the
+  focused window there.
+
+The extension is installed in the user's home, not layered into the system:
+
+```sh
+scripts/configure-margine-workspaces-extension --apply
+scripts/configure-gnome-keybindings --apply
+```
+
+To disable the extension without deleting files:
+
+```sh
+scripts/configure-margine-workspaces-extension --disable --apply
+```
+
 ## Channels
 
 | Item | Channel |
@@ -319,6 +344,8 @@ gsettings get org.gnome.desktop.interface gtk-theme
 gsettings get org.gnome.desktop.interface icon-theme
 gsettings get org.gnome.mutter dynamic-workspaces
 gsettings get org.gnome.desktop.wm.preferences workspace-names
+gsettings get org.gnome.shell.extensions.margine-workspaces jump-to-workspace-4
+gnome-extensions list --enabled | grep margine-workspaces
 gsettings get org.gnome.shell.extensions.forge focus-border-color
 gsettings get org.gnome.shell.extensions.forge window-gap-hidden-on-single
 cat ~/.config/user-dirs.dirs

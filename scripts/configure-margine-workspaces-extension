@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""
+Install and enable the Margine Workspaces GNOME Shell extension.
+
+The extension is user-level only. It provides:
+  - a numeric workspace indicator in the top bar;
+  - SUPER+1..0 workspace jumps that create the target workspace first;
+  - SUPER+Shift+1..0 move-focused-window variants.
+
+Usage:
+    configure-margine-workspaces-extension            # dry-run
+    configure-margine-workspaces-extension --apply    # install + enable
+    configure-margine-workspaces-extension --disable  # disable only
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+UUID = "margine-workspaces@margine.local"
+SOURCE = REPO / "extensions" / "gnome" / UUID
+TARGET = Path.home() / ".local" / "share" / "gnome-shell" / "extensions" / UUID
+
+
+def run(cmd: list[str], dry: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if not dry:
+        subprocess.run(cmd, check=True)
+
+
+def run_soft(cmd: list[str], dry: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if dry:
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        print(f"    (skipped: {first})")
+        print("    Log out / log back in, then run this command again if needed.")
+
+
+def copy_extension(dry: bool) -> None:
+    print(f"== Install {UUID}")
+    if not SOURCE.is_dir():
+        sys.exit(f"extension source not found: {SOURCE}")
+    print(f"  copy {SOURCE} -> {TARGET}")
+    if dry:
+        return
+    if TARGET.exists():
+        shutil.rmtree(TARGET)
+    shutil.copytree(SOURCE, TARGET)
+
+
+def compile_schemas(dry: bool) -> None:
+    schemas = TARGET / "schemas"
+    print("== Compile schemas")
+    if dry:
+        print(f"  $ glib-compile-schemas {schemas}")
+        return
+    if not shutil.which("glib-compile-schemas"):
+        sys.exit("glib-compile-schemas not found in PATH")
+    run(["glib-compile-schemas", str(schemas)], dry)
+
+
+def enable_extension(dry: bool) -> None:
+    print("== Enable extension")
+    if not shutil.which("gnome-extensions") and not dry:
+        sys.exit("gnome-extensions not found in PATH")
+    run_soft(["gnome-extensions", "enable", UUID], dry)
+
+
+def disable_extension(dry: bool) -> None:
+    print("== Disable extension")
+    run_soft(["gnome-extensions", "disable", UUID], dry)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="install and enable the extension (default: dry-run)",
+    )
+    parser.add_argument(
+        "--disable",
+        action="store_true",
+        help="disable the extension instead of installing/enabling",
+    )
+    args = parser.parse_args()
+    dry = not args.apply
+
+    if args.disable:
+        disable_extension(dry)
+    else:
+        copy_extension(dry)
+        compile_schemas(dry)
+        enable_extension(dry)
+
+    if dry:
+        print("\ndry-run only: no changes were made")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. Log out / log back in if GNOME Shell does not load it immediately.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

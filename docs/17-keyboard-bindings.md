@@ -25,6 +25,8 @@ GNOME distinguishes five surfaces, each with its own gsettings schema:
 
 A 6th surface — `org.gnome.mutter` + `org.gnome.desktop.wm.preferences` —
 controls the workspace model (`dynamic-workspaces=true`) and workspace names.
+Direct numeric jumps use the local `margine-workspaces@margine.local` GNOME
+Shell extension so they can create the target workspace before switching.
 
 ## Workspace model
 
@@ -34,9 +36,25 @@ controls the workspace model (`dynamic-workspaces=true`) and workspace names.
 | `workspace-names` | `1` ... `10` | Gives GNOME/extension UIs numeric labels where they expose workspace names |
 | `count` | `10` | Declarative static fallback; only written to `num-workspaces` if `dynamic=false` |
 
-The `SUPER+1..0` bindings are still declared. In dynamic mode they jump to
-existing workspaces; GNOME will not keep ten empty workspaces visible from
-login.
+GNOME's native `switch-to-workspace-N` bindings only activate existing
+workspaces. They do not create workspace 4 if only workspaces 1 and 2 exist.
+To match Hyprland muscle memory, Margine disables the native direct-jump
+bindings and lets the local extension own `SUPER+1..0` and
+`SUPER SHIFT+1..0`.
+
+Install/enable the extension:
+
+```sh
+scripts/configure-margine-workspaces-extension --apply
+scripts/configure-gnome-keybindings --apply
+```
+
+Disable it:
+
+```sh
+scripts/configure-margine-workspaces-extension --disable --apply
+scripts/configure-gnome-keybindings --apply
+```
 
 ## Hyprland → GNOME mapping
 
@@ -70,8 +88,8 @@ F = Forge).
 | `SUPER+TAB` | `switch-to-workspace-right` |
 | `SUPER SHIFT+TAB` | `switch-to-workspace-left` |
 | `SUPER CTRL+TAB` | `switch-to-workspace-last` |
-| `SUPER+1..0` | `switch-to-workspace-1` ... `switch-to-workspace-10` |
-| `SUPER SHIFT+1..0` | `move-to-workspace-1` ... `move-to-workspace-10` |
+| `SUPER+1..0` | `margine-workspaces` jump to workspace 1..10, creating the target first |
+| `SUPER SHIFT+1..0` | `margine-workspaces` move focused window to workspace 1..10, creating the target first |
 
 ### Window actions (W)
 
@@ -171,6 +189,9 @@ gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
 gsettings get org.gnome.shell.extensions.forge.keybindings window-toggle-float
 gsettings get org.gnome.mutter dynamic-workspaces                      # true
 gsettings get org.gnome.desktop.wm.preferences workspace-names          # ['1', ...]
+gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-4    # @as []
+gsettings get org.gnome.shell.extensions.margine-workspaces jump-to-workspace-4
+gnome-extensions list --enabled | grep margine-workspaces
 ```
 
 GNOME Settings → Keyboard → View and Customize Shortcuts shows the same

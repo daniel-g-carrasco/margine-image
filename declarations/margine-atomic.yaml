@@ -454,13 +454,16 @@ gnome:
   workspaces:
     note: >
       GNOME dynamic workspace model, with Hyprland-style direct-jump
-      bindings retained for currently existing workspaces. This avoids
-      pre-creating ten empty workspaces while preserving SUPER+1..0 muscle
-      memory when those workspaces exist.
+      bindings handled by the local Margine Workspaces GNOME Shell extension.
+      This avoids pre-creating ten empty workspaces while preserving SUPER+1..0
+      muscle memory: the extension creates the target workspace first, then
+      activates it.
       Applied by scripts/configure-gnome-keybindings.
     dynamic: true
     count: 10
     names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    binding_provider: margine-workspaces-extension
+    extension_uuid: margine-workspaces@margine.local
   keybindings:
     note: >
       Hyprland-style keybindings ported from

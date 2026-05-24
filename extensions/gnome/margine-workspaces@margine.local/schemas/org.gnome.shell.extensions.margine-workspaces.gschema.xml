@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.margine-workspaces" path="/org/gnome/shell/extensions/margine-workspaces/">
+    <key name="jump-to-workspace-1" type="as">
+      <default>['&lt;Super&gt;1']</default>
+    </key>
+    <key name="jump-to-workspace-2" type="as">
+      <default>['&lt;Super&gt;2']</default>
+    </key>
+    <key name="jump-to-workspace-3" type="as">
+      <default>['&lt;Super&gt;3']</default>
+    </key>
+    <key name="jump-to-workspace-4" type="as">
+      <default>['&lt;Super&gt;4']</default>
+    </key>
+    <key name="jump-to-workspace-5" type="as">
+      <default>['&lt;Super&gt;5']</default>
+    </key>
+    <key name="jump-to-workspace-6" type="as">
+      <default>['&lt;Super&gt;6']</default>
+    </key>
+    <key name="jump-to-workspace-7" type="as">
+      <default>['&lt;Super&gt;7']</default>
+    </key>
+    <key name="jump-to-workspace-8" type="as">
+      <default>['&lt;Super&gt;8']</default>
+    </key>
+    <key name="jump-to-workspace-9" type="as">
+      <default>['&lt;Super&gt;9']</default>
+    </key>
+    <key name="jump-to-workspace-10" type="as">
+      <default>['&lt;Super&gt;0']</default>
+    </key>
+    <key name="move-to-workspace-1" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;1']</default>
+    </key>
+    <key name="move-to-workspace-2" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;2']</default>
+    </key>
+    <key name="move-to-workspace-3" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;3']</default>
+    </key>
+    <key name="move-to-workspace-4" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;4']</default>
+    </key>
+    <key name="move-to-workspace-5" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;5']</default>
+    </key>
+    <key name="move-to-workspace-6" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;6']</default>
+    </key>
+    <key name="move-to-workspace-7" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;7']</default>
+    </key>
+    <key name="move-to-workspace-8" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;8']</default>
+    </key>
+    <key name="move-to-workspace-9" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;9']</default>
+    </key>
+    <key name="move-to-workspace-10" type="as">
+      <default>['&lt;Super&gt;&lt;Shift&gt;0']</default>
+    </key>
+  </schema>
+</schemalist>

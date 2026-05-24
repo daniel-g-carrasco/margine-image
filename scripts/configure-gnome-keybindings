@@ -99,6 +99,15 @@ CUSTOM_BASE_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybind
 CUSTOM_LIST_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 MARGINE_WORKSPACES_SCHEMA = "org.gnome.shell.extensions.margine-workspaces"
 MARGINE_EXTENSION_PROVIDER = "margine-workspaces-extension"
+MARGINE_WORKSPACES_SCHEMA_DIR = (
+    Path.home()
+    / ".local"
+    / "share"
+    / "gnome-shell"
+    / "extensions"
+    / "margine-workspaces@margine.local"
+    / "schemas"
+)
 
 DIRECT_WORKSPACE_RE = re.compile(r"^(switch_to|move_window_to)_([1-9]|10)$")
 
@@ -136,6 +145,15 @@ def run_soft(cmd: list[str], dry: bool) -> None:
         print(f"    (skipped: {first})")
 
 
+def gsettings_cmd(schema: str) -> list[str]:
+    if (
+        schema == MARGINE_WORKSPACES_SCHEMA
+        and (MARGINE_WORKSPACES_SCHEMA_DIR / "gschemas.compiled").is_file()
+    ):
+        return ["gsettings", "--schemadir", str(MARGINE_WORKSPACES_SCHEMA_DIR)]
+    return ["gsettings"]
+
+
 def set_key(schema: str, key: str, value, dry: bool) -> None:
     if isinstance(value, list):
         gv = gvariant_strings(value)
@@ -143,11 +161,11 @@ def set_key(schema: str, key: str, value, dry: bool) -> None:
         gv = gvariant_strings([value])
     else:
         gv = str(value)
-    run_soft(["gsettings", "set", schema, key, gv], dry)
+    run_soft([*gsettings_cmd(schema), "set", schema, key, gv], dry)
 
 
 def set_string_key(schema: str, key: str, value: str, dry: bool) -> None:
-    run_soft(["gsettings", "set", schema, key, gvariant_string(value)], dry)
+    run_soft([*gsettings_cmd(schema), "set", schema, key, gvariant_string(value)], dry)
 
 
 def apply_workspaces(ws: dict, dry: bool) -> None:

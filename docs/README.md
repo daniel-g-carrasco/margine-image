@@ -40,7 +40,7 @@ install guide is self-contained.
 | [08-gnome-personal-layer.md](08-gnome-personal-layer.md) | Home layout, fonts, icons, GNOME theme, folder metadata |
 | [10-hardware-media-stack.md](10-hardware-media-stack.md) | Intel/AMD drivers, Mesa, VA-API, Vulkan, OpenCL, PipeWire, codecs |
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
-| [15-host-layer.md](15-host-layer.md) | Bluefin-style host baseline: codec replacement, virt, hw diag, fonts, gnome-tweaks; what `apply-host-layer` installs, Bluefin mapping, and a usage cookbook |
+| [15-host-layer.md](15-host-layer.md) | **Legacy** Bluefin-style host baseline for stock Silverblue (superseded by ADR 0005 — Margine now rebases to Bluefin DX). Preserved for audit / fallback path. |
 | [16-developer-toolbox.md](16-developer-toolbox.md) | Daily-use guide for the developer surfaces: toolbox tools (just, glow, gum, fastfetch), distrobox for non-Fedora distros, Homebrew on Linux, starship prompt, GNOME app folders, daily workflow |
 | [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (kitty terminal, SUPER+E Nautilus), Tiling Shell tiling actions; full Hyprland→GNOME mapping |
 
@@ -60,6 +60,7 @@ install guide is self-contained.
 | [adr/0002-gnome-in-phase-1.md](adr/0002-gnome-in-phase-1.md) | Why GNOME stock in phase 1 and not Hyprland |
 | [adr/0003-fedora-native-boot-security.md](adr/0003-fedora-native-boot-security.md) | Why Fedora shim/systemd-cryptenroll and not Arch/Limine/sbctl patterns |
 | [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why rpm-ostree owns the base OS boundary and Topgrade is accessory-only |
+| [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deploys as Bluefin DX rebase + 5 diffs, not as stock Silverblue + layer |
 
 ## Reference
 

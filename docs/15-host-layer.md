@@ -1,13 +1,38 @@
-# Host Layer Baseline (Bluefin-style)
+# Host Layer Baseline (legacy — Bluefin-style on stock Silverblue)
 
-This document defines the **host layer baseline** of Margine Fedora Atomic:
-the set of packages that `scripts/apply-host-layer` installs on the rpm-ostree
-deployment so the day-to-day experience matches what a curated Atomic image
-like Bluefin already ships.
+> **Status: superseded by [ADR 0005](adr/0005-base-on-bluefin-dx.md).**
+>
+> Margine's recommended deployment path is now **Bluefin DX rebase + 5
+> Margine diffs**, applied via `scripts/apply-margine-on-bluefin`.
+> Bluefin already ships the codec replacement, freeworld Mesa, virt
+> stack, hardware diagnostics, fonts, GNOME tools, and dconf polish
+> that this document was hand-rolling on top of stock Silverblue. We
+> stopped maintaining a parallel baseline once the audit showed the
+> Margine layer was ~70% a literal copy of Bluefin's image.
+>
+> This document is preserved for two reasons: (1) the analysis of why
+> each Bluefin-style decision matters is the best onboarding material
+> for understanding the desktop stack, and (2) someone who wants to
+> stay on stock Silverblue can still run `apply-host-layer --apply`
+> and get an equivalent result. The script and the
+> `host_packages.baseline` section of the YAML are intact.
+>
+> For new installs, **follow [16-developer-toolbox.md](16-developer-toolbox.md)
+> and ADR 0005, not this document**.
 
-It is the answer to "I want codec, drivers, virt, hardware tools, and
-developer tools ready out of the box, but I do not want to give up Margine to
-become Bluefin."
+---
+
+This document defines the **legacy host layer baseline** of Margine
+Fedora Atomic: the set of packages that `scripts/apply-host-layer`
+installs on the rpm-ostree deployment so the day-to-day experience
+matches what a curated Atomic image like Bluefin already ships.
+
+It was the answer to "I want codec, drivers, virt, hardware tools, and
+developer tools ready out of the box, but I do not want to give up
+Margine to become Bluefin." The audit in ADR 0005 showed that "not
+giving up Margine to become Bluefin" was paying ~3-4 weeks of
+maintenance for ~5 actual customisations. We pivoted to Bluefin DX as
+base.
 
 ## Why this exists
 

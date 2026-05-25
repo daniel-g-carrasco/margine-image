@@ -14,10 +14,42 @@ base:
   architecture: x86_64
   update_engine: rpm-ostree
   image_workflow:
-    current: stock-silverblue-lab
+    current: bluefin-dx-rebase
+    legacy: stock-silverblue-lab
     future_candidates:
       - bootc
       - native-ostree-compose
+  bluefin_pivot:
+    note: >
+      Margine deploys as Bluefin DX rebased + a small Margine delta
+      (see docs/adr/0005-base-on-bluefin-dx.md). The stock-silverblue
+      apply-host-layer path is preserved for audit/learning but is no
+      longer the recommended install path.
+    rebase_target: "ostree-unverified-registry:ghcr.io/ublue-os/bluefin-dx:stable"
+    track_choice: stable
+    track_choice_reason: >
+      Bluefin LTS is built on CentOS Stream 10 (EPEL10, RHEL-derived
+      kernel, dnf4). That breaks CachyOS COPR (Fedora-only) and
+      shrinks RPMFusion coverage. Margine needs the Fedora track.
+    dx_choice_reason: >
+      DX already includes the virt stack + container tooling that the
+      stock Silverblue layer was adding (libvirt, qemu-kvm, virt-
+      manager, swtpm, edk2-ovmf, distrobox, podman-compose). Going with
+      base Bluefin would force us to re-layer them.
+    margine_delta:
+      kernel:
+        action: rpm-ostree override remove kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra --install kernel-cachyos
+        source: copr:bieszczaders/kernel-cachyos
+      terminal:
+        action: rpm-ostree install kitty + xdg-mime default kitty
+      branding_extensions_disabled:
+        - bazaar-integration@kolunmi.github.io
+        - gradia-integration@alexandervanhee.github.io
+        - logomenu@aryan_k
+      tiling_extension:
+        action: install-user-extensions --apply (Tiling Shell from EGO)
+      configure_user_state:
+        action: configure-gnome-{keybindings,extensions,app-folders,appearance,default-applications}
 
 updates:
   orchestrator: scripts/update-all

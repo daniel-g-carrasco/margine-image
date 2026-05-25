@@ -573,7 +573,7 @@ gnome:
         description: Tiling Shell — active EGO upload, GNOME 48+
       - uuid: search-light@icedman.github.com
         git_url: https://github.com/icedman/search-light.git
-        git_ref: master
+        git_ref: main
         description: >
           Search Light — Spotlight-like popup. Installed from the
           upstream git repo (Bluefin does the same) because the EGO

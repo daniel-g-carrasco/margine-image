@@ -245,6 +245,7 @@ host_packages:
       - gnome-shell-extension-appindicator
       - gnome-shell-extension-blur-my-shell
       - gnome-shell-extension-dash-to-dock
+      - gnome-shell-extension-gsconnect
       - gnome-shell-extension-just-perfection
       - gnome-shell-extension-workspace-indicator
       - adw-gtk3-theme
@@ -480,6 +481,14 @@ gnome:
       pipeline: pipeline_default
     org.gnome.shell.extensions.blur-my-shell.applications:
       blur: false
+    org.gnome.shell.extensions.search-light:
+      note: >
+        Spotlight-like popup search bound to SUPER+SPACE. The combo is
+        freed from toggle-application-view (which is still on SUPER+R).
+        Borrowed from Bluefin's default extension set.
+      shortcut-search: ['<Super>space']
+      blur-background: true
+      popup-at-cursor-monitor: true
     org.gnome.shell.extensions.just-perfection:
       note: >
         Just Perfection lets you trim shell elements (top-bar menus,
@@ -510,19 +519,39 @@ gnome:
     enable:
       - appindicatorsupport@rgcjonas.gmail.com
       - blur-my-shell@aunetx
-      - dash-to-dock@micxgx.gmail.com
+      - gsconnect@andyholmes.github.io
       - just-perfection-desktop@just-perfection
-      - workspace-indicator@gnome-shell-extensions.gcampax.github.com
       - tilingshell@ferrarodomenico.com
+      - workspaces-bar@fthx
+      - search-light@icedman.github.com
+    installed_but_not_enabled_note: >
+      These ship in the host layer baseline but are NOT enabled by default
+      (the user can flip them on via Extensions Manager when wanted):
+        - dash-to-dock@micxgx.gmail.com
+            User preferred the GNOME-native top dock layout. The package
+            stays available so it can be turned on for a single session
+            without re-applying the host layer.
+        - workspace-indicator@gnome-shell-extensions.gcampax.github.com
+            Replaced by Workspaces Bar (user-installed, numeric per-
+            workspace buttons on the left of the top bar — closer to
+            the Hyprland workflow).
     user_install_note: >
       These extensions are NOT in Fedora 44 repos. install-user-extensions
       downloads them from extensions.gnome.org into
-      ~/.local/share/gnome-shell/extensions/. The shell_version query
-      is computed at runtime so the right release is fetched.
+      ~/.local/share/gnome-shell/extensions/, copies the schema into
+      ~/.local/share/glib-2.0/schemas/ so gsettings CLI and GNOME Shell
+      both find it, and runs glib-compile-schemas. The shell_version
+      query is computed at runtime so the right release is fetched.
     user_install:
       - uuid: tilingshell@ferrarodomenico.com
         ego_id: 7065
-        description: Tiling Shell — active, GNOME 48 supported
+        description: Tiling Shell — active, GNOME 48+ supported
+      - uuid: workspaces-bar@fthx
+        ego_id: 3851
+        description: Workspaces Bar — numeric workspace buttons in top bar
+      - uuid: search-light@icedman.github.com
+        ego_id: 5489
+        description: Search Light — Spotlight-like popup search (used by Bluefin)
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -594,7 +623,7 @@ gnome:
       toggle_fullscreen:  '<Super>f'
       always_on_top:      '<Super>o'
     shell:
-      toggle_application_view: ['<Super>space', '<Super>r']
+      toggle_application_view: ['<Super>r']
       toggle_overview:    '<Super><Shift>space'
       toggle_message_tray: '<Super>n'
       show_screenshot_ui: 'Print'

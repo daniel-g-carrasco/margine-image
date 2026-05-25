@@ -112,6 +112,28 @@ def install_one(uuid: str, ego_id: int, dry: bool, shell_version: str) -> None:
         zf.extractall(target_dir)
 
     print(f"  Installed: {target_dir}")
+
+    # Compile schemas in the extension dir (required for the extension itself)
+    ext_schemas = target_dir / "schemas"
+    if ext_schemas.is_dir() and any(ext_schemas.glob("*.xml")):
+        subprocess.run(
+            ["glib-compile-schemas", str(ext_schemas)],
+            check=False,
+        )
+        # Also copy schemas to ~/.local/share/glib-2.0/schemas/ so the
+        # `gsettings` CLI (and our configure-gnome-* scripts) can find
+        # them without the GSETTINGS_SCHEMA_DIR env var. GNOME Shell
+        # itself reads the extension dir directly, but the CLI doesn't.
+        user_glib_schemas = Path.home() / ".local" / "share" / "glib-2.0" / "schemas"
+        user_glib_schemas.mkdir(parents=True, exist_ok=True)
+        for xml in ext_schemas.glob("*.xml"):
+            shutil.copy(xml, user_glib_schemas / xml.name)
+        subprocess.run(
+            ["glib-compile-schemas", str(user_glib_schemas)],
+            check=False,
+        )
+        print(f"  Schemas: compiled in ext dir + copied/compiled in {user_glib_schemas}")
+
     print(
         "  Enable next with:  scripts/configure-gnome-extensions --apply"
         f"  (or: gnome-extensions enable {uuid})"

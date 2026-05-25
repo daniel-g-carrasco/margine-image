@@ -481,11 +481,23 @@ gnome:
       pipeline: pipeline_default
     org.gnome.shell.extensions.blur-my-shell.applications:
       blur: false
+    org.gnome.shell.extensions.tilingshell:
+      note: >
+        Tiling Shell config. enable-autotiling=true makes new windows
+        auto-snap to the active layout — closer to i3/Hyprland auto-
+        tiling than the default snap-assist-only behaviour. The
+        keybindings themselves live in gnome.keybindings.tilingshell
+        and are applied by configure-gnome-keybindings.
+      enable-autotiling: true
+      enable-snap-assist: true
+      enable-window-border: true
+      inner-gaps: 4
+      outer-gaps: 4
     org.gnome.shell.extensions.search-light:
       note: >
-        Spotlight-like popup search bound to SUPER+SPACE. The combo is
-        freed from toggle-application-view (which is still on SUPER+R).
-        Borrowed from Bluefin's default extension set.
+        Settings staged for when search-light v43+ supports GNOME 50.
+        Currently the extension is OUT OF DATE on shell 50 so these
+        keys are written but inactive until the extension can load.
       shortcut-search: ['<Super>space']
       blur-background: true
       popup-at-cursor-monitor: true
@@ -519,22 +531,33 @@ gnome:
     enable:
       - appindicatorsupport@rgcjonas.gmail.com
       - blur-my-shell@aunetx
+      - dash-to-dock@micxgx.gmail.com
       - gsconnect@andyholmes.github.io
-      - just-perfection-desktop@just-perfection
       - tilingshell@ferrarodomenico.com
-      - workspaces-bar@fthx
-      - search-light@icedman.github.com
     installed_but_not_enabled_note: >
-      These ship in the host layer baseline but are NOT enabled by default
-      (the user can flip them on via Extensions Manager when wanted):
-        - dash-to-dock@micxgx.gmail.com
-            User preferred the GNOME-native top dock layout. The package
-            stays available so it can be turned on for a single session
-            without re-applying the host layer.
+      These are still installed (host layer or user_install) but NOT in
+      the enable list, so configure-gnome-extensions leaves them off.
+      They can still be turned on per-session via Extensions Manager.
+        - just-perfection-desktop@just-perfection
+            Bluefin does NOT use Just Perfection; on the lab VM the
+            extension was making the overview dash icons shrink. Drop
+            it from the baseline and keep the GNOME defaults that
+            Bluefin's gschema override already polishes (hot corners
+            off, weekday on, etc.).
         - workspace-indicator@gnome-shell-extensions.gcampax.github.com
-            Replaced by Workspaces Bar (user-installed, numeric per-
-            workspace buttons on the left of the top bar — closer to
-            the Hyprland workflow).
+            Fedora-packaged numeric workspace indicator (top-right
+            dropdown). Available as a fallback if the user wants the
+            current workspace number visible.
+        - workspaces-bar@fthx
+            User-installed numeric workspaces bar (top-left buttons).
+            v13 declares shell-version up to 49 only, so on GNOME 50
+            it reports OUT OF DATE and is auto-disabled. Re-enable
+            when an updated release lands on extensions.gnome.org.
+        - search-light@icedman.github.com
+            User-installed Spotlight-like popup (Bluefin uses it too).
+            v42 declares shell-version up to 49 only, so on GNOME 50
+            it reports OUT OF DATE. Re-enable when v43+ supports 50,
+            or when we vendor the Bluefin-bundled build later.
     user_install_note: >
       These extensions are NOT in Fedora 44 repos. install-user-extensions
       downloads them from extensions.gnome.org into

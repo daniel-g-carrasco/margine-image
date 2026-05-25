@@ -533,6 +533,7 @@ gnome:
       - blur-my-shell@aunetx
       - dash-to-dock@micxgx.gmail.com
       - gsconnect@andyholmes.github.io
+      - search-light@icedman.github.com
       - tilingshell@ferrarodomenico.com
     installed_but_not_enabled_note: >
       These are still installed (host layer or user_install) but NOT in
@@ -549,32 +550,42 @@ gnome:
             dropdown). Available as a fallback if the user wants the
             current workspace number visible.
         - workspaces-bar@fthx
-            User-installed numeric workspaces bar (top-left buttons).
-            v13 declares shell-version up to 49 only, so on GNOME 50
-            it reports OUT OF DATE and is auto-disabled. Re-enable
-            when an updated release lands on extensions.gnome.org.
-        - search-light@icedman.github.com
-            User-installed Spotlight-like popup (Bluefin uses it too).
-            v42 declares shell-version up to 49 only, so on GNOME 50
-            it reports OUT OF DATE. Re-enable when v43+ supports 50,
-            or when we vendor the Bluefin-bundled build later.
+            Upstream is dead (fthx abandoned; max shell-version = 42).
+            No fork actively packaged for GNOME 50. Kept in
+            user_install only as a historical record; remove later if
+            an actively-maintained alternative ships in Margine.
     user_install_note: >
       These extensions are NOT in Fedora 44 repos. install-user-extensions
-      downloads them from extensions.gnome.org into
-      ~/.local/share/gnome-shell/extensions/, copies the schema into
-      ~/.local/share/glib-2.0/schemas/ so gsettings CLI and GNOME Shell
-      both find it, and runs glib-compile-schemas. The shell_version
-      query is computed at runtime so the right release is fetched.
+      installs each entry from either extensions.gnome.org (when ego_id
+      is set) or directly from a git repo (when git_url is set — the
+      same approach Bluefin uses via git submodules). For both flows the
+      schema is copied into ~/.local/share/glib-2.0/schemas/ and
+      compiled, so the gsettings CLI and GNOME Shell both find it.
+
+      The git source is preferred over EGO when the upstream is more
+      current than the published EGO release — at the time of writing,
+      search-light's last EGO upload (v42) supports up to GNOME Shell
+      49, while the upstream master (v101) supports 48-50. Bluefin uses
+      git submodule for the same reason.
     user_install:
       - uuid: tilingshell@ferrarodomenico.com
         ego_id: 7065
-        description: Tiling Shell — active, GNOME 48+ supported
+        description: Tiling Shell — active EGO upload, GNOME 48+
+      - uuid: search-light@icedman.github.com
+        git_url: https://github.com/icedman/search-light.git
+        git_ref: master
+        description: >
+          Search Light — Spotlight-like popup. Installed from the
+          upstream git repo (Bluefin does the same) because the EGO
+          release (v42) is stuck at GNOME 49 while master (v101)
+          supports GNOME 50.
       - uuid: workspaces-bar@fthx
         ego_id: 3851
-        description: Workspaces Bar — numeric workspace buttons in top bar
-      - uuid: search-light@icedman.github.com
-        ego_id: 5489
-        description: Search Light — Spotlight-like popup search (used by Bluefin)
+        description: >
+          Workspaces Bar — DEAD upstream (shell-version max 42). Kept
+          in this list as a record of the intent (numeric workspace
+          bar). Will not install successfully on GNOME 50; either
+          drop, find an active fork, or revisit later.
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME

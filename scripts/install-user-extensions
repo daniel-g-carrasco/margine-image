@@ -75,8 +75,8 @@ def download_zip(uuid: str, version_tag: int) -> bytes:
         return resp.read()
 
 
-def install_one(uuid: str, ego_id: int, dry: bool, shell_version: str) -> None:
-    print(f"\n== {uuid} (ego_id={ego_id}) ==")
+def install_from_ego(uuid: str, ego_id: int, dry: bool, shell_version: str) -> None:
+    print(f"\n== {uuid} (ego_id={ego_id}, source=extensions.gnome.org) ==")
     try:
         meta = fetch_release_metadata(uuid, shell_version)
     except Exception as exc:
@@ -112,6 +112,68 @@ def install_one(uuid: str, ego_id: int, dry: bool, shell_version: str) -> None:
         zf.extractall(target_dir)
 
     print(f"  Installed: {target_dir}")
+
+
+def install_from_git(uuid: str, git_url: str, git_ref: str | None, dry: bool) -> None:
+    print(f"\n== {uuid} (source=git: {git_url}@{git_ref or 'HEAD'}) ==")
+    target_dir = USER_EXT_DIR / uuid
+    print(f"  Target: {target_dir}")
+    if dry:
+        return
+
+    USER_EXT_DIR.mkdir(parents=True, exist_ok=True)
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+
+    with tempfile.TemporaryDirectory() as tmpd:
+        clone_dir = Path(tmpd) / "ext"
+        cmd = ["git", "clone", "--depth=1"]
+        if git_ref:
+            cmd.extend(["--branch", git_ref])
+        cmd.extend([git_url, str(clone_dir)])
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        # The extension content can be either at the repo root (most
+        # extensions) or in a subdir. Detect by looking for metadata.json.
+        meta_path = clone_dir / "metadata.json"
+        if not meta_path.is_file():
+            # Try src/ or extension/ subdir conventions
+            for sub in ("src", "extension"):
+                if (clone_dir / sub / "metadata.json").is_file():
+                    clone_dir = clone_dir / sub
+                    break
+        if not (clone_dir / "metadata.json").is_file():
+            print(f"  (skip: metadata.json not found in clone)")
+            return
+
+        # Some extensions need a build step. We don't run it here; we trust
+        # the repo to be self-contained (most search-light style extensions
+        # are pure JS + schemas). If a build is needed, vendor a built
+        # release instead.
+        shutil.copytree(clone_dir, target_dir, symlinks=True)
+        # Drop .git to keep the dir clean
+        gitdir = target_dir / ".git"
+        if gitdir.is_dir():
+            shutil.rmtree(gitdir)
+
+    print(f"  Installed: {target_dir}")
+
+
+def install_one(uuid: str, entry: dict, dry: bool, shell_version: str) -> None:
+    # entry may have 'ego_id' OR 'git_url' (+optional 'git_ref').
+    target_dir = USER_EXT_DIR / uuid
+    git_url = entry.get("git_url")
+    if git_url:
+        install_from_git(uuid, git_url, entry.get("git_ref"), dry)
+    elif entry.get("ego_id"):
+        install_from_ego(uuid, entry["ego_id"], dry, shell_version)
+    else:
+        print(f"\n== {uuid} ==")
+        print("  (skip: entry has neither ego_id nor git_url)")
+        return
+
+    if dry:
+        return
 
     # Compile schemas in the extension dir (required for the extension itself)
     ext_schemas = target_dir / "schemas"
@@ -182,8 +244,7 @@ def main() -> int:
         if args.remove:
             remove_one(uuid, dry)
         else:
-            ego_id = entry.get("ego_id", 0)
-            install_one(uuid, ego_id, dry, shell_version)
+            install_one(uuid, entry, dry, shell_version)
 
     if dry:
         print(f"\ndry-run only. Apply with: {sys.argv[0]} --apply")

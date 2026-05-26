@@ -14,24 +14,109 @@ helpers into `/usr/bin/margine-configure-*` and the YAML into
 
 ## What Margine adds on top of Bluefin DX
 
-1. **CachyOS mainline kernel** from
-   [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/),
-   replacing Bluefin's signed kernel.
-2. **MOK-signed kernel + modules** so the image boots cleanly under
-   Secure Boot (one-time MOK enrollment on first boot via
-   `mok-enroll.service`).
-3. **kitty** preinstalled as a system Flatpak.
-4. **Bluefin branding extensions disabled** by default
-   (`bazaar-integration`, `gradia-integration`, `logomenu`). Packages
-   stay installed and can be flipped back on per session.
-5. **Margine GNOME defaults** (yellow accent, Zen as default browser,
-   Tiling Shell as the tiling extension, autotiling on, etc.) layered
-   via a `zz1-margine.gschema.override` that loads after Bluefin's
-   `zz0-bluefin-modifications`.
+Margine's deltas are intentionally small. Everything not listed below
+(codec replacement, Mesa freeworld, virt stack, container tooling, fonts,
+hardware diagnostics, daily updates via `uupd.timer`, Homebrew support,
+toolbox/distrobox, …) is **inherited unchanged** from Bluefin DX.
 
-Everything else — codec / Mesa freeworld / GNOME blur / dash-to-dock /
-gsconnect / virt stack / podman+distrobox / fonts / hardware
-diagnostics — is inherited unchanged from Bluefin DX.
+### 1 · System layer (baked into the image at build time)
+
+| Item | Mechanism | Why |
+| --- | --- | --- |
+| **CachyOS mainline kernel** | replaces Bluefin's signed kernel; built from [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR | scheduler & I/O tuning; better laptop performance |
+| **MOK signing of vmlinuz + modules** | `sbsign` (vmlinuz) + `sign-file` (every `.ko*`) | makes CachyOS bootable under Secure Boot |
+| **First-boot MOK enrollment** | `mok-enroll.service` (oneshot) pipes the MOK password into `mokutil --import /usr/share/cert/MOK.der`, marker at `/var/.mok-enrolled` | one-time confirm in MOK Manager → CachyOS boots under Secure Boot |
+| **`v4l2loopback`** kmod | akmod build at image time (best-effort; skipped if it fails to build) | virtual camera (OBS, etc.) |
+| **Margine `/etc/os-release`** | overrides `NAME`, `ID`, `VARIANT_ID`, `PRETTY_NAME`, etc. | system identifies as Margine in `hostnamectl`, GNOME About, `os-release` consumers |
+
+### 2 · Preinstalled Flatpak applications
+
+System-wide via `/etc/ublue-os/system-flatpaks.list` (Universal Blue's
+reconciliation mechanism). Installed on first boot from Flathub.
+
+| Application | Flatpak ID | Category |
+| --- | --- | --- |
+| Zen Browser | `app.zen_browser.zen` | web browser |
+| Bitwarden | `com.bitwarden.desktop` | password manager |
+| LibreOffice | `org.libreoffice.LibreOffice` | office suite |
+| Gapless | `com.github.neithern.g4music` | music player |
+| GIMP | `org.gimp.GIMP` | raster graphics |
+| Inkscape | `org.inkscape.Inkscape` | vector graphics |
+| darktable | `org.darktable.Darktable` | photography RAW |
+| Audacity | `org.audacityteam.Audacity` | audio editor |
+| OBS Studio | `com.obsproject.Studio` | screen recording / streaming |
+| EasyEffects | `com.github.wwmm.easyeffects` | PipeWire audio effects |
+| Reaper | `fm.reaper.Reaper` | DAW |
+| VSCodium | `com.vscodium.codium` | code editor |
+
+> Optional / not preinstalled (declared as such in
+> [`declarations/margine-atomic.yaml`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/declarations/margine-atomic.yaml)
+> `flatpaks.optional_apps`, install manually with `flatpak install`):
+> Steam, Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt, RetroArch,
+> RetroDECK, Cartridges.
+
+### 3 · GNOME Shell extensions
+
+| Extension | Source | Status vs Bluefin |
+| --- | --- | --- |
+| AppIndicator Support | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| Blur My Shell | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| Dash to Dock | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| GSConnect | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| Search Light | git clone of [`icedman/search-light`](https://github.com/icedman/search-light) (user-installed) | **added** by Margine |
+| Tiling Shell | [EGO 7065](https://extensions.gnome.org/extension/7065/tiling-shell/) (user-installed via `margine-install-user-extensions`) | **added** by Margine — replaces the unmaintained Forge |
+| Bazaar Integration | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
+| Gradia Integration | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
+| LogoMenu | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
+
+### 4 · GNOME defaults (via `zz1-margine.gschema.override`)
+
+Loaded **after** Bluefin's `zz0-bluefin-modifications.gschema.override`,
+so the keys below win.
+
+| Setting | Value |
+| --- | --- |
+| `org.gnome.desktop.interface accent-color` | `yellow` |
+| `org.gnome.shell favorite-apps` | Zen, Thunderbird, Nautilus, Ptyxis, VSCodium |
+| `org.gnome.shell enabled-extensions` | the 6 enabled extensions above |
+| Tiling Shell auto-tiling | `enable-autotiling=true`, `enable-snap-assist=true`, gaps=4 |
+| Default terminal | inherits Bluefin's **Ptyxis** (no override) |
+| Default web browser | Zen (set by `margine-configure-default-applications`) |
+
+### 5 · User-state helpers (in `/usr/bin`)
+
+Fetched at image build time from
+[`margine-fedora-atomic`](https://github.com/daniel-g-carrasco/margine-fedora-atomic).
+Read the declarative spec at `/usr/share/margine/declarations.yaml`.
+All are idempotent and default to dry-run; use `--apply` to act.
+
+| Command | Purpose |
+| --- | --- |
+| `margine-configure-default-applications` | Set MIME / `xdg-settings` handlers (browser, mail, terminal, image viewer, …) per Margine defaults |
+| `margine-configure-gnome-appearance` | Apply `gsettings` values from the declarative spec (theme, fonts, dconf for extensions) |
+| `margine-configure-gnome-extensions` | Enable / disable extensions per Margine policy |
+| `margine-configure-gnome-keybindings` | Apply the Hyprland-style keybindings (`SUPER+1..0` workspaces, `SUPER+RETURN` Ptyxis, `SUPER+E` Nautilus, Tiling Shell directional binds, …) |
+| `margine-configure-gnome-app-folders` | Group apps in the Activities grid by category (Internet / Productivity / Graphics / …) |
+| `margine-install-user-extensions` | Install Tiling Shell + Search Light into `~/.local/share/gnome-shell/extensions/` |
+| `margine-collect-diagnostics` | Read-only system snapshot for troubleshooting |
+| `margine-validate-atomic-layout` | Read-only health check (ostree layout, mounts, Secure Boot, TPM2) |
+| `margine-validate-cachyos-kernel` | Read-only kernel-related health check |
+| `margine-validate-hardware-media-stack` | Read-only Mesa / Vulkan / VA-API / PipeWire / OpenCL check |
+| `margine-validate-gaming-runtime` | Read-only gaming runtime check |
+
+### 6 · What channel does what (user-facing summary)
+
+| Want to install / change | Channel | How |
+| --- | --- | --- |
+| **GUI application** | **Flatpak** (preferred) | `flatpak install <id>` from Flathub. Already-shipped apps in §2 above. |
+| **CLI tool that moves faster than Fedora** | **Homebrew on Linux** | `brew install <tool>` (e.g. `starship`, `lazygit`, `zellij`). Auto-updated daily by `uupd.timer`. |
+| **Dev environment / SDK** | **Toolbox** (Fedora 44 default image) | `toolbox enter` then `dnf install …`. Inherits Bluefin's container tooling. |
+| **Non-Fedora-distro tool** | **Distrobox** | `distrobox-create --image archlinux:latest` etc. |
+| **System-wide package** | rpm-ostree layer (last resort) | `rpm-ostree install <pkg>`. Re-evaluate first whether Flatpak / Toolbox / Brew fits — they survive rebases for free. |
+| **GUI app launcher (Activities grid)** | Folder layout in [`declarations/margine-atomic.yaml`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/declarations/margine-atomic.yaml) | Edit YAML → `margine-configure-gnome-app-folders --apply`. |
+| **Keybinding** | `gnome.keybindings.*` in the YAML | Edit YAML → `margine-configure-gnome-keybindings --apply`. |
+| **GNOME setting** | `gnome.settings.*` in the YAML | Edit YAML → `margine-configure-gnome-appearance --apply`. |
+| **System updates** | **Inherited from Bluefin** | `uupd.timer` runs daily; orchestrates `bootc upgrade` + `flatpak update` + `brew upgrade` + `distrobox upgrade`. No user intervention. |
 
 ## Install
 

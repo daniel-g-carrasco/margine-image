@@ -1,0 +1,7 @@
+secrets/MOK.key
+secrets/cosign.key
+secrets/*.pem
+/tmp/
+*.iso
+*.qcow2
+*.raw

@@ -227,6 +227,13 @@ primary-color='#2C1810'
 OVERRIDE
 
 # (c) Plymouth theme → /usr/share/plymouth/themes/margine/
+# Our theme is script-based, which needs /usr/lib64/plymouth/script.so.
+# Bluefin DX ships Plymouth core but not the script plugin (their own
+# theme uses other plugins). Layer plymouth-plugin-script so the
+# plymouth-set-default-theme call below resolves the backend.
+log "Installing plymouth-plugin-script (required by our script-based theme)"
+dnf -y install plymouth-plugin-script
+
 mkdir -p /usr/share/plymouth/themes/margine
 for f in margine.plymouth margine.script watermark.png ; do
   curl --fail --silent --show-error -L \
@@ -239,9 +246,9 @@ log "Installed: /usr/share/plymouth/themes/margine/"
 # Set Margine as the default Plymouth theme. The `-R` flag would
 # regenerate the initramfs, but in a bootc build context we'd rather
 # trigger that explicitly at the end of the kernel install path. Here we
-# just point the config; dracut --regenerate-all (run by
-# custom-kernel/install.sh) picks it up because the symlink set by
-# plymouth-set-default-theme is in /etc/plymouth/plymouthd.conf.
+# just point the config; dracut --regenerate-all (run below) picks it
+# up because the symlink set by plymouth-set-default-theme is in
+# /etc/plymouth/plymouthd.conf.
 if command -v plymouth-set-default-theme >/dev/null 2>&1; then
   plymouth-set-default-theme margine
   log "Set Plymouth default theme: margine"

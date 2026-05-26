@@ -275,6 +275,71 @@ Acceptable lab results:
 Never make a script that forces the CachyOS deployment to stay default while the
 boot security model is unresolved.
 
+## MOK Signing for the CachyOS Kernel
+
+The Margine bootc image solves the "CachyOS under Secure Boot" problem by
+**signing the kernel and modules at image build time** with a Margine MOK
+(Machine Owner Key), and shipping a `mok-enroll.service` that imports the
+matching certificate on first boot. The user confirms the import from the
+bootloader's MOK Manager UI once; thereafter the CachyOS kernel boots under
+Secure Boot without intervention.
+
+This section documents the procedure as it actually ships. Source code:
+[`margine-image/build_files/custom-kernel/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/custom-kernel/install.sh).
+
+### Key material
+
+| File | Where it lives | Visibility |
+| --- | --- | --- |
+| `MOK.key` (RSA 2048 private) | GitHub Actions secret `MOK_KEY`; local backup at `~/data/technology/00-admin/security/encryption/margine-image-keys/MOK.key` (chmod 600) | **private — never committed** |
+| `MOK.pem` (X.509 certificate, PEM) | `margine-image/secrets/MOK.pem` (committed) and GH Actions secret `MOK_CERT` | public |
+| `MOK.der` (X.509 certificate, DER) | `margine-image/secrets/MOK.der` (committed) | public |
+| `MOK_PASSWORD` | GH Actions secret `MOK_PASSWORD`; Bitwarden entry | private |
+
+The cert fingerprint at the time of this writing is
+`DF:C0:A7:0A:8B:90:EC:8F:01:04:1C:F7:7C:05:F0:79:76:B8:CC:72:BC:8C:38:F4:6D:26:5D:DA:6C:1E:55:B1`.
+
+### Build-time flow
+
+1. `dnf -y install sbsigntools` (provides `sbsign` and `sbverify`).
+2. Remove Bluefin's stock kernel packages, then `dnf -y install kernel-cachyos kernel-cachyos-core kernel-cachyos-modules kernel-cachyos-devel-matched` from the `bieszczaders/kernel-cachyos` COPR.
+3. **Sign vmlinuz**: `sbsign --key MOK.key --cert MOK.pem --output … /usr/lib/modules/${KERNEL_VERSION}/vmlinuz`, then `sbverify --cert MOK.pem` to confirm.
+4. **Sign every kernel module**: for each `*.ko`/`*.ko.xz`/`*.ko.zst`/`*.ko.gz` under `/usr/lib/modules/${KERNEL_VERSION}`, decompress, run `scripts/sign-file sha256 MOK.key MOK.pem <module>`, recompress.
+5. **Write the cert + first-boot enrollment unit**: convert `MOK.pem` to DER at `/usr/share/cert/MOK.der`, write `/usr/lib/systemd/system/mok-enroll.service` (oneshot, gated by `ConditionPathExists=!/var/.mok-enrolled`), `systemctl enable mok-enroll.service`.
+6. Regenerate the initramfs against the new kernel (`dracut --force --kver "$KERNEL_VERSION" --regenerate-all`).
+
+### First-boot user experience
+
+1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
+2. The user reboots again. The firmware presents the **MOK Manager** screen.
+3. The user selects "Enroll MOK", confirms, types the MOK password, and reboots one final time.
+4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
+
+### Recovery if MOK enrollment is missed
+
+If the user reboots past the MOK Manager screen without confirming, the
+service has already created `/var/.mok-enrolled`, so it won't run again
+automatically. To retry, log in (using the original LUKS passphrase if
+TPM2 sealed against PCR 7), then:
+
+```sh
+sudo rm /var/.mok-enrolled
+sudo systemctl start mok-enroll.service
+sudo systemctl reboot
+```
+
+The MOK Manager will appear again on next boot.
+
+### PCR policy after MOK enrollment
+
+Once the Margine MOK is enrolled and Secure Boot is enabled with the
+CachyOS kernel, the **hardware** target PCR policy is `0+7` (Platform
+Firmware + Secure Boot state). The VM lab uses `0` only, because Secure
+Boot is disabled in the VM. Re-enroll TPM2 against the new PCR policy
+after the first successful Secure-Boot boot, **before** wiping the
+passphrase slot (which Margine never does in any case — passphrase
+recovery is permanent).
+
 ## References
 
 - Fedora Secure Boot: https://fedoraproject.org/wiki/Secureboot

@@ -140,6 +140,20 @@ log "Fetching Margine configure-* scripts"
 MARGINE_REPO="https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic"
 MARGINE_REF="${MARGINE_REF:-main}"
 
+# Preflight: confirm we can reach the spec repo before fetching anything.
+# Without this, individual silent-skip fallbacks (the previous pattern)
+# masked real connectivity / repo-visibility bugs and shipped incomplete
+# images. Fail loud + fail early.
+log "Preflight: probing spec repo at ${MARGINE_REPO}/${MARGINE_REF}/"
+if ! curl --fail --silent --show-error --head -L \
+     "${MARGINE_REPO}/${MARGINE_REF}/README.md" >/dev/null; then
+  err() { printf '[margine-build] ERROR: %s\n' "$*" >&2; }
+  err "cannot reach the Margine spec repo (${MARGINE_REPO}/${MARGINE_REF}/)."
+  err "Check that the repo is PUBLIC on GitHub and that the runner has network access."
+  exit 1
+fi
+log "Preflight OK"
+
 for s in \
     configure-default-applications \
     configure-gnome-app-folders \
@@ -148,23 +162,19 @@ for s in \
     configure-gnome-keybindings \
     configure-home-layout \
     install-user-extensions ; do
-  if curl --fail --silent --show-error -L \
+  curl --fail --silent --show-error -L \
        "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
-       -o "/usr/bin/margine-${s}"; then
-    chmod 0755 "/usr/bin/margine-${s}"
-    log "Installed: /usr/bin/margine-${s}"
-  else
-    log "(skip: could not fetch ${s})"
-  fi
+       -o "/usr/bin/margine-${s}"
+  chmod 0755 "/usr/bin/margine-${s}"
+  log "Installed: /usr/bin/margine-${s}"
 done
 
 # Also pull the declarations YAML the scripts read.
 mkdir -p /usr/share/margine
-if curl --fail --silent --show-error -L \
+curl --fail --silent --show-error -L \
      "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" \
-     -o /usr/share/margine/declarations.yaml; then
-  log "Installed: /usr/share/margine/declarations.yaml"
-fi
+     -o /usr/share/margine/declarations.yaml
+log "Installed: /usr/share/margine/declarations.yaml"
 
 # Set MARGINE_DECLARATIONS env for the scripts to pick up the system copy.
 cat > /etc/profile.d/margine.sh <<'EOF'

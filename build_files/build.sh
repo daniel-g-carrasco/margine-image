@@ -23,22 +23,19 @@ set -euo pipefail
 log() { printf '[margine-build] %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
-# 1. kitty as system Flatpak
+# 1. Margine default Flatpak apps
 # ---------------------------------------------------------------------------
-# Bluefin ships Flathub already configured. We add kitty as a default app
-# to the system Flatpak installation so it ships preinstalled and works
-# without per-user setup.
-log "Adding kitty (org.kitty.kitty) as a system Flatpak preinstall"
+# Bluefin ships Flathub already configured. We add the Margine default
+# app set to the system Flatpak preinstall list so it ships preinstalled
+# and works without per-user setup.
+#
+# Terminal: we DO NOT preinstall kitty. Bluefin's default terminal
+# (Ptyxis) is the chosen one. Users who want a different terminal can
+# install it themselves via Flatpak or distrobox.
+log "Adding Margine default Flatpaks to /etc/ublue-os/system-flatpaks.list"
 
-# Universal Blue images use /etc/ublue-os/system-flatpaks.list (and
-# /etc/ublue-os/user-flatpaks.list) — at first boot, ublue-flatpak-manager
-# reconciles them. Append our additions.
 mkdir -p /etc/ublue-os
 touch /etc/ublue-os/system-flatpaks.list
-grep -qxF "org.kitty.kitty" /etc/ublue-os/system-flatpaks.list \
-  || echo "org.kitty.kitty" >> /etc/ublue-os/system-flatpaks.list
-
-# Add the rest of the Margine default app set, idempotent.
 for app in \
     app.zen_browser.zen \
     com.bitwarden.desktop \
@@ -73,14 +70,14 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # keep the packages installed so the user can flip them back on per
 # session, but they don't auto-load on first boot.
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'tilingshell@ferrarodomenico.com']
-favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'kitty.desktop', 'com.vscodium.codium.desktop']
+favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'com.vscodium.codium.desktop']
 
 [org.gnome.desktop.interface]
 accent-color='yellow'
 
-[org.gnome.desktop.default-applications.terminal]
-exec='kitty'
-exec-arg=''
+# Terminal default: leave Bluefin's choice (Ptyxis) — do NOT override
+# org.gnome.desktop.default-applications.terminal. Users who want a
+# different terminal can install one and flip the setting per session.
 
 [org.gnome.shell.extensions.tilingshell]
 enable-autotiling=true

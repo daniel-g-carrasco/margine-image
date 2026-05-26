@@ -112,6 +112,20 @@ Migration rule:
   `~/Pictures`, `~/Documenti`, `~/Scaricati`, and `~/Immagini`;
 - preserve non-empty legacy folders for manual migration.
 
+The first three steps (create dirs, write `~/.config/user-dirs.dirs`,
+write `~/.config/gtk-{3,4}.0/bookmarks`) are automated by
+`scripts/configure-home-layout` (baked into the image as
+`margine-configure-home-layout`):
+
+```sh
+margine-configure-home-layout            # dry-run: print plan
+margine-configure-home-layout --apply    # do it
+```
+
+The script is idempotent — re-running on an already-configured home
+reports `[no change]` for each file. The legacy-folder cleanup remains
+a manual step (the script never deletes anything).
+
 ## Folder Icons
 
 Carry over the concept, but make it tolerant of Fedora's available icon themes.

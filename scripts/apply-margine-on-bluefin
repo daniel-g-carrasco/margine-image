@@ -167,7 +167,7 @@ fi
 section "Step 4 — Apply Margine user state (extensions/keybindings/appearance/apps/folders)"
 for s in configure-gnome-extensions configure-gnome-keybindings \
          configure-gnome-appearance configure-default-applications \
-         configure-gnome-app-folders; do
+         configure-gnome-app-folders configure-home-layout; do
   script_path="${repo_root}/scripts/${s}"
   if [[ -x "$script_path" ]]; then
     if (( apply )); then

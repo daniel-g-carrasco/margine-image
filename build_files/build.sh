@@ -173,6 +173,20 @@ EOF
 chmod 0644 /etc/profile.d/margine.sh
 
 # ---------------------------------------------------------------------------
+# 4. Margine ujust recipes (gaming layer opt-in)
+# ---------------------------------------------------------------------------
+# Bluefin ships a `ujust` wrapper that loads recipe files from
+# /usr/share/ublue-os/just/. Drop our 99-margine.just there so the user
+# can run `ujust margine-gaming` to opt into the gaming layer
+# (Steam Flatpak + Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/
+# gamemode/goverlay/steam-devices layered via rpm-ostree).
+#
+# Modeled after Bazzite's gaming bake, but opt-in: Margine default stays
+# minimal; gamers run one command and get a working stack.
+log "Installing Margine ujust recipes"
+install -Dm0644 /ctx/99-margine.just /usr/share/ublue-os/just/99-margine.just
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 log "Margine build modifications complete."

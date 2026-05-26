@@ -118,6 +118,20 @@ All are idempotent and default to dry-run; use `--apply` to act.
 | **Keybinding** | `gnome.keybindings.*` in the YAML | Edit YAML → `margine-configure-gnome-keybindings --apply`. |
 | **GNOME setting** | `gnome.settings.*` in the YAML | Edit YAML → `margine-configure-gnome-appearance --apply`. |
 | **System updates** | **Inherited from Bluefin** | `uupd.timer` runs daily; orchestrates `bootc upgrade` + `flatpak update` + `brew upgrade` + `distrobox upgrade`. No user intervention. |
+| **Gaming layer** (opt-in) | **`ujust margine-gaming`** | Installs Steam + Lutris + Heroic + Bottles + Protontricks + ProtonUp-Qt as system Flatpaks AND layers gamescope + MangoHud + vkBasalt + GameMode + goverlay + steam-devices via rpm-ostree. Reboot needed for the RPM layer; Flatpaks are immediate. Roll back with `ujust margine-gaming-remove`. Inspired by Bazzite but opt-in (default image stays lean). |
+
+### 7 · ujust recipes added by Margine
+
+Bluefin ships [`ujust`](https://github.com/casey/just) (the `just` wrapper)
+with its own recipes for common tasks. Margine adds two more, available
+from any terminal as `ujust <recipe>`:
+
+| Recipe | Group | What it does |
+| --- | --- | --- |
+| `ujust margine-gaming` | Gaming | Opt into the gaming layer (see row above) |
+| `ujust margine-gaming-remove` | Gaming | Roll back what `margine-gaming` installed |
+
+Run `ujust` with no argument to see the full list (Bluefin's recipes + Margine's).
 
 ## Install
 

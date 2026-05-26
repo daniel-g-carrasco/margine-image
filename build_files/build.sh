@@ -146,6 +146,7 @@ for s in \
     configure-gnome-appearance \
     configure-gnome-extensions \
     configure-gnome-keybindings \
+    configure-home-layout \
     install-user-extensions ; do
   if curl --fail --silent --show-error -L \
        "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \

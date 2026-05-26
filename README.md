@@ -60,14 +60,14 @@ reconciliation mechanism). Installed on first boot from Flathub.
 | Extension | Source | Status vs Bluefin |
 | --- | --- | --- |
 | AppIndicator Support | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| Bazaar Integration | host RPM (inherited from Bluefin) | **enabled** by Margine — shell hooks for [Bazaar](https://github.com/kolunmi/bazaar), Bluefin's GTK4 Flathub-first software center |
 | Blur My Shell | host RPM (inherited from Bluefin) | **enabled** by Margine |
 | Dash to Dock | host RPM (inherited from Bluefin) | **enabled** by Margine |
+| Gradia Integration | host RPM (inherited from Bluefin) | **enabled** by Margine — adds an "Open in Gradia" action to the screenshot flow ([Gradia](https://github.com/AlexanderVanhee/Gradia) is a screenshot beautifier) |
 | GSConnect | host RPM (inherited from Bluefin) | **enabled** by Margine |
 | Search Light | git clone of [`icedman/search-light`](https://github.com/icedman/search-light) (user-installed) | **added** by Margine |
 | Tiling Shell | [EGO 7065](https://extensions.gnome.org/extension/7065/tiling-shell/) (user-installed via `margine-install-user-extensions`) | **added** by Margine — replaces the unmaintained Forge |
-| Bazaar Integration | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
-| Gradia Integration | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
-| LogoMenu | host RPM (Bluefin default) | **disabled** by Margine (package stays) |
+| LogoMenu | host RPM (Bluefin default) | **disabled** by Margine — replaces the "Activities" text button with a distro-logo dropdown; pure branding (package stays installed) |
 
 ### 4 · GNOME defaults (via `zz1-margine.gschema.override`)
 

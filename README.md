@@ -28,6 +28,12 @@ toolbox/distrobox, …) is **inherited unchanged** from Bluefin DX.
 | **First-boot MOK enrollment** | `mok-enroll.service` (oneshot) pipes the MOK password into `mokutil --import /usr/share/cert/MOK.der`, marker at `/var/.mok-enrolled` | one-time confirm in MOK Manager → CachyOS boots under Secure Boot |
 | **`v4l2loopback`** kmod | akmod build at image time (best-effort; skipped if it fails to build) | virtual camera (OBS, etc.) |
 | **Margine `/etc/os-release`** | overrides `NAME`, `ID`, `VARIANT_ID`, `PRETTY_NAME`, etc. | system identifies as Margine in `hostnamectl`, GNOME About, `os-release` consumers |
+| **Margine logo** | `/usr/share/pixmaps/margine-logo.png` (the file referenced by `LOGO=margine-logo` in os-release) | GNOME "About this system" shows the Margine logo |
+| **Plymouth boot splash** | `/usr/share/plymouth/themes/margine/` (script-based theme: dark warm background + centered logo); set as default via `plymouth-set-default-theme margine`; initramfs regenerated | boot screen shows Margine instead of Fedora/Bluefin |
+| **Desktop wallpaper** | `/usr/share/backgrounds/margine/autumn-leaves.png` (flat-color stylized autumn leaves on warm-brown background); set as default via gschema override on `org.gnome.desktop.background.picture-uri{,-dark}` | default desktop background on first login |
+| **GDM login background** | dconf system database in `/etc/dconf/db/gdm.d/01-margine-background` pointing to the same wallpaper | login screen matches the desktop |
+| **`/etc/issue`** | rewritten to `Margine \r (\m) — Bluefin DX + CachyOS signed kernel` | console / emergency shell shows Margine |
+| **`margine-fetch`** + fastfetch config | `/usr/bin/margine-fetch` wraps `fastfetch --config /usr/share/fastfetch/margine.jsonc`; the config uses the ASCII logo from `/usr/share/margine/ascii-logo.txt` | `margine-fetch` in a terminal prints a Margine summary with the ASCII art logo |
 
 ### 2 · Preinstalled Flatpak applications
 
@@ -99,6 +105,7 @@ All are idempotent and default to dry-run; use `--apply` to act.
 | `margine-configure-gnome-app-folders` | Group apps in the Activities grid by category (Internet / Productivity / Graphics / …) |
 | `margine-configure-home-layout` | Create `~/data`, `~/dev`, `~/scratch` and their declared subdirs; rewrite `~/.config/user-dirs.dirs` and `~/.config/gtk-{3,4}.0/bookmarks` to match the spec (XDG remap + Nautilus sidebar) |
 | `margine-install-user-extensions` | Install Tiling Shell + Search Light into `~/.local/share/gnome-shell/extensions/` |
+| `margine-fetch` | Run `fastfetch` with Margine's ASCII logo and curated module set (os, kernel, packages, shell, GPU, memory, …) |
 | `margine-collect-diagnostics` | Read-only system snapshot for troubleshooting |
 | `margine-validate-atomic-layout` | Read-only health check (ostree layout, mounts, Secure Boot, TPM2) |
 | `margine-validate-cachyos-kernel` | Read-only kernel-related health check |

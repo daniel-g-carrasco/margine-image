@@ -173,7 +173,165 @@ EOF
 chmod 0644 /etc/profile.d/margine.sh
 
 # ---------------------------------------------------------------------------
-# 4. Margine ujust recipes (gaming layer opt-in)
+# 4. Margine visual branding (logo, wallpaper, Plymouth, /etc/issue, fastfetch)
+# ---------------------------------------------------------------------------
+# Fetch the branding assets from margine-fedora-atomic and install them in
+# the standard system locations so user-facing surfaces (About panel,
+# desktop wallpaper, login screen, boot splash, console, fastfetch) all
+# show Margine identity instead of inheriting Bluefin's.
+log "Installing Margine visual branding"
+
+# (a) Logo PNG → /usr/share/pixmaps/ so /etc/os-release's LOGO=margine-logo
+#     resolves and GNOME About panel shows it.
+mkdir -p /usr/share/pixmaps
+curl --fail --silent --show-error -L \
+    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo.png" \
+    -o /usr/share/pixmaps/margine-logo.png
+chmod 0644 /usr/share/pixmaps/margine-logo.png
+log "Installed: /usr/share/pixmaps/margine-logo.png"
+
+# (b) Wallpaper → /usr/share/backgrounds/margine/ + dconf override so it's
+#     the default desktop background (light + dark).
+mkdir -p /usr/share/backgrounds/margine
+curl --fail --silent --show-error -L \
+    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-autumn-leaves.png" \
+    -o /usr/share/backgrounds/margine/autumn-leaves.png
+chmod 0644 /usr/share/backgrounds/margine/autumn-leaves.png
+log "Installed: /usr/share/backgrounds/margine/autumn-leaves.png"
+
+# Desktop background gschema override — set on the existing zz1 file so
+# it loads after Bluefin's zz0.
+cat >> /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
+
+[org.gnome.desktop.background]
+picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-options='zoom'
+primary-color='#2C1810'
+secondary-color='#1A0E08'
+
+[org.gnome.desktop.screensaver]
+picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-options='zoom'
+primary-color='#2C1810'
+OVERRIDE
+
+# (c) Plymouth theme → /usr/share/plymouth/themes/margine/
+mkdir -p /usr/share/plymouth/themes/margine
+for f in margine.plymouth margine.script watermark.png ; do
+  curl --fail --silent --show-error -L \
+      "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/plymouth/${f}" \
+      -o "/usr/share/plymouth/themes/margine/${f}"
+done
+chmod 0644 /usr/share/plymouth/themes/margine/*
+log "Installed: /usr/share/plymouth/themes/margine/"
+
+# Set Margine as the default Plymouth theme. The `-R` flag would
+# regenerate the initramfs, but in a bootc build context we'd rather
+# trigger that explicitly at the end of the kernel install path. Here we
+# just point the config; dracut --regenerate-all (run by
+# custom-kernel/install.sh) picks it up because the symlink set by
+# plymouth-set-default-theme is in /etc/plymouth/plymouthd.conf.
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+  plymouth-set-default-theme margine
+  log "Set Plymouth default theme: margine"
+fi
+# Regenerate initramfs so the new theme is embedded for the boot splash.
+if command -v dracut >/dev/null 2>&1; then
+  KVER="$(rpm -q kernel-cachyos --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}' 2>/dev/null || true)"
+  if [[ -n "$KVER" ]]; then
+    dracut --force --kver "$KVER" --regenerate-all || \
+      log "(warning: dracut regenerate failed; Plymouth may fall back to default)"
+  fi
+fi
+
+# (d) GDM login screen background — system dconf override.
+mkdir -p /etc/dconf/db/gdm.d /etc/dconf/profile
+cat > /etc/dconf/profile/gdm <<'EOF'
+user-db:user
+system-db:gdm
+file-db:/usr/share/gdm/greeter-dconf-defaults
+EOF
+cat > /etc/dconf/db/gdm.d/01-margine-background <<'EOF'
+[org/gnome/desktop/background]
+picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-options='zoom'
+primary-color='#2C1810'
+EOF
+# Compile the gdm dconf db (best-effort; safe to skip if dconf is absent).
+if command -v dconf >/dev/null 2>&1; then
+  dconf update || log "(warning: dconf update failed)"
+fi
+log "Installed: GDM background override"
+
+# (e) /etc/issue — text-mode banner shown on console (e.g. emergency shell)
+cat > /etc/issue <<'EOF'
+Margine \r (\m) — Bluefin DX + CachyOS signed kernel
+\d \t
+
+EOF
+chmod 0644 /etc/issue
+log "Installed: /etc/issue"
+
+# (f) Fastfetch config + margine-fetch wrapper.
+# Fetch the ASCII logo and use it as fastfetch's --logo source.
+mkdir -p /usr/share/fastfetch /usr/share/margine
+curl --fail --silent --show-error -L \
+    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/ascii-logo.txt" \
+    -o /usr/share/margine/ascii-logo.txt
+chmod 0644 /usr/share/margine/ascii-logo.txt
+
+cat > /usr/share/fastfetch/margine.jsonc <<'EOF'
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+  "logo": {
+    "source": "/usr/share/margine/ascii-logo.txt",
+    "type": "file",
+    "color": { "1": "yellow" },
+    "padding": { "right": 2 }
+  },
+  "display": {
+    "separator": " · "
+  },
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "wm",
+    "terminal",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "localip",
+    "battery",
+    "locale",
+    "break",
+    "colors"
+  ]
+}
+EOF
+chmod 0644 /usr/share/fastfetch/margine.jsonc
+
+cat > /usr/bin/margine-fetch <<'EOF'
+#!/usr/bin/sh
+# margine-fetch: fastfetch with Margine ASCII logo + module set.
+exec fastfetch --config /usr/share/fastfetch/margine.jsonc "$@"
+EOF
+chmod 0755 /usr/bin/margine-fetch
+log "Installed: /usr/share/fastfetch/margine.jsonc + /usr/bin/margine-fetch"
+
+# Recompile glib schemas so the appended background override takes effect.
+glib-compile-schemas /usr/share/glib-2.0/schemas
+
+# ---------------------------------------------------------------------------
+# 5. Margine ujust recipes (gaming layer opt-in)
 # ---------------------------------------------------------------------------
 # Bluefin ships a `ujust` wrapper that loads recipe files from
 # /usr/share/ublue-os/just/. Drop our 99-margine.just there so the user

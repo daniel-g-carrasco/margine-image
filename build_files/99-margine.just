@@ -3,6 +3,51 @@
 # /usr/share/ublue-os/just/. The 99- prefix loads after everything
 # Bluefin ships so we can override if needed.
 
+# Apply the full Margine user-state in one shot (home layout, GNOME extensions, keybindings, appearance, default apps, app folders)
+[group('Margine')]
+margine-bootstrap:
+    #!/usr/bin/bash
+    set -euo pipefail
+
+    cat <<'EOF'
+    == Margine user-state bootstrap ==
+
+    Applies the full Margine user-state declaration. Idempotent — safe
+    to re-run after upgrades; each step reports [no change] for keys that
+    already match the spec.
+
+    Steps:
+      1. margine-configure-home-layout         (~/data + ~/dev + ~/scratch + XDG remap + bookmarks)
+      2. margine-install-user-extensions       (Tiling Shell + Search Light into ~/.local)
+      3. margine-configure-gnome-extensions    (enable/disable per Margine policy)
+      4. margine-configure-gnome-keybindings   (Hyprland-style SUPER+1..0, SUPER+E, tiling binds)
+      5. margine-configure-gnome-appearance    (accent, theme, dconf for extensions)
+      6. margine-configure-default-applications (Zen as browser, Ptyxis terminal, etc.)
+      7. margine-configure-gnome-app-folders   (Activities grid grouped by category)
+
+    No package install. No layer staged. Pure user-state under $HOME and
+    user-dconf. Reversible by hand.
+
+    EOF
+    read -rp "Continue? [Y/n] " ans
+    case "$ans" in ""|[yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+
+    set -x
+    margine-configure-home-layout --apply
+    margine-install-user-extensions --apply
+    margine-configure-gnome-extensions --apply
+    margine-configure-gnome-keybindings --apply
+    margine-configure-gnome-appearance --apply
+    margine-configure-default-applications --apply
+    margine-configure-gnome-app-folders --apply
+    set +x
+
+    echo
+    echo "== Done =="
+    echo "Log out and back in (or restart GNOME Shell with Alt+F2 → 'r')"
+    echo "to refresh the dock, extensions, keybindings, and bookmarks."
+
+
 # Install the Margine gaming layer (Steam Flatpak + Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/gamemode layered via rpm-ostree)
 [group('Gaming')]
 margine-gaming:

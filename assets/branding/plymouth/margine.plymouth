@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Margine
+Description=Margine boot splash (dark warm background + centered logo)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/margine
+ScriptFile=/usr/share/plymouth/themes/margine/margine.script

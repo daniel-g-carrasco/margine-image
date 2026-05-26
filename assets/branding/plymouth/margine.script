@@ -1,0 +1,24 @@
+// Margine Plymouth theme — minimal: solid background + centered logo.
+// Plymouth Script language (not JS/C).
+
+// Background: dark warm brown gradient, matches /etc/os-release ANSI_COLOR
+// and the desktop wallpaper.
+Window.SetBackgroundTopColor    (0.173, 0.094, 0.063);  // #2C1810
+Window.SetBackgroundBottomColor (0.102, 0.055, 0.031);  // #1A0E08
+
+// Logo, pre-scaled to a sane size by build.sh.
+logo.image  = Image("watermark.png");
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetX(Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
+logo.sprite.SetY(Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
+
+// Plymouth requires a refresh function to be registered, even if no-op.
+fun refresh_callback () { }
+Plymouth.SetRefreshFunction(refresh_callback);
+
+// When the password prompt appears (e.g. LUKS unlock), keep the logo
+// visible and let Plymouth render its default text prompt on top.
+fun display_password_callback (prompt, bullets) {
+    return;
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);

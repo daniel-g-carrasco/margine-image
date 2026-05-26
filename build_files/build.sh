@@ -23,6 +23,41 @@ set -euo pipefail
 log() { printf '[margine-build] %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
+# 0. OS identity — make the system identify as Margine
+# ---------------------------------------------------------------------------
+# Override /usr/lib/os-release so commands like `cat /etc/os-release`,
+# `hostnamectl`, GNOME's About panel, and our own validate-atomic-layout
+# all see "Margine". We keep ID_LIKE="fedora bluefin" so tools that branch
+# on Fedora-derivative behavior still work.
+log "Stamping /usr/lib/os-release as Margine"
+
+FEDORA_VER="$(rpm -E %fedora)"
+BUILD_DATE="$(date -u +%Y%m%d)"
+
+cat > /usr/lib/os-release <<EOF
+NAME="Margine"
+VERSION="${FEDORA_VER} (Margine)"
+ID=margine
+ID_LIKE="fedora bluefin"
+VERSION_ID=${FEDORA_VER}
+VERSION_CODENAME=""
+PLATFORM_ID="platform:f${FEDORA_VER}"
+PRETTY_NAME="Margine ${FEDORA_VER} (${BUILD_DATE})"
+VARIANT="Margine"
+VARIANT_ID=margine
+ANSI_COLOR="0;38;2;232;186;0"
+LOGO=margine-logo
+CPE_NAME="cpe:/o:daniel-g-carrasco:margine:${FEDORA_VER}"
+HOME_URL="https://github.com/daniel-g-carrasco/margine-image"
+DOCUMENTATION_URL="https://github.com/daniel-g-carrasco/margine-fedora-atomic"
+SUPPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
+BUG_REPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
+DEFAULT_HOSTNAME="margine"
+EOF
+# Ensure /etc/os-release points to our /usr/lib copy (the standard layout).
+ln -sf ../usr/lib/os-release /etc/os-release
+
+# ---------------------------------------------------------------------------
 # 1. Margine default Flatpak apps
 # ---------------------------------------------------------------------------
 # Bluefin ships Flathub already configured. We add the Margine default

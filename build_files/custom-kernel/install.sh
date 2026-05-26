@@ -48,7 +48,13 @@ COPR_REPO="bieszczaders/kernel-cachyos"
 KERNEL_PKG="kernel-cachyos"
 KERNEL_DEVEL_PKG="kernel-cachyos-devel-matched"
 KERNEL_PACKAGES="kernel-cachyos kernel-cachyos-core kernel-cachyos-modules kernel-cachyos-devel-matched"
-TRANSIENT="akmods $KERNEL_DEVEL_PKG"
+# TRANSIENT packages are installed for build time only and removed at the end.
+# sbsigntools provides sbsign/sbverify; akmods is needed for v4l2loopback (best-effort).
+TRANSIENT="akmods sbsigntools $KERNEL_DEVEL_PKG"
+
+# Install the signing tools up-front so they're available when we sign vmlinuz.
+log "Installing sbsigntools (build-time only)"
+dnf -y install sbsigntools
 
 # ---------------------------------------------------------------------------
 # Helpers

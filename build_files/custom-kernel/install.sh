@@ -187,40 +187,49 @@ log "Removing COPR repo file (kept only at build time)"
 rm -f /etc/yum.repos.d/*copr*
 
 # ---------------------------------------------------------------------------
-# v4l2loopback against the CachyOS kernel
+# v4l2loopback against the CachyOS kernel (OPTIONAL — skip on build error)
 # ---------------------------------------------------------------------------
-log "Building v4l2loopback against $KERNEL_VERSION"
-disable_akmodsbuild
-
-dnf -y install \
-    "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
-dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=noscripts \
-    akmod-v4l2loopback
-TRANSIENT="$TRANSIENT akmod-v4l2loopback"
-
-akmods --force --verbose --kernels "$KERNEL_VERSION" --kmod v4l2loopback
-
-# akmods always returns 0; check for *.failed.log explicitly
-for _f in /var/cache/akmods/v4l2loopback/*-for-"$KERNEL_VERSION".failed.log; do
-  if [[ -f "$_f" ]]; then
-    err "v4l2loopback akmod build failed:"
-    cat "$_f"
-    restore_akmodsbuild
-    exit 1
+# Building akmod-v4l2loopback in BuildKit currently fails with "ERROR:
+# Could create tempdir" because akmodsbuild expects writable /var
+# state that isn't available in a build cache mount. Origami works
+# around it with their own build environment. For Margine v1 we mark
+# v4l2loopback as best-effort: if the build fails, we log and continue
+# without it. Users who need virtual camera support can install
+# v4l2loopback later as a one-off layer or via Flatpak (OBS has its
+# own GStreamer pipeline that doesn't need this module).
+log "Building v4l2loopback against $KERNEL_VERSION (best-effort)"
+V4L2_OK=0
+if disable_akmodsbuild; then
+  if dnf -y install \
+        "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+     && dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=noscripts \
+        akmod-v4l2loopback; then
+    if akmods --force --verbose --kernels "$KERNEL_VERSION" --kmod v4l2loopback; then
+      # akmods always returns 0; check for *.failed.log explicitly
+      V4L2_FAILED=0
+      for _f in /var/cache/akmods/v4l2loopback/*-for-"$KERNEL_VERSION".failed.log; do
+        [[ -f "$_f" ]] && V4L2_FAILED=1 && break
+      done
+      if (( V4L2_FAILED == 0 )); then
+        V4L2_OK=1
+      fi
+    fi
+    dnf -y remove rpmfusion-free-release
+    rm -f /etc/yum.repos.d/rpmfusion-free*.repo
   fi
-done
+  restore_akmodsbuild
+fi
 
-dnf -y remove rpmfusion-free-release
-rm -f /etc/yum.repos.d/rpmfusion-free*.repo
-restore_akmodsbuild
-
-# Install built kmod RPM
-_kmod_rpm="$(find /var/cache/akmods/v4l2loopback/ -name "kmod-v4l2loopback-*$KERNEL_VERSION*.rpm" -print -quit)"
-if [[ -n "${_kmod_rpm:-}" && -f "$_kmod_rpm" ]]; then
-  dnf -y install "$_kmod_rpm"
-  TRANSIENT="$TRANSIENT kmod-v4l2loopback"
+if (( V4L2_OK )); then
+  log "v4l2loopback built OK"
+  TRANSIENT="$TRANSIENT akmod-v4l2loopback"
+  _kmod_rpm="$(find /var/cache/akmods/v4l2loopback/ -name "kmod-v4l2loopback-*$KERNEL_VERSION*.rpm" -print -quit 2>/dev/null || true)"
+  if [[ -n "${_kmod_rpm:-}" && -f "$_kmod_rpm" ]]; then
+    dnf -y install "$_kmod_rpm"
+    TRANSIENT="$TRANSIENT kmod-v4l2loopback"
+  fi
 else
-  log "(no built kmod-v4l2loopback rpm to install; skipping)"
+  log "v4l2loopback build skipped/failed — not blocking; image continues without virtual camera kmod"
 fi
 
 # ---------------------------------------------------------------------------

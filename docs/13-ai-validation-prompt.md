@@ -59,8 +59,9 @@ Explicit non-goals for phase 1:
 - no implicit kernel.split_lock_mitigate=0 gaming tweak
 - no Steam Gaming Mode as the first GNOME phase
 - no Bazzite rebase as the default Margine base
-- no Topgrade ownership of rpm-ostree, bootc, firmware, Secure Boot, TPM2, or
-  rollback policy
+- no custom update orchestrator: routine updates flow through Bluefin's
+  `uupd.timer` (inherited from the base image); the on-demand validators in
+  `scripts/` are the only update-adjacent tooling Margine maintains
 
 Repository state to inspect in /home/daniel/dev/margine-fedora-atomic:
 
@@ -77,16 +78,20 @@ Repository state to inspect in /home/daniel/dev/margine-fedora-atomic:
 - docs/09-declarative-model.md
 - docs/10-hardware-media-stack.md
 - docs/11-gaming-runtime.md
-- docs/12-update-orchestration.md
 - declarations/README.md
 - declarations/margine-atomic.yaml
-- config/topgrade.toml
 - scripts/validate-atomic-layout
 - scripts/validate-cachyos-kernel
 - scripts/validate-hardware-media-stack
 - scripts/validate-gaming-runtime
+- scripts/validate-baseline-packages
 - scripts/collect-diagnostics
-- scripts/update-all
+- scripts/apply-margine-on-bluefin
+- scripts/apply-host-layer
+- scripts/configure-*
+- scripts/install-user-extensions
+- docs/adr/0005-base-on-bluefin-dx.md
+- docs/15-host-layer.md
 
 Context to inspect in /home/daniel/dev/margine-os and
 /home/daniel/dev/margine-os-personal:
@@ -94,7 +99,7 @@ Context to inspect in /home/daniel/dev/margine-os and
 - package manifests
 - AUR manifests
 - Flatpak manifests
-- update-all architecture
+- update-all architecture (Margine's own update-all was deleted; reference only)
 - Secure Boot and TPM2 docs
 - root-on-ZFS docs
 - post-install validation docs
@@ -118,7 +123,7 @@ Fedora-native redesign:
 - PipeWire/WirePlumber validation
 - gaming runtime split between runtime helpers and launchers
 - split-lock mitigation as explicit operator policy only
-- update-all as orchestration concept, but not the Arch implementation
+- update-all as orchestration concept, retired in Margine in favor of Bluefin's `uupd`
 
 Validation tasks:
 
@@ -154,11 +159,13 @@ Validation tasks:
    - Bazzite used as reference, not default base
    - split-lock tweak not hidden
 8. Validate update orchestration:
-   - scripts/update-all owns rpm-ostree as hard boundary
-   - Topgrade is constrained to accessory updates
-   - config/topgrade.toml disables system, firmware, rpm_ostree, and bootc
-   - bootc is future image work
-   - diagnostics and validators happen before/after updates
+   - the repo does NOT ship a custom orchestrator; routine updates flow via
+     Bluefin's `uupd.timer` (inherited from the base image)
+   - `bootc` is the base-OS update path; `rpm-ostree upgrade` is its CLI alias
+   - the on-demand validators in `scripts/` are available but not wired to
+     `uupd` hooks
+   - any reintroduction of an `update-all`-style script or a Topgrade profile
+     is a regression — flag it
 9. Validate the declarative model:
    - declarations are desired state, not secrets
    - channel-specific state stays separated
@@ -166,32 +173,31 @@ Validation tasks:
 10. Validate script quality:
    - no destructive commands
    - read-only validators stay read-only
-   - update-all has dry-run and clear hard/soft failure boundaries
-   - shell scripts pass bash -n and shellcheck
-   - YAML/TOML parses cleanly
+   - `apply-*` and `configure-*` scripts have dry-run as the default and an
+     explicit `--apply` flag to take action
+   - shell scripts pass `bash -n` and `shellcheck`
+   - Python scripts pass `python3 -m py_compile`
+   - YAML parses cleanly
 
 Suggested commands:
 
 cd /home/daniel/dev
 find margine-fedora-atomic -maxdepth 3 -type f | sort
 git -C margine-fedora-atomic status --short
-rg -n "TODO|FIXME|pacman|yay|paru|AUR|Hyprland|Waybar|Walker|Limine|sbctl|mkinitcpio|ZFS|root-on-ZFS|NVIDIA|Resolve|split_lock|Topgrade|bootc" margine-fedora-atomic -S
-rg -n "gaming|Steam|Proton|Wine|Gamescope|MangoHud|vkBasalt|GameMode|split_lock|Bazzite|OpenCL|VA-API|Vulkan|PipeWire|WirePlumber|TPM2|Secure Boot|update-all" margine-os margine-os-personal -S
+rg -n "TODO|FIXME|pacman|yay|paru|AUR|Hyprland|Waybar|Walker|Limine|sbctl|mkinitcpio|ZFS|root-on-ZFS|NVIDIA|Resolve|split_lock|update-all|topgrade" margine-fedora-atomic -S
+rg -n "gaming|Steam|Proton|Wine|Gamescope|MangoHud|vkBasalt|GameMode|split_lock|Bazzite|OpenCL|VA-API|Vulkan|PipeWire|WirePlumber|TPM2|Secure Boot" margine-os margine-os-personal -S
 
 cd /home/daniel/dev/margine-fedora-atomic
-bash -n scripts/*
-shellcheck scripts/*
-python3 - <<'PY'
-from pathlib import Path
-import tomllib
-import yaml
-for p in Path("declarations").glob("*.yaml"):
-    yaml.safe_load(p.read_text())
-with Path("config/topgrade.toml").open("rb") as f:
-    tomllib.load(f)
-print("YAML/TOML parse OK")
-PY
-scripts/update-all --dry-run --no-validators --no-diagnostics
+# Bash scripts
+for s in scripts/validate-* scripts/collect-diagnostics scripts/apply-host-layer scripts/apply-margine-on-bluefin; do
+  bash -n "$s" && shellcheck -S warning "$s"
+done
+# Python scripts
+for s in scripts/configure-* scripts/install-user-extensions; do
+  python3 -m py_compile "$s"
+done
+# YAML parse
+python3 -c "import yaml; yaml.safe_load(open('declarations/margine-atomic.yaml'))" && echo "YAML parse OK"
 
 Output format:
 

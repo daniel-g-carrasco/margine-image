@@ -51,8 +51,8 @@ kernel from COPR, starting from a manual VM lab.
 - Keep Flatpak, toolbox/distrobox, and rpm-ostree layering as separate channels.
 - Test the CachyOS kernel from COPR only as a reversible lab experiment.
 - Keep a Fedora kernel deployment available as the fallback path.
-- Provide a Fedora Atomic `update-all` that coordinates rpm-ostree, validators,
-  diagnostics, and accessory updates without hiding reboot or rollback state.
+- Inherit Bluefin DX's update orchestration (`uupd.timer`) for routine updates;
+  use the on-demand validators when investigating a specific deployment.
 - Record diagnostics before and after the kernel experiment.
 
 ## Non-Goals
@@ -68,8 +68,9 @@ kernel from COPR, starting from a manual VM lab.
 - No DaVinci Resolve support claim in the baseline.
 - No hidden gaming sysctl policy such as implicit `kernel.split_lock_mitigate=0`.
 - No Steam Gaming Mode or Bazzite rebase as the first GNOME phase.
-- No Topgrade ownership of rpm-ostree, bootc, firmware, Secure Boot, TPM2, or
-  rollback policy.
+- No custom update orchestrator competing with Bluefin's `uupd`. No tool
+  outside `bootc` is allowed to own rpm-ostree, firmware, Secure Boot, TPM2,
+  or rollback policy.
 - No copied Arch/Limine/sbctl Secure Boot or TPM2 flow.
 - No custom Secure Boot key hierarchy until the stock Fedora path has been
   validated.
@@ -104,8 +105,8 @@ kernel from COPR, starting from a manual VM lab.
 - Bazzite is a useful Fedora Atomic gaming reference, but Margine should borrow
   its image-first/runtime ideas rather than inherit all of its image policy by
   default.
-- Topgrade can update accessory channels, but Margine still needs a local
-  orchestrator for the base OS update boundary and post-update validation.
+- Bluefin's `uupd` already orchestrates `bootc upgrade` + Flatpak + Brew +
+  distrobox in the right order; Margine inherits this rather than rebuilding it.
 - A useful declarative model can be built as desired-state files plus
   channel-specific adapters instead of a single universal installer script.
 

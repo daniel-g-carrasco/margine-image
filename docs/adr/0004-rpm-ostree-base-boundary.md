@@ -1,7 +1,19 @@
 # ADR 0004 — rpm-ostree owns the base OS boundary
 
 **Date:** 2026-05-22
-**Status:** Accepted
+**Status:** Superseded by [ADR 0005](0005-base-on-bluefin-dx.md) (the principle stands; the implementation is now Bluefin's `uupd`, not our own `update-all`)
+
+> **Why this ADR is preserved.** The principle this ADR established — that the
+> base-OS update step must own pre/post validation, reboot judgment, and
+> rollback, and that no generic tool (Topgrade) should run in its place —
+> remains correct. The pivot to Bluefin DX (ADR 0005) and then to a published
+> bootc image realized this principle through a different artifact: Bluefin's
+> `uupd.timer` is the canonical orchestrator, with `bootc upgrade` as the
+> base-OS step. Margine's own `scripts/update-all` and `config/topgrade.toml`
+> were deleted as duplication. The ADR text below is the original rationale
+> and is kept as the historical reasoning that motivated the pivot.
+
+---
 
 ## Context
 

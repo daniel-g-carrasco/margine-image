@@ -679,28 +679,22 @@ Do not keep a single "packages" layer that hides the channel decision.
 
 ### Update Helper
 
-The old `update-all` is not portable.
+The old `update-all` from `margine-os` is not portable, and Margine's own
+short-lived `scripts/update-all` (Silverblue-era) has been removed in favor
+of Bluefin's `uupd.timer`, which ships pre-enabled on the Bluefin DX base
+image and orchestrates `bootc upgrade` + `flatpak update` + `brew upgrade`
++ `distrobox upgrade` daily.
 
-A future Atomic update helper should understand:
+The principle that motivated the old Arch `update-all` — base-OS upgrade
+must own pre/post validation, reboot judgment, and rollback — is preserved
+by `bootc` semantics (transactional, rolling back to the previous deployment
+is `rpm-ostree rollback --reboot`), and `uupd` is the orchestrator that
+calls it in the right order.
 
-- `rpm-ostree upgrade`;
-- reboot-required deployment state;
-- `flatpak update`;
-- Topgrade as an accessory updater only;
-- toolbox/distrobox update checks;
-- diagnostics before and after upgrades;
-- rollback instructions.
-
-It must not use pacman, Snapper, ZFS boot environments, or Limine.
-
-Initial implementation:
-
-- `scripts/update-all`;
-- `config/topgrade.toml`;
-- `docs/12-update-orchestration.md`.
-
-Topgrade is deliberately constrained. It must not own `rpm-ostree`, `bootc`,
-firmware, Secure Boot, TPM2, or rollback semantics.
+Nothing in Margine's repo runs `pacman`, Snapper, ZFS boot environments, or
+Limine. Firmware (`fwupd`) remains a manual decision per machine. The
+on-demand validators (`scripts/validate-*`) are available for ad-hoc
+investigation but are not wired into the routine update flow.
 
 ### Branding
 

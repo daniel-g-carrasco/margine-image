@@ -61,8 +61,3 @@ shellcheck scripts/<changed-script>
 python3 -c "import yaml; yaml.safe_load(open('declarations/margine-atomic.yaml'))"
 ```
 
-For `config/topgrade.toml`:
-
-```sh
-python3 -c "import tomllib; tomllib.load(open('config/topgrade.toml', 'rb'))"
-```

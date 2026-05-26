@@ -103,7 +103,7 @@ enough until there is evidence that a custom format is needed.
 | systemd services | `systemctl enable`, presets, or image policy |
 | boot security | validation plus manual enrollment steps |
 | TPM2 unlock | `systemd-cryptenroll`, `/etc/crypttab`, rpm-ostree initramfs |
-| routine updates | Margine `update-all`; Topgrade only for accessory channels |
+| routine updates | Bluefin `uupd.timer` (inherited from base image) |
 
 Adapters should support at least two modes:
 
@@ -145,7 +145,7 @@ Expected data sources:
 - `findmnt`;
 - `lsblk -f`;
 - `systemctl is-enabled`;
-- `topgrade --version` and Topgrade configuration if installed;
+- `uupd --version` and `systemctl status uupd.timer` for update orchestration health;
 - GIO metadata for managed folders.
 
 This validator should not install or remove anything.
@@ -193,8 +193,8 @@ a faster way to distribute those assumptions.
 - How to represent toolbox contents without turning toolboxes into host state.
 - Whether stable gaming host helpers move into a native image before Steam
   Gaming Mode work starts.
-- Whether Topgrade remains an accessory helper or gets removed once Margine has
-  enough channel-specific apply adapters.
+- Whether the channel-specific apply adapters should integrate with `uupd`
+  hooks or remain purely on-demand.
 - How to model Secure Boot and TPM2 as locally verified requirements rather
   than portable secrets.
 - Whether bootc should replace Silverblue rebasing later or remain a separate

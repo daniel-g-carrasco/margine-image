@@ -247,9 +247,11 @@ brew upgrade                   # upgrade everything
 brew cleanup                   # remove old versions
 ```
 
-Brew is **not** in the `scripts/update-all` orchestration today. Either run
-it manually, or add it to `config/topgrade.toml` (Topgrade has a brew step
-out of the box).
+Brew updates are picked up automatically by Bluefin's `uupd.timer` (the
+daily update orchestrator inherited from the base image), which runs
+`brew update && brew upgrade` as part of its standard run alongside
+`bootc upgrade`, `flatpak update`, and `distrobox upgrade`. You can also
+run them manually any time.
 
 ## Starship prompt
 
@@ -386,14 +388,14 @@ A concrete day-to-day flow that uses all the layers:
    `npm install -g ...`; the CLIs run in the toolbox, the VSCodium
    extensions live in the Flatpak (call them with the `flatpak-spawn --host`
    workaround if needed).
-7. **System updates**: `rpm-ostree upgrade` (host) + `flatpak --user
-   update` + `toolbox run sudo dnf upgrade` + `brew upgrade`. The
-   `scripts/update-all` orchestrator covers the first three; brew remains
-   manual or via Topgrade.
+7. **System updates**: handled automatically by Bluefin's `uupd.timer`
+   (daily): `bootc upgrade` + `flatpak update` + `brew upgrade` +
+   `distrobox upgrade`. Toolbox containers (`toolbox run sudo dnf upgrade`)
+   are not in `uupd`'s scope — refresh them on demand.
 
 ## Cross-references
 
 - Host baseline package set: [15-host-layer.md](15-host-layer.md)
-- Update orchestration: [12-update-orchestration.md](12-update-orchestration.md)
+- Update orchestration: [01-architecture.md § Update Orchestration](01-architecture.md#update-orchestration)
 - GNOME look and feel: [08-gnome-personal-layer.md](08-gnome-personal-layer.md)
 - Hardware/media drivers: [10-hardware-media-stack.md](10-hardware-media-stack.md)

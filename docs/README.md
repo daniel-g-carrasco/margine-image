@@ -42,15 +42,16 @@ install guide is self-contained.
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
 | [15-host-layer.md](15-host-layer.md) | **Legacy** Bluefin-style host baseline for stock Silverblue (superseded by ADR 0005 — Margine now rebases to Bluefin DX). Preserved for audit / fallback path. |
 | [16-developer-toolbox.md](16-developer-toolbox.md) | Daily-use guide for the developer surfaces: toolbox tools (just, glow, gum, fastfetch), distrobox for non-Fedora distros, Homebrew on Linux, starship prompt, GNOME app folders, daily workflow |
-| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (kitty terminal, SUPER+E Nautilus), Tiling Shell tiling actions; full Hyprland→GNOME mapping |
+| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (Ptyxis terminal, SUPER+E Nautilus), Tiling Shell tiling actions; full Hyprland→GNOME mapping |
 
 ## System design
 
 | Document | What it covers |
 | --- | --- |
 | [09-declarative-model.md](09-declarative-model.md) | Declarative desired-state model; channel-aware adapters; phase plan |
-| [12-update-orchestration.md](12-update-orchestration.md) | `update-all` orchestration; hard rpm-ostree boundary; Topgrade constraints |
 | [roadmap.md](roadmap.md) | Phase plan with objectives and decision gates |
+
+Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base image); see [01-architecture.md § Update Orchestration](01-architecture.md#update-orchestration).
 
 ## Architecture decisions
 
@@ -59,7 +60,7 @@ install guide is self-contained.
 | [adr/0001-why-silverblue-not-kinoite.md](adr/0001-why-silverblue-not-kinoite.md) | Why Fedora Silverblue (GNOME) over Kinoite (KDE) for phase 1 |
 | [adr/0002-gnome-in-phase-1.md](adr/0002-gnome-in-phase-1.md) | Why GNOME stock in phase 1 and not Hyprland |
 | [adr/0003-fedora-native-boot-security.md](adr/0003-fedora-native-boot-security.md) | Why Fedora shim/systemd-cryptenroll and not Arch/Limine/sbctl patterns |
-| [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why rpm-ostree owns the base OS boundary and Topgrade is accessory-only |
+| [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why the base-OS update step owns pre/post validation, reboot judgment, and rollback (superseded — implementation moved to Bluefin `uupd`) |
 | [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deploys as Bluefin DX rebase + 5 diffs, not as stock Silverblue + layer |
 
 ## Reference

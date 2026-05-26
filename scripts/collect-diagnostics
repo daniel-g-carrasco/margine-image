@@ -54,7 +54,7 @@ capture flatpak-list.txt flatpak list
 capture flatpak-remotes.txt flatpak remotes --show-details
 capture toolbox-list.txt toolbox list
 capture distrobox-list.txt distrobox list
-capture_shell topgrade-state.txt "if command -v topgrade >/dev/null 2>&1; then topgrade --version; fi; for file in \"${HOME}/.config/topgrade.toml\" \"${repo_root}/config/topgrade.toml\"; do printf '== %s ==\\n' \"\$file\"; sed -n '1,220p' \"\$file\" 2>/dev/null || true; done"
+capture_shell uupd-state.txt "if command -v uupd >/dev/null 2>&1; then uupd --version 2>&1 || true; fi; if command -v systemctl >/dev/null 2>&1; then systemctl status uupd.timer --no-pager 2>/dev/null || true; systemctl list-timers uupd.timer --no-pager 2>/dev/null || true; fi"
 capture_shell pci-graphics-audio.txt "if command -v lspci >/dev/null 2>&1; then lspci -k | sed -n '/VGA compatible controller/,+6p;/3D controller/,+6p;/Display controller/,+6p;/Audio device/,+6p'; fi"
 capture_shell kernel-media-modules.txt "if command -v lsmod >/dev/null 2>&1; then lsmod | grep -E 'amdgpu|i915|xe|nvidia|nouveau|virtio_gpu|snd|snd_hda|snd_sof|kvm' || true; fi"
 capture_shell hardware-media-rpms.txt "if command -v rpm >/dev/null 2>&1; then rpm -qa | grep -Ei 'mesa|vulkan|libva|intel|rocm|opencl|clinfo|pipewire|wireplumber|alsa|easyeffects|gstreamer|ffmpeg|openh264|dav1d|libavif|libheif|aom|radeontop' | sort || true; fi"

@@ -176,7 +176,7 @@ installed explicitly with `rpm-ostree install` when needed.
 | Bluefin choice | Margine choice | Reason |
 | --- | --- | --- |
 | Remove `gnome-software` and ship `bazaar` | Keep `gnome-software` | It's the standard surface on Silverblue; users discover Flatpak apps through it |
-| `uupd` as update orchestrator | `scripts/update-all` + Topgrade | ADR 0004 — rpm-ostree owns the OS boundary, Topgrade only orchestrates the accessory layer |
+| `uupd` as update orchestrator | inherited — Margine now uses Bluefin's `uupd.timer` directly (see ADR 0004 amendment) |
 | Custom signed kernel from `ublue-os/akmods` | Stock Fedora kernel (CachyOS lab option) | Different trust model; keeps the Fedora signing chain intact |
 | Bluefin wallpapers, faces, custom GNOME schema overrides | None | Branding noise outside this project's scope |
 | Cockpit (DX variant) | Not installed by default | Web admin not used here; can be added per-host |

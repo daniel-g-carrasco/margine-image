@@ -97,7 +97,7 @@ that state through the correct Fedora channel:
 | Secure Boot | firmware, shim, MOK, and boot validation |
 | TPM2 unlock | LUKS2, systemd-cryptenroll, crypttab, initramfs |
 | diagnostics | read-only validators |
-| update orchestration | Margine `update-all`; Topgrade only for accessory channels |
+| update orchestration | Bluefin `uupd.timer` (inherited from base image); on-demand validators in this repo |
 
 Principles:
 
@@ -234,7 +234,15 @@ than by assuming a mutable Fedora Workstation `dracut -f` workflow.
 
 ## Update Orchestration
 
-Routine updates use `scripts/update-all`.
+Routine updates are handled by **Bluefin's `uupd`** (Universal Updater), which
+ships pre-enabled on the Bluefin DX base image we rebase from. `uupd.timer`
+runs daily and orchestrates, in order:
+
+1. `bootc upgrade` (or `rpm-ostree upgrade` on layered installs);
+2. `flatpak update` (system + user);
+3. `brew update && brew upgrade` if Homebrew is present;
+4. `distrobox upgrade --all` for declared containers;
+5. reboot indication via `notify-send` when a new deployment is staged.
 
 The Atomic update boundary is different from the Arch/CachyOS one:
 
@@ -244,21 +252,11 @@ The Atomic update boundary is different from the Arch/CachyOS one:
 - no Limine or UKI refresh path;
 - no `sbctl` trust refresh.
 
-The phase 1 order is:
-
-1. validators;
-2. diagnostics;
-3. `rpm-ostree upgrade`;
-4. Topgrade accessory updates or Flatpak fallback;
-5. toolbox/distrobox status;
-6. validators and diagnostics again;
-7. explicit reboot guidance.
-
-Topgrade is intentionally constrained. It may update accessory channels such as
-Flatpak, containers, language toolchains, or editor plugins, but it must not own
-`rpm-ostree`, `bootc`, firmware, Secure Boot, TPM2, or rollback policy.
-
-The detailed plan is in `docs/12-update-orchestration.md`.
+Margine does **not** maintain a parallel update orchestrator. The on-demand
+validators in `scripts/` (`validate-atomic-layout`, `validate-cachyos-kernel`,
+`validate-hardware-media-stack`, `validate-gaming-runtime`, `collect-diagnostics`)
+remain available for ad-hoc investigation but are not wired into the routine
+update flow. Firmware updates (`fwupd`) remain a manual decision per machine.
 
 ## bootc Position
 

@@ -52,42 +52,31 @@ base:
         action: configure-gnome-{keybindings,extensions,app-folders,appearance,default-applications}
 
 updates:
-  orchestrator: scripts/update-all
+  orchestrator: bluefin-uupd
+  orchestrator_note: >
+    Bluefin DX ships uupd (Universal Updater) with uupd.timer enabled by
+    default. It runs daily and orchestrates bootc upgrade + flatpak update
+    + brew update + distrobox upgrade in the right order, with reboot
+    detection. Margine inherits this — no custom update orchestrator is
+    needed or maintained. The validators below are on-demand health checks,
+    not pre/post-update hooks.
   system:
-    command: rpm-ostree upgrade
-    hard_failure: true
+    engine: bootc
+    transport: ostree-image-signed
+    image_ref: ghcr.io/daniel-g-carrasco/margine:stable
     require_reboot_judgment: true
-  accessory:
-    preferred: topgrade
-    config: config/topgrade.toml
-    topgrade_disabled_steps:
-      - system
-      - firmware
-    direct_flatpak_fallback: true
-    soft_failure: true
   bootc:
-    phase: future-image-work
-    update_from_topgrade: false
-    update_from_scripts_update_all: false
+    phase: shipping
+    orchestrated_by: bluefin-uupd
   firmware:
-    phase1_automatic: false
+    automatic: false
     reason: requires-hardware-runbook
-  diagnostics:
-    pre_update: true
-    post_update: true
-  validators:
-    pre_update:
-      hard:
-        - scripts/validate-atomic-layout
-      soft:
-        - scripts/validate-hardware-media-stack
-        - scripts/validate-gaming-runtime
-    post_update:
-      hard:
-        - scripts/validate-atomic-layout
-      soft:
-        - scripts/validate-hardware-media-stack
-        - scripts/validate-gaming-runtime
+  validators_on_demand:
+    - scripts/validate-atomic-layout
+    - scripts/validate-cachyos-kernel
+    - scripts/validate-hardware-media-stack
+    - scripts/validate-gaming-runtime
+    - scripts/collect-diagnostics
 
 storage:
   installer: fedora-anaconda
@@ -969,7 +958,6 @@ rejected_phase1:
 
 validation:
   scripts:
-    - scripts/update-all
     - scripts/validate-atomic-layout
     - scripts/validate-cachyos-kernel
     - scripts/validate-hardware-media-stack

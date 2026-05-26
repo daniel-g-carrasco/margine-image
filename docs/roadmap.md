@@ -48,7 +48,7 @@ GNOME settings, home layout) gets its own check.
 - Channel-specific drift check for installed Flatpak applications
 - Channel-specific drift check for GNOME dconf settings
 - Channel-specific drift check for home layout (XDG dirs, fonts, folder metadata)
-- Drift check integrated into `scripts/update-all` as a pre-update report
+- Drift check exposed as `margine-validate-declared-state` (on-demand, not wired into uupd)
 - Declaration schema documented in `declarations/README.md`
 
 **Decision gate:** Drift detection covers all declared channels before moving to phase 3.
@@ -72,7 +72,7 @@ have run.
 - GNOME dconf adapter: compute setting changes, confirm, apply
 - Home layout adapter: create XDG dirs, set folder metadata, install fonts
 - Toolbox adapter: create declared containers with declared packages
-- All adapters integrated into `scripts/update-all` as optional apply step
+- All adapters available as standalone `margine-apply-*` commands (on-demand, post-rebase only)
 - Adapters are dry-run capable and idempotent
 
 **Decision gate:** All adapters pass dry-run and apply in the VM before moving to phase 4.

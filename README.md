@@ -97,6 +97,7 @@ All are idempotent and default to dry-run; use `--apply` to act.
 | `margine-configure-gnome-extensions` | Enable / disable extensions per Margine policy |
 | `margine-configure-gnome-keybindings` | Apply the Hyprland-style keybindings (`SUPER+1..0` workspaces, `SUPER+RETURN` Ptyxis, `SUPER+E` Nautilus, Tiling Shell directional binds, …) |
 | `margine-configure-gnome-app-folders` | Group apps in the Activities grid by category (Internet / Productivity / Graphics / …) |
+| `margine-configure-home-layout` | Create `~/data`, `~/dev`, `~/scratch` and their declared subdirs; rewrite `~/.config/user-dirs.dirs` and `~/.config/gtk-{3,4}.0/bookmarks` to match the spec (XDG remap + Nautilus sidebar) |
 | `margine-install-user-extensions` | Install Tiling Shell + Search Light into `~/.local/share/gnome-shell/extensions/` |
 | `margine-collect-diagnostics` | Read-only system snapshot for troubleshooting |
 | `margine-validate-atomic-layout` | Read-only health check (ostree layout, mounts, Secure Boot, TPM2) |

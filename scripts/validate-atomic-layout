@@ -64,17 +64,23 @@ if [[ -r /etc/os-release ]]; then
   printf 'ID=%s\n' "${ID:-unknown}"
   printf 'VARIANT_ID=%s\n' "${VARIANT_ID:-unknown}"
 
-  if [[ "${ID:-}" == "fedora" ]]; then
-    ok "Fedora detected"
-  else
-    warn "ID is not fedora"
-  fi
+  case "${ID:-}" in
+    margine|fedora)
+      ok "Fedora-family ID detected: ${ID}"
+      ;;
+    *)
+      warn "ID is not margine or fedora (got: ${ID:-empty})"
+      ;;
+  esac
 
-  if [[ "${VARIANT_ID:-}" == "silverblue" ]]; then
-    ok "Silverblue variant detected"
-  else
-    warn "VARIANT_ID is not silverblue; verify this is an Atomic Desktop target"
-  fi
+  case "${VARIANT_ID:-}" in
+    margine|silverblue|bluefin|bluefin-dx)
+      ok "Atomic Desktop variant detected: ${VARIANT_ID}"
+      ;;
+    *)
+      warn "VARIANT_ID is not a recognized Margine/Atomic variant (got: ${VARIANT_ID:-empty})"
+      ;;
+  esac
 else
   warn "/etc/os-release is not readable"
 fi

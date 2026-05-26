@@ -142,21 +142,82 @@ Run `ujust` with no argument to see the full list (Bluefin's recipes + Margine's
 
 ## Install
 
-On a fresh Bluefin DX (or Fedora Atomic) install:
+### Step 1 · Install Bluefin from ISO
+
+> **Important — there is no "Bluefin DX" ISO.** Universal Blue does not
+> publish a separate DX (Developer Experience) installation image. DX is
+> a *post-install runtime toggle* enabled via `ujust devmode` on a regular
+> Bluefin install. **For Margine you don't need to enable devmode** —
+> Margine's image is `FROM ghcr.io/ublue-os/bluefin-dx:stable`, so the
+> entire DX package set (libvirt, qemu-kvm, virt-manager, swtpm,
+> edk2-ovmf, podman-compose, distrobox, VS Code, Cockpit, Tailscale,
+> bpftrace, sysprof, …) is **already baked into Margine** by the time
+> you rebase. Skip `ujust devmode`.
+
+Download the regular Bluefin stable ISO:
 
 ```sh
-# Rebase to Margine
-rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+curl -L -o ~/Downloads/bluefin-stable-x86_64.iso \
+  https://download.projectbluefin.io/bluefin-stable-x86_64.iso
 
-# Reboot
+# (optional but recommended) verify
+curl -sL https://download.projectbluefin.io/bluefin-stable-x86_64.iso-CHECKSUM \
+  | sha256sum -c - --ignore-missing
+```
+
+Install it. Recommended choices in Anaconda:
+- UEFI firmware with **Secure Boot enabled** (BIOS-side setting before booting the ISO)
+- **Full-disk encryption** (LUKS2 — set a strong passphrase, you can add TPM2 later)
+- Btrfs (Anaconda default — keep it)
+- Standard partitioning (we don't need custom Btrfs subvolumes for the smoke test)
+
+### Step 2 · Rebase to Margine
+
+After Bluefin is installed and you're at the desktop:
+
+```sh
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 ```
 
-On first boot:
-- `mok-enroll.service` opens `mokutil --import` with the Margine MOK.
-  Reboot again, the MOK manager will prompt for the password set at
-  build time (see repo secrets).
-- After MOK enrollment, the CachyOS kernel boots under Secure Boot.
+### Step 3 · Enroll the Margine MOK (one-time)
+
+- **First boot after rebase** — `mok-enroll.service` runs once and queues
+  the Margine MOK certificate for import.
+- **Reboot a second time** — the firmware shows the **MOK Manager**
+  screen (shim's blue-and-grey UI). Choose `Enroll MOK` → `Continue` →
+  `Yes` → type the MOK password (set at image build time; in the repo's
+  GH Actions secret `MOK_PASSWORD`) → reboot.
+- After this, the CachyOS kernel boots under Secure Boot. Verify:
+
+  ```sh
+  mokutil --sb-state          # SecureBoot enabled
+  mokutil --list-enrolled     # see the Margine cert
+  uname -r                    # 7.0.x-cachyos*.fc44.x86_64
+  ```
+
+### Step 4 · Apply user-state (one-time)
+
+```sh
+ujust margine-bootstrap
+```
+
+This runs all 7 `margine-configure-*` helpers in sequence and applies
+the Margine user-state declaration: `~/data` / `~/dev` / `~/scratch` +
+XDG remap + Nautilus bookmarks + Tiling Shell + GNOME extensions +
+keybindings + appearance + default applications + app folders.
+Idempotent. Re-runnable after upgrades.
+
+Log out and back in to refresh GNOME Shell.
+
+### (Optional) Step 5 · Opt into the gaming layer
+
+```sh
+ujust margine-gaming
+```
+
+See §6 ("Channel cheat sheet") and §1 ("System layer") above for what
+each layer brings in.
 
 ## Build
 

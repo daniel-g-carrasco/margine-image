@@ -195,7 +195,7 @@ anonymized public artifact.
 
 The baseline is acceptable when:
 
-- `rpm-ostree status` shows a healthy Silverblue deployment;
+- `rpm-ostree status` shows a healthy Atomic deployment (Margine bootc image, Bluefin DX, or stock Silverblue depending on path);
 - Secure Boot is enabled on the stock Fedora deployment;
 - `/usr` follows the read-only ostree model;
 - `/etc` and `/var` are available as local state;

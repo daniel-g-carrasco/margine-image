@@ -1,7 +1,37 @@
 # Manual Lab Installation
 
-This document defines the phase 1 VM lab. The lab is intentionally manual so the
-project can observe Fedora Silverblue before automating anything.
+> **Two paths today.** The recommended way to install Margine is to rebase
+> a Bluefin DX install to the published bootc image — see
+> [ADR 0005](adr/0005-base-on-bluefin-dx.md) and the
+> [margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
+> The procedure below is the **phase-0 Silverblue lab path** that produced
+> this spec; it is preserved for completeness and for users who explicitly
+> want to start from stock Silverblue + `apply-host-layer` rather than the
+> bootc image. On real hardware, only the bootc path is supported.
+
+## Margine bootc install (recommended)
+
+```sh
+# On a fresh Bluefin DX (or any Fedora Atomic) install:
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+systemctl reboot
+# First boot: mok-enroll.service runs once; reboot a second time and
+# confirm enrollment in the MOK Manager screen. The CachyOS kernel then
+# boots under Secure Boot.
+# After login, run the one-shot user-state bootstrap:
+ujust margine-bootstrap
+```
+
+That's the entire install on the production path. Everything below is the
+legacy Silverblue lab procedure.
+
+---
+
+## Phase-0 Silverblue lab (legacy)
+
+This document defines the phase 0 (originally called "phase 1") VM lab.
+The lab was intentionally manual so the project could observe Fedora
+Silverblue before automating anything.
 
 ## VM Requirements
 

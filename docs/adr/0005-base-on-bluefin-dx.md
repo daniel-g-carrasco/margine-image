@@ -239,18 +239,64 @@ b. **Re-install from Bluefin ISO** and immediately run
 
 For hardware installs, only (b) is supported.
 
-## Phase 2 path unchanged
+## Phase 2 path: SHORTCUT to image-based via Origami's custom-kernel pattern
 
-`declarations.base.image_workflow.future_candidates` still lists
-`bootc` and `native-ostree-compose`. The intended phase 2 endpoint
-becomes:
+Phase 2 (`declarations.base.image_workflow.future_candidates: bootc`) was
+originally projected as 1-2 weeks of CI/BlueBuild setup. After surveying
+the existing ecosystem (Origami Linux, MorrOS, the Universal Blue
+`image-template`), we realised the heavy work was already done:
 
-**Margine as a Containerfile** that `FROM ghcr.io/ublue-os/bluefin-dx`
-and applies the 5 diffs at image-build time, publishing the result as
-`ghcr.io/daniel-g-carrasco/margine` (or similar). This is the BlueBuild
-flow that the Universal Blue community already supports and tools.
-Pivoting to Bluefin DX in phase 1 makes phase 2 a ~50-line Containerfile
-instead of a from-scratch Silverblue derivative.
+- The Universal Blue
+  [`image-template`](https://github.com/ublue-os/image-template) is the
+  recommended starting point — Containerfile + GitHub Actions + cosign
+  scaffolding ready to fork.
+- Origami Linux's
+  [`custom-kernel` module](https://gitlab.com/origami-linux/images)
+  installs the CachyOS kernel from COPR, signs vmlinuz with `sbsign`,
+  signs all modules with `sign-file`, and creates a `mok-enroll.service`
+  that imports the MOK on first boot. Reusable as-is (with attribution),
+  simplified for Margine's single-kernel-variant + no-Nvidia profile.
+- MorrOS [`morros`](https://github.com/morrolinux/morros) demonstrates the
+  pattern with a different desktop choice, validating that the recipe is
+  approachable for individual maintainers.
+
+Margine adopts the same pattern. Phase 2 is therefore not "future work"
+but a **second active repo**:
+[`daniel-g-carrasco/margine-image`](https://github.com/daniel-g-carrasco/margine-image)
+(or whatever final name we publish), built nightly by GitHub Actions and
+pushed to `ghcr.io/daniel-g-carrasco/margine:stable`.
+
+**End-user install becomes:**
+
+```sh
+# On any vanilla Bluefin DX / Fedora Atomic install
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+systemctl reboot
+# On first boot: mok-enroll.service imports the Margine MOK; reboot
+# again and select "Enroll MOK" in the bootloader.
+# The CachyOS kernel now boots under Secure Boot.
+```
+
+No host rpm-ostree layering at runtime. Container-first across the board.
+
+This **supersedes** the `apply-margine-on-bluefin` adapter that this ADR
+originally proposed. The adapter is kept in the repo as a fallback for
+users who do not want to rebase to the published image (they stay on
+Bluefin DX upstream and let the adapter layer kernel-cachyos + kitty
+themselves), but the recommended path is the image rebase.
+
+The two repos divide as follows:
+
+| Repo | Scope |
+| --- | --- |
+| `margine-fedora-atomic` (this one) | Declarative spec (`declarations/margine-atomic.yaml`), ADRs, lab docs, `configure-gnome-*` user-state helpers, validation scripts. The "what Margine is" repo. |
+| `margine-image` | bootc image build: `Containerfile`, `build_files/custom-kernel/install.sh`, `build_files/build.sh`, GitHub Actions CI for build+sign+push. The "how Margine is produced" repo. |
+
+The image repo fetches `configure-gnome-*` and
+`declarations/margine-atomic.yaml` from this repo at build time, pinning
+to a specific commit (set via `MARGINE_REF` env in the build, default
+`main`). So a change in the declarative spec rolls out to a new image
+build automatically.
 
 ## References
 

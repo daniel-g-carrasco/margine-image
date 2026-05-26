@@ -11,19 +11,34 @@
 
 ## Margine bootc install (recommended)
 
+The install starts from a regular **Bluefin** ISO, not a separate
+"Bluefin DX" ISO (which does not exist — DX is a `ujust devmode` toggle
+on top of regular Bluefin, and Margine's image already contains the DX
+package set, so `ujust devmode` is unnecessary).
+
 ```sh
-# On a fresh Bluefin DX (or any Fedora Atomic) install:
+# 1. Get the Bluefin ISO (regular, not DX — there is no DX ISO).
+curl -L -o ~/Downloads/bluefin-stable-x86_64.iso \
+  https://download.projectbluefin.io/bluefin-stable-x86_64.iso
+
+# 2. Install Bluefin (UEFI + Secure Boot enabled + LUKS2 encryption).
+
+# 3. From the Bluefin desktop, rebase to Margine:
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
-# First boot: mok-enroll.service runs once; reboot a second time and
-# confirm enrollment in the MOK Manager screen. The CachyOS kernel then
-# boots under Secure Boot.
-# After login, run the one-shot user-state bootstrap:
+
+# 4. First boot after reboot: mok-enroll.service runs once.
+# 5. Reboot a second time: confirm enrollment in the MOK Manager screen
+#    (firmware UI). The CachyOS kernel then boots under Secure Boot.
+
+# 6. After login, run the one-shot user-state bootstrap:
 ujust margine-bootstrap
 ```
 
-That's the entire install on the production path. Everything below is the
-legacy Silverblue lab procedure.
+That's the entire install on the production path. Full step-by-step + a
+post-install verification checklist live in the
+[margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
+Everything below is the legacy Silverblue lab procedure.
 
 ---
 

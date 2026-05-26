@@ -102,6 +102,31 @@ We pick **Bluefin DX (Fedora 44 track)** going forward.
 
 ## Why DX, not the base Bluefin image
 
+### Terminology clarification
+
+"Bluefin DX" is not a separate Linux distribution or a separately
+installable ISO. Universal Blue ships **one** Bluefin ISO
+(`bluefin-stable-x86_64.iso`). "DX" (Developer Experience) is a
+post-install toggle: the user installs Bluefin from the regular ISO,
+then runs `ujust devmode`, which rebases the local deployment to the
+`bluefin-dx:stable` OCI image (same family, DX additions layered on
+top).
+
+For **Margine** this matters because:
+
+- Our Containerfile uses `FROM ghcr.io/ublue-os/bluefin-dx:stable`
+  directly. By the time the user rebases to Margine, the DX package
+  set is already baked in — running `ujust devmode` first would be
+  redundant.
+- A user installing Margine on real hardware downloads
+  `bluefin-stable-x86_64.iso` (the regular one), installs it, and
+  immediately rebases to `ghcr.io/daniel-g-carrasco/margine:stable`.
+  They never see "bluefin-dx" as a separate ISO because none exists.
+- This is documented prominently in the
+  [margine-image README install steps](https://github.com/daniel-g-carrasco/margine-image#install).
+
+### Why the DX package set (not base Bluefin)
+
 Both Bluefin and Bluefin DX ship the same desktop polish (codec,
 mesa-freeworld, blur-my-shell, dash-to-dock, gsconnect, AppIndicator).
 DX adds on top of base:

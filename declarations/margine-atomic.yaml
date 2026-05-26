@@ -903,19 +903,37 @@ gaming_runtime:
     steam_gaming_mode_default: false
     split_lock_override_default: false
     nvidia_gaming_default: false
+    default_image_includes_gaming: false  # opt-in via `ujust margine-gaming`
+  opt_in:
+    command: ujust margine-gaming
+    recipe_file: /usr/share/ublue-os/just/99-margine.just
+    source_in_image_repo: build_files/99-margine.just
+    inspired_by: >
+      Bazzite (ublue-os/bazzite) which bakes the gaming stack into the
+      image. Margine instead exposes it as a single ujust opt-in command
+      so the default image stays lean. The package set is a Margine-
+      curated subset of what Bazzite ships — no scx-scheds (we have the
+      CachyOS kernel), no umu-launcher (complex packaging), no Bazzite
+      KDE/Deck-specific bits.
+    rollback_command: ujust margine-gaming-remove
   layers:
     desktop_runtime:
       apps_channel: flatpak
-      host_helpers_channel: rpm-ostree-or-image
-    tools_overlays:
-      default: optional
-      host_helpers:
-        - gamescope
-        - mangohud
-        - vkBasalt
-        - gamemode
-        - goverlay
-        - steam-devices
+      host_helpers_channel: rpm-ostree-via-ujust
+    flatpak_launchers_opt_in:
+      - com.valvesoftware.Steam
+      - net.lutris.Lutris
+      - com.heroicgameslauncher.hgl
+      - com.usebottles.bottles
+      - com.github.Matoking.protontricks
+      - net.davidotek.pupgui2
+    rpm_host_helpers_opt_in:
+      - gamescope
+      - mangohud
+      - vkBasalt
+      - gamemode
+      - goverlay
+      - steam-devices
     gaming_mode_session:
       phase: future-image-or-bootc
       requires:

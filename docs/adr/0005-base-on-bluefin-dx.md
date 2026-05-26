@@ -49,7 +49,7 @@ The "Margine-specific" decisions reduce to five:
 | Tiling Shell user-installed | Margine **adds** (Bluefin has no tiling extension) |
 | Kernel CachyOS via COPR | Margine **adds** (Bluefin uses its own signed kernel from `ublue-akmods`) |
 | ~~`kitty` as default terminal~~ | ~~Margine replaces~~ — **dropped 2026-05-26**; Margine keeps Bluefin's Ptyxis. (Original delta is preserved here for traceability; the image, YAML keybindings, and adapter scripts no longer reference kitty.) |
-| Bluefin branding extensions (bazaar-integration, gradia-integration, logomenu) | Margine **disables** (the packages can stay) |
+| LogoMenu (`logomenu@aryan_k`) | Margine **disables** (replaces "Activities" with a distro-logo dropdown; pure branding). Bazaar Integration and Gradia Integration were originally listed as branding too but were re-enabled 2026-05-26 — they're functional tools (Flathub app store + screenshot beautifier), not branding. |
 | Hyprland-style keybindings (workspace binds, custom launchers, Tiling Shell binds, default applications) | Margine **adds** via `configure-gnome-keybindings` and `configure-gnome-{appearance,extensions,app-folders,default-applications}` |
 
 Maintaining a hand-rolled clone of 130 packages and 70 settings for the
@@ -147,11 +147,11 @@ scripts/apply-margine-on-bluefin --apply
    kernel-cachyos`);
 2. ~~layers `kitty` and registers it as the default terminal emulator~~ —
    dropped (see delta-table note above); Bluefin's Ptyxis stays as default;
-3. disables Bluefin branding extensions
-   (`bazaar-integration@kolunmi.github.io`,
-   `gradia-integration@alexandervanhee.github.io`, `logomenu@aryan_k`)
-   via `gnome-extensions disable`; the packages stay installed so the
-   user can re-enable per session;
+3. disables only LogoMenu (`logomenu@aryan_k`) — Bluefin's distro-logo
+   replacement of the "Activities" button — via `gnome-extensions
+   disable`; the package stays installed so the user can re-enable per
+   session. Bazaar Integration and Gradia Integration stay enabled
+   (re-evaluated 2026-05-26 — they're functional, not branding);
 4. installs Tiling Shell from the EGO release matching the running
    GNOME Shell (reuses `scripts/install-user-extensions`);
 5. applies the Hyprland-style keybindings, default applications, app

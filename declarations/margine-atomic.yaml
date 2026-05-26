@@ -50,9 +50,7 @@ base:
       terminal:
         action: inherit Bluefin default (Ptyxis); no override
       branding_extensions_disabled:
-        - bazaar-integration@kolunmi.github.io
-        - gradia-integration@alexandervanhee.github.io
-        - logomenu@aryan_k
+        - logomenu@aryan_k  # only true branding ext; Bazaar+Gradia are functional and stay enabled
       tiling_extension:
         action: install-user-extensions --apply (Tiling Shell from EGO)
       configure_user_state:
@@ -591,8 +589,10 @@ gnome:
       All enabled by scripts/configure-gnome-extensions.
     enable:
       - appindicatorsupport@rgcjonas.gmail.com
+      - bazaar-integration@kolunmi.github.io
       - blur-my-shell@aunetx
       - dash-to-dock@micxgx.gmail.com
+      - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
       - search-light@icedman.github.com
       - tilingshell@ferrarodomenico.com

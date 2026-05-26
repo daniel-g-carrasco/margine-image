@@ -134,11 +134,9 @@ sys.exit(1)
   fi
 fi
 
-# --- step 2: disable Bluefin branding extensions ------------------------
-section "Step 2 — Disable Bluefin branding extensions"
+# --- step 2: disable LogoMenu (the only pure-branding extension) ---------
+section "Step 2 — Disable LogoMenu (Bluefin's distro-logo Activities button)"
 branding_extensions=(
-  "bazaar-integration@kolunmi.github.io"
-  "gradia-integration@alexandervanhee.github.io"
   "logomenu@aryan_k"
 )
 if command -v gnome-extensions >/dev/null 2>&1; then

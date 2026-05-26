@@ -8,16 +8,23 @@ profile:
 
 base:
   family: fedora-atomic-desktop
-  variant: silverblue
-  release: 44
+  variant: margine
+  derives_from: bluefin-dx
+  fedora_release: 44
   desktop: gnome
   architecture: x86_64
-  update_engine: rpm-ostree
+  update_engine: bootc
+  legacy_variants_for_reference:
+    - silverblue        # phase-0 lab base, before ADR 0005
+    - bluefin-dx        # phase-1 rebase target, before the published image
   image_workflow:
-    current: bluefin-dx-rebase
-    legacy: stock-silverblue-lab
+    current: margine-bootc-image
+    image_ref: ghcr.io/daniel-g-carrasco/margine:stable
+    build_repo: https://github.com/daniel-g-carrasco/margine-image
+    legacy_paths:
+      - stock-silverblue-lab        # scripts/apply-host-layer
+      - bluefin-dx-rebase-adapter   # scripts/apply-margine-on-bluefin
     future_candidates:
-      - bootc
       - native-ostree-compose
   bluefin_pivot:
     note: >
@@ -41,7 +48,7 @@ base:
         action: rpm-ostree override remove kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra --install kernel-cachyos
         source: copr:bieszczaders/kernel-cachyos
       terminal:
-        action: rpm-ostree install kitty + xdg-mime default kitty
+        action: inherit Bluefin default (Ptyxis); no override
       branding_extensions_disabled:
         - bazaar-integration@kolunmi.github.io
         - gradia-integration@alexandervanhee.github.io
@@ -150,33 +157,68 @@ security:
   secure_boot:
     required: true
     baseline: stock-fedora-shim-bootloader-kernel
-    custom_keys: deferred
+    custom_signing:
+      mechanism: mok
+      signed_at: image-build-time
+      key_format: rsa-2048
+      signs:
+        - vmlinuz       # via sbsign
+        - kernel-modules  # via scripts/sign-file per .ko/.ko.xz/.ko.zst/.ko.gz
+      first_boot_enrollment:
+        unit: mok-enroll.service
+        certificate_path: /usr/share/cert/MOK.der
+        marker_path: /var/.mok-enrolled
+      keys:
+        public_in_repo:
+          - margine-image/secrets/MOK.pem
+          - margine-image/secrets/MOK.der
+        private_in_repo: false
+        private_storage: github-actions-secret (MOK_KEY) + local backup
   tpm2_auto_unlock:
     required: true
     tool: systemd-cryptenroll
     crypttab_option: tpm2-device=auto
     keep_recovery_passphrase: true
-    pcr_policy: lab-decision-required
+    pcr_policy:
+      vm_lab: "0"
+      hardware_target: "0+7"
+      validation_note: >
+        PCR 0 (Platform Firmware) alone survives kernel + initramfs changes
+        and is the right choice for VM lab where Secure Boot is off. PCR 7
+        (Secure Boot state) is added on hardware where Secure Boot is
+        enrolled with the Margine MOK and the boot chain is stable.
   secrets_policy:
     store_in_repo: false
 
 kernel:
-  baseline:
-    provider: fedora
-    required_fallback: true
-  experiment:
+  shipped:
     provider: cachyos-copr
     repo: bieszczaders/kernel-cachyos
     package: kernel-cachyos
-    target_compliant_only_with_secure_boot: true
-    force_as_default: false
+    signed_with: margine-mok
+    secure_boot_compliant: true
+    installed_at: image-build-time
+  fallback:
+    provider: fedora
+    available_via: rpm-ostree rollback (previous deployment)
+  legacy_layered_path_for_reference:
+    method: rpm-ostree override remove kernel{,-core,-modules,-modules-core,-modules-extra} --install kernel-cachyos
+    secure_boot_compliant: false
+    note: kept in docs/03 for completeness; superseded by image-baked + MOK-signed
 
 host_packages:
   baseline_note: >
-    Baseline = installed by scripts/apply-host-layer on every Margine
-    Fedora Atomic installation. Mirrors the Bluefin "common host layer"
-    intent but using rpm-ostree layering rather than image baking
-    (image-based variant is on the phase 2 roadmap as bootc).
+    Reference list of what the Margine baseline expects to find on disk.
+    On the shipping path (Margine bootc image rebased FROM bluefin-dx),
+    every package in `baseline` is ALREADY provided by Bluefin DX — Margine
+    does not re-layer them. This section is the contract used by the future
+    `validate-declared-state` drift detector to confirm Bluefin still ships
+    them; if Bluefin removes one, we'll need to layer it back in the image
+    build.
+
+    The legacy `scripts/apply-host-layer` (Silverblue phase-0 lab path)
+    uses this same list to layer the packages on stock Silverblue.
+  baseline_provided_by: bluefin-dx
   baseline:
     rpmfusion:
       enable_free: true
@@ -267,11 +309,9 @@ host_packages:
       - gnome-shell-extension-blur-my-shell
       - gnome-shell-extension-dash-to-dock
       - gnome-shell-extension-gsconnect
-      - gnome-shell-extension-just-perfection
       - gnome-shell-extension-workspace-indicator
       - adw-gtk3-theme
       - showtime
-      - kitty
     gnome_tools_note: >
       Tiling extension: we use Tiling Shell (tilingshell@ferrarodomenico.com),
       not Forge. Forge is marked "Needs a new maintainer" upstream and its
@@ -560,21 +600,10 @@ gnome:
       These are still installed (host layer or user_install) but NOT in
       the enable list, so configure-gnome-extensions leaves them off.
       They can still be turned on per-session via Extensions Manager.
-        - just-perfection-desktop@just-perfection
-            Bluefin does NOT use Just Perfection; on the lab VM the
-            extension was making the overview dash icons shrink. Drop
-            it from the baseline and keep the GNOME defaults that
-            Bluefin's gschema override already polishes (hot corners
-            off, weekday on, etc.).
         - workspace-indicator@gnome-shell-extensions.gcampax.github.com
             Fedora-packaged numeric workspace indicator (top-right
             dropdown). Available as a fallback if the user wants the
             current workspace number visible.
-        - workspaces-bar@fthx
-            Upstream is dead (fthx abandoned; max shell-version = 42).
-            No fork actively packaged for GNOME 50. Kept in
-            user_install only as a historical record; remove later if
-            an actively-maintained alternative ships in Margine.
     user_install_note: >
       These extensions are NOT in Fedora 44 repos. install-user-extensions
       installs each entry from either extensions.gnome.org (when ego_id
@@ -600,13 +629,6 @@ gnome:
           upstream git repo (Bluefin does the same) because the EGO
           release (v42) is stuck at GNOME 49 while master (v101)
           supports GNOME 50.
-      - uuid: workspaces-bar@fthx
-        ego_id: 3851
-        description: >
-          Workspaces Bar — DEAD upstream (shell-version max 42). Kept
-          in this list as a record of the intent (numeric workspace
-          bar). Will not install successfully on GNOME 50; either
-          drop, find an active fork, or revisit later.
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -622,7 +644,7 @@ gnome:
     pdf_viewer: org.gnome.Papers.desktop
     text_editor: org.gnome.TextEditor.desktop
     archive_manager: org.gnome.FileRoller.desktop
-    terminal_emulator: kitty.desktop
+    terminal_emulator: org.gnome.Ptyxis.desktop
   workspaces:
     note: >
       GNOME dynamic workspace model, with native SUPER+1..0 direct-jump
@@ -638,12 +660,12 @@ gnome:
       margine-os-personal/files/home/.config/hypr/conf.d/60-binds.conf.
       Mapped to GNOME native (org.gnome.desktop.wm.keybindings,
       org.gnome.shell.keybindings, org.gnome.settings-daemon.plugins.media-keys),
-      custom-keybindings (for app-launcher slots), and Forge extension
-      keybindings (for tiling actions). Applied by
-      scripts/configure-gnome-keybindings.
+      custom-keybindings (for app-launcher slots), and Tiling Shell
+      extension keybindings (for tiling actions; see `tilingshell:`
+      block below). Applied by scripts/configure-gnome-keybindings.
       Overrides vs the Hyprland source:
         - SUPER+E      → file manager (Nautilus), instead of SUPER SHIFT+F
-        - terminal     = kitty (replaces ptyxis as the launch target)
+        - terminal     = Ptyxis (Bluefin's default; no kitty override)
       Skipped (no GNOME equivalent or out of scope):
         - SUPER+K      Hyprland binds help (use GNOME Settings → Keyboard)
         - SUPER SHIFT+P  restart waybar (waybar not present)
@@ -689,7 +711,7 @@ gnome:
     custom:
       - name: terminal
         binding: '<Super>Return'
-        command: 'kitty'
+        command: 'ptyxis'
       - name: browser
         binding: '<Super><Shift>Return'
         command: 'flatpak run app.zen_browser.zen'
@@ -698,7 +720,7 @@ gnome:
         command: 'nautilus'
       - name: btop
         binding: '<Super><Ctrl>t'
-        command: 'kitty -e btop'
+        command: 'ptyxis -- btop'
       - name: session_actions_menu
         binding: '<Super>Escape'
         command: 'gnome-session-quit --logout'

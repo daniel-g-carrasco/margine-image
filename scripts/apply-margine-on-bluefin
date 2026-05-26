@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
 #
+# SUPERSEDED (kept as fallback only).
+#
+# The recommended path is to rebase to the published Margine bootc image:
+#
+#   rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+#   systemctl reboot
+#
+# This script is preserved for the rare case of users who want to stay on
+# upstream Bluefin DX and layer Margine deltas at runtime. The kernel is
+# layered UNSIGNED here — Secure Boot will refuse the CachyOS kernel
+# unless you disable Secure Boot in firmware first. Only the published
+# bootc image carries MOK-signed kernel + modules + first-boot
+# mok-enroll.service. Do not use this adapter on production hardware
+# where Secure Boot must remain enabled.
+#
+# ---------------------------------------------------------------------
+#
 # Apply the Margine delta on top of a Bluefin DX deployment.
 #
 # Assumes the system has already been rebased to:
 #   ostree-unverified-registry:ghcr.io/ublue-os/bluefin-dx:stable
 #
-# The delta is the 5 differences documented in
-# docs/adr/0005-base-on-bluefin-dx.md:
+# The delta is the 4 differences documented in
+# docs/adr/0005-base-on-bluefin-dx.md (kitty was dropped 2026-05-26):
 #
 #   1. Layer kernel-cachyos from the bieszczaders/kernel-cachyos COPR,
 #      replacing Bluefin's signed kernel.
-#   2. Layer kitty.
-#   3. Disable Bluefin's branding extensions (bazaar-integration,
+#   2. Disable Bluefin's branding extensions (bazaar-integration,
 #      gradia-integration, logomenu). The packages stay installed.
-#   4. Install Tiling Shell user-level (via install-user-extensions).
-#   5. Apply Margine user state via the existing configure-gnome-* and
+#   3. Install Tiling Shell user-level (via install-user-extensions).
+#   4. Apply Margine user state via the existing configure-gnome-* and
 #      configure-default-applications scripts.
 #
 # Re-runnable. Each step checks current state and skips when applicable.
@@ -118,37 +134,8 @@ sys.exit(1)
   fi
 fi
 
-# --- step 2: kitty as terminal -------------------------------------------
-section "Step 2 — Layer kitty"
-kitty_installed=0
-if command -v rpm-ostree >/dev/null 2>&1; then
-  if rpm-ostree status --json 2>/dev/null \
-    | python3 -c '
-import json, sys
-data = json.loads(sys.stdin.read() or "{}")
-for d in data.get("deployments", [])[:2]:
-    requested = (d.get("requested-packages") or []) + (d.get("packages") or [])
-    if "kitty" in (str(p) for p in requested):
-        sys.exit(0)
-sys.exit(1)
-'; then
-    kitty_installed=1
-  fi
-fi
-
-if (( kitty_installed )); then
-  echo "  kitty already layered — skip rpm-ostree install."
-else
-  run sudo rpm-ostree install kitty
-fi
-
-# Default terminal: handled by configure-gnome-appearance writing
-# gnome.default_applications.terminal_emulator, applied by
-# configure-default-applications. Nothing to do here beyond making sure
-# kitty is on disk.
-
-# --- step 3: disable Bluefin branding extensions ------------------------
-section "Step 3 — Disable Bluefin branding extensions"
+# --- step 2: disable Bluefin branding extensions ------------------------
+section "Step 2 — Disable Bluefin branding extensions"
 branding_extensions=(
   "bazaar-integration@kolunmi.github.io"
   "gradia-integration@alexandervanhee.github.io"
@@ -166,8 +153,8 @@ else
   echo "  (gnome-extensions not available; would disable: ${branding_extensions[*]})"
 fi
 
-# --- step 4: install Tiling Shell user-level ----------------------------
-section "Step 4 — Install Tiling Shell user-level"
+# --- step 3: install Tiling Shell user-level ----------------------------
+section "Step 3 — Install Tiling Shell user-level"
 if [[ -x "${repo_root}/scripts/install-user-extensions" ]]; then
   if (( apply )); then
     "${repo_root}/scripts/install-user-extensions" --apply
@@ -178,8 +165,8 @@ else
   echo "  (install-user-extensions missing; skipping)"
 fi
 
-# --- step 5: apply Margine user state -----------------------------------
-section "Step 5 — Apply Margine user state (extensions/keybindings/appearance/apps/folders)"
+# --- step 4: apply Margine user state -----------------------------------
+section "Step 4 — Apply Margine user state (extensions/keybindings/appearance/apps/folders)"
 for s in configure-gnome-extensions configure-gnome-keybindings \
          configure-gnome-appearance configure-default-applications \
          configure-gnome-app-folders; do
@@ -204,7 +191,7 @@ The Margine delta has been applied on top of Bluefin DX.
 If kernel-cachyos was newly layered (step 1), a new rpm-ostree deployment
 is staged. Reboot from the GNOME menu (Power → Restart) to enter it.
 
-For desktop-side changes (steps 3, 4, 5) a logout / log back in is
+For desktop-side changes (steps 2, 3, 4) a logout / log back in is
 enough on Wayland to fully refresh GNOME Shell.
 EOF
 else

@@ -1,10 +1,20 @@
 # ADR 0005 — Base Margine on Bluefin DX (Fedora track), not on stock Silverblue
 
-**Date:** 2026-05-25
-**Status:** Accepted (supersedes the implicit "stock Silverblue + layered
-baseline" deployment story of phase 1; the lab artifacts under
-`scripts/apply-host-layer` and `host_packages.baseline` remain valid as
-learning material but are no longer the recommended install path)
+**Date:** 2026-05-25 (amended 2026-05-26)
+**Status:** Accepted and shipping. Margine is published as a bootc image
+(`ghcr.io/daniel-g-carrasco/margine:stable`) built by GitHub Actions from
+[`margine-image`](https://github.com/daniel-g-carrasco/margine-image),
+which uses Bluefin DX as the `FROM`. The original "Silverblue + layered
+baseline" lab path (`scripts/apply-host-layer`, `host_packages.baseline`)
+and the interim "Bluefin DX rebase + adapter" path
+(`scripts/apply-margine-on-bluefin`) remain in the repo as fallbacks for
+users who do not want the published image, but the shipping deployment is
+the bootc image rebase.
+
+**Amendment 2026-05-26.** The `kitty` delta listed below was dropped:
+Margine now keeps Bluefin's Ptyxis as the default terminal. The published
+image installs no terminal-related layer. See the strike-through in the
+delta table.
 
 ## Context
 
@@ -38,7 +48,7 @@ The "Margine-specific" decisions reduce to five:
 | --- | --- |
 | Tiling Shell user-installed | Margine **adds** (Bluefin has no tiling extension) |
 | Kernel CachyOS via COPR | Margine **adds** (Bluefin uses its own signed kernel from `ublue-akmods`) |
-| `kitty` as default terminal | Margine **replaces** (Bluefin uses GNOME Console / ptyxis) |
+| ~~`kitty` as default terminal~~ | ~~Margine replaces~~ — **dropped 2026-05-26**; Margine keeps Bluefin's Ptyxis. (Original delta is preserved here for traceability; the image, YAML keybindings, and adapter scripts no longer reference kitty.) |
 | Bluefin branding extensions (bazaar-integration, gradia-integration, logomenu) | Margine **disables** (the packages can stay) |
 | Hyprland-style keybindings (workspace binds, custom launchers, Tiling Shell binds, default applications) | Margine **adds** via `configure-gnome-keybindings` and `configure-gnome-{appearance,extensions,app-folders,default-applications}` |
 
@@ -135,7 +145,8 @@ scripts/apply-margine-on-bluefin --apply
    top of Bluefin's base kernel (Bluefin's signed kernel is replaced via
    `rpm-ostree override remove kernel kernel-core ... --install
    kernel-cachyos`);
-2. layers `kitty` and registers it as the default terminal emulator;
+2. ~~layers `kitty` and registers it as the default terminal emulator~~ —
+   dropped (see delta-table note above); Bluefin's Ptyxis stays as default;
 3. disables Bluefin branding extensions
    (`bazaar-integration@kolunmi.github.io`,
    `gradia-integration@alexandervanhee.github.io`, `logomenu@aryan_k`)
@@ -282,7 +293,7 @@ No host rpm-ostree layering at runtime. Container-first across the board.
 This **supersedes** the `apply-margine-on-bluefin` adapter that this ADR
 originally proposed. The adapter is kept in the repo as a fallback for
 users who do not want to rebase to the published image (they stay on
-Bluefin DX upstream and let the adapter layer kernel-cachyos + kitty
+Bluefin DX upstream and let the adapter layer kernel-cachyos
 themselves), but the recommended path is the image rebase.
 
 The two repos divide as follows:

@@ -1,9 +1,29 @@
 # CachyOS Kernel Experiment
 
-The CachyOS kernel from COPR is experimental in this project. It is not part of
-the Fedora Silverblue base and must not be treated as a safe default until
-rollback has been tested. It also must not be treated as compatible with the
-target Secure Boot requirement until that boot path is validated explicitly.
+> **Production path (since 2026-05-26).** The Margine bootc image
+> (`ghcr.io/daniel-g-carrasco/margine:stable`) bakes `kernel-cachyos`
+> into the OCI image at build time and MOK-signs both the vmlinuz and
+> every kernel module. First-boot `mok-enroll.service` imports the
+> Margine MOK certificate via `mokutil`; after the user confirms the
+> import from the bootloader, the CachyOS kernel boots cleanly under
+> Secure Boot. See [docs/07-secure-boot-tpm2.md § MOK signing for the
+> CachyOS kernel](07-secure-boot-tpm2.md#mok-signing-for-the-cachyos-kernel)
+> and [`margine-image/build_files/custom-kernel/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/custom-kernel/install.sh).
+>
+> The lab procedure below is preserved as the **historical** Silverblue
+> path (runtime `rpm-ostree override remove ... --install kernel-cachyos`).
+> It runs unsigned, and only works with Secure Boot disabled. It is
+> useful as a reference for understanding what the image build does, and
+> as a fallback for users on stock Silverblue who want to experiment
+> without rebasing.
+
+---
+
+The CachyOS kernel from COPR is experimental as a runtime-layered package.
+It is not part of the Fedora Silverblue base and must not be treated as a
+safe default in that path until rollback has been tested. It also must not
+be treated as compatible with Secure Boot in the runtime-layered path
+because nothing in the layered path signs vmlinuz or the modules.
 
 ## Upstream Inputs
 

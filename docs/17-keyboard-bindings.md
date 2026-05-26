@@ -59,10 +59,10 @@ F = Forge).
 
 | Hyprland | Command | Override note |
 | --- | --- | --- |
-| `SUPER+RETURN` | `kitty` | terminal default is **kitty**, not the GNOME-stock ptyxis |
+| `SUPER+RETURN` | `ptyxis` | terminal default is **Ptyxis** (Bluefin's default; previous design used kitty, dropped 2026-05-26) |
 | `SUPER SHIFT+RETURN` | `flatpak run app.zen_browser.zen` | |
 | **`SUPER+E`** | `nautilus` | **override of `SUPER SHIFT+F`** — `E` is the recurring desktop convention for "Explorer/Files" |
-| `SUPER CTRL+T` | `kitty -e btop` | btop lives in the toolbox; runs inside kitty |
+| `SUPER CTRL+T` | `ptyxis -- btop` | btop lives in the toolbox; runs inside Ptyxis |
 | `SUPER+ESCAPE` | `gnome-session-quit --logout` | replaces the `open-session-actions-menu` helper |
 | `SHIFT+Print` | `gnome-screenshot -ac` | takes a region screenshot to clipboard (GNOME shell handles SUPER+Print and bare Print as full UIs) |
 

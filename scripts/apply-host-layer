@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 #
+# SUPERSEDED (kept for audit + Silverblue lab fallback only).
+#
+# The recommended Margine install path is to rebase to the published bootc
+# image, which already contains everything this script would layer:
+#
+#   rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+#   systemctl reboot
+#
+# This script is preserved for two reasons:
+#   1. The Silverblue lab phase that produced the host_packages.baseline
+#      list still works — running this on a stock Silverblue install gives
+#      a result equivalent to Bluefin DX baseline (codec + virt + diag +
+#      fonts + GNOME tools).
+#   2. The package list itself is the contract that the future
+#      `validate-declared-state` drift detector will check against the
+#      published image.
+#
+# Do not use this on a Margine bootc deployment — the layers it would
+# stage already live in the image and would be reported as duplicates by
+# rpm-ostree.
+#
+# ---------------------------------------------------------------------
+#
 # Apply the Margine host layer baseline:
 #   - Enable RPMFusion (free + nonfree)
 #   - Replace ffmpeg-free / mesa-va-drivers / mesa-vdpau-drivers with

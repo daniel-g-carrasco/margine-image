@@ -110,6 +110,135 @@ jobs:
             --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
             --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
 
+      # Layer A: image-internals inspection. Runs BEFORE push so a
+      # broken image never reaches :stable. Catches the three classes
+      # of bugs that have bitten us during the smoke test (2026-05-28):
+      #   1. dracut silently producing no initramfs
+      #   2. initramfs missing crypto/btrfs/virtio_blk modules
+      #   3. initramfs at /boot/ instead of /usr/lib/modules/$KVER/
+      # See docs/lessons-learned/ in margine-fedora-atomic for context.
+      - name: Verify image internals (Layer A guardrails)
+        run: |
+          set -euo pipefail
+
+          IMG="localhost/${{ env.IMAGE_NAME }}:$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')"
+          echo "Inspecting image: $IMG"
+          podman images "$IMG"
+
+          # Helper: run command inside the image.
+          # Use bash explicitly so shell globs expand.
+          inspect() { podman run --rm --entrypoint="" "$IMG" bash -c "$1"; }
+
+          fail=0
+          check() {
+            local label="$1"; shift
+            if "$@"; then
+              echo "  ✓ $label"
+            else
+              echo "  ✗ FAIL: $label"
+              fail=1
+            fi
+          }
+
+          echo
+          echo "== 1. bootc-canonical initramfs path =="
+          check "/usr/lib/modules/*/initramfs.img exists" \
+            inspect 'test -f /usr/lib/modules/*/initramfs.img'
+          check "/usr/lib/modules/*/vmlinuz exists" \
+            inspect 'test -f /usr/lib/modules/*/vmlinuz'
+
+          echo
+          echo "== 2. initramfs size sanity (>50 MB; host-only is <30) =="
+          size=$(inspect 'stat -c%s /usr/lib/modules/*/initramfs.img' || echo 0)
+          echo "  initramfs size: $size bytes ($((size / 1024 / 1024)) MB)"
+          if (( size < 50000000 )); then
+            echo "  ✗ FAIL: initramfs too small — likely host-only / missing modules"
+            fail=1
+          else
+            echo "  ✓ size acceptable"
+          fi
+
+          echo
+          echo "== 3. critical modules in initramfs =="
+          for mod in dm-crypt dm-mod btrfs virtio_blk; do
+            check "module: $mod" \
+              inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q '/$mod\\.ko'"
+          done
+
+          echo
+          echo "== 4. boot-security infrastructure =="
+          check "mok-enroll.service enabled" \
+            inspect 'systemctl --root=/ is-enabled mok-enroll.service >/dev/null'
+          check "/usr/share/cert/MOK.der present" \
+            inspect 'test -f /usr/share/cert/MOK.der'
+          # (skip vmlinuz signature verify here — sbverify is part of
+          # sbsigntools which is transient and removed at end of kernel
+          # install. If signing was broken, MOK enrollment would fail
+          # at first boot — that's a Layer B smoke-boot concern.)
+
+          echo
+          echo "== 5. Margine identity =="
+          check "NAME=Margine in /etc/os-release" \
+            inspect 'grep -q "^NAME=\"Margine\"" /etc/os-release'
+          check "ID=margine in /etc/os-release" \
+            inspect 'grep -q "^ID=margine" /etc/os-release'
+
+          echo
+          echo "== 6. Plymouth theme =="
+          check "Plymouth default theme = margine" \
+            inspect 'plymouth-set-default-theme 2>/dev/null | grep -q margine'
+          check "/usr/share/plymouth/themes/margine exists" \
+            inspect 'test -d /usr/share/plymouth/themes/margine'
+          check "plymouth-plugin-script.so present" \
+            inspect 'test -f /usr/lib64/plymouth/script.so'
+
+          echo
+          echo "== 7. margine-* helpers in /usr/bin =="
+          for h in \
+              configure-default-applications \
+              configure-gnome-app-folders \
+              configure-gnome-appearance \
+              configure-gnome-extensions \
+              configure-gnome-keybindings \
+              configure-home-layout \
+              install-user-extensions \
+              validate-atomic-layout \
+              validate-cachyos-kernel \
+              validate-hardware-media-stack \
+              validate-gaming-runtime \
+              collect-diagnostics \
+              fetch ; do
+            check "/usr/bin/margine-$h" \
+              inspect "test -x /usr/bin/margine-$h"
+          done
+
+          echo
+          echo "== 8. ujust recipes + declarations =="
+          check "/usr/share/ublue-os/just/99-margine.just" \
+            inspect 'test -f /usr/share/ublue-os/just/99-margine.just'
+          check "/usr/share/margine/declarations.yaml" \
+            inspect 'test -f /usr/share/margine/declarations.yaml'
+          check "/usr/share/margine/ascii-logo.txt" \
+            inspect 'test -f /usr/share/margine/ascii-logo.txt'
+
+          echo
+          echo "== 9. branding assets =="
+          check "/usr/share/pixmaps/margine-logo.png" \
+            inspect 'test -f /usr/share/pixmaps/margine-logo.png'
+          check "/usr/share/backgrounds/margine/autumn-leaves.png" \
+            inspect 'test -f /usr/share/backgrounds/margine/autumn-leaves.png'
+          check "/etc/dconf/db/gdm.d/01-margine-background" \
+            inspect 'test -f /etc/dconf/db/gdm.d/01-margine-background'
+          check "/etc/issue mentions Margine" \
+            inspect 'grep -q Margine /etc/issue'
+
+          echo
+          if (( fail )); then
+            echo "ONE OR MORE LAYER A CHECKS FAILED — image will NOT be published."
+            exit 1
+          fi
+          echo "All Layer A image checks PASSED. Proceeding to push."
+
       - name: Login to GHCR
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: docker/login-action@v3

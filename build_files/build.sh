@@ -253,17 +253,15 @@ if command -v plymouth-set-default-theme >/dev/null 2>&1; then
   plymouth-set-default-theme margine
   log "Set Plymouth default theme: margine"
 fi
-# Regenerate initramfs so the new theme is embedded for the boot splash.
+# Regenerate initramfs so the new Plymouth theme is embedded for the
+# boot splash. --regenerate-all iterates every installed kernel (it's
+# mutually exclusive with --kver, dracut rejects the combination).
 # /etc/dracut.conf.d/01-margine-no-hostonly.conf (written by
-# custom-kernel/install.sh) keeps this generic, but we also pass the
-# flag explicitly for belt-and-braces.
+# custom-kernel/install.sh) already configures no-hostonly; we also
+# pass the flag explicitly. No `|| true` — Plymouth failing means a
+# broken boot splash, which we want to catch at build time.
 if command -v dracut >/dev/null 2>&1; then
-  KVER="$(rpm -q kernel-cachyos --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}' 2>/dev/null || true)"
-  if [[ -n "$KVER" ]]; then
-    dracut --force --no-hostonly --no-hostonly-cmdline \
-      --kver "$KVER" --regenerate-all || \
-      log "(warning: dracut regenerate failed; Plymouth may fall back to default)"
-  fi
+  dracut --force --no-hostonly --no-hostonly-cmdline --regenerate-all
 fi
 
 # (d) GDM login screen background — system dconf override.

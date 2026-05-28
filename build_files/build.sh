@@ -161,7 +161,12 @@ for s in \
     configure-gnome-extensions \
     configure-gnome-keybindings \
     configure-home-layout \
-    install-user-extensions ; do
+    install-user-extensions \
+    validate-atomic-layout \
+    validate-cachyos-kernel \
+    validate-hardware-media-stack \
+    validate-gaming-runtime \
+    collect-diagnostics ; do
   curl --fail --silent --show-error -L \
        "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
        -o "/usr/bin/margine-${s}"

@@ -257,9 +257,28 @@ log "Removing transient build-only packages: $TRANSIENT"
 # shellcheck disable=SC2086
 dnf -y remove $TRANSIENT || true
 
-# Regenerate initramfs against the new kernel
-log "Regenerating initramfs for $KERNEL_VERSION"
-/usr/lib/dracut/dracut-install --kver "$KERNEL_VERSION" || true
-dracut --force --kver "$KERNEL_VERSION" --regenerate-all || true
+# Drop a dracut config to disable host-only mode for every subsequent
+# dracut invocation in this image (build.sh's Plymouth regeneration too,
+# and any user-triggered `rpm-ostree initramfs` post-install). Without
+# this, dracut runs in the build container — where there's no LUKS,
+# no btrfs root, no virtio-net — and bakes an initramfs that boots only
+# on hardware exactly like the build container. End users with LUKS
+# encryption (every real install) get a kernel panic at early boot:
+#   VFS: Cannot open root device "UUID=..."
+# because the crypto/dm/btrfs modules are not in the initramfs.
+mkdir -p /etc/dracut.conf.d
+cat > /etc/dracut.conf.d/01-margine-no-hostonly.conf <<'CONF'
+# Required for bootc / OCI image builds: the build environment is not
+# the deployment environment, so initramfs must be generic.
+hostonly="no"
+hostonly_cmdline="no"
+CONF
+
+# Regenerate initramfs against the new kernel. --no-hostonly is also
+# passed explicitly so the policy applies even before /etc/dracut.conf.d
+# is read (defensive).
+log "Regenerating initramfs for $KERNEL_VERSION (generic, no-hostonly)"
+dracut --force --no-hostonly --no-hostonly-cmdline \
+    --kver "$KERNEL_VERSION" --regenerate-all
 
 log "custom-kernel install complete: $KERNEL_VERSION"

@@ -159,10 +159,27 @@ jobs:
           fi
 
           echo
-          echo "== 3. critical modules in initramfs =="
-          for mod in dm-crypt dm-mod btrfs virtio_blk; do
-            check "module: $mod" \
-              inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q '/$mod\\.ko'"
+          echo "== 3. critical kernel features (module in initramfs OR built into kernel) =="
+          # Map module-name → CONFIG symbol. A feature counts as present if
+          # EITHER (a) its .ko is in the initramfs OR (b) it's compiled into
+          # the kernel (CONFIG_*=y). CachyOS is monolithic for btrfs/virtio_blk
+          # (=y), so they never appear as .ko — earlier check was a false
+          # positive on those.
+          for entry in \
+              "dm-crypt:CONFIG_DM_CRYPT" \
+              "dm-mod:CONFIG_BLK_DEV_DM" \
+              "btrfs:CONFIG_BTRFS_FS" \
+              "virtio_blk:CONFIG_VIRTIO_BLK" ; do
+            mod="${entry%:*}"
+            cfg="${entry#*:}"
+            if inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q '/${mod}\\.ko'"; then
+              echo "  ✓ $mod (loadable module in initramfs)"
+            elif inspect "grep -q '^${cfg}=y' /usr/lib/modules/*/config"; then
+              echo "  ✓ $mod (built into kernel: ${cfg}=y)"
+            else
+              echo "  ✗ FAIL: $mod (no .ko in initramfs AND ${cfg} not =y)"
+              fail=1
+            fi
           done
 
           echo

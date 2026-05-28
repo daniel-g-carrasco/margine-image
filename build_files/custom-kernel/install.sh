@@ -274,11 +274,15 @@ hostonly="no"
 hostonly_cmdline="no"
 CONF
 
-# Regenerate initramfs against the new kernel. --no-hostonly is also
-# passed explicitly so the policy applies even before /etc/dracut.conf.d
-# is read (defensive).
-log "Regenerating initramfs for $KERNEL_VERSION (generic, no-hostonly)"
-dracut --force --no-hostonly --no-hostonly-cmdline \
-    --kver "$KERNEL_VERSION" --regenerate-all
+# Regenerate initramfs for every installed kernel. --regenerate-all is
+# mutually exclusive with --kver (dracut fails: "--regenerate-all cannot
+# be called with a kernel version"), so we let it iterate. There's only
+# one kernel in the image anyway (kernel-cachyos).
+# --no-hostonly is also passed explicitly so the policy applies even if
+# /etc/dracut.conf.d isn't read for some reason (defensive).
+# No `|| true` — if dracut fails the image is unbootable and we want
+# the build to fail loud, not silently ship a broken initramfs.
+log "Regenerating initramfs for all installed kernels (generic, no-hostonly)"
+dracut --force --no-hostonly --no-hostonly-cmdline --regenerate-all
 
 log "custom-kernel install complete: $KERNEL_VERSION"

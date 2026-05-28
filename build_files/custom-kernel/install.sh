@@ -274,15 +274,24 @@ hostonly="no"
 hostonly_cmdline="no"
 CONF
 
-# Regenerate initramfs for every installed kernel. --regenerate-all is
-# mutually exclusive with --kver (dracut fails: "--regenerate-all cannot
-# be called with a kernel version"), so we let it iterate. There's only
-# one kernel in the image anyway (kernel-cachyos).
-# --no-hostonly is also passed explicitly so the policy applies even if
-# /etc/dracut.conf.d isn't read for some reason (defensive).
-# No `|| true` — if dracut fails the image is unbootable and we want
-# the build to fail loud, not silently ship a broken initramfs.
-log "Regenerating initramfs for all installed kernels (generic, no-hostonly)"
-dracut --force --no-hostonly --no-hostonly-cmdline --regenerate-all
+# Regenerate initramfs at the **bootc/ostree-expected path**:
+#   /usr/lib/modules/<KVER>/initramfs.img
+# Bluefin DX (and every Universal Blue image) puts initramfs there.
+# bootc/ostree picks it up at deployment time from that exact path.
+# Dracut's default output is /boot/initramfs-<KVER>.img — the traditional
+# Anaconda/non-ostree location — which ostree IGNORES, falling back to
+# auto-generating a host-only initramfs (no crypto/btrfs/virtio_blk
+# modules → kernel panic on real installs with LUKS).
+#
+# We pass the output path as a positional argument so dracut writes
+# exactly where ostree expects.
+log "Regenerating initramfs for all installed kernels (generic, bootc-path)"
+for kver_dir in /usr/lib/modules/*/; do
+  kver=$(basename "$kver_dir")
+  dracut --force --no-hostonly --no-hostonly-cmdline \
+      --kver "$kver" \
+      "${kver_dir}initramfs.img"
+  log "Wrote ${kver_dir}initramfs.img ($(du -h ${kver_dir}initramfs.img | cut -f1))"
+done
 
 log "custom-kernel install complete: $KERNEL_VERSION"

@@ -254,14 +254,17 @@ if command -v plymouth-set-default-theme >/dev/null 2>&1; then
   log "Set Plymouth default theme: margine"
 fi
 # Regenerate initramfs so the new Plymouth theme is embedded for the
-# boot splash. --regenerate-all iterates every installed kernel (it's
-# mutually exclusive with --kver, dracut rejects the combination).
-# /etc/dracut.conf.d/01-margine-no-hostonly.conf (written by
-# custom-kernel/install.sh) already configures no-hostonly; we also
-# pass the flag explicitly. No `|| true` — Plymouth failing means a
-# broken boot splash, which we want to catch at build time.
+# boot splash. Output goes to /usr/lib/modules/<KVER>/initramfs.img,
+# the bootc/ostree-expected path (NOT /boot/initramfs-<KVER>.img which
+# ostree ignores). See the matching block in custom-kernel/install.sh
+# for the full rationale.
 if command -v dracut >/dev/null 2>&1; then
-  dracut --force --no-hostonly --no-hostonly-cmdline --regenerate-all
+  for kver_dir in /usr/lib/modules/*/; do
+    kver=$(basename "$kver_dir")
+    dracut --force --no-hostonly --no-hostonly-cmdline \
+        --kver "$kver" \
+        "${kver_dir}initramfs.img"
+  done
 fi
 
 # (d) GDM login screen background — system dconf override.

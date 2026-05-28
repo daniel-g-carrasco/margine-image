@@ -254,10 +254,14 @@ if command -v plymouth-set-default-theme >/dev/null 2>&1; then
   log "Set Plymouth default theme: margine"
 fi
 # Regenerate initramfs so the new theme is embedded for the boot splash.
+# /etc/dracut.conf.d/01-margine-no-hostonly.conf (written by
+# custom-kernel/install.sh) keeps this generic, but we also pass the
+# flag explicitly for belt-and-braces.
 if command -v dracut >/dev/null 2>&1; then
   KVER="$(rpm -q kernel-cachyos --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}' 2>/dev/null || true)"
   if [[ -n "$KVER" ]]; then
-    dracut --force --kver "$KVER" --regenerate-all || \
+    dracut --force --no-hostonly --no-hostonly-cmdline \
+      --kver "$KVER" --regenerate-all || \
       log "(warning: dracut regenerate failed; Plymouth may fall back to default)"
   fi
 fi

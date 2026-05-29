@@ -110,13 +110,52 @@ jobs:
             --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
             --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
 
+      # Fix the `ostree.linux` OCI label.
+      #
+      # Bluefin DX (our FROM) labels its image with ostree.linux=
+      # <fedora-kernel-version>. When we swap to kernel-cachyos in
+      # custom-kernel/install.sh the kernel files change but the label
+      # stays Bluefin's. rpm-ostree/bootc read this label at DEPLOY time
+      # to decide which kernel to wire into the bootloader and where
+      # ostree should look for kernel files; if it points at a kernel
+      # that doesn't exist (Bluefin's), the deployment ends up
+      # half-created — bootloader entry references one hash, on-disk
+      # ostree deploy dir is named another, and switch-root fails.
+      #
+      # Found 2026-05-29 by inspecting a panicking VM. The user pulled
+      # the published image and saw:
+      #   /usr/lib/modules/                  → only 7.0.8-cachyos1.fc44.x86_64
+      #   labels.ostree.linux                → 7.0.8-200.fc44.x86_64 (Bluefin)
+      #
+      # Update the label on each tag in podman storage to match the
+      # actual kernel directory.
+      - name: Fix ostree.linux label to actual installed kernel
+        run: |
+          set -euo pipefail
+          IMG_BASE="localhost/${{ env.IMAGE_NAME }}"
+          # Find the actual kernel version in the image.
+          KVER=$(podman run --rm --entrypoint="" "${IMG_BASE}:$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')" \
+                   bash -c 'ls /usr/lib/modules/ | head -1')
+          echo "Detected kernel in image: $KVER"
+          OLD_LABEL=$(podman inspect "${IMG_BASE}:$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')" \
+                       --format '{{ index .Labels "ostree.linux" }}')
+          echo "Current ostree.linux label: $OLD_LABEL"
+          if [ "$KVER" = "$OLD_LABEL" ]; then
+            echo "Already in sync, nothing to do."
+          else
+            echo "Stale label detected — updating on every tag."
+            for tag in ${{ steps.metadata.outputs.tags }}; do
+              buildah config --label "ostree.linux=$KVER" "${IMG_BASE}:$tag"
+              echo "  ✓ ${IMG_BASE}:$tag → ostree.linux=$KVER"
+            done
+          fi
+
       # Layer A: image-internals inspection. Runs BEFORE push so a
-      # broken image never reaches :stable. Catches the three classes
-      # of bugs that have bitten us during the smoke test (2026-05-28):
+      # broken image never reaches :stable. Catches:
       #   1. dracut silently producing no initramfs
       #   2. initramfs missing crypto/btrfs/virtio_blk modules
       #   3. initramfs at /boot/ instead of /usr/lib/modules/$KVER/
-      # See docs/lessons-learned/ in margine-fedora-atomic for context.
+      #   4. ostree.linux label mismatching actual kernel (2026-05-29)
       - name: Verify image internals (Layer A guardrails)
         run: |
           set -euo pipefail
@@ -181,6 +220,19 @@ jobs:
               fail=1
             fi
           done
+
+          echo
+          echo "== 3b. ostree.linux label matches actual kernel =="
+          actual_kver=$(inspect 'ls /usr/lib/modules/ | head -1')
+          label_kver=$(podman inspect "$IMG" --format '{{ index .Labels "ostree.linux" }}')
+          echo "  actual kernel dir: $actual_kver"
+          echo "  ostree.linux label: $label_kver"
+          if [ "$actual_kver" = "$label_kver" ]; then
+            echo "  ✓ in sync"
+          else
+            echo "  ✗ FAIL: label/kernel mismatch — bootc/ostree will produce broken deployments"
+            fail=1
+          fi
 
           echo
           echo "== 4. boot-security infrastructure =="

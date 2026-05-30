@@ -321,8 +321,9 @@ The phase 1 layout:
 | Productivity | Bitwarden, Thunderbird, LibreOffice suite | Office |
 | Graphics | GIMP, Inkscape | Graphics, 2DGraphics, VectorGraphics, RasterGraphics |
 | Photography | darktable | Photography |
+| Documentation | Apostrophe | — |
 | Multimedia | Gapless, Audacity, OBS Studio, EasyEffects, Reaper | AudioVideo, Audio, Video, Music |
-| Development | VSCodium | Development, IDE |
+| Development | VS Code (Bluefin DX preinstall) | Development, IDE |
 | Utilities | — | Utility, Accessibility |
 | System | — | System, Settings |
 

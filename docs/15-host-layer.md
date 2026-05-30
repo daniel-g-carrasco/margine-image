@@ -181,7 +181,6 @@ installed explicitly with `rpm-ostree install` when needed.
 | Bluefin wallpapers, faces, custom GNOME schema overrides | None | Branding noise outside this project's scope |
 | Cockpit (DX variant) | Not installed by default | Web admin not used here; can be added per-host |
 | Docker CE from docker.com | Podman (already on Silverblue) + `podman-compose` in toolbox | Avoids the docker daemon, keeps containers rootless by default |
-| VS Code from Microsoft repo | VSCodium via Flatpak | Preference for open-source build |
 
 ## Developer tooling (toolbox, not host)
 

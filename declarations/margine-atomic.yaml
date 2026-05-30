@@ -409,8 +409,15 @@ flatpaks:
       - com.obsproject.Studio
       - com.github.wwmm.easyeffects
       - fm.reaper.Reaper
-    development:
-      - com.vscodium.codium
+    documentation:
+      # GTK 4 markdown viewer/editor (libadwaita). Used as the default
+      # `.md` opener so docs in margine-fedora-atomic and similar repos
+      # render cleanly with a double click.
+      - org.gnome.gitlab.somas.Apostrophe
+    # Development: no Flatpak editor is preinstalled by Margine.
+    # Bluefin DX already ships Visual Studio Code (from the Microsoft
+    # repository) with dev container tooling wired up, and Margine
+    # keeps that as the default IDE. See docs/16-developer-toolbox.md.
   optional_apps:
     gaming:
       - com.valvesoftware.Steam
@@ -794,6 +801,10 @@ gnome:
           - org.darktable.Darktable.desktop
         categories:
           - Photography
+      - id: Documentation
+        name: Documentation
+        apps:
+          - org.gnome.gitlab.somas.Apostrophe.desktop
       - id: Multimedia
         name: Multimedia
         apps:
@@ -810,7 +821,9 @@ gnome:
       - id: Development
         name: Development
         apps:
-          - com.vscodium.codium.desktop
+          # VS Code is shipped by Bluefin DX (Microsoft repo) with dev
+          # container tooling, not as Flatpak — system .desktop file.
+          - code.desktop
         categories:
           - Development
           - IDE

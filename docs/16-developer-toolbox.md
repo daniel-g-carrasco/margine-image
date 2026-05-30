@@ -353,8 +353,9 @@ by `scripts/configure-gnome-app-folders --apply`.
 | Productivity | Bitwarden, Thunderbird, LibreOffice suite | Office |
 | Graphics | GIMP, Inkscape | Graphics, 2DGraphics, VectorGraphics |
 | Photography | darktable | Photography |
+| Documentation | Apostrophe | — |
 | Multimedia | Gapless, Audacity, OBS Studio, EasyEffects, Reaper | AudioVideo, Audio, Video, Music |
-| Development | VSCodium | Development, IDE |
+| Development | VS Code (Bluefin DX preinstall) | Development, IDE |
 | Utilities | — | Utility, Accessibility |
 | System | — | System, Settings |
 
@@ -377,17 +378,18 @@ A concrete day-to-day flow that uses all the layers:
    host (for `rpm-ostree`, `virsh`, `systemctl`, `flatpak`) and open another
    that auto-enters the toolbox (`exec toolbox enter` at the end of your
    `.bashrc` if interactive and not already inside).
-2. **Editor**: VSCodium (Flatpak) for GUI work; neovim or helix in the
-   toolbox for terminal sessions.
+2. **Editor**: Visual Studio Code (preinstalled by Bluefin DX from the
+   Microsoft repo, with dev container tooling already wired up) for
+   GUI work; neovim or helix in the toolbox for terminal sessions.
 3. **Source control**: `git` + `gh` from the toolbox; `lazygit` from brew
    when you want a TUI.
 4. **Containers / services**: `podman` (on host, comes with Silverblue) for
    one-off runs; `podman-compose` from the toolbox for multi-service stacks.
 5. **VMs**: `virt-manager` from host for full-fat KVM virtualization.
 6. **AI assistants** (Claude Code, Codex CLI): install in the toolbox via
-   `npm install -g ...`; the CLIs run in the toolbox, the VSCodium
-   extensions live in the Flatpak (call them with the `flatpak-spawn --host`
-   workaround if needed).
+   `npm install -g ...`; the CLIs run in the toolbox, the VS Code
+   extensions live on the host (Bluefin DX preinstalls them with native
+   distrobox/toolbox awareness, so no `flatpak-spawn` workaround needed).
 7. **System updates**: handled automatically by Bluefin's `uupd.timer`
    (daily): `bootc upgrade` + `flatpak update` + `brew upgrade` +
    `distrobox upgrade`. Toolbox containers (`toolbox run sudo dnf upgrade`)

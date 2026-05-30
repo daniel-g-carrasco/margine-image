@@ -307,6 +307,117 @@ legacy file so it doesn't cause confusion. Implemented in step 1.
 exists and contains entries for our canonical app set (Zen, Bitwarden,
 GIMP, Apostrophe as spot checks).
 
+## Bug 10 — Cache poisoning on self-hosted runner: persistent `/var/cache` keeps bad RPMs across builds
+
+**Symptom.** Two consecutive builds failed at the CachyOS kernel
+install step:
+
+    Transaction failed: Rpm transaction failed.
+    package kernel-cachyos-modules-7.0.8-cachyos1.fc44.x86_64 does not verify:
+    Payload SHA256 ALT digest: BAD (Expected d37a2ac... != 640ab260...)
+
+A re-trigger reproduced the same SHA256 mismatch with identical
+"expected" and "actual" values, ruling out a flaky download.
+
+**Cause.** The Containerfile mounts a BuildKit cache for `/var/cache`:
+
+    --mount=type=cache,dst=/var/cache
+
+On GHA-hosted runners this cache is recreated fresh for every job, so
+a single bad download just fails once and the retry succeeds. On the
+**self-hosted pve1 runner** the cache is **persistent across builds**
+(podman cache lives on the VM's disk). Once a partial / corrupted RPM
+lands in `/var/cache/libdnf5/`, every subsequent `dnf install` reuses
+it and fails identically.
+
+This was the first self-hosted-only failure mode that GHA never
+showed us. It's a class of "the new infra surface eats classes of
+bugs that the old infra hid."
+
+**Fix.** In `custom-kernel/install.sh`, before the kernel install:
+
+    dnf -y clean packages metadata
+    dnf -y install --refresh $KERNEL_PACKAGES akmods
+
+Belt and suspenders — either alone is probably sufficient.
+
+**Durable guardrail.** None added: the failure is loud (build fails
+at install step, doesn't reach Layer A). The fix above is the
+durable change.
+
+## Bug 11 — Margine ships its specs correctly but never applies them on user systems
+
+**Symptom.** First successful Margine boot. User logs in, sees: GNOME
+default theme (not dark), no Tiling Shell active, no `~/data/~/dev/
+~/scratch` home dirs, no Margine-grouped Activities folders, default
+keybindings. Margine documents all of these as defaults. Where did
+they go?
+
+**Cause.** Three independent breakages in the **user-state bootstrap
+orchestration**, each of which alone would have masked the others:
+
+1. **`ujust` never sees Margine recipes.** Bluefin's
+   `/usr/share/ublue-os/just/00-entry.just` hardcodes the list of
+   imported recipe files. The only one marked `import?` (optional)
+   is `60-custom.just`. Files dropped under any other name are
+   simply ignored. We were installing `99-margine.just` — invisible
+   to `ujust --list`, so the user couldn't even *discover* the
+   `margine-bootstrap` command.
+
+2. **6 of 7 configure-* scripts couldn't find the declarations YAML.**
+   Each script computes:
+
+       REPO = Path(__file__).resolve().parent.parent
+       YAML = REPO / "declarations" / "margine-atomic.yaml"
+
+   For a script at `/usr/bin/<script>`, that resolves to
+   `/usr/declarations/margine-atomic.yaml`. The build installs the
+   file at `/usr/share/margine/declarations.yaml` (FHS-canonical).
+   The two paths don't match. Only `configure-home-layout` honored
+   `MARGINE_DECLARATIONS` env var as fallback. Running any of the
+   other 6 yields `declarations file not found: /usr/declarations/
+   margine-atomic.yaml` and exits non-zero. Bootstrap chain
+   silently dies after step 1.
+
+3. **No auto-run.** Even with the recipe visible and the YAML
+   findable, the user has to know the command exists and type it
+   manually, then answer an interactive "Continue? [Y/n]" prompt.
+   On a fresh first login nothing in the OOBE points at it.
+
+The validator at the time only checked that `/usr/bin/margine-configure-*`
+existed — not that they had ever been *invoked* with effect. So
+Layer A and `validate-margine-system` both reported green while the
+distro was running in "user has none of the documented defaults" mode.
+
+**Fix.** Four-part:
+
+- Rename `build_files/99-margine.just` → `build_files/60-custom.just`
+  so ujust loads it via the documented `import?` extension point.
+- Add a `/usr/declarations/margine-atomic.yaml -> ../share/margine/
+  declarations.yaml` symlink at build time. All 7 scripts find the
+  file without per-script patching.
+- Make the `margine-bootstrap` recipe accept a `MODE` parameter
+  (`interactive` / `unattended`). Continue on per-step failure,
+  summarize at end, drop `~/.config/margine/bootstrapped` marker.
+- Install `/etc/xdg/autostart/margine-first-boot.desktop` that runs
+  `ujust margine-bootstrap unattended` on first GNOME session if the
+  marker is absent.
+
+**Durable guardrails.** `validate-margine-system` section "9b. User-
+state bootstrap effects" added: checks the bootstrap marker,
+`~/data ~/dev ~/scratch`, color-scheme = `prefer-dark`, Tiling Shell
+installed under `~/.local` + autotile = true, app-folders includes
+Margine groups, Nautilus bookmarks reference `~/data`. Each check is
+on the *visible state* the configure-* scripts produce — so any
+future bootstrap regression flips them red instead of going silent.
+
+**Meta-lesson.** A validator that asserts "the right files are in
+the image" is not the same as a validator that asserts "the
+documented user experience is what you actually get." Margine's
+spec was correct on disk; the orchestration to apply it on first
+login was broken. Build-time checks can never substitute for
+runtime acceptance tests on a booted system.
+
 ## Bug 8 (cosmetic, NOT a regression) — `systemd-remount-fs.service` always fails on ostree/composefs
 
 Both Bluefin DX and Margine boot with `systemd-remount-fs.service`

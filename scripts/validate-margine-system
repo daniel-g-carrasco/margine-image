@@ -252,6 +252,61 @@ if command -v ujust >/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+hdr "9b. Bootstrap effects on user state (the configure-* chain ran)"
+# ---------------------------------------------------------------------------
+# Bootstrap orchestration (Bug 11): without these, the distro ships
+# with the right specs but the user session never applied them.
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  # Marker dropped by `ujust margine-bootstrap` (autostart or manual)
+  if [[ -f "$HOME/.config/margine/bootstrapped" ]]; then
+    ok "user bootstrap marker present ($(cat "$HOME/.config/margine/bootstrapped" 2>/dev/null))"
+  else
+    warn "no ~/.config/margine/bootstrapped marker — bootstrap never ran on this account"
+  fi
+
+  # Home layout (Margine-specific directories created)
+  for d in data dev scratch; do
+    [[ -d "$HOME/$d" ]] && ok "~/$d exists" || bad "~/$d missing (configure-home-layout didn't run)"
+  done
+
+  # Dark theme — Margine canonical default
+  CUR_SCHEME=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | tr -d "'")
+  [[ "$CUR_SCHEME" == "prefer-dark" ]] \
+    && ok "color-scheme = prefer-dark" \
+    || bad "color-scheme is '$CUR_SCHEME' (expected 'prefer-dark') — configure-gnome-appearance didn't run"
+
+  # Tiling Shell extension installed in user-extensions dir
+  if compgen -G "$HOME/.local/share/gnome-shell/extensions/tilingshell@*" >/dev/null; then
+    ok "Tiling Shell installed under ~/.local"
+  else
+    bad "Tiling Shell NOT installed — install-user-extensions didn't run"
+  fi
+
+  # Tiling Shell autotile actually flipped on
+  TS_AUTO=$(gsettings get org.gnome.shell.extensions.tilingshell enable-autotiling 2>/dev/null)
+  [[ "$TS_AUTO" == "true" ]] \
+    && ok "Tiling Shell autotile = true" \
+    || warn "Tiling Shell autotile is '$TS_AUTO' (extension schema may not be present yet — log out/in)"
+
+  # App folders configured (Margine canonical set vs empty/Bluefin default)
+  CUR_FOLDERS=$(gsettings get org.gnome.desktop.app-folders folder-children 2>/dev/null)
+  if echo "$CUR_FOLDERS" | grep -q "Documentation\|Multimedia"; then
+    ok "app folders configured by Margine (Documentation/Multimedia present)"
+  else
+    warn "app folders not Margine-configured: $CUR_FOLDERS (configure-gnome-app-folders may have failed)"
+  fi
+
+  # Nautilus bookmarks under ~/.config/gtk-3.0/bookmarks
+  if [[ -f "$HOME/.config/gtk-3.0/bookmarks" ]] && grep -q "$HOME/data" "$HOME/.config/gtk-3.0/bookmarks"; then
+    ok "Nautilus bookmarks include Margine ~/data"
+  else
+    warn "Nautilus bookmarks don't reference ~/data (configure-home-layout incomplete?)"
+  fi
+else
+  warn "running as root — skipping user-state bootstrap effect checks"
+fi
+
+# ---------------------------------------------------------------------------
 hdr "10. Failed services (regression detector)"
 # ---------------------------------------------------------------------------
 FAILED_NOW=$("${SUDO[@]}" systemctl list-units --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' || true)

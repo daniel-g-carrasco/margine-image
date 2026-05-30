@@ -74,11 +74,14 @@ SHELL_KEYS = {
     "show_screen_recording_ui": "show-screen-recording-ui",
 }
 
-# GNOME shell.keybindings.switch-to-application-N defaults to <Super>1..9
-# on GNOME 48. We use those combos for switch-to-workspace-N instead, so
-# clear the shell keys to let the WM ones win. screen-brightness-* keys
-# also default to bindings we don't want stealing focus.
+# Keys whose GNOME defaults collide with Margine's keybindings spec.
+# Audited 2026-05-31 on a booted Margine system — see lessons-learned
+# Bug 12. Resetting each to empty `@as []` so our intended binding (set
+# elsewhere in this script) is the sole owner of the chord.
+
 SHELL_KEYS_TO_CLEAR = (
+    # switch-to-application-N defaults to <Super>1..9. We use those
+    # for switch-to-workspace-N instead.
     "switch-to-application-1",
     "switch-to-application-2",
     "switch-to-application-3",
@@ -88,6 +91,45 @@ SHELL_KEYS_TO_CLEAR = (
     "switch-to-application-7",
     "switch-to-application-8",
     "switch-to-application-9",
+    # focus-active-notification defaults to <Super>n; we use that for
+    # toggle-message-tray.
+    "focus-active-notification",
+)
+
+# WM keybindings whose defaults shadow our intent.
+WM_KEYS_TO_CLEAR = (
+    # switch-applications + backward default to <Super>Tab / <Shift>+<Super>Tab,
+    # which we redirect to switch-to-workspace-right / left.
+    "switch-applications",
+    "switch-applications-backward",
+    # move-to-monitor-* default to <Super><Shift>arrow, which we use for
+    # Tiling Shell move-window-*. Without clearing these the chord is
+    # captured by mutter to move-to-monitor instead of the extension.
+    "move-to-monitor-up",
+    "move-to-monitor-down",
+    "move-to-monitor-left",
+    "move-to-monitor-right",
+)
+
+# media-keys defaults that clobber our custom shortcuts.
+MEDIA_KEYS_TO_CLEAR = (
+    # home defaults to <Super>e; we use that for our custom
+    # `file_manager` keybinding (nautilus).
+    "home",
+    # rotate-video-lock-static defaults to <Super>o; we use that for
+    # wm.always-on-top.
+    "rotate-video-lock-static",
+)
+
+# Extension settings that grab keys we want Margine to own.
+# Each entry is (schema, key, value-to-set).
+EXTENSION_OVERRIDES = (
+    # dash-to-dock's hot-keys=true binds <Super>1..9,0 to launch the
+    # N-th pinned app. We bind those to switch-to-workspace-N. Disable
+    # dash-to-dock's hot-keys flag so the shortcut goes to the WM
+    # binding instead. Affects the extension only — pin behavior in
+    # the dock itself (click to launch) is unchanged.
+    ("org.gnome.shell.extensions.dash-to-dock", "hot-keys", "false"),
 )
 
 MEDIA_KEYS = {
@@ -284,10 +326,18 @@ def main() -> int:
             {**workspace_bindings, **kb.get("window", {})},
             dry,
         )
-        print("\n== Clear conflicting shell.keybindings switch-to-application-N ==")
-        print("   (so <Super>1..9 reach wm.keybindings switch-to-workspace-N)")
+        print("\n== Clear conflicting GNOME defaults ==")
+        print("   (so the chord reaches the Margine binding instead)")
+        for key in WM_KEYS_TO_CLEAR:
+            set_key("org.gnome.desktop.wm.keybindings", key, [], dry)
         for key in SHELL_KEYS_TO_CLEAR:
             set_key("org.gnome.shell.keybindings", key, [], dry)
+        for key in MEDIA_KEYS_TO_CLEAR:
+            set_key("org.gnome.settings-daemon.plugins.media-keys", key, [], dry)
+        for schema, key, val in EXTENSION_OVERRIDES:
+            print(f"  {schema} {key}={val}")
+            run_soft(["gsettings", "set", schema, key, val], dry)
+
         apply_group(
             "Shell",
             "org.gnome.shell.keybindings",

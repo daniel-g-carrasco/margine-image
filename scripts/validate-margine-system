@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+# Margine runtime acceptance test.
+#
+# Run this on a booted Margine system to photograph the current state
+# and compare it against the canonical expected state. Catches drift
+# that the build-time Layer A checks and the pre-reboot
+# validate-staged-deployment cannot see: GNOME settings as actually
+# applied by GDM/Shell, Flatpaks really installed (not just declared),
+# system users present at runtime (Bug 6 post-rebase), running kernel
+# signature, no failed services, branding assets in place, etc.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-margine-system | bash
+# or after `git clone`:
+#   scripts/validate-margine-system
+#
+# Exit code:
+#   0  all required checks passed (warnings allowed)
+#   1  at least one required check failed
+
+set -u
+
+FAIL=0
+WARN=0
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+bad()  { printf '  \033[31m✗\033[0m FAIL: %s\n' "$1"; FAIL=$((FAIL+1)); }
+warn() { printf '  \033[33m!\033[0m WARN: %s\n' "$1"; WARN=$((WARN+1)); }
+info() { printf '  %s\n' "$1"; }
+hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+
+if [[ $(id -u) -eq 0 ]]; then
+  SUDO=()
+else
+  SUDO=(sudo)
+  echo "Running as $USER — privileged checks will use sudo (one prompt)."
+fi
+
+# Expected values — canonical Margine state.
+# Keep in sync with declarations/margine-atomic.yaml and build.sh.
+EXPECTED_OS_NAME="Margine"
+EXPECTED_OS_ID="margine"
+EXPECTED_KERNEL_PATTERN="cachyos"
+EXPECTED_PLYMOUTH_THEME="margine"
+EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/autumn-leaves.png"
+EXPECTED_GDM_LOGO="/usr/share/pixmaps/margine-logo.png"
+EXPECTED_GHCR_IMAGE="ghcr.io/daniel-g-carrasco/margine"
+
+EXPECTED_FLATPAKS=(
+  app.zen_browser.zen
+  com.bitwarden.desktop
+  org.libreoffice.LibreOffice
+  com.github.neithern.g4music
+  org.gimp.GIMP
+  org.inkscape.Inkscape
+  org.darktable.Darktable
+  org.audacityteam.Audacity
+  com.obsproject.Studio
+  com.github.wwmm.easyeffects
+  fm.reaper.Reaper
+  org.gnome.gitlab.somas.Apostrophe
+)
+
+EXPECTED_EXTENSIONS=(
+  appindicatorsupport@rgcjonas.gmail.com
+  bazaar-integration@kolunmi.github.io
+  blur-my-shell@aunetx
+  dash-to-dock@micxgx.gmail.com
+  gradia-integration@alexandervanhee.github.io
+  gsconnect@andyholmes.github.io
+  search-light@icedman.github.com
+  tilingshell@ferrarodomenico.com
+)
+
+EXPECTED_MARGINE_HELPERS=(
+  margine-fetch
+  margine-install-user-extensions
+)
+
+# Services that are expected to fail and are NOT counted as
+# regressions. See lessons-learned Bug 8.
+EXPECTED_FAILED_SERVICES=(
+  systemd-remount-fs.service
+)
+
+# ---------------------------------------------------------------------------
+hdr "1. OS identity"
+# ---------------------------------------------------------------------------
+NAME=$(grep -E '^NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
+ID=$(grep -E '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+info "os-release NAME=$NAME ID=$ID"
+[[ "$NAME" == "$EXPECTED_OS_NAME" ]] && ok "NAME == $EXPECTED_OS_NAME" || bad "NAME is '$NAME', expected '$EXPECTED_OS_NAME'"
+[[ "$ID"   == "$EXPECTED_OS_ID"   ]] && ok "ID == $EXPECTED_OS_ID"     || bad "ID is '$ID', expected '$EXPECTED_OS_ID'"
+
+# ---------------------------------------------------------------------------
+hdr "2. Kernel and boot integrity"
+# ---------------------------------------------------------------------------
+KVER=$(uname -r)
+info "running kernel: $KVER"
+[[ "$KVER" =~ $EXPECTED_KERNEL_PATTERN ]] \
+  && ok "kernel matches '$EXPECTED_KERNEL_PATTERN' (CachyOS)" \
+  || bad "kernel doesn't match '$EXPECTED_KERNEL_PATTERN'"
+
+if command -v bootc >/dev/null; then
+  BOOTED_IMAGE=$("${SUDO[@]}" bootc status --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+img = data.get("status", {}).get("booted", {}).get("image", {}).get("image", {}).get("image", "")
+print(img)
+' 2>/dev/null)
+  info "booted image: $BOOTED_IMAGE"
+  [[ "$BOOTED_IMAGE" == ${EXPECTED_GHCR_IMAGE}* ]] \
+    && ok "booted from $EXPECTED_GHCR_IMAGE" \
+    || bad "booted from '$BOOTED_IMAGE' (expected $EXPECTED_GHCR_IMAGE*)"
+else
+  warn "bootc command not found — cannot verify booted image"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "3. System users and groups (Bug 6 post-rebase guardrail)"
+# ---------------------------------------------------------------------------
+PASSWD_N=$(wc -l < /etc/passwd)
+GROUP_N=$(wc -l < /etc/group)
+info "/etc/passwd entries: $PASSWD_N  /etc/group entries: $GROUP_N"
+(( PASSWD_N >= 30 )) && ok "/etc/passwd has system users ($PASSWD_N >= 30)" \
+  || bad "/etc/passwd has only $PASSWD_N entries — Bug 6 regression"
+(( GROUP_N >= 50 )) && ok "/etc/group has system groups ($GROUP_N >= 50)" \
+  || bad "/etc/group has only $GROUP_N entries — Bug 6 regression"
+for g in audio disk kvm tty utmp tss dbus polkitd; do
+  getent group "$g" >/dev/null 2>&1 \
+    && ok "group '$g' resolves" \
+    || bad "group '$g' MISSING"
+done
+
+# ---------------------------------------------------------------------------
+hdr "4. Boot security (Secure Boot, MOK)"
+# ---------------------------------------------------------------------------
+if command -v mokutil >/dev/null; then
+  SB_STATE=$(mokutil --sb-state 2>&1 | head -1)
+  info "$SB_STATE"
+  if [[ "$SB_STATE" =~ enabled ]]; then
+    ok "Secure Boot is enabled"
+    if "${SUDO[@]}" mokutil --list-enrolled 2>/dev/null | grep -qiE 'margine|daniel'; then
+      ok "Margine MOK is enrolled"
+    else
+      bad "Margine MOK NOT enrolled — CachyOS kernel will not load on next boot if SB stays on"
+    fi
+  else
+    warn "Secure Boot is disabled — running unsigned kernel without verification"
+  fi
+else
+  warn "mokutil not present — cannot verify Secure Boot state"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "5. Margine branding assets"
+# ---------------------------------------------------------------------------
+[[ -f /usr/share/pixmaps/margine-logo.png ]] && ok "margine-logo.png present" \
+  || bad "/usr/share/pixmaps/margine-logo.png missing"
+[[ -f /usr/share/backgrounds/margine/autumn-leaves.png ]] && ok "wallpaper present" \
+  || bad "/usr/share/backgrounds/margine/autumn-leaves.png missing"
+[[ -d /usr/share/plymouth/themes/margine ]] && ok "Plymouth theme dir present" \
+  || bad "/usr/share/plymouth/themes/margine missing"
+[[ -f /usr/share/margine/ascii-logo.txt ]] && ok "fastfetch ASCII logo present" \
+  || warn "fastfetch ASCII logo missing (cosmetic)"
+
+if command -v plymouth-set-default-theme >/dev/null; then
+  CUR_PLY=$(plymouth-set-default-theme 2>/dev/null | tr -d '\n')
+  [[ "$CUR_PLY" == "$EXPECTED_PLYMOUTH_THEME" ]] \
+    && ok "Plymouth default theme = $EXPECTED_PLYMOUTH_THEME" \
+    || bad "Plymouth default theme is '$CUR_PLY', expected '$EXPECTED_PLYMOUTH_THEME'"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "6. GDM greeter overrides (Bug 7 guardrail)"
+# ---------------------------------------------------------------------------
+GDM_LOGO=$(DCONF_PROFILE=gdm gsettings get org.gnome.login-screen logo 2>/dev/null | tr -d "'")
+GDM_BG=$(DCONF_PROFILE=gdm gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
+info "GDM logo: $GDM_LOGO"
+info "GDM bg:   $GDM_BG"
+[[ "$GDM_LOGO" == "$EXPECTED_GDM_LOGO" ]] \
+  && ok "GDM logo points at Margine asset" \
+  || bad "GDM logo points at '$GDM_LOGO' (expected '$EXPECTED_GDM_LOGO') — Bug 7 regression"
+[[ "$GDM_BG" == "$EXPECTED_WALLPAPER" ]] \
+  && ok "GDM background uses Margine wallpaper" \
+  || bad "GDM background is '$GDM_BG' (expected '$EXPECTED_WALLPAPER')"
+
+# ---------------------------------------------------------------------------
+hdr "7. GNOME Shell defaults (user session)"
+# ---------------------------------------------------------------------------
+# This needs the user's dconf, not root's. Skip if we are root (curl|sudo bash).
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  CUR_EXTS=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null | tr -d "[](),'" | tr ' ' '\n' | grep . | sort)
+  EXP_EXTS=$(printf '%s\n' "${EXPECTED_EXTENSIONS[@]}" | sort)
+  MISSING=$(comm -23 <(echo "$EXP_EXTS") <(echo "$CUR_EXTS"))
+  EXTRA=$(comm -13   <(echo "$EXP_EXTS") <(echo "$CUR_EXTS"))
+  if [[ -z "$MISSING" && -z "$EXTRA" ]]; then
+    ok "enabled-extensions matches Margine canonical set"
+  else
+    [[ -n "$MISSING" ]] && bad "extensions MISSING: $(echo $MISSING)"
+    [[ -n "$EXTRA"   ]] && warn "extensions EXTRA (user-added?): $(echo $EXTRA)"
+  fi
+
+  CUR_ACCENT=$(gsettings get org.gnome.desktop.interface accent-color 2>/dev/null | tr -d "'")
+  [[ "$CUR_ACCENT" == "yellow" ]] && ok "GNOME accent-color = yellow" \
+    || warn "accent-color is '$CUR_ACCENT' (expected 'yellow') — user may have customized"
+
+  CUR_BG=$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
+  [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]] && ok "desktop wallpaper = Margine autumn-leaves" \
+    || warn "desktop wallpaper is '$CUR_BG' (expected Margine; user may have changed)"
+else
+  warn "running as root — skipping GNOME session-level gsettings checks"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "8. Default Flatpak applications (Bug 9 guardrail)"
+# ---------------------------------------------------------------------------
+INSTALLED=$(flatpak list --system --columns=application 2>/dev/null | tail -n +1 | sort)
+PREINSTALL_FILE=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
+[[ -f "$PREINSTALL_FILE" ]] \
+  && ok "preinstall file present: $PREINSTALL_FILE" \
+  || bad "preinstall file MISSING — Bug 9 regression (system-flatpaks.list is legacy)"
+
+MISSING_FP=""
+for app in "${EXPECTED_FLATPAKS[@]}"; do
+  if echo "$INSTALLED" | grep -qxF "$app"; then
+    ok "$app installed"
+  else
+    bad "$app NOT installed"
+    MISSING_FP="$MISSING_FP $app"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+hdr "9. Margine helpers and ujust recipes"
+# ---------------------------------------------------------------------------
+for bin in "${EXPECTED_MARGINE_HELPERS[@]}"; do
+  if [[ -x "/usr/bin/$bin" ]]; then
+    ok "/usr/bin/$bin present"
+  else
+    warn "/usr/bin/$bin missing (helper may not be required, but spec advertises it)"
+  fi
+done
+
+if command -v ujust >/dev/null; then
+  UJUST_MARGINE=$(ujust --list 2>/dev/null | grep -c '^[[:space:]]*margine-' || true)
+  if (( UJUST_MARGINE > 0 )); then
+    ok "ujust has $UJUST_MARGINE margine-* recipe(s)"
+  else
+    warn "ujust has no margine-* recipes — check /usr/share/ublue-os/just/99-margine.just"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+hdr "10. Failed services (regression detector)"
+# ---------------------------------------------------------------------------
+FAILED_NOW=$("${SUDO[@]}" systemctl list-units --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' || true)
+if [[ -z "$FAILED_NOW" ]]; then
+  ok "no failed system units"
+else
+  for unit in $FAILED_NOW; do
+    if printf '%s\n' "${EXPECTED_FAILED_SERVICES[@]}" | grep -qxF "$unit"; then
+      ok "$unit failed (known noise, Bug 8 — ignored)"
+    else
+      bad "$unit failed (unexpected — investigate)"
+    fi
+  done
+fi
+
+# ---------------------------------------------------------------------------
+hdr "11. Verdict"
+# ---------------------------------------------------------------------------
+if (( FAIL == 0 )); then
+  printf "\n\033[1;32m✓✓✓ Margine acceptance test PASSED (%d warnings).\033[0m\n" "$WARN"
+  exit 0
+else
+  printf "\n\033[1;31m✗✗✗ %d CHECK(S) FAILED (%d warnings).\033[0m\n" "$FAIL" "$WARN"
+  printf "    Investigate the FAIL lines above. If a fix exists in the\n"
+  printf "    margine-image build, try 'sudo bootc upgrade && systemctl reboot'\n"
+  printf "    to pull a newer image and re-validate.\n"
+  exit 1
+fi

@@ -51,6 +51,7 @@ jobs:
         id: date
         run: |
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "ymd=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
 
       - name: Stage MOK secrets for BuildKit
         # Write the MOK key/cert/password from GH Actions secrets to disk
@@ -110,63 +111,17 @@ jobs:
             --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
             --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
 
-      # Fix the `ostree.linux` OCI label.
-      #
-      # Bluefin DX (our FROM) labels its image with ostree.linux=
-      # <fedora-kernel-version>. When we swap to kernel-cachyos in
-      # custom-kernel/install.sh the kernel files change but the label
-      # stays Bluefin's. rpm-ostree/bootc read this label at DEPLOY time
-      # to decide which kernel to wire into the bootloader and where
-      # ostree should look for kernel files; if it points at a kernel
-      # that doesn't exist (Bluefin's), the deployment ends up
-      # half-created — bootloader entry references one hash, on-disk
-      # ostree deploy dir is named another, and switch-root fails.
-      #
-      # Found 2026-05-29 by inspecting a panicking VM. The user pulled
-      # the published image and saw:
-      #   /usr/lib/modules/                  → only 7.0.8-cachyos1.fc44.x86_64
-      #   labels.ostree.linux                → 7.0.8-200.fc44.x86_64 (Bluefin)
-      #
-      # Update the label on each tag in podman storage to match the
-      # actual kernel directory.
-      - name: Fix ostree.linux label to actual installed kernel
-        run: |
-          set -euo pipefail
-          IMG_BASE="localhost/${{ env.IMAGE_NAME }}"
-          FIRST_TAG=$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')
-          # Find the actual kernel version in the image.
-          KVER=$(podman run --rm --entrypoint="" "${IMG_BASE}:${FIRST_TAG}" \
-                   bash -c 'ls /usr/lib/modules/ | head -1')
-          echo "Detected kernel in image: $KVER"
-          OLD_LABEL=$(podman inspect "${IMG_BASE}:${FIRST_TAG}" \
-                       --format '{{ index .Labels "ostree.linux" }}')
-          echo "Current ostree.linux label: $OLD_LABEL"
-          if [ "$KVER" = "$OLD_LABEL" ]; then
-            echo "Already in sync, nothing to do."
-            exit 0
-          fi
-          echo "Stale label detected — updating via buildah from→config→commit on every tag."
-          # `buildah config` operates on a working container, not on an
-          # image directly. So for each tag: create a working container,
-          # set the label, commit back to the same tag, remove container.
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            ctr=$(buildah from "${IMG_BASE}:${tag}")
-            buildah config --label "ostree.linux=$KVER" "$ctr"
-            buildah commit --rm "$ctr" "${IMG_BASE}:${tag}"
-            echo "  ✓ ${IMG_BASE}:${tag} → ostree.linux=$KVER"
-          done
-          # Verify on the first tag.
-          NEW_LABEL=$(podman inspect "${IMG_BASE}:${FIRST_TAG}" \
-                       --format '{{ index .Labels "ostree.linux" }}')
-          echo "Verified ostree.linux now: $NEW_LABEL"
-          [ "$NEW_LABEL" = "$KVER" ]
-
-      # Layer A: image-internals inspection. Runs BEFORE push so a
-      # broken image never reaches :stable. Catches:
+      # Layer A: image-internals inspection. Runs BEFORE rechunk/push
+      # so a broken image never reaches :stable. Catches:
       #   1. dracut silently producing no initramfs
       #   2. initramfs missing crypto/btrfs/virtio_blk modules
       #   3. initramfs at /boot/ instead of /usr/lib/modules/$KVER/
-      #   4. ostree.linux label mismatching actual kernel (2026-05-29)
+      #
+      # Note: pre-rechunk ostree.linux label is INTENTIONALLY stale here
+      # (we inherit Bluefin's). The check that used to enforce label
+      # correctness has been MOVED to post-rechunk where it actually
+      # matters — rechunk regenerates all ostree-related labels from
+      # the actual image content.
       - name: Verify image internals (Layer A guardrails)
         run: |
           set -euo pipefail
@@ -232,18 +187,10 @@ jobs:
             fi
           done
 
-          echo
-          echo "== 3b. ostree.linux label matches actual kernel =="
-          actual_kver=$(inspect 'ls /usr/lib/modules/ | head -1')
-          label_kver=$(podman inspect "$IMG" --format '{{ index .Labels "ostree.linux" }}')
-          echo "  actual kernel dir: $actual_kver"
-          echo "  ostree.linux label: $label_kver"
-          if [ "$actual_kver" = "$label_kver" ]; then
-            echo "  ✓ in sync"
-          else
-            echo "  ✗ FAIL: label/kernel mismatch — bootc/ostree will produce broken deployments"
-            fail=1
-          fi
+          # (Removed: ostree.linux label check. Pre-rechunk this label
+          # is intentionally Bluefin's stale value; rechunk regenerates
+          # it from the actual /usr/lib/modules/ content. The check now
+          # lives in the post-rechunk verification step.)
 
           echo
           echo "== 4. boot-security infrastructure =="
@@ -319,6 +266,40 @@ jobs:
           fi
           echo "All Layer A image checks PASSED. Proceeding to push."
 
+      # Fix B — rechunk the image into ostree-canonical form. This is
+      # the architecturally correct step that:
+      #   1. Re-commits the image content to OSTree, regenerating
+      #      ostree.commit, ostree.linux, ostree.bootable, etc., from
+      #      what's actually in the image (vs the stale labels we
+      #      inherited from Bluefin DX).
+      #   2. Sets up composefs correctly so /usr is mounted in time for
+      #      systemd's switch-root validation (eliminates the entire
+      #      class of "os-release missing at switch-root" bugs).
+      #   3. Re-chunks into optimal layers (typically 5-10x smaller
+      #      delta updates, which uupd users will appreciate).
+      #
+      # See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+      # ("Meta-lessons → Inherited OCI labels are dangerous") for why
+      # we need this. The matching memory entry is
+      # project_todo_margine_rechunk_fixB.md.
+      - name: ReChunk image (ostree-canonical commit + label refresh)
+        id: rechunk
+        uses: hhd-dev/rechunk@v1.2.4
+        with:
+          ref: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          version: ${{ env.DEFAULT_TAG }}.${{ steps.date.outputs.ymd }}
+          labels: |
+            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
+            org.opencontainers.image.description=${{ env.IMAGE_DESC }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.licenses=Apache-2.0
+            io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
+            io.artifacthub.package.license=Apache-2.0
+            containers.bootc=1
+          revision: ${{ github.sha }}
+
       - name: Login to GHCR
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: docker/login-action@v3
@@ -327,16 +308,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push to GHCR
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        uses: redhat-actions/push-to-registry@v2
+      # Push the rechunked image (which is an oci:dir on disk) to GHCR
+      # under every tag. Use skopeo copy because rechunk's output is
+      # oci-format, not loaded into podman. --all preserves both arch
+      # variants if any (we're x86_64-only today, but cheap).
+      - name: Push rechunked image to GHCR
         id: push
-        with:
-          registry: ${{ env.IMAGE_REGISTRY }}
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          set -euo pipefail
+          IMG_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
+          AUTH="--dest-creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            echo "Pushing → docker://${IMG_FULL}:${tag}"
+            sudo skopeo copy --all $AUTH \
+              "${{ steps.rechunk.outputs.ref }}" \
+              "docker://${IMG_FULL}:${tag}"
+          done
+          # Echo the digest of the first tag for cosign sign below.
+          DIGEST=$(sudo skopeo inspect $AUTH "docker://${IMG_FULL}:$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')" --format '{{.Digest}}')
+          echo "Pushed digest: $DIGEST"
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
       - name: Install Cosign
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)

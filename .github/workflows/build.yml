@@ -28,7 +28,10 @@ concurrency:
 jobs:
   build_push:
     name: Build, sign kernel, push, cosign
-    runs-on: ubuntu-24.04
+    # Self-hosted runner hosted on pve1 (VM 170 builder).
+    # See proxmox-pve1 ADR 0003. Fallback to ubuntu-24.04 by switching
+    # this line manually if the self-hosted runner is offline.
+    runs-on: [self-hosted, margine-builder]
 
     permissions:
       contents: read

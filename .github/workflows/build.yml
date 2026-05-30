@@ -239,6 +239,27 @@ jobs:
           # at first boot — that's a Layer B smoke-boot concern.)
 
           echo
+          echo "== 4b. Flatpak preinstall list (Bug 9 guardrail) =="
+          # Bluefin DX uses the upstream `flatpak preinstall` mechanism
+          # — /usr/share/flatpak/preinstall.d/*.preinstall — at boot.
+          # The legacy /etc/ublue-os/system-flatpaks.list is ignored.
+          PREINSTALL_FILE=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
+          if inspect "test -f $PREINSTALL_FILE"; then
+            echo "  ✓ $PREINSTALL_FILE present"
+          else
+            echo "  ✗ FAIL: $PREINSTALL_FILE missing — flatpaks won't be preinstalled"
+            fail=1
+          fi
+          for app in app.zen_browser.zen com.bitwarden.desktop org.gimp.GIMP org.gnome.gitlab.somas.Apostrophe; do
+            if inspect "grep -q '\\[Flatpak Preinstall $app\\]' $PREINSTALL_FILE"; then
+              echo "  ✓ entry [$app] present"
+            else
+              echo "  ✗ FAIL: entry [$app] missing from preinstall file"
+              fail=1
+            fi
+          done
+
+          echo
           echo "== 5. Margine identity =="
           check "NAME=Margine in /etc/os-release" \
             inspect 'grep -q "^NAME=\"Margine\"" /etc/os-release'

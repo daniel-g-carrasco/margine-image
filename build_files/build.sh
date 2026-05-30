@@ -321,7 +321,15 @@ curl --fail --silent --show-error -L \
     "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-margine.png" \
     -o /usr/share/backgrounds/margine/margine.png
 chmod 0644 /usr/share/backgrounds/margine/margine.png
-log "Installed: /usr/share/backgrounds/margine/margine.png"
+# Backwards-compat shim: pre-2026-05-30 images shipped this file as
+# `autumn-leaves.png` and users' dconf may still point there. Keep a
+# symlink so existing sessions keep rendering the new image rather
+# than dropping to the fallback solid color after `bootc upgrade`.
+# Remove in a few months once it's safe to assume everyone has run
+# `gsettings reset org.gnome.desktop.background picture-uri` at least
+# once.
+ln -sf margine.png /usr/share/backgrounds/margine/autumn-leaves.png
+log "Installed: /usr/share/backgrounds/margine/margine.png (+ autumn-leaves.png compat symlink)"
 
 # Desktop background gschema override — set on the existing zz1 file so
 # it loads after Bluefin's zz0.

@@ -196,6 +196,17 @@ def apply(dirs, user_dirs_path, user_dirs_text, gtk3_path, gtk4_path,
             p.write_text(bookmarks_text)
             print(f"  wrote {p}")
 
+    # Bluefin MOTD: /etc/profile.d/ublue-motd.sh checks for the marker
+    # ~/.config/no-show-user-motd and skips the banner if present.
+    # Margine disables it by default for existing users; new accounts
+    # get the same via /etc/skel/.config/no-show-user-motd shipped by
+    # the build. Re-running this step is idempotent.
+    motd_marker = Path.home() / ".config" / "no-show-user-motd"
+    if not motd_marker.exists():
+        motd_marker.parent.mkdir(parents=True, exist_ok=True)
+        motd_marker.touch()
+        print(f"  touch {motd_marker}  (silences Bluefin MOTD)")
+
     print()
     print("Done.")
     print("Note: log out and back in (or restart Nautilus with "

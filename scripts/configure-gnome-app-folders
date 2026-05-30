@@ -60,8 +60,11 @@ def apply(folders: list[dict], dry_run: bool) -> None:
 
     ids = [f["id"] for f in folders]
     print(f"== Set top-level folders: {ids}")
+    # NOTE: the gsettings KEY is `folder-children` on GNOME 40+; older
+    # GNOME used `folders`. Verified against `gsettings list-keys
+    # org.gnome.desktop.app-folders` on Margine 44.
     run(
-        ["gsettings", "set", FOLDERS_SCHEMA, "folders", gvariant_list(ids)],
+        ["gsettings", "set", FOLDERS_SCHEMA, "folder-children", gvariant_list(ids)],
         dry_run,
     )
 
@@ -103,7 +106,7 @@ def apply(folders: list[dict], dry_run: bool) -> None:
 def reset(folders: list[dict], dry_run: bool) -> None:
     print(f"== Reset top-level folders to []")
     run(
-        ["gsettings", "set", FOLDERS_SCHEMA, "folders", "[]"],
+        ["gsettings", "set", FOLDERS_SCHEMA, "folder-children", "[]"],
         dry_run,
     )
     for folder in folders:

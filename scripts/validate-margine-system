@@ -78,10 +78,11 @@ EXPECTED_MARGINE_HELPERS=(
 )
 
 # Services that are expected to fail and are NOT counted as
-# regressions. See lessons-learned Bug 8.
-EXPECTED_FAILED_SERVICES=(
-  systemd-remount-fs.service
-)
+# regressions. Empty list since 2026-05-31: systemd-remount-fs.service
+# (Bug 8 — overlay rejects reconfigure) is now masked at build time
+# so it never starts. If it ever shows up as failed again, that's a
+# real regression worth investigating.
+EXPECTED_FAILED_SERVICES=()
 
 # ---------------------------------------------------------------------------
 hdr "1. OS identity"
@@ -247,7 +248,7 @@ if command -v ujust >/dev/null; then
   if (( UJUST_MARGINE > 0 )); then
     ok "ujust has $UJUST_MARGINE margine-* recipe(s)"
   else
-    warn "ujust has no margine-* recipes — check /usr/share/ublue-os/just/99-margine.just"
+    warn "ujust has no margine-* recipes — check /usr/share/ublue-os/just/60-custom.just (must use this name; 00-entry.just only \`import?\`s 60-custom.just)"
   fi
 fi
 

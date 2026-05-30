@@ -25,16 +25,41 @@ log() { printf '[margine-build] %s\n' "$*"; }
 # ---------------------------------------------------------------------------
 # 0. OS identity — make the system identify as Margine
 # ---------------------------------------------------------------------------
-# Override /usr/lib/os-release so commands like `cat /etc/os-release`,
+# Override the os-release file so commands like `cat /etc/os-release`,
 # `hostnamectl`, GNOME's About panel, and our own validate-atomic-layout
-# all see "Margine". We keep ID_LIKE="fedora bluefin" so tools that branch
-# on Fedora-derivative behavior still work.
-log "Stamping /usr/lib/os-release as Margine"
+# all see "Margine". We keep ID_LIKE="fedora bluefin" so tools that
+# branch on Fedora-derivative behavior still work.
+#
+# IMPORTANT: we write os-release as a REGULAR FILE at BOTH /etc/os-release
+# AND /usr/lib/os-release, not as a symlink. Why:
+#
+# At early boot, systemd's switch-root path checks for os-release in the
+# new root with `openat(fd, "etc/os-release", O_NOFOLLOW)` first, then
+# `openat(fd, "usr/lib/os-release", O_NOFOLLOW)`. If /etc/os-release is
+# a symlink to /usr/lib/os-release, the first open fails (O_NOFOLLOW on
+# a symlink → ELOOP) and falls through to the /usr/lib check.
+#
+# BUT at switch-root time, /usr isn't yet mounted via composefs in
+# bootc-style deployments. The fallback path is therefore inaccessible.
+# Without an os-release available pre-composefs, systemd errors with
+# "Specified switch root path '/sysroot' does not seem to be an OS
+# tree. os-release file is missing." and drops to emergency shell.
+#
+# Bluefin's image happens to work because their rechunk pipeline
+# re-commits everything in an ostree-coherent format where composefs
+# is set up by switch-root time. We don't rechunk (yet — that's a
+# future architectural change), so we route around the problem by
+# making sure /etc/os-release is a standalone file, accessible
+# regardless of composefs/usr state.
+#
+# See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+# for the full investigation.
+log "Stamping os-release files (real files, NOT symlinks) as Margine"
 
 FEDORA_VER="$(rpm -E %fedora)"
 BUILD_DATE="$(date -u +%Y%m%d)"
 
-cat > /usr/lib/os-release <<EOF
+OS_RELEASE_CONTENT=$(cat <<EOF
 NAME="Margine"
 VERSION="${FEDORA_VER} (Margine)"
 ID=margine
@@ -54,8 +79,17 @@ SUPPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
 BUG_REPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
 DEFAULT_HOSTNAME="margine"
 EOF
-# Ensure /etc/os-release points to our /usr/lib copy (the standard layout).
-ln -sf ../usr/lib/os-release /etc/os-release
+)
+
+# /usr/lib/os-release as a regular file (the canonical location).
+printf '%s\n' "$OS_RELEASE_CONTENT" > /usr/lib/os-release
+chmod 0644 /usr/lib/os-release
+
+# /etc/os-release as a regular file (NOT a symlink) so systemd's
+# switch-root check finds it before composefs/usr is mounted.
+rm -f /etc/os-release
+printf '%s\n' "$OS_RELEASE_CONTENT" > /etc/os-release
+chmod 0644 /etc/os-release
 
 # ---------------------------------------------------------------------------
 # 1. Margine default Flatpak apps

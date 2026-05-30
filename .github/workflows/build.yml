@@ -265,6 +265,14 @@ jobs:
             inspect 'grep -q "^NAME=\"Margine\"" /etc/os-release'
           check "ID=margine in /etc/os-release" \
             inspect 'grep -q "^ID=margine" /etc/os-release'
+          # Bug 7 v2: LOGO= empty so GDM/widgets don't try to render
+          # a missing icon (and don't fall back to fedora-logo-sprite).
+          check "no LOGO= line in /etc/os-release" \
+            inspect '! grep -q "^LOGO=" /etc/os-release'
+          # Bug 7 v2: fedora-logo-sprite.svg replaced with empty SVG
+          # (Bluefin uses it for their "F"; we want no logo at all).
+          check "fedora-logo-sprite.svg is the empty placeholder (<200 bytes)" \
+            inspect '[[ $(stat -c%s /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg 2>/dev/null) -lt 200 ]]'
 
           echo
           echo "== 5b. /etc/passwd + /etc/group populated from factory =="

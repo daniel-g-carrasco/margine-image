@@ -44,6 +44,19 @@ jobs:
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
+      - name: Clean workspace before checkout
+        # Self-hosted-only workaround: the rechunk action writes
+        # intermediate files (margine_stable/blobs/, *.manifest.json, ...)
+        # owned by root because it runs via `sudo podman`. On the next
+        # run, actions/checkout cleans the workspace as gha-runner and
+        # cannot unlink those files → EACCES. GHA-hosted runners don't
+        # hit this because every job gets a fresh VM. Nuke as root here.
+        if: runner.environment != 'github-hosted' && github.workspace != ''
+        run: |
+          if [[ -d "$GITHUB_WORKSPACE" ]]; then
+            sudo find "$GITHUB_WORKSPACE" -mindepth 1 -delete 2>/dev/null || true
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 

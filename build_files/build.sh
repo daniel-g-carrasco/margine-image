@@ -319,26 +319,26 @@ log "Installed: /usr/share/pixmaps/margine-logo.png"
 #     the default desktop background (light + dark).
 mkdir -p /usr/share/backgrounds/margine
 curl --fail --silent --show-error -L \
-    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-autumn-leaves.png" \
-    -o /usr/share/backgrounds/margine/autumn-leaves.png
-chmod 0644 /usr/share/backgrounds/margine/autumn-leaves.png
-log "Installed: /usr/share/backgrounds/margine/autumn-leaves.png"
+    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-margine.png" \
+    -o /usr/share/backgrounds/margine/margine.png
+chmod 0644 /usr/share/backgrounds/margine/margine.png
+log "Installed: /usr/share/backgrounds/margine/margine.png"
 
 # Desktop background gschema override — set on the existing zz1 file so
 # it loads after Bluefin's zz0.
 cat >> /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 
 [org.gnome.desktop.background]
-picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
-picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-uri='file:///usr/share/backgrounds/margine/margine.png'
+picture-uri-dark='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#2C1810'
-secondary-color='#1A0E08'
+primary-color='#5B2903'
+secondary-color='#2D1402'
 
 [org.gnome.desktop.screensaver]
-picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-uri='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#2C1810'
+primary-color='#5B2903'
 OVERRIDE
 
 # (c) Plymouth theme → /usr/share/plymouth/themes/margine/
@@ -392,10 +392,10 @@ file-db:/usr/share/gdm/greeter-dconf-defaults
 EOF
 cat > /etc/dconf/db/gdm.d/01-margine-background <<'EOF'
 [org/gnome/desktop/background]
-picture-uri='file:///usr/share/backgrounds/margine/autumn-leaves.png'
-picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
+picture-uri='file:///usr/share/backgrounds/margine/margine.png'
+picture-uri-dark='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#2C1810'
+primary-color='#5B2903'
 EOF
 # (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at

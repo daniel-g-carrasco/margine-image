@@ -53,7 +53,11 @@ reconciliation mechanism). Installed on first boot from Flathub.
 | OBS Studio | `com.obsproject.Studio` | screen recording / streaming |
 | EasyEffects | `com.github.wwmm.easyeffects` | PipeWire audio effects |
 | Reaper | `fm.reaper.Reaper` | DAW |
-| VSCodium | `com.vscodium.codium` | code editor |
+| Apostrophe | `org.gnome.gitlab.somas.Apostrophe` | GTK 4 markdown viewer/editor |
+
+> VS Code is **not** installed by Margine — Bluefin DX already
+> preinstalls Visual Studio Code (Microsoft repo) with dev container
+> tooling already configured. Margine keeps that.
 
 > Optional / not preinstalled (declared as such in
 > [`declarations/margine-atomic.yaml`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/declarations/margine-atomic.yaml)
@@ -83,7 +87,7 @@ so the keys below win.
 | Setting | Value |
 | --- | --- |
 | `org.gnome.desktop.interface accent-color` | `yellow` |
-| `org.gnome.shell favorite-apps` | Zen, Thunderbird, Nautilus, Ptyxis, VSCodium |
+| `org.gnome.shell favorite-apps` | Zen, Thunderbird, Nautilus, Ptyxis, VS Code |
 | `org.gnome.shell enabled-extensions` | the 6 enabled extensions above |
 | Tiling Shell auto-tiling | `enable-autotiling=true`, `enable-snap-assist=true`, gaps=4 |
 | Default terminal | inherits Bluefin's **Ptyxis** (no override) |

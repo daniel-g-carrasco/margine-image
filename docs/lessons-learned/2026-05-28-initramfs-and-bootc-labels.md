@@ -262,6 +262,37 @@ broken greeter render but not a wrong logo. For now, document and
 let next rebase confirm. If we ever wire up screenshot diffing of
 the greeter, this is the canonical regression target.
 
+## Bug 9 — Margine default Flatpaks never get installed (uBlue legacy mechanism ignored)
+
+**Symptom.** After the first successful Margine boot the user notes
+that none of the apps Margine advertises as defaults (Zen, Bitwarden,
+LibreOffice, GIMP, Inkscape, darktable, Audacity, OBS, EasyEffects,
+Reaper, Apostrophe) are installed. Only Bluefin DX's own preinstalled
+apps appear in `flatpak list`.
+
+**Cause.** We were writing the app list to
+`/etc/ublue-os/system-flatpaks.list`, an older uBlue convention.
+Current Bluefin DX has moved to the **upstream `flatpak preinstall`
+API** (Flatpak 1.16+): the install service
+`flatpak-preinstall.service` runs at boot and reads
+`/usr/share/flatpak/preinstall.d/*.preinstall` files in INI format
+(`[Flatpak Preinstall <app-id>]` + `Branch=stable` + `IsRuntime=false`).
+Bluefin DX itself ships one such file (`bazaar.preinstall`) and
+nothing else. Our `system-flatpaks.list` was silently ignored.
+
+`systemctl status flatpak-preinstall.service` told the story:
+"Nothing to do" — it ran successfully because it only had Bluefin's
+own bazaar.preinstall to consider.
+
+**Fix.** In `build.sh`, replace the `system-flatpaks.list` writer with
+a `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`
+generator that emits the correct INI sections. Also `rm -f` the
+legacy file so it doesn't cause confusion. Implemented in step 1.
+
+**Durable guardrail.** Layer A check 4b: assert the preinstall file
+exists and contains entries for our canonical app set (Zen, Bitwarden,
+GIMP, Apostrophe as spot checks).
+
 ## Bug 8 (cosmetic, NOT a regression) — `systemd-remount-fs.service` always fails on ostree/composefs
 
 Both Bluefin DX and Margine boot with `systemd-remount-fs.service`

@@ -179,9 +179,17 @@ rm -rf /usr/lib/modules/* || true
 log "Enabling COPR: $COPR_REPO"
 dnf -y copr enable "$COPR_REPO"
 
+# On self-hosted runners, /var/cache is a persistent BuildKit cache
+# mount. A previous failed download (e.g. a partial RPM with bad
+# SHA256) gets stored there and dnf will keep re-using it, failing
+# every subsequent build with "Payload SHA256 ALT digest: BAD".
+# Clean packages + metadata before install so each kernel pull is fresh.
+log "Cleaning dnf packages + metadata to avoid cache poisoning on persistent runners"
+dnf -y clean packages metadata
+
 log "Installing CachyOS kernel: $KERNEL_PACKAGES"
 # shellcheck disable=SC2086
-dnf -y install $KERNEL_PACKAGES akmods
+dnf -y install --refresh $KERNEL_PACKAGES akmods
 
 KERNEL_VERSION="$(rpm -q "$KERNEL_PKG" --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}')"
 log "Installed kernel: $KERNEL_VERSION"

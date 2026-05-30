@@ -117,7 +117,12 @@ for app in \
     com.obsproject.Studio \
     com.github.wwmm.easyeffects \
     fm.reaper.Reaper \
-    com.vscodium.codium ; do
+    org.gnome.gitlab.somas.Apostrophe ; do
+  # NB: VS Code is intentionally NOT installed here. Bluefin DX
+  # preinstalls Visual Studio Code from the Microsoft repository with
+  # the dev container tooling already wired up (devpod, distrobox
+  # integration, etc.); adding VSCodium on top would just create a
+  # second, redundant editor.
   grep -qxF "$app" /etc/ublue-os/system-flatpaks.list \
     || echo "$app" >> /etc/ublue-os/system-flatpaks.list
 done
@@ -139,7 +144,7 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # keep the packages installed so the user can flip them back on per
 # session, but they don't auto-load on first boot.
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'tilingshell@ferrarodomenico.com']
-favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'com.vscodium.codium.desktop']
+favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'code.desktop']
 
 [org.gnome.desktop.interface]
 accent-color='yellow'

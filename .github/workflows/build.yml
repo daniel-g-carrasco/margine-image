@@ -330,8 +330,8 @@ jobs:
 
           echo
           echo "== 8. ujust recipes + declarations =="
-          check "/usr/share/ublue-os/just/99-margine.just" \
-            inspect 'test -f /usr/share/ublue-os/just/99-margine.just'
+          check "/usr/share/ublue-os/just/60-custom.just" \
+            inspect 'test -f /usr/share/ublue-os/just/60-custom.just'
           check "/usr/share/margine/declarations.yaml" \
             inspect 'test -f /usr/share/margine/declarations.yaml'
           check "/usr/share/margine/ascii-logo.txt" \

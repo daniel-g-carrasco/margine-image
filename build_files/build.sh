@@ -294,13 +294,14 @@ if command -v plymouth-set-default-theme >/dev/null 2>&1; then
 fi
 # Regenerate initramfs so the new Plymouth theme is embedded for the
 # boot splash. Output goes to /usr/lib/modules/<KVER>/initramfs.img,
-# the bootc/ostree-expected path (NOT /boot/initramfs-<KVER>.img which
-# ostree ignores). See the matching block in custom-kernel/install.sh
-# for the full rationale.
+# the bootc/ostree-expected path. --add ostree explicitly includes the
+# ostree dracut module (without which switch-root fails — see comment
+# in custom-kernel/install.sh).
 if command -v dracut >/dev/null 2>&1; then
   for kver_dir in /usr/lib/modules/*/; do
     kver=$(basename "$kver_dir")
     dracut --force --no-hostonly --no-hostonly-cmdline \
+        --add "ostree" \
         --kver "$kver" \
         "${kver_dir}initramfs.img"
   done

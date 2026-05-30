@@ -11,10 +11,14 @@
 
 ## Margine bootc install (recommended)
 
-The install starts from a regular **Bluefin** ISO, not a separate
-"Bluefin DX" ISO (which does not exist — DX is a `ujust devmode` toggle
-on top of regular Bluefin, and Margine's image already contains the DX
-package set, so `ujust devmode` is unnecessary).
+For the **operational** step-by-step (libvirt setup, virt-install
+command, virt-viewer, GRUB recovery, force-off + recreate, etc.) see
+the dedicated reference: [02b-lab-vm-setup.md](02b-lab-vm-setup.md).
+
+Conceptually, the install starts from a regular **Bluefin** ISO, not a
+separate "Bluefin DX" ISO (which does not exist — DX is a
+`ujust devmode` toggle on top of regular Bluefin, and Margine's image
+already contains the DX package set, so `ujust devmode` is unnecessary).
 
 ```sh
 # 1. Get the Bluefin ISO (regular, not DX — there is no DX ISO).

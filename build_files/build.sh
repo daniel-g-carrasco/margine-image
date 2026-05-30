@@ -290,6 +290,18 @@ curl --fail --silent --show-error -L \
      -o /usr/share/margine/declarations.yaml
 log "Installed: /usr/share/margine/declarations.yaml"
 
+# Compat symlink: 6 of the 7 configure-* scripts compute
+#   YAML = Path(__file__).parent.parent / "declarations" / "margine-atomic.yaml"
+# Since the scripts live at /usr/bin/, that resolves to
+# /usr/declarations/margine-atomic.yaml. Without this symlink they
+# silently can't find the file and bootstrap is broken end-to-end.
+# Only configure-home-layout honors MARGINE_DECLARATIONS env var.
+# Symlink is cheaper than patching 6 scripts. Keep until the scripts
+# are unified to use a canonical lookup (FHS /usr/share/margine/).
+mkdir -p /usr/declarations
+ln -sf ../share/margine/declarations.yaml /usr/declarations/margine-atomic.yaml
+log "Symlink: /usr/declarations/margine-atomic.yaml -> ../share/margine/declarations.yaml"
+
 # Set MARGINE_DECLARATIONS env for the scripts to pick up the system copy.
 cat > /etc/profile.d/margine.sh <<'EOF'
 export MARGINE_DECLARATIONS=/usr/share/margine/declarations.yaml
@@ -514,16 +526,46 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 # ---------------------------------------------------------------------------
 # 5. Margine ujust recipes (gaming layer opt-in)
 # ---------------------------------------------------------------------------
-# Bluefin ships a `ujust` wrapper that loads recipe files from
-# /usr/share/ublue-os/just/. Drop our 99-margine.just there so the user
-# can run `ujust margine-gaming` to opt into the gaming layer
+# Bluefin's /usr/share/ublue-os/just/00-entry.just hardcodes the list
+# of imported recipe files. The ONLY one declared as optional is
+# 60-custom.just (via `import?`) — that's the documented extension
+# point for downstream distros. Files dropped under any other name
+# (e.g. 99-margine.just) are simply ignored by `ujust --list`, even
+# if syntactically valid. Use 60-custom.just so our recipes appear.
 # (Steam Flatpak + Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/
 # gamemode/goverlay/steam-devices layered via rpm-ostree).
 #
 # Modeled after Bazzite's gaming bake, but opt-in: Margine default stays
 # minimal; gamers run one command and get a working stack.
 log "Installing Margine ujust recipes"
-install -Dm0644 /ctx/99-margine.just /usr/share/ublue-os/just/99-margine.just
+install -Dm0644 /ctx/60-custom.just /usr/share/ublue-os/just/60-custom.just
+
+# ---------------------------------------------------------------------------
+# 5b. First-login auto-bootstrap (XDG autostart)
+# ---------------------------------------------------------------------------
+# When a fresh user logs in for the first time after rebasing to
+# Margine, run `ujust margine-bootstrap unattended` once. It's
+# idempotent and skips re-running because of the marker file at
+# ~/.config/margine/bootstrapped. The user can re-run by deleting
+# that file or by invoking `ujust margine-bootstrap` manually.
+#
+# Without this, the configure-* scripts only ever run if the user
+# happens to know they have to type the ujust command — which is
+# exactly the "nothing's configured" bug we just fixed.
+log "Installing /etc/xdg/autostart/margine-first-boot.desktop"
+mkdir -p /etc/xdg/autostart
+cat > /etc/xdg/autostart/margine-first-boot.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Margine first-login user-state bootstrap
+Comment=Apply Margine home layout, GNOME extensions, keybindings, defaults
+Exec=/usr/bin/bash -c 'test -f "$HOME/.config/margine/bootstrapped" || ujust margine-bootstrap unattended > "$HOME/.config/margine/bootstrap.log" 2>&1'
+NoDisplay=true
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
+EOF
+chmod 0644 /etc/xdg/autostart/margine-first-boot.desktop
 
 # ---------------------------------------------------------------------------
 # Done

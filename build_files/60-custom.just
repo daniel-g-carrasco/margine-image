@@ -1,20 +1,25 @@
 # Margine ujust recipes.
-# Loaded by /usr/bin/ujust (Universal Blue's just wrapper) from
-# /usr/share/ublue-os/just/. The 99- prefix loads after everything
-# Bluefin ships so we can override if needed.
+# Loaded by /usr/bin/ujust (Universal Blue's just wrapper) via
+# /usr/share/ublue-os/just/00-entry.just `import?` of 60-custom.just
+# (the only optional extension point in Bluefin's entry file).
 
-# Apply the full Margine user-state in one shot (home layout, GNOME extensions, keybindings, appearance, default apps, app folders)
+# Apply the full Margine user-state in one shot (home layout, GNOME extensions, keybindings, appearance, default apps, app folders). Pass MODE=unattended to skip the prompt.
 [group('Margine')]
-margine-bootstrap:
+margine-bootstrap MODE="interactive":
     #!/usr/bin/bash
-    set -euo pipefail
+    set -uo pipefail
+    UNATTENDED=0
+    case "{{ MODE }}" in
+      unattended|--unattended|noninteractive|silent) UNATTENDED=1 ;;
+    esac
 
-    cat <<'EOF'
+    if [[ "$UNATTENDED" -ne 1 ]]; then
+      cat <<'EOF'
     == Margine user-state bootstrap ==
 
     Applies the full Margine user-state declaration. Idempotent — safe
-    to re-run after upgrades; each step reports [no change] for keys that
-    already match the spec.
+    to re-run after upgrades; each step reports [no change] for keys
+    that already match the spec.
 
     Steps:
       1. margine-configure-home-layout         (~/data + ~/dev + ~/scratch + XDG remap + bookmarks)
@@ -25,27 +30,51 @@ margine-bootstrap:
       6. margine-configure-default-applications (Zen as browser, Ptyxis terminal, etc.)
       7. margine-configure-gnome-app-folders   (Activities grid grouped by category)
 
-    No package install. No layer staged. Pure user-state under $HOME and
-    user-dconf. Reversible by hand.
+    No package install. No layer staged. Pure user-state under $HOME
+    and user-dconf. Reversible by hand.
+
+    Run `ujust margine-bootstrap unattended` to skip the prompt
+    (this is what /etc/xdg/autostart/margine-first-boot.desktop does
+    the first time you log in).
 
     EOF
-    read -rp "Continue? [Y/n] " ans
-    case "$ans" in ""|[yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+      read -rp "Continue? [Y/n] " ans
+      case "$ans" in ""|[yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    fi
 
-    set -x
-    margine-configure-home-layout --apply
-    margine-install-user-extensions --apply
-    margine-configure-gnome-extensions --apply
-    margine-configure-gnome-keybindings --apply
-    margine-configure-gnome-appearance --apply
-    margine-configure-default-applications --apply
-    margine-configure-gnome-app-folders --apply
-    set +x
+    FAILED=()
+    for step in \
+        margine-configure-home-layout \
+        margine-install-user-extensions \
+        margine-configure-gnome-extensions \
+        margine-configure-gnome-keybindings \
+        margine-configure-gnome-appearance \
+        margine-configure-default-applications \
+        margine-configure-gnome-app-folders ; do
+      echo
+      echo "==> $step --apply"
+      if ! $step --apply; then
+        echo "  ⚠ $step failed (continuing)"
+        FAILED+=("$step")
+      fi
+    done
 
     echo
-    echo "== Done =="
+    if [[ ${#FAILED[@]} -eq 0 ]]; then
+      echo "== Bootstrap complete (all steps succeeded). =="
+    else
+      echo "== Bootstrap complete with ${#FAILED[@]} failed step(s): =="
+      printf '   - %s\n' "${FAILED[@]}"
+    fi
     echo "Log out and back in (or restart GNOME Shell with Alt+F2 → 'r')"
     echo "to refresh the dock, extensions, keybindings, and bookmarks."
+
+    # Drop a marker so the autostart entry doesn't re-trigger every
+    # session. Re-run `ujust margine-bootstrap` to refresh manually.
+    mkdir -p "$HOME/.config/margine"
+    date -uIs > "$HOME/.config/margine/bootstrapped"
+
+    [[ ${#FAILED[@]} -eq 0 ]]
 
 
 # Install the Margine gaming layer (Steam Flatpak + Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/gamemode layered via rpm-ostree)

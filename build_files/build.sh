@@ -92,6 +92,61 @@ printf '%s\n' "$OS_RELEASE_CONTENT" > /etc/os-release
 chmod 0644 /etc/os-release
 
 # ---------------------------------------------------------------------------
+# 0.bis Populate /etc/passwd and /etc/group from factory (/usr/lib/*)
+# ---------------------------------------------------------------------------
+# Bluefin DX (like most modern Fedora-based containers) ships /etc/passwd
+# and /etc/group as a near-empty file ("root: only"), expecting systemd-
+# sysusers to materialize entries from /usr/lib/sysusers.d/ at first boot.
+# That works fine on a stock install — but when rechunk runs over our
+# image, it copies /etc/ into /usr/etc/ as the ostree "factory" view.
+# That factory then has only "root". On a rebase from Bluefin (where
+# /etc/passwd is full because Anaconda populated it), ostree's 3-way
+# merge between {old factory ≈ implicit, old /etc, new factory = root-only}
+# strips out everything but "root" and the user's own account.
+#
+# Symptoms on the post-rebase machine: dozens of "Failed to resolve group
+# 'audio'/'kvm'/'tty'/..." errors at boot, broken TPM, broken audio
+# permissions, etc.
+#
+# Fix: at build time, copy the canonical factory files into /etc so that
+# the post-rechunk /usr/etc/ contains the full list. ostree then knows
+# what the "Margine factory" looks like and the rebase merge preserves
+# the system users.
+if [[ -f /usr/lib/passwd ]] && [[ -f /usr/lib/group ]]; then
+  log "Seeding /etc/passwd + /etc/group from /usr/lib/{passwd,group} factory"
+  # Preserve any locally-modified entries (e.g. root with a custom shell)
+  # by letting our local /etc lines override factory ones for the same name.
+  python3 <<'PY'
+def load(p):
+    try:
+        with open(p) as f: return [l.rstrip("\n") for l in f if l.strip()]
+    except FileNotFoundError: return []
+def by_name(lines):
+    return {l.split(":",1)[0]: l for l in lines}
+for kind in ("passwd", "group"):
+    local   = by_name(load(f"/etc/{kind}"))
+    factory = by_name(load(f"/usr/lib/{kind}"))
+    merged  = dict(factory); merged.update(local)
+    def sort_key(line):
+        try:
+            uid = int(line.split(":")[2])
+            return (uid >= 1000, uid)
+        except Exception:
+            return (True, 999999)
+    import os
+    tmp = f"/etc/{kind}.new"
+    with open(tmp, "w") as f:
+        for l in sorted(merged.values(), key=sort_key):
+            f.write(l + "\n")
+    os.replace(tmp, f"/etc/{kind}")
+    print(f"  /etc/{kind}: was {len(local)} entries, now {len(merged)} (added {len(merged)-len(local)})")
+PY
+  chmod 0644 /etc/passwd /etc/group
+else
+  log "WARNING: /usr/lib/passwd or /usr/lib/group missing — skipping factory seed"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. Margine default Flatpak apps
 # ---------------------------------------------------------------------------
 # Bluefin ships Flathub already configured. We add the Margine default
@@ -326,11 +381,24 @@ picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
 picture-options='zoom'
 primary-color='#2C1810'
 EOF
+# (d.bis) GDM greeter logo (shown above the user list / password prompt).
+# The default org.gnome.login-screen.logo points at
+# /usr/share/pixmaps/fedora-gdm-logo.png which on Bluefin DX is
+# physically replaced with Bluefin's logo file. Point at our own asset
+# instead so the greeter visibly identifies as Margine.
+cat > /etc/dconf/db/gdm.d/02-margine-logo <<'EOF'
+[org/gnome/login-screen]
+logo='/usr/share/pixmaps/margine-logo.png'
+EOF
+mkdir -p /etc/dconf/db/gdm.d/locks
+cat > /etc/dconf/db/gdm.d/locks/02-margine-logo <<'EOF'
+/org/gnome/login-screen/logo
+EOF
 # Compile the gdm dconf db (best-effort; safe to skip if dconf is absent).
 if command -v dconf >/dev/null 2>&1; then
   dconf update || log "(warning: dconf update failed)"
 fi
-log "Installed: GDM background override"
+log "Installed: GDM background + greeter logo overrides"
 
 # (e) /etc/issue — text-mode banner shown on console (e.g. emergency shell)
 cat > /etc/issue <<'EOF'

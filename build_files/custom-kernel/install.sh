@@ -285,10 +285,23 @@ CONF
 #
 # We pass the output path as a positional argument so dracut writes
 # exactly where ostree expects.
-log "Regenerating initramfs for all installed kernels (generic, bootc-path)"
+log "Regenerating initramfs for all installed kernels (generic, bootc-path, ostree)"
+# --add ostree: ESSENTIAL for bootc/ostree systems. Without it the
+# initramfs doesn't include ostree-prepare-root, which is what pivots
+# /sysroot from the raw btrfs root (where there's no /etc/os-release
+# at the top level — just home/root/var subvolumes) to the actual
+# deployment content under /ostree/deploy/.../.../. Without this,
+# systemd's switch-root check `openat(fd, "etc/os-release",
+# O_NOFOLLOW)` fails because /sysroot is the wrong filesystem view.
+# Symptom: "Failed to switch root: ... os-release file is missing"
+# even when the deployment is fully present on disk.
+# Verified missing 2026-05-30: `lsinitrd <initramfs> | grep ostree`
+# returned ZERO lines on our published image. `--no-hostonly` alone
+# is insufficient; ostree dracut module must be EXPLICITLY requested.
 for kver_dir in /usr/lib/modules/*/; do
   kver=$(basename "$kver_dir")
   dracut --force --no-hostonly --no-hostonly-cmdline \
+      --add "ostree" \
       --kver "$kver" \
       "${kver_dir}initramfs.img"
   log "Wrote ${kver_dir}initramfs.img ($(du -h ${kver_dir}initramfs.img | cut -f1))"

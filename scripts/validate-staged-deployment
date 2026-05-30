@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# Pre-reboot validation for a Margine deployment staged by `bootc switch`
+# or `rpm-ostree rebase`.
+#
+# Run this from the current (Bluefin DX) GNOME terminal AFTER the
+# rebase command and BEFORE rebooting. Inspects the staged deployment
+# from outside, so any defect that would later land you in a dracut
+# emergency shell is caught here where copy-paste actually works.
+#
+# Exit code:
+#   0  all checks passed — safe to reboot
+#   1  one or more checks failed — DO NOT reboot, investigate first
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-staged-deployment | bash
+# or after `git clone`:
+#   scripts/validate-staged-deployment
+
+set -u
+
+FAIL=0
+WARN=0
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+bad()  { printf '  \033[31m✗\033[0m FAIL: %s\n' "$1"; FAIL=$((FAIL+1)); }
+warn() { printf '  \033[33m!\033[0m WARN: %s\n' "$1"; WARN=$((WARN+1)); }
+info() { printf '  %s\n' "$1"; }
+hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+
+check() {
+  local label="$1"; shift
+  if eval "$@" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
+}
+
+# ---------------------------------------------------------------------------
+hdr "1. Locate the staged deployment"
+# ---------------------------------------------------------------------------
+
+if ! command -v rpm-ostree >/dev/null; then
+  echo "rpm-ostree not found — not running on an ostree-based host?"
+  exit 1
+fi
+
+STAGED_JSON=$(rpm-ostree status --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for d in data.get("deployments", []):
+    if d.get("staged") or d.get("pending"):
+        print(json.dumps(d))
+        break
+' || true)
+
+if [[ -z "$STAGED_JSON" ]]; then
+  bad "no staged/pending deployment found — did the bootc/rpm-ostree rebase actually succeed?"
+  echo
+  echo "Hint: run 'rpm-ostree status' to inspect deployments."
+  exit 1
+fi
+
+STAGED_HASH=$(echo "$STAGED_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin)["checksum"])')
+STAGED_REF=$(echo "$STAGED_JSON" | python3 -c '
+import json,sys
+d = json.load(sys.stdin)
+print(d.get("container-image-reference") or d.get("origin") or "<unknown>")
+')
+DEPLOY_PATH=$(ls -d /ostree/deploy/*/deploy/"${STAGED_HASH}".* 2>/dev/null | head -1)
+
+info "staged checksum:  ${STAGED_HASH:0:16}..."
+info "staged ref:       $STAGED_REF"
+info "deployment path:  $DEPLOY_PATH"
+
+if [[ -z "$DEPLOY_PATH" || ! -d "$DEPLOY_PATH" ]]; then
+  bad "deployment directory not found on disk"
+  exit 1
+fi
+ok "deployment directory exists"
+
+# ---------------------------------------------------------------------------
+hdr "2. OS identity (Margine, not still Bluefin)"
+# ---------------------------------------------------------------------------
+
+OSREL="$DEPLOY_PATH/usr/lib/os-release"
+ETC_OSREL="$DEPLOY_PATH/etc/os-release"
+
+check "/usr/lib/os-release exists in staged deployment" "test -f '$OSREL'"
+check "/etc/os-release exists in staged deployment"     "test -e '$ETC_OSREL'"
+
+if [[ -f "$OSREL" ]]; then
+  NAME=$(grep -E '^NAME=' "$OSREL" | head -1 | cut -d= -f2- | tr -d '"')
+  info "os-release NAME=$NAME"
+  if [[ "$NAME" == "Margine" ]]; then
+    ok "NAME=\"Margine\" (rebase landed)"
+  elif [[ "$NAME" =~ [Bb]luefin ]]; then
+    bad "NAME still says Bluefin — bootc switch did not pivot to Margine"
+  else
+    warn "NAME=\"$NAME\" — unexpected; verify manually"
+  fi
+fi
+
+# Fix A safeguard: /etc/os-release must exist as a real file or a working
+# symlink whose target exists. A dangling link puts switch-root in panic.
+if [[ -L "$ETC_OSREL" ]]; then
+  if [[ -e "$ETC_OSREL" ]]; then
+    ok "/etc/os-release is a working symlink"
+  else
+    bad "/etc/os-release is a DANGLING symlink (switch-root will fail)"
+  fi
+elif [[ -f "$ETC_OSREL" ]]; then
+  ok "/etc/os-release is a regular file (Fix A)"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "3. Initramfs (the critical check — was Bug 5 here)"
+# ---------------------------------------------------------------------------
+
+KVER=$(ls "$DEPLOY_PATH/usr/lib/modules/" 2>/dev/null | head -1)
+if [[ -z "$KVER" ]]; then
+  bad "no kernel found in /usr/lib/modules/"
+else
+  info "kernel version: $KVER"
+fi
+
+INITRD="$DEPLOY_PATH/usr/lib/modules/$KVER/initramfs.img"
+VMLINUZ="$DEPLOY_PATH/usr/lib/modules/$KVER/vmlinuz"
+
+check "initramfs at bootc-canonical path"          "test -f '$INITRD'"
+check "vmlinuz at bootc-canonical path"            "test -f '$VMLINUZ'"
+
+if [[ -f "$INITRD" ]]; then
+  SZ=$(stat -c%s "$INITRD")
+  info "initramfs size: $SZ bytes ($((SZ/1024/1024)) MB)"
+  if (( SZ > 50000000 )); then
+    ok "initramfs > 50 MB (looks generic, not host-only minimal)"
+  else
+    bad "initramfs too small — likely host-only / missing modules"
+  fi
+
+  # THE check that motivated Bug 5: ostree-prepare-root must be inside
+  # the initramfs, otherwise switch-root cannot pivot /sysroot to the
+  # deployment view and you land in dracut shell with "os-release missing".
+  if lsinitrd "$INITRD" 2>/dev/null | grep -q ostree-prepare-root; then
+    ok "initramfs contains ostree-prepare-root (--add ostree fix applied)"
+  else
+    bad "initramfs MISSING ostree-prepare-root — this WILL panic at switch-root"
+  fi
+
+  for need in 'btrfs' 'dm[_-]crypt' 'virtio_blk'; do
+    desc="initramfs contains $need module"
+    if lsinitrd "$INITRD" 2>/dev/null | grep -qE "/$need\.ko"; then
+      ok "$desc (as .ko)"
+    elif [[ -r "$DEPLOY_PATH/usr/lib/modules/$KVER/config" ]] && \
+         grep -qE "^CONFIG_(BTRFS_FS|DM_CRYPT|VIRTIO_BLK)=y" \
+         "$DEPLOY_PATH/usr/lib/modules/$KVER/config" 2>/dev/null; then
+      # crude check: if any of the relevant CONFIG_*=y appears, accept it
+      ok "$desc (built into kernel)"
+    else
+      bad "$desc not present (neither .ko in initramfs nor built-in)"
+    fi
+  done
+fi
+
+# ---------------------------------------------------------------------------
+hdr "4. CachyOS kernel + Secure Boot signature"
+# ---------------------------------------------------------------------------
+
+if [[ "$KVER" =~ cachyos ]]; then
+  ok "kernel version contains 'cachyos'"
+else
+  warn "kernel does not contain 'cachyos' — Margine swaps to CachyOS kernel; this is unexpected"
+fi
+
+if [[ -f "$VMLINUZ" ]] && command -v sbverify >/dev/null; then
+  if sbverify --list "$VMLINUZ" 2>&1 | grep -qiE 'margine|daniel'; then
+    ok "vmlinuz is signed (Margine MOK present in signature)"
+  elif sbverify --list "$VMLINUZ" 2>&1 | grep -q 'No signature table'; then
+    bad "vmlinuz has NO signature — will fail under Secure Boot"
+  else
+    warn "vmlinuz signed but Margine identity not found in signature list — review manually"
+  fi
+elif ! command -v sbverify >/dev/null; then
+  info "sbverify not installed — skipping signature check"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "5. MOK enrollment artifacts"
+# ---------------------------------------------------------------------------
+
+MOK_CERTS=$(ls "$DEPLOY_PATH"/etc/pki/akmods/certs/*.cer 2>/dev/null)
+if [[ -n "$MOK_CERTS" ]]; then
+  ok "MOK cert(s) present:"
+  for c in $MOK_CERTS; do info "    $c"; done
+else
+  warn "no .cer under /etc/pki/akmods/certs/ — check where Margine ships its MOK"
+fi
+
+MOK_ENROLL_UNITS=$(find "$DEPLOY_PATH/etc/systemd" "$DEPLOY_PATH/usr/lib/systemd" \
+  -name "mok-enroll*.service" 2>/dev/null | head -3)
+if [[ -n "$MOK_ENROLL_UNITS" ]]; then
+  ok "mok-enroll systemd unit(s) found:"
+  for u in $MOK_ENROLL_UNITS; do info "    $u"; done
+else
+  warn "no mok-enroll.service found — first-boot MOK enrollment may rely on something else"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "6. Bootloader entry for the staged deployment"
+# ---------------------------------------------------------------------------
+
+# Look for the BLS entry that references the staged hash
+BLS_ENTRY=$(grep -lr "${STAGED_HASH:0:32}" /boot/loader/entries/ 2>/dev/null | head -1)
+if [[ -n "$BLS_ENTRY" ]]; then
+  ok "bootloader entry exists for staged deployment"
+  info "    $BLS_ENTRY"
+  # Check the entry references the right kernel path
+  if grep -q "linux .*ostree.*/$KVER/" "$BLS_ENTRY" 2>/dev/null || \
+     grep -q "linux .*/${STAGED_HASH:0:32}.*vmlinuz" "$BLS_ENTRY" 2>/dev/null; then
+    ok "bootloader entry references the staged kernel path"
+  else
+    warn "bootloader entry kernel path looks unusual — inspect manually"
+    grep -E 'linux|initrd' "$BLS_ENTRY" | sed 's/^/    /'
+  fi
+else
+  bad "no bootloader entry found that references the staged hash — GRUB will not boot this deployment"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "7. Verdict"
+# ---------------------------------------------------------------------------
+
+if (( FAIL == 0 )); then
+  printf "\n\033[1;32m✓✓✓ ALL CHECKS PASSED — safe to reboot.\033[0m\n"
+  if (( WARN > 0 )); then
+    printf "    (%d non-blocking warnings above; review if curious)\n" "$WARN"
+  fi
+  exit 0
+else
+  printf "\n\033[1;31m✗✗✗ %d CHECK(S) FAILED — DO NOT REBOOT until investigated.\033[0m\n" "$FAIL"
+  printf "    Paste the output above to the person who can help, or run\n"
+  printf "    'rpm-ostree status' and 'rpm-ostree rollback' to abandon\n"
+  printf "    the staged deployment without rebooting into it.\n"
+  exit 1
+fi

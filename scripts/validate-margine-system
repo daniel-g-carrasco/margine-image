@@ -182,9 +182,24 @@ info "GDM bg:   $GDM_BG"
 [[ "$GDM_LOGO" == "$EXPECTED_GDM_LOGO" ]] \
   && ok "GDM logo is empty (no logo rendered, by design)" \
   || bad "GDM logo is '$GDM_LOGO' (expected '$EXPECTED_GDM_LOGO' = empty) — Bug 7 regression"
-[[ "$GDM_BG" == "$EXPECTED_WALLPAPER" ]] \
-  && ok "GDM background uses Margine wallpaper" \
-  || bad "GDM background is '$GDM_BG' (expected '$EXPECTED_WALLPAPER')"
+
+# Compare resolved paths, not raw strings: the wallpaper compat
+# symlink (autumn-leaves.png -> margine.png) means the dconf path
+# may still say "autumn-leaves" but resolves to the new file. The
+# visual rendering is correct; only string-comparison was failing.
+gdm_bg_path="${GDM_BG#file://}"
+exp_path="${EXPECTED_WALLPAPER#file://}"
+gdm_bg_real=$(readlink -f "$gdm_bg_path" 2>/dev/null || echo "$gdm_bg_path")
+exp_real=$(readlink -f "$exp_path" 2>/dev/null || echo "$exp_path")
+if [[ "$gdm_bg_real" == "$exp_real" ]]; then
+  if [[ "$GDM_BG" == "$EXPECTED_WALLPAPER" ]]; then
+    ok "GDM background uses Margine wallpaper"
+  else
+    ok "GDM background resolves to Margine wallpaper via symlink (dconf still references the old path)"
+  fi
+else
+  bad "GDM background resolves to '$gdm_bg_real' (expected '$exp_real')"
+fi
 
 # ---------------------------------------------------------------------------
 hdr "7. GNOME Shell defaults (user session)"
@@ -207,8 +222,16 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     || warn "accent-color is '$CUR_ACCENT' (expected 'yellow') — user may have customized"
 
   CUR_BG=$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
-  [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]] && ok "desktop wallpaper = Margine default" \
-    || warn "desktop wallpaper is '$CUR_BG' (expected Margine; user may have changed)"
+  cur_bg_real=$(readlink -f "${CUR_BG#file://}" 2>/dev/null || echo "${CUR_BG#file://}")
+  if [[ "$cur_bg_real" == "$exp_real" ]]; then
+    if [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]]; then
+      ok "desktop wallpaper = Margine default"
+    else
+      ok "desktop wallpaper resolves to Margine via symlink (dconf still references old path)"
+    fi
+  else
+    warn "desktop wallpaper resolves to '$cur_bg_real' (expected '$exp_real'; user may have changed)"
+  fi
 else
   warn "running as root — skipping GNOME session-level gsettings checks"
 fi

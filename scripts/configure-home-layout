@@ -207,6 +207,37 @@ def apply(dirs, user_dirs_path, user_dirs_text, gtk3_path, gtk4_path,
         motd_marker.touch()
         print(f"  touch {motd_marker}  (silences Bluefin MOTD)")
 
+    # Prune stock XDG user directories that no XDG key references
+    # anymore (the Margine remap above points DOCUMENTS/MUSIC/PICTURES
+    # /etc. at ~/data/...). xdg-user-dirs created the stock dirs on
+    # first login and never cleans them up. Margine doesn't want them.
+    # SAFE: only delete dirs that are empty (rmdir, not rm -rf). If
+    # the user has any file inside, the prune is silently skipped so
+    # no data is lost.
+    stock_xdg_names = [
+        # English (any locale where en_US settings landed)
+        "Documents", "Downloads", "Music", "Pictures", "Videos",
+        "Desktop", "Templates", "Public",
+        # Italian (Bluefin install in IT)
+        "Documenti", "Scaricati", "Musica", "Immagini", "Video",
+        "Scrivania", "Modelli", "Pubblici",
+    ]
+    pruned = []
+    skipped = []
+    for name in stock_xdg_names:
+        p = Path.home() / name
+        if not p.is_dir() or p.is_symlink():
+            continue
+        try:
+            p.rmdir()  # only succeeds if empty
+            pruned.append(name)
+        except OSError:
+            skipped.append(name)
+    if pruned:
+        print(f"  pruned empty stock XDG dirs: {', '.join(pruned)}")
+    if skipped:
+        print(f"  kept non-empty stock dirs (move files manually if you want them gone): {', '.join(skipped)}")
+
     print()
     print("Done.")
     print("Note: log out and back in (or restart Nautilus with "

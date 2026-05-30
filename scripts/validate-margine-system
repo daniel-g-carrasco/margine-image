@@ -43,7 +43,7 @@ EXPECTED_OS_ID="margine"
 EXPECTED_KERNEL_PATTERN="cachyos"
 EXPECTED_PLYMOUTH_THEME="margine"
 EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/autumn-leaves.png"
-EXPECTED_GDM_LOGO="/usr/share/pixmaps/margine-logo.png"
+EXPECTED_GDM_LOGO=""   # empty: no logo in greeter, by design (see lessons-learned Bug 7)
 EXPECTED_GHCR_IMAGE="ghcr.io/daniel-g-carrasco/margine"
 
 EXPECTED_FLATPAKS=(
@@ -179,8 +179,8 @@ GDM_BG=$(DCONF_PROFILE=gdm gsettings get org.gnome.desktop.background picture-ur
 info "GDM logo: $GDM_LOGO"
 info "GDM bg:   $GDM_BG"
 [[ "$GDM_LOGO" == "$EXPECTED_GDM_LOGO" ]] \
-  && ok "GDM logo points at Margine asset" \
-  || bad "GDM logo points at '$GDM_LOGO' (expected '$EXPECTED_GDM_LOGO') — Bug 7 regression"
+  && ok "GDM logo is empty (no logo rendered, by design)" \
+  || bad "GDM logo is '$GDM_LOGO' (expected '$EXPECTED_GDM_LOGO' = empty) — Bug 7 regression"
 [[ "$GDM_BG" == "$EXPECTED_WALLPAPER" ]] \
   && ok "GDM background uses Margine wallpaper" \
   || bad "GDM background is '$GDM_BG' (expected '$EXPECTED_WALLPAPER')"

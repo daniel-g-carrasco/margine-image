@@ -252,10 +252,24 @@ nothing pointed to.
 Our existing `/etc/dconf/db/gdm.d/01-margine-background` override
 correctly set the wallpaper, but never touched the logo key.
 
-**Fix.** Add `/etc/dconf/db/gdm.d/02-margine-logo` setting
-`org.gnome.login-screen.logo = '/usr/share/pixmaps/margine-logo.png'`,
-with a matching lock file in `/etc/dconf/db/gdm.d/locks/` to prevent
-user-session overrides. `dconf update` at build end picks it up.
+**First (wrong) fix.** Point
+`org.gnome.login-screen.logo = '/usr/share/pixmaps/margine-logo.png'`.
+This made things WORSE: our Margine logo asset is a 2400×700
+horizontal banner sized for documentation headers, and GDM scales any
+configured logo to fit a square slot — the result was the wordmark
+blurred to nearly fullscreen behind the password field. Recorded here
+so nobody else points the key at a non-square asset.
+
+**Real fix.** Set `org.gnome.login-screen.logo = ''` (empty string) so
+GDM renders no logo at all. The Margine wordmark already lives in
+the Plymouth boot splash and in `/etc/issue` — the greeter doesn't
+need yet another instance of it. File:
+`/etc/dconf/db/gdm.d/02-margine-logo`, with a matching lock in
+`/etc/dconf/db/gdm.d/locks/`. `dconf update` at build end picks it up.
+
+If we ever want a logo back, ship a properly-sized square asset (eg
+256×256) at a separate path and point the key at THAT, not at the
+wordmark banner.
 
 **Durable guardrail.** Visual; Layer B smoke-boot would catch a
 broken greeter render but not a wrong logo. For now, document and

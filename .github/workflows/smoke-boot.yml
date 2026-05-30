@@ -36,15 +36,23 @@ on:
         description: 'OCI ref to smoke-boot (default: :stable)'
         required: false
         default: 'ghcr.io/daniel-g-carrasco/margine:stable'
-  # TODO: enable once verified
-  # workflow_run:
-  #   workflows: ["Build Margine image"]
-  #   types: [completed]
-  #   branches: [main]
+  # Auto-trigger after every successful Build Margine image on main.
+  # The guard `if: github.event.workflow_run.conclusion == 'success'`
+  # on the job ensures we don't waste a runner on cancelled / failed
+  # build outputs (which never get pushed to :stable anyway).
+  workflow_run:
+    workflows: ["Build Margine image"]
+    types: [completed]
+    branches: [main]
 
 jobs:
   smoke_boot:
     name: Build qcow2 + boot in QEMU
+    # Skip when triggered by workflow_run if the upstream build wasn't
+    # a clean success. workflow_dispatch always passes this check.
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 

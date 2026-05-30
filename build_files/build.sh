@@ -71,7 +71,6 @@ PRETTY_NAME="Margine ${FEDORA_VER} (${BUILD_DATE})"
 VARIANT="Margine"
 VARIANT_ID=margine
 ANSI_COLOR="0;38;2;232;186;0"
-LOGO=margine-logo
 CPE_NAME="cpe:/o:daniel-g-carrasco:margine:${FEDORA_VER}"
 HOME_URL="https://github.com/daniel-g-carrasco/margine-image"
 DOCUMENTATION_URL="https://github.com/daniel-g-carrasco/margine-fedora-atomic"
@@ -397,6 +396,26 @@ picture-uri-dark='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
 primary-color='#5B2903'
 EOF
+# (d.ter) Replace Bluefin's "F"-logo SVG with a fully transparent one.
+# Bluefin DX drops its own logo into
+# /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg (the
+# file is not owned by any RPM — it's overlaid by Bluefin's build).
+# GNOME greeter / about widgets that look up "fedora-logo-sprite" by
+# icon name therefore render the Bluefin "F" in our images too.
+# Overwrite with a 296×296 empty SVG so any consumer of that icon
+# name renders nothing.
+SPRITE=/usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg
+if [[ -f "$SPRITE" ]]; then
+  cat > "$SPRITE" <<'SVG'
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="296" height="296" viewBox="0 0 296 296"/>
+SVG
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache /usr/share/icons/hicolor || true
+  fi
+  log "Replaced Bluefin's fedora-logo-sprite.svg with transparent placeholder"
+fi
+
 # (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at
 # /usr/share/pixmaps/fedora-gdm-logo.png which on Bluefin DX is

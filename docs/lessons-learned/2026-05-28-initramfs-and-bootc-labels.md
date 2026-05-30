@@ -132,6 +132,151 @@ on every tag via `buildah config --label ostree.linux=<kver>`.
 **Durable guardrail.** Layer A check 3b verifies the invariant on
 every future build.
 
+## Bug 5 — Initramfs missing the `ostree` dracut module
+
+**Symptom.** All four bugs above fixed, initramfs at the right path,
+modules present, label correct. Boot still drops to dracut emergency
+shell with:
+
+    Failed to switch root: os-release file is missing
+
+From inside the emergency shell, `/sysroot` is mounted but contains
+only `home/ root/ var/` — the raw btrfs subvolumes — not the pivoted
+deployment content. systemd's `openat(fd, "etc/os-release", O_NOFOLLOW)`
+on that filesystem returns `ENOENT` because /sysroot is the wrong view.
+
+Diagnosis from emergency shell:
+
+    lsinitrd /sysroot/root/boot/ostree/.../initramfs-7.0.8-cachyos1.fc44.x86_64.img | grep ostree
+
+returned **empty** — proving the initramfs contained zero
+ostree-related content (no `ostree-prepare-root`, no ostree dracut
+hooks).
+
+**Cause.** dracut does not auto-include the `ostree` module just
+because the host is ostree-based. It must be requested explicitly with
+`--add ostree` (or via an `add_dracutmodules+=" ostree "` snippet in
+`/etc/dracut.conf.d/`). Our dracut invocations had neither, so the
+generated initramfs lacked `ostree-prepare-root` — the userspace tool
+responsible for pivoting `/sysroot` from the raw btrfs root to the
+deployment's content-addressed checkout BEFORE systemd's switch-root.
+
+Without that pivot, /sysroot is the disk root and contains no
+`etc/os-release` (it's inside the deployment dir, not at the btrfs
+top). switch-root fails its os-release sanity check and aborts.
+
+**Fix.** Add `--add "ostree"` to both dracut invocations:
+
+    dracut --force --no-hostonly --no-hostonly-cmdline \
+        --add "ostree" \
+        --kver "$kver" \
+        "${kver_dir}initramfs.img"
+
+Applied in `custom-kernel/install.sh` (kernel-swap regen) and
+`build.sh` (Plymouth-driven regen).
+
+**Durable guardrail.** Layer A check 2c (added with this fix):
+`lsinitrd /usr/lib/modules/*/initramfs.img | grep -q ostree-prepare-root`
+on every built initramfs. Fails the build if missing.
+
+## Bug 6 — `/etc/passwd` and `/etc/group` stripped to root-only on post-rebase systems
+
+**Symptom.** Margine boots successfully (after Bug 5 fix), but the
+boot journal is full of:
+
+    systemd-tmpfiles[…]: Failed to resolve group 'audio': Unknown group
+    systemd-tmpfiles[…]: Failed to resolve group 'kvm': Unknown group
+    systemd-tmpfiles[…]: Failed to resolve group 'tty': Unknown group
+    systemd-tmpfiles[…]: Failed to resolve user 'tss': Unknown user
+    …
+
+`getent group audio` returns nothing. `wc -l /etc/passwd` returns 2
+(only `root` and the install-time user). Audio device permissions,
+TPM2 access, and a long tail of subsystems become quietly broken.
+
+**Cause.** The Bluefin DX container ships `/etc/passwd` with only
+`root` (modern Fedora pattern: actual system users are materialized
+at first boot by `systemd-sysusers` from `/usr/lib/sysusers.d/`). On
+a stock install via Anaconda this works fine — Anaconda populates
+`/etc/passwd` during install.
+
+Our Margine build inherits the near-empty `/etc/passwd`. Then
+`rechunk` runs over the image and creates `/usr/etc/passwd` (ostree's
+"factory /etc" view) **from the current `/etc/passwd`**, which has
+only `root`. So the resulting Margine image ships with `/usr/etc/passwd`
+= one line.
+
+Now consider the rebase path (the only path users have today):
+
+  1. User installs Bluefin DX from ISO via Anaconda. `/etc/passwd`
+     ends up with the full Fedora system user set + `daniel`.
+  2. User runs `bootc switch ghcr.io/daniel-g-carrasco/margine:stable`.
+  3. ostree does a 3-way merge between:
+     - old factory: there was no `/usr/etc/passwd` in the Bluefin DX
+       container image — Anaconda created `/etc/passwd` post-install,
+       so ostree's view of "what was the factory" is incomplete.
+     - new factory: Margine's `/usr/etc/passwd` (one line, `root`).
+     - old /etc/passwd: 60+ entries.
+  4. The merge keeps entries that match the new factory plus
+     user-added entries. Net result: `root` (factory match) and
+     `daniel` (user-added). All system users dropped.
+
+**Fix.** Seed `/etc/passwd` and `/etc/group` at build time from
+`/usr/lib/passwd` and `/usr/lib/group` (the canonical Fedora factory
+copies). This way `rechunk` captures a `/usr/etc/passwd` with all
+system users, ostree sees a meaningful "Margine factory", and the
+3-way merge on rebase preserves the full user set.
+
+Implemented in `build.sh` step `0.bis Populate /etc/passwd and
+/etc/group from factory`. The python merge preserves any locally
+modified entries (e.g. `root` with a custom shell) by overlaying
+local entries on top of factory ones.
+
+**Durable guardrail.** Layer A check 5b (added with this fix):
+asserts `wc -l /etc/passwd >= 30` and `wc -l /etc/group >= 50`, and
+explicitly checks the presence of `audio`, `disk`, `kvm`, `tty`,
+`utmp`, `tss`. Fails the build if any are missing.
+
+## Bug 7 — GDM greeter shows Bluefin logo instead of Margine
+
+**Symptom.** First boot into Margine: GDM greeter visually identifies
+as Bluefin (logo above the user list / password prompt).
+
+**Cause.** The default `org.gnome.login-screen.logo` gsetting points
+at `/usr/share/pixmaps/fedora-gdm-logo.png`. Bluefin DX **replaces
+that file** (not the gsettings key) with its own logo asset baked
+into the image. Margine inherits Bluefin's logo file but ships its
+own logo separately as `/usr/share/pixmaps/margine-logo.png` — which
+nothing pointed to.
+
+Our existing `/etc/dconf/db/gdm.d/01-margine-background` override
+correctly set the wallpaper, but never touched the logo key.
+
+**Fix.** Add `/etc/dconf/db/gdm.d/02-margine-logo` setting
+`org.gnome.login-screen.logo = '/usr/share/pixmaps/margine-logo.png'`,
+with a matching lock file in `/etc/dconf/db/gdm.d/locks/` to prevent
+user-session overrides. `dconf update` at build end picks it up.
+
+**Durable guardrail.** Visual; Layer B smoke-boot would catch a
+broken greeter render but not a wrong logo. For now, document and
+let next rebase confirm. If we ever wire up screenshot diffing of
+the greeter, this is the canonical regression target.
+
+## Bug 8 (cosmetic, NOT a regression) — `systemd-remount-fs.service` always fails on ostree/composefs
+
+Both Bluefin DX and Margine boot with `systemd-remount-fs.service`
+in `failed` state:
+
+    mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure.
+
+The service tries to remount `/` as rw, but on composefs `/` is an
+overlay that cannot be reconfigured at runtime. There is nothing
+broken; the service is upstream-generic and doesn't know about
+composefs.
+
+We do not fix this. Documented here so it doesn't get re-investigated
+on every future boot test.
+
 ## Meta-lessons
 
 ### `|| true` is a smell

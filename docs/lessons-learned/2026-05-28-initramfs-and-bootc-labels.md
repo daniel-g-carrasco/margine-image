@@ -418,20 +418,151 @@ spec was correct on disk; the orchestration to apply it on first
 login was broken. Build-time checks can never substitute for
 runtime acceptance tests on a booted system.
 
-## Bug 8 (cosmetic, NOT a regression) — `systemd-remount-fs.service` always fails on ostree/composefs
+## Bug 8 — `systemd-remount-fs.service` always fails on ostree/composefs (MASKED)
 
-Both Bluefin DX and Margine boot with `systemd-remount-fs.service`
+Both Bluefin DX and Margine booted with `systemd-remount-fs.service`
 in `failed` state:
 
     mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure.
 
-The service tries to remount `/` as rw, but on composefs `/` is an
-overlay that cannot be reconfigured at runtime. There is nothing
-broken; the service is upstream-generic and doesn't know about
-composefs.
+The service is a Linux legacy: read `/etc/fstab` and remount `/` rw
+(used to be needed after fsck on traditional mounts). On composefs
+`/` is an overlay (lowerdir = read-only ostree content store,
+upperdir = rw deployment vars), and the kernel refuses overlay
+reconfigure. There is no functional impact — `/` is already rw via
+the overlay upper layer — but the unit lands in `failed` and
+`systemctl --failed` always shows noise.
 
-We do not fix this. Documented here so it doesn't get re-investigated
-on every future boot test.
+**First decision (2026-05-30):** leave alone, document, accept noise.
+
+**Revised decision (2026-05-31):** mask the unit at build time.
+
+    ln -sf /dev/null /etc/systemd/system/systemd-remount-fs.service
+
+The service does nothing useful for our root filesystem topology, so
+preventing it from starting at all is the correct outcome. `systemctl
+--failed` returns empty on a clean Margine boot. Layer A and
+`validate-margine-system` both updated to no longer accept this as
+"known noise" — if the unit ever fails again, it's a real regression.
+
+The proper upstream fix would be in systemd itself: detect overlay
+`/` and skip the remount. Not our problem to solve.
+
+## Bug 12 — Keybinding chord collisions silently shadow Margine's intended bindings
+
+**Symptom.** User reports: `Super+1..0` for workspace switching also
+launches dash-to-dock pinned apps (collision); `Super+Shift+arrow`
+doesn't move windows to other Tiling Shell zones (collision); a
+handful of other shortcuts feel inconsistent.
+
+**Cause.** An exhaustive audit of `gsettings list-recursively` on a
+booted Margine system, grepping for `Super`, surfaced **seven** chord
+collisions where a Margine binding shared a chord with a GNOME or
+extension default:
+
+| Chord | GNOME / extension default | Margine intent |
+| --- | --- | --- |
+| `<Super>1..0` | `dash-to-dock hot-keys=true` (launches Nth pinned app) | `wm.switch-to-workspace-N` |
+| `<Super>Tab` | `wm.switch-applications` | `wm.switch-to-workspace-right` |
+| `<Super><Shift>Tab` | `wm.switch-applications-backward` | `wm.switch-to-workspace-left` |
+| `<Super><Shift>arrow` | `wm.move-to-monitor-*` | `tilingshell.move-window-*` |
+| `<Super>n` | `shell.focus-active-notification` | `shell.toggle-message-tray` |
+| `<Super>e` | `media-keys.home` | custom `nautilus` |
+| `<Super>o` | `media-keys.rotate-video-lock-static` | `wm.always-on-top` |
+
+`configure-gnome-keybindings` already had a `SHELL_KEYS_TO_CLEAR`
+mechanism but it only covered `switch-to-application-N`. The other
+six namespaces were never cleared, so the GNOME default and the
+Margine binding both fired — usually with the GNOME one winning
+because it's set in lower-priority schema.
+
+The user-visible "Super+Shift+arrow doesn't move windows" was the
+clearest expression of this: `wm.move-to-monitor-*` was catching the
+chord before Tiling Shell got to see it.
+
+**Fix.** Extend `configure-gnome-keybindings`:
+
+- `WM_KEYS_TO_CLEAR`: switch-applications, switch-applications-backward,
+  move-to-monitor-{up,down,left,right}
+- `SHELL_KEYS_TO_CLEAR`: add `focus-active-notification`
+- `MEDIA_KEYS_TO_CLEAR`: home, rotate-video-lock-static
+- `EXTENSION_OVERRIDES`: dash-to-dock hot-keys → false, written via
+  `dconf write` (not `gsettings set`) so it lands in user dconf even
+  if the extension schema isn't loaded into the current shell process
+  yet (typical right after a fresh login).
+
+Each clear writes `@as []` to the GNOME default so the chord arrives
+at the Margine binding, which is set in the same pass.
+
+**Durable guardrail.** None added in this iteration: the validator
+already checks that Margine's intended bindings are set; the meta
+check "no other binding shares this chord" would catch future
+regressions but requires walking every key in multiple schemas to
+look for the chord. Worth adding as a Layer A-style check post-build
+if collisions keep being introduced by upstream Bluefin defaults
+shifting.
+
+**Audit method (reusable).** From a booted Margine system:
+
+```sh
+{
+  gsettings list-recursively org.gnome.desktop.wm.keybindings
+  gsettings list-recursively org.gnome.shell.keybindings
+  gsettings list-recursively org.gnome.settings-daemon.plugins.media-keys
+  gsettings list-recursively org.gnome.shell.extensions.dash-to-dock
+  gsettings list-recursively org.gnome.shell.extensions.tilingshell
+} | grep -i super | sort
+```
+
+Look for duplicate chord values across schemas — each duplicate is a
+potential collision to resolve.
+
+## Bug 13 — Self-hosted runner ENOSPC: podman rootless cache grew to 34 GB
+
+**Symptom.** A build that previously succeeded failed at the
+`Move built image to root storage for rechunk` step with:
+
+    write /sysroot/ostree/repo/objects/.../file-xattrs-link: no space left on device
+
+The runner VM has 80 GB total root disk. `df -h /` showed 51 GB used,
+26 GB available. The error path looked confusing because it
+mentioned `/sysroot/ostree/`, which the runner's Debian root doesn't
+have — but the path is inside the BuildKit transient extraction, not
+the host filesystem.
+
+**Cause.** Persistent BuildKit caches on the self-hosted runner
+accumulate across builds. Specifically:
+
+    sudo du -sh /home/gha-runner/.local/share/containers
+    34G	/home/gha-runner/.local/share/containers
+
+That's gha-runner's **rootless podman storage**: layer blobs from
+every build kept around (most still referenced by some manifest, so
+generic cleanup didn't reclaim them). The actual write fail happened
+during a `podman load` step that needed transient space the cache
+had already eaten.
+
+GHA-hosted runners never showed this because each job starts with a
+fresh VM and zero cache.
+
+**Fix.**
+
+1. **Immediate:** `sudo -u gha-runner -i podman system prune --all
+   --force --volumes` reclaimed **168 GB of dedup'd layer references**
+   (the on-disk delta dropped from 51 GB → 29 GB / 47 GB free).
+2. **Permanent:** systemd timer on the builder VM that runs
+   `podman system prune --all --filter until=48h` every Sunday at
+   04:00 + journal vacuum 7d. Units:
+
+       /etc/systemd/system/margine-builder-cleanup.timer
+       /etc/systemd/system/margine-builder-cleanup.service
+
+   The `until=48h` filter spares recently-used cache (yesterday's
+   build) so the next run still benefits from layer reuse.
+
+**Documented.** `proxmox-pve1/docs/operations/provision-margine-builder.md`
+should mention this timer as part of the canonical builder setup
+(TODO — currently in this lessons-learned only).
 
 ## Meta-lessons
 

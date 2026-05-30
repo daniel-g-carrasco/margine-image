@@ -12,6 +12,19 @@ lab catches problems that would also bite on real hardware:
 - LUKS2 full-disk encryption during install
 - 8 GiB RAM, 4 vCPU, 64 GiB qcow2 disk
 
+## Operare da GUI o da CLI
+
+Tutte le operazioni sotto possono essere fatte sia da **virt-manager**
+(GUI grafica) sia da `virsh` / `virt-install` (CLI). La guida mostra
+**entrambe**, con la GUI come metodo preferito per le operazioni
+quotidiane (snapshot, start/stop, console viewer) e la CLI per le
+operazioni complesse o ripetibili (creazione VM con vTPM + Secure Boot,
+script di automazione).
+
+Apri virt-manager con il comando omonimo. Connetti se necessario:
+`File → Add Connection... → QEMU/KVM`, host locale, system level
+(`qemu:///system`).
+
 ## Prerequisites (Arch host)
 
 Margine's spec runs on Bluefin DX, but the lab host can be any
@@ -95,6 +108,13 @@ curl -sL https://download.projectbluefin.io/bluefin-stable-x86_64.iso-CHECKSUM \
 
 ## Create the VM
 
+Si puo' fare in due modi: CLI con `virt-install` (consigliato la prima
+volta perche' la riga di comando documenta ogni feature in modo
+esplicito, e si puo' riusare/automatizzare) oppure GUI virt-manager
+(piu' veloce in seguito).
+
+### CLI (`virt-install`)
+
 ```sh
 virt-install \
     --connect qemu:///system \
@@ -120,6 +140,28 @@ Notes:
 ```sh
 virt-viewer --connect qemu:///system margine-smoketest
 ```
+
+### GUI (virt-manager)
+
+`File → New Virtual Machine`. Wizard:
+
+1. **Local install media (ISO image or CDROM)** → `Forward`.
+2. Browse l'ISO Bluefin scaricato sopra. Lascia detection automatica
+   OS — se non trova `Silverblue`, scegli manualmente `Fedora Silverblue`
+   (o `Fedora Linux 41` come fallback).
+3. Memory: `8192 MiB`. CPU: `4`. `Forward`.
+4. Storage: `Create a disk image`, `64 GiB`. `Forward`.
+5. Name: `margine-smoketest`. Network: `Virtual network 'default'`.
+   **Tick "Customize configuration before install"**. `Finish`.
+6. Nella finestra di customizzazione che si apre:
+   - **Overview → Firmware**: cambia da `BIOS` a `UEFI x86_64:
+     /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd` (o equivalente del
+     tuo distro). Tick `Secure Boot`.
+   - Click `Add Hardware` (in basso a sinistra) → `TPM` → Model
+     `CRB`, Backend `Emulated`, Version `2.0`. `Finish`.
+   - Verifica `Boot Options`: tick `SDA Hard Disk` come boot primario,
+     lascia CDROM secondario. `Apply`.
+7. Click `Begin Installation` (alto a sinistra).
 
 ## Install Bluefin
 
@@ -177,16 +219,84 @@ Creates `~/data ~/dev ~/scratch`, XDG remap, Nautilus bookmarks,
 Tiling Shell, Search Light, GNOME extensions enable/disable,
 keybindings, default apps, app folders. Logout + login.
 
+## Snapshot e rollback (operazione quotidiana)
+
+**Fai snapshot ad ogni stato "buono" della VM.** Reinstallare Bluefin
+da zero richiede 20-30 minuti; un rollback a snapshot richiede 5
+secondi. Gli snapshot interni qcow2 sono copy-on-write: il file disco
+cresce solo dei blocchi modificati DA quel punto in poi, quindi
+costano pochissimo spazio.
+
+### Da virt-manager (consigliato)
+
+1. Apri virt-manager, doppio click sulla VM.
+2. Nella finestra che si apre, click sul'icona "Vista" (occhio) o
+   `View → Snapshots`. Si apre il pannello snapshot a sinistra.
+3. Spegni la VM prima di fare lo snapshot (Power off, non
+   Suspend) — questo garantisce snapshot atomici e coerenti.
+4. Click sul **`+`** in basso a sinistra del pannello snapshot.
+5. Compila:
+   - **Name**: `bluefin-fresh`, `margine-rebased-OK-20260530`, ecc.
+   - **Description**: una riga sul perche'.
+6. `Finish`. Lo snapshot e' creato in pochi secondi.
+
+Per fare rollback: seleziona lo snapshot dalla lista, click sul tasto
+**`▶`** (Run selected snapshot). La VM viene fermata e ripristinata
+allo stato salvato in pochi secondi. Lo stato corrente viene perso —
+se vuoi salvarlo prima, crea un altro snapshot.
+
+Per cancellare uno snapshot vecchio: selezionalo e click sul **`-`**
+(cestino).
+
+### Da CLI (alternativa, utile per automazione)
+
+```sh
+# Crea snapshot (VM spenta)
+virsh snapshot-create-as margine-smoketest bluefin-fresh \
+    "Bluefin DX appena installato, mai rebasato" --atomic
+
+# Lista snapshot
+virsh snapshot-list margine-smoketest --tree
+
+# Rollback (la VM viene fermata e riportata allo stato salvato)
+virsh snapshot-revert margine-smoketest bluefin-fresh
+virsh start margine-smoketest
+
+# Cancella uno snapshot
+virsh snapshot-delete margine-smoketest <name>
+```
+
+### Quando fare snapshot
+
+Almeno questi due, sempre:
+
+| Snapshot suggerito | Quando | A cosa serve |
+| --- | --- | --- |
+| `bluefin-fresh` | Subito dopo install Bluefin + primo boot OK | Punto di partenza per qualsiasi test rebase Margine |
+| `margine-stable-<data>` | Dopo rebase Margine, MOK enrolled, boot a multi-user verificato | Margine funzionante — se la build successiva ha regressioni, rollback qui invece di rifare tutto |
+
+Snapshot aggiuntivi su misura: prima di test rischiosi (kernel custom,
+upgrade aggressivi), prima di ujust su cui non sei sicuro, prima di
+abilitare TPM2 PCR policy.
+
 ## Recovery (when something breaks)
+
+### Prima cosa da provare: rollback a uno snapshot precedente
+
+Se hai snapshot (vedi sezione sopra), il rollback e' quasi sempre la
+strada piu' veloce per recuperare. Riporta la VM allo stato di un'ora
+o un giorno prima senza dover indagare cosa si e' rotto.
 
 ### Force-off + restart
 
-From the host:
+Da virt-manager: tasto destro sulla VM → `Force Off`, poi `Run`.
+
+Da CLI:
 
 ```sh
-virsh --connect qemu:///system destroy margine-smoketest
-virsh --connect qemu:///system start margine-smoketest
-virt-viewer --connect qemu:///system margine-smoketest
+virsh destroy margine-smoketest
+virsh start margine-smoketest
+virt-viewer margine-smoketest   # apre la console grafica
 ```
 
 ### At GRUB: pick a different deployment
@@ -206,15 +316,23 @@ sudo rpm-ostree cleanup -rmpb        # nuke pending + rollback + metadata + base
 
 ### Nuke the VM and start fresh
 
-When the VM has accumulated too much state from failed experiments,
-just recreate it (re-using the same ISO; install takes ~20 min):
+**Ultimo resort.** Se hai snapshot, prima prova un rollback (vedi
+sezione "Snapshot e rollback"). Una reinstall completa di Bluefin
+richiede 20-30 minuti che gli snapshot ti risparmiano.
+
+Quando proprio la VM e' irrecuperabile:
+
+Da virt-manager: tasto destro sulla VM → `Delete...` → spunta
+"Delete associated storage files" → `Delete`. Poi crea una nuova VM
+con `File → New Virtual Machine`.
+
+Da CLI:
 
 ```sh
-# Nuke
-virsh --connect qemu:///system destroy margine-smoketest 2>/dev/null
-virsh --connect qemu:///system undefine margine-smoketest --nvram --remove-all-storage
+virsh destroy margine-smoketest 2>/dev/null
+virsh undefine margine-smoketest --nvram --remove-all-storage
 
-# Recreate (same command as "Create the VM" above)
+# Recreate (same virt-install command as "Create the VM" above)
 ```
 
 ## When the VM lab catches its limit

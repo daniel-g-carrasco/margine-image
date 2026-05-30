@@ -1,0 +1,139 @@
+---
+# Layer B — smoke-boot the published Margine image in QEMU and verify
+# it actually reaches multi-user.target before we trust :stable.
+#
+# Layer A (in build.yml) checks image internals statically: required
+# files, paths, labels, modules. Useful but insufficient — every bug
+# we hit during the 2026-05-28/29 smoke test was a RUNTIME bug that
+# Layer A could not see. Layer B closes that gap.
+#
+# Current trigger: workflow_dispatch only. Once it's been validated
+# end-to-end a few times, change to workflow_run after Build Margine
+# image so every push to main gets smoke-booted before being trusted.
+#
+# What it does:
+#   1. Install bootc-image-builder + qemu + ovmf
+#   2. Pull the latest published Margine OCI image
+#   3. Build a qcow2 from it (no LUKS — automated boot can't enter
+#      a passphrase; LUKS boot is exercised manually in the VM lab)
+#   4. Boot the qcow2 in QEMU with serial console
+#   5. Wait up to 10 min for "Reached target Multi-User System"
+#   6. If reached → pass; if not → upload serial log as artifact, fail
+#
+# Notes:
+#   - GHA ubuntu-24.04 runners DO have KVM acceleration since 2024.
+#     Boot is fast (typically ~30s to multi-user).
+#   - bootc-image-builder runs as root, in a privileged container.
+#   - The qcow2 stays local to the runner; we don't publish it. The
+#     publication target is the OCI image (already pushed by build.yml).
+
+name: Smoke-boot published image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: 'OCI ref to smoke-boot (default: :stable)'
+        required: false
+        default: 'ghcr.io/daniel-g-carrasco/margine:stable'
+  # TODO: enable once verified
+  # workflow_run:
+  #   workflows: ["Build Margine image"]
+  #   types: [completed]
+  #   branches: [main]
+
+jobs:
+  smoke_boot:
+    name: Build qcow2 + boot in QEMU
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Install QEMU + OVMF + tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 ovmf swtpm
+          # Verify KVM
+          ls -la /dev/kvm || true
+          kvm-ok 2>&1 || true
+
+      - name: Build qcow2 with bootc-image-builder
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          IMG="${{ github.event.inputs.image_ref || 'ghcr.io/daniel-g-carrasco/margine:stable' }}"
+          echo "Building qcow2 from: $IMG"
+          # Pull the image first so bootc-image-builder doesn't have to
+          # re-download under root.
+          sudo podman pull "$IMG"
+          # bootc-image-builder needs --privileged + a few specific
+          # mounts. Defaults produce qcow2 with no LUKS.
+          sudo podman run --rm \
+            --privileged \
+            --pull=newer \
+            --security-opt label=type:unconfined_t \
+            -v "$(pwd)/output:/output" \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type qcow2 \
+            --rootfs btrfs \
+            "$IMG"
+          ls -la output/qcow2/
+          sudo chown "$(id -u):$(id -g)" -R output/
+
+      - name: Boot qcow2 in QEMU and wait for multi-user.target
+        id: boot
+        run: |
+          set -euo pipefail
+          QCOW=$(ls output/qcow2/*.qcow2 | head -1)
+          echo "Booting: $QCOW"
+
+          # Start QEMU in the background, capture serial console to file.
+          # -no-reboot exits when guest shuts down.
+          # Plenty of RAM/CPU so we're not the bottleneck.
+          sudo qemu-system-x86_64 \
+            -enable-kvm \
+            -m 4096 -smp 4 \
+            -machine q35,smm=on \
+            -global driver=cfi.pflash01,property=secure,value=on \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.secboot.fd \
+            -drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_VARS.fd \
+            -drive file="$QCOW",format=qcow2,if=virtio \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -serial file:serial.log \
+            -display none \
+            -no-reboot \
+            &
+          QEMU_PID=$!
+          echo "QEMU PID: $QEMU_PID"
+
+          # Watch the serial log for the marker. 10 min cap.
+          # systemd prints "Reached target multi-user.target - Multi-User System"
+          # (or similar) when the userspace finishes coming up.
+          MARKER="Reached target multi-user.target"
+          for i in $(seq 1 600); do
+            if [[ -f serial.log ]] && grep -q "$MARKER" serial.log; then
+              echo "✓ Boot reached multi-user target at second $i"
+              echo "passed=true" >> $GITHUB_OUTPUT
+              # Try to shut down gracefully via QEMU monitor; otherwise force-kill
+              sudo kill "$QEMU_PID" 2>/dev/null || true
+              wait "$QEMU_PID" 2>/dev/null || true
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "✗ Boot did NOT reach multi-user target within 10 minutes"
+          echo "Last 200 lines of serial log:"
+          tail -200 serial.log
+          sudo kill -9 "$QEMU_PID" 2>/dev/null || true
+          echo "passed=false" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Upload serial log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-boot-serial-log
+          path: serial.log
+          retention-days: 7

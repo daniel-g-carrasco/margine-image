@@ -341,8 +341,8 @@ jobs:
           echo "== 9. branding assets =="
           check "/usr/share/pixmaps/margine-logo.png" \
             inspect 'test -f /usr/share/pixmaps/margine-logo.png'
-          check "/usr/share/backgrounds/margine/autumn-leaves.png" \
-            inspect 'test -f /usr/share/backgrounds/margine/autumn-leaves.png'
+          check "/usr/share/backgrounds/margine/margine.png" \
+            inspect 'test -f /usr/share/backgrounds/margine/margine.png'
           check "/etc/dconf/db/gdm.d/01-margine-background" \
             inspect 'test -f /etc/dconf/db/gdm.d/01-margine-background'
           check "/etc/issue mentions Margine" \

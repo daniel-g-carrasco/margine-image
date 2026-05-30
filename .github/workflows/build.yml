@@ -185,6 +185,20 @@ jobs:
           fi
 
           echo
+          echo "== 2c. ostree-prepare-root inside initramfs (Bug 5 guardrail) =="
+          # Without this binary in initrd, switch-root cannot pivot /sysroot
+          # to the deployment view → "Failed to switch root: os-release file
+          # is missing" → dracut emergency shell. Caught by --add ostree in
+          # dracut. See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+          # Bug 5.
+          if inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q 'usr/lib/ostree/ostree-prepare-root'"; then
+            echo "  ✓ ostree-prepare-root present in initramfs"
+          else
+            echo "  ✗ FAIL: ostree-prepare-root MISSING — initramfs cannot pivot to deployment"
+            fail=1
+          fi
+
+          echo
           echo "== 3. critical kernel features (module in initramfs OR built into kernel) =="
           # Map module-name → CONFIG symbol. A feature counts as present if
           # EITHER (a) its .ko is in the initramfs OR (b) it's compiled into
@@ -230,6 +244,31 @@ jobs:
             inspect 'grep -q "^NAME=\"Margine\"" /etc/os-release'
           check "ID=margine in /etc/os-release" \
             inspect 'grep -q "^ID=margine" /etc/os-release'
+
+          echo
+          echo "== 5b. /etc/passwd + /etc/group populated from factory =="
+          # If only "root" and the install-time user are present, the
+          # post-rebase ostree 3-way merge will strip system users and
+          # cause boot-time "Unknown group 'audio/tty/kvm/...'" errors.
+          # build.sh seeds these from /usr/lib/{passwd,group}.
+          passwd_n=$(inspect 'wc -l < /etc/passwd' || echo 0)
+          group_n=$(inspect 'wc -l < /etc/group' || echo 0)
+          echo "  /etc/passwd entries: $passwd_n"
+          echo "  /etc/group entries:  $group_n"
+          if (( passwd_n >= 30 )) && (( group_n >= 50 )); then
+            echo "  ✓ system users + groups present (will survive rechunk)"
+          else
+            echo "  ✗ FAIL: /etc/passwd or /etc/group looks stripped — Bug 6 will recur"
+            fail=1
+          fi
+          for need_group in audio disk kvm tty utmp tss; do
+            if inspect "grep -q '^${need_group}:' /etc/group"; then
+              echo "  ✓ group '$need_group' present"
+            else
+              echo "  ✗ FAIL: group '$need_group' missing from /etc/group"
+              fail=1
+            fi
+          done
 
           echo
           echo "== 6. Plymouth theme =="

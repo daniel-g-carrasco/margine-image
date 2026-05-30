@@ -122,14 +122,18 @@ MEDIA_KEYS_TO_CLEAR = (
 )
 
 # Extension settings that grab keys we want Margine to own.
-# Each entry is (schema, key, value-to-set).
+# Each entry is (dconf-path, value). We write via `dconf write` rather
+# than `gsettings set` because the gschema may not be loaded into the
+# current gnome-shell process when this script runs (e.g. extension
+# enabled but session not restarted yet). dconf write bypasses the
+# schema check; the extension picks it up next time it reads dconf.
 EXTENSION_OVERRIDES = (
     # dash-to-dock's hot-keys=true binds <Super>1..9,0 to launch the
     # N-th pinned app. We bind those to switch-to-workspace-N. Disable
     # dash-to-dock's hot-keys flag so the shortcut goes to the WM
-    # binding instead. Affects the extension only — pin behavior in
-    # the dock itself (click to launch) is unchanged.
-    ("org.gnome.shell.extensions.dash-to-dock", "hot-keys", "false"),
+    # binding instead. Pin behavior in the dock itself (click to
+    # launch) is unchanged.
+    ("/org/gnome/shell/extensions/dash-to-dock/hot-keys", "false"),
 )
 
 MEDIA_KEYS = {
@@ -334,9 +338,9 @@ def main() -> int:
             set_key("org.gnome.shell.keybindings", key, [], dry)
         for key in MEDIA_KEYS_TO_CLEAR:
             set_key("org.gnome.settings-daemon.plugins.media-keys", key, [], dry)
-        for schema, key, val in EXTENSION_OVERRIDES:
-            print(f"  {schema} {key}={val}")
-            run_soft(["gsettings", "set", schema, key, val], dry)
+        for path, val in EXTENSION_OVERRIDES:
+            print(f"  dconf write {path} {val}")
+            run_soft(["dconf", "write", path, val], dry)
 
         apply_group(
             "Shell",

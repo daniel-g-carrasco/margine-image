@@ -42,7 +42,7 @@ EXPECTED_OS_NAME="Margine"
 EXPECTED_OS_ID="margine"
 EXPECTED_KERNEL_PATTERN="cachyos"
 EXPECTED_PLYMOUTH_THEME="margine"
-EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/autumn-leaves.png"
+EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/margine.png"
 EXPECTED_GDM_LOGO=""   # empty: no logo in greeter, by design (see lessons-learned Bug 7)
 EXPECTED_GHCR_IMAGE="ghcr.io/daniel-g-carrasco/margine"
 
@@ -157,8 +157,8 @@ hdr "5. Margine branding assets"
 # ---------------------------------------------------------------------------
 [[ -f /usr/share/pixmaps/margine-logo.png ]] && ok "margine-logo.png present" \
   || bad "/usr/share/pixmaps/margine-logo.png missing"
-[[ -f /usr/share/backgrounds/margine/autumn-leaves.png ]] && ok "wallpaper present" \
-  || bad "/usr/share/backgrounds/margine/autumn-leaves.png missing"
+[[ -f /usr/share/backgrounds/margine/margine.png ]] && ok "wallpaper present" \
+  || bad "/usr/share/backgrounds/margine/margine.png missing"
 [[ -d /usr/share/plymouth/themes/margine ]] && ok "Plymouth theme dir present" \
   || bad "/usr/share/plymouth/themes/margine missing"
 [[ -f /usr/share/margine/ascii-logo.txt ]] && ok "fastfetch ASCII logo present" \
@@ -206,7 +206,7 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     || warn "accent-color is '$CUR_ACCENT' (expected 'yellow') — user may have customized"
 
   CUR_BG=$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
-  [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]] && ok "desktop wallpaper = Margine autumn-leaves" \
+  [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]] && ok "desktop wallpaper = Margine default" \
     || warn "desktop wallpaper is '$CUR_BG' (expected Margine; user may have changed)"
 else
   warn "running as root — skipping GNOME session-level gsettings checks"

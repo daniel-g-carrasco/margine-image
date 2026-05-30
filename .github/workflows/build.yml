@@ -91,7 +91,7 @@ jobs:
           chmod 600 /tmp/margine-secrets/*
 
       - name: Image metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         id: metadata
         with:
           tags: |

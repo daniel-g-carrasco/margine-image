@@ -266,6 +266,31 @@ jobs:
           fi
           echo "All Layer A image checks PASSED. Proceeding to push."
 
+      # Move built image to root podman storage with an unqualified tag,
+      # so rechunk (which runs `sudo podman create REF`) can find it.
+      #
+      # The buildah-build action stores its output in the GHA user's
+      # podman storage as `localhost/margine:stable`. The rechunk action
+      # then does `sudo podman create localhost/margine:stable` which:
+      #   (a) doesn't see the user-storage image (sudo = root storage)
+      #   (b) interprets `localhost/...` as a remote registry hostname
+      #       and tries to ping https://localhost:443 → connection
+      #       refused → build fails.
+      # Fix: pipe the built image through `podman save | sudo podman
+      # load` to copy it into root storage, then re-tag it to just
+      # `margine:stable` (no `localhost/` prefix). `sudo podman create
+      # margine:stable` then finds it in root storage by local lookup.
+      - name: Move built image to root storage for rechunk
+        run: |
+          set -euo pipefail
+          podman save "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+            | sudo podman load
+          sudo podman tag \
+            "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          echo "Root-storage images:"
+          sudo podman images
+
       # Fix B — rechunk the image into ostree-canonical form. This is
       # the architecturally correct step that:
       #   1. Re-commits the image content to OSTree, regenerating
@@ -286,7 +311,7 @@ jobs:
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
         with:
-          ref: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          ref: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           version: ${{ env.DEFAULT_TAG }}.${{ steps.date.outputs.ymd }}
           labels: |
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}

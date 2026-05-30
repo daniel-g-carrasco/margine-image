@@ -27,6 +27,17 @@ warn() { printf '  \033[33m!\033[0m WARN: %s\n' "$1"; WARN=$((WARN+1)); }
 info() { printf '  %s\n' "$1"; }
 hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
+# Several checks need to read root-owned files (initramfs.img, MOK certs).
+# If we're not root, prefix those calls with sudo so `curl ... | bash`
+# without sudo still gives accurate results (after one password prompt).
+if [[ $(id -u) -eq 0 ]]; then
+  SUDO=()
+else
+  SUDO=(sudo)
+  echo "Not running as root — privileged checks will use sudo (you may be"
+  echo "prompted for the password once)."
+fi
+
 check() {
   local label="$1"; shift
   if eval "$@" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
@@ -62,6 +73,13 @@ STAGED_REF=$(echo "$STAGED_JSON" | python3 -c '
 import json,sys
 d = json.load(sys.stdin)
 print(d.get("container-image-reference") or d.get("origin") or "<unknown>")
+')
+# Distinguish "staged" (bootc switch — finalized by
+# ostree-finalize-staged.service at shutdown, BLS entries appear THEN)
+# from "pending" (rpm-ostree rebase — BLS entries written immediately).
+IS_STAGED=$(echo "$STAGED_JSON" | python3 -c '
+import json,sys
+print("true" if json.load(sys.stdin).get("staged") else "false")
 ')
 DEPLOY_PATH=$(ls -d /ostree/deploy/*/deploy/"${STAGED_HASH}".* 2>/dev/null | head -1)
 
@@ -135,10 +153,16 @@ if [[ -f "$INITRD" ]]; then
     bad "initramfs too small — likely host-only / missing modules"
   fi
 
+  # Cache lsinitrd output once — initramfs.img is root-owned, so we
+  # need sudo. Storing in a temp file avoids repeating the prompt.
+  LS_OUT=$(mktemp)
+  trap 'rm -f "$LS_OUT"' EXIT
+  "${SUDO[@]}" lsinitrd "$INITRD" >"$LS_OUT" 2>/dev/null || true
+
   # THE check that motivated Bug 5: ostree-prepare-root must be inside
   # the initramfs, otherwise switch-root cannot pivot /sysroot to the
   # deployment view and you land in dracut shell with "os-release missing".
-  if lsinitrd "$INITRD" 2>/dev/null | grep -q ostree-prepare-root; then
+  if grep -q 'usr/lib/ostree/ostree-prepare-root' "$LS_OUT"; then
     ok "initramfs contains ostree-prepare-root (--add ostree fix applied)"
   else
     bad "initramfs MISSING ostree-prepare-root — this WILL panic at switch-root"
@@ -146,7 +170,7 @@ if [[ -f "$INITRD" ]]; then
 
   for need in 'btrfs' 'dm[_-]crypt' 'virtio_blk'; do
     desc="initramfs contains $need module"
-    if lsinitrd "$INITRD" 2>/dev/null | grep -qE "/$need\.ko"; then
+    if grep -qE "/$need\.ko" "$LS_OUT"; then
       ok "$desc (as .ko)"
     elif [[ -r "$DEPLOY_PATH/usr/lib/modules/$KVER/config" ]] && \
          grep -qE "^CONFIG_(BTRFS_FS|DM_CRYPT|VIRTIO_BLK)=y" \
@@ -185,12 +209,16 @@ fi
 hdr "5. MOK enrollment artifacts"
 # ---------------------------------------------------------------------------
 
-MOK_CERTS=$(ls "$DEPLOY_PATH"/etc/pki/akmods/certs/*.cer 2>/dev/null)
+MOK_CERTS=$("${SUDO[@]}" find \
+  "$DEPLOY_PATH/etc/pki" \
+  "$DEPLOY_PATH/usr/etc/pki" \
+  "$DEPLOY_PATH/usr/share/pki" \
+  -name '*.cer' -o -name 'MOK.*' 2>/dev/null | head -10)
 if [[ -n "$MOK_CERTS" ]]; then
-  ok "MOK cert(s) present:"
-  for c in $MOK_CERTS; do info "    $c"; done
+  ok "MOK material found in staged deployment:"
+  while IFS= read -r c; do info "    $c"; done <<< "$MOK_CERTS"
 else
-  warn "no .cer under /etc/pki/akmods/certs/ — check where Margine ships its MOK"
+  warn "no .cer / MOK.* under any known pki path — cert may be embedded elsewhere"
 fi
 
 MOK_ENROLL_UNITS=$(find "$DEPLOY_PATH/etc/systemd" "$DEPLOY_PATH/usr/lib/systemd" \
@@ -206,21 +234,26 @@ fi
 hdr "6. Bootloader entry for the staged deployment"
 # ---------------------------------------------------------------------------
 
-# Look for the BLS entry that references the staged hash
-BLS_ENTRY=$(grep -lr "${STAGED_HASH:0:32}" /boot/loader/entries/ 2>/dev/null | head -1)
-if [[ -n "$BLS_ENTRY" ]]; then
-  ok "bootloader entry exists for staged deployment"
-  info "    $BLS_ENTRY"
-  # Check the entry references the right kernel path
-  if grep -q "linux .*ostree.*/$KVER/" "$BLS_ENTRY" 2>/dev/null || \
-     grep -q "linux .*/${STAGED_HASH:0:32}.*vmlinuz" "$BLS_ENTRY" 2>/dev/null; then
-    ok "bootloader entry references the staged kernel path"
-  else
-    warn "bootloader entry kernel path looks unusual — inspect manually"
-    grep -E 'linux|initrd' "$BLS_ENTRY" | sed 's/^/    /'
-  fi
+if [[ "$IS_STAGED" == "true" ]]; then
+  info "Deployment is STAGED (bootc switch flow). BLS entries are not"
+  info "rewritten now — ostree-finalize-staged.service does that at the"
+  info "next shutdown, so GRUB sees the new entry on the boot AFTER."
+  ok "BLS entry update is correctly deferred (this is normal)"
 else
-  bad "no bootloader entry found that references the staged hash — GRUB will not boot this deployment"
+  # rpm-ostree rebase / non-staged path: entry must already exist.
+  BLS_ENTRY=$("${SUDO[@]}" grep -lr "${STAGED_HASH:0:32}" /boot/loader/entries/ 2>/dev/null | head -1)
+  if [[ -n "$BLS_ENTRY" ]]; then
+    ok "bootloader entry exists for pending deployment"
+    info "    $BLS_ENTRY"
+    if "${SUDO[@]}" grep -qE "linux .*/$KVER" "$BLS_ENTRY" 2>/dev/null; then
+      ok "bootloader entry references the pending kernel path"
+    else
+      warn "bootloader entry kernel path looks unusual — inspect manually"
+      "${SUDO[@]}" grep -E 'linux|initrd' "$BLS_ENTRY" | sed 's/^/    /'
+    fi
+  else
+    bad "no bootloader entry found that references the pending hash — GRUB will not boot this deployment"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

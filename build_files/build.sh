@@ -397,14 +397,17 @@ picture-uri-dark='file:///usr/share/backgrounds/margine/autumn-leaves.png'
 picture-options='zoom'
 primary-color='#2C1810'
 EOF
-# (d.bis) GDM greeter logo (shown above the user list / password prompt).
+# (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at
 # /usr/share/pixmaps/fedora-gdm-logo.png which on Bluefin DX is
-# physically replaced with Bluefin's logo file. Point at our own asset
-# instead so the greeter visibly identifies as Margine.
+# physically replaced with Bluefin's logo file. Pointing it at
+# /usr/share/pixmaps/margine-logo.png produced a horrible result:
+# our logo asset is a 2400×700 horizontal banner sized for headers,
+# and GDM scales it to nearly fullscreen behind the password field.
+# Cleanest fix: empty-string the key so GDM renders no logo at all.
 cat > /etc/dconf/db/gdm.d/02-margine-logo <<'EOF'
 [org/gnome/login-screen]
-logo='/usr/share/pixmaps/margine-logo.png'
+logo=''
 EOF
 mkdir -p /etc/dconf/db/gdm.d/locks
 cat > /etc/dconf/db/gdm.d/locks/02-margine-logo <<'EOF'

@@ -54,7 +54,7 @@ jobs:
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40   # bootc-image-builder ~5min + first-boot ~12-15min + slack
 
     steps:
       - name: Install QEMU + OVMF + tools
@@ -148,11 +148,15 @@ jobs:
           QEMU_PID=$!
           echo "QEMU PID: $QEMU_PID"
 
-          # Watch the serial log for the marker. 10 min cap.
-          # systemd prints "Reached target multi-user.target - Multi-User System"
-          # (or similar) when the userspace finishes coming up.
+          # Watch the serial log for the marker. 20 min cap.
+          # First boot of Margine downloads ~2-3 GB of Flatpaks via
+          # flatpak-preinstall.service (Zen, Bitwarden, GIMP, ...),
+          # plus ostree-finalize-staged, bootc-fix-deploy, machine-id
+          # commit, etc. On a non-KVM GHA runner that is slow.
+          # Test confirmed network.target reached at ~8 min, multi-user
+          # at ~10-12 min — so 10 min was too tight, 20 min is safe.
           MARKER="Reached target multi-user.target"
-          for i in $(seq 1 600); do
+          for i in $(seq 1 1200); do
             if [[ -f serial.log ]] && grep -q "$MARKER" serial.log; then
               echo "✓ Boot reached multi-user target at second $i"
               echo "passed=true" >> $GITHUB_OUTPUT
@@ -164,9 +168,15 @@ jobs:
             sleep 1
           done
 
-          echo "✗ Boot did NOT reach multi-user target within 10 minutes"
+          echo "✗ Boot did NOT reach multi-user target within 20 minutes"
           echo "Last 200 lines of serial log:"
           tail -200 serial.log
+          echo
+          echo "=== systemd target progress (Reached vs Failed) ==="
+          grep -E "Reached target|Failed to start|systemd\[1\]: Starting" serial.log | tail -40
+          echo
+          echo "=== units still starting (likely culprits) ==="
+          grep -oE "[a-z0-9_-]+\.service" serial.log | sort | uniq -c | sort -rn | head -10
           sudo kill -9 "$QEMU_PID" 2>/dev/null || true
           echo "passed=false" >> $GITHUB_OUTPUT
           exit 1

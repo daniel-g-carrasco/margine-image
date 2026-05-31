@@ -761,21 +761,17 @@ gnome:
       #   layout zones, not container trees.
   app_folders:
     naming_note: >
-      App folders are visible in the GNOME Activities app grid. Each folder
-      can include apps by .desktop file id and/or by XDG category. Categories
-      are useful so the folder absorbs new compatible apps automatically when
-      they are installed. .desktop ids pin specific Flatpaks even if their
-      categories drift.
+      App folders in the GNOME Activities grid. Margine takes a
+      "frequent apps top-level, batch tools in folders" approach:
+      high-frequency apps (Zen, Thunderbird, Bitwarden, Nautilus,
+      Ptyxis, VS Code, Apostrophe, Calendar, Settings) are
+      INTENTIONALLY not in any folder, so they appear at the top of
+      the grid and are 1 click away. Lower-frequency tools are
+      grouped into 6 small, themed folders.
     list:
-      - id: Internet
-        name: Internet
+      - id: Office
+        name: Office
         apps:
-          - app.zen_browser.zen.desktop
-      - id: Productivity
-        name: Productivity
-        apps:
-          - com.bitwarden.desktop.desktop
-          - org.mozilla.Thunderbird.desktop
           - org.libreoffice.LibreOffice.desktop
           - org.libreoffice.LibreOffice.writer.desktop
           - org.libreoffice.LibreOffice.calc.desktop
@@ -785,58 +781,64 @@ gnome:
           - org.libreoffice.LibreOffice.math.desktop
         categories:
           - Office
-      - id: Graphics
-        name: Graphics
+      - id: Grafica
+        name: Grafica
         apps:
           - org.gimp.GIMP.desktop
           - org.inkscape.Inkscape.desktop
+          - com.github.PintaProject.Pinta.desktop
         categories:
           - Graphics
           - 2DGraphics
           - VectorGraphics
           - RasterGraphics
-      - id: Photography
-        name: Photography
+      - id: Foto
+        name: Foto
         apps:
           - org.darktable.Darktable.desktop
+          - org.gnome.Loupe.desktop
         categories:
           - Photography
-      - id: Documentation
-        name: Documentation
-        apps:
-          - org.gnome.gitlab.somas.Apostrophe.desktop
-      - id: Multimedia
-        name: Multimedia
+      - id: Audio
+        name: Audio
         apps:
           - com.github.neithern.g4music.desktop
           - org.audacityteam.Audacity.desktop
-          - com.obsproject.Studio.desktop
           - com.github.wwmm.easyeffects.desktop
           - fm.reaper.Reaper.desktop
         categories:
-          - AudioVideo
           - Audio
-          - Video
           - Music
-      - id: Development
-        name: Development
+      - id: Video
+        name: Video
         apps:
-          # VS Code is shipped by Bluefin DX (Microsoft repo) with dev
-          # container tooling, not as Flatpak — system .desktop file.
-          - code.desktop
+          - com.obsproject.Studio.desktop
+          - org.gnome.Showtime.desktop
         categories:
-          - Development
-          - IDE
-      - id: Utilities
-        name: Utilities
-        categories:
-          - Utility
-          - Accessibility
-      - id: System
-        name: System
+          - Video
+          - AudioVideo
+      - id: Sistema
+        name: Sistema & Utility
+        apps:
+          # Low-frequency system + utility apps that don't need to
+          # clutter the top-level grid. Grouped together because the
+          # user rarely opens any of them — when needed, the folder
+          # name says where they are.
+          - io.missioncenter.MissionCenter.desktop
+          - com.github.tchx84.Flatseal.desktop
+          - io.github.flattool.Warehouse.desktop
+          - io.github.flattool.Ignition.desktop
+          - io.github.kolunmi.Bazaar.desktop
+          - org.gnome.Software.desktop
+          - com.mattjakeman.ExtensionManager.desktop
+          - com.ranfdev.DistroShelf.desktop
+          - it.mijorus.smile.desktop
+          - io.gitlab.adhami3310.Impression.desktop
+          - org.gnome.FileRoller.desktop
         categories:
           - System
-          - Settings
+          - Utility
+          - Accessibility
 
 home:
   roots:

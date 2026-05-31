@@ -502,6 +502,11 @@ gnome:
         - Source Code Pro 11
     org.gnome.desktop.wm.preferences:
       button-layout: ":minimize,maximize,close"
+      # Focus follows mouse (Hyprland muscle memory). `sloppy` keeps
+      # focus when pointer leaves a window (vs `mouse` which removes
+      # it). auto-raise=false so hover doesn't reorder window stack.
+      focus-mode: sloppy
+      auto-raise: false
     org.gnome.desktop.peripherals.keyboard:
       numlock-state: true
     org.gnome.mutter:
@@ -556,7 +561,7 @@ gnome:
         and are applied by configure-gnome-keybindings.
       enable-autotiling: true
       enable-snap-assist: true
-      enable-window-border: true
+      enable-window-border: false   # ghost-border bug on Tiling Shell when a window closes
       inner-gaps: 4
       outer-gaps: 4
     org.gnome.shell.extensions.search-light:
@@ -603,6 +608,7 @@ gnome:
       - gsconnect@andyholmes.github.io
       - search-light@icedman.github.com
       - tilingshell@ferrarodomenico.com
+      - hide-cursor@elcste.com
     installed_but_not_enabled_note: >
       These are still installed (host layer or user_install) but NOT in
       the enable list, so configure-gnome-extensions leaves them off.
@@ -636,6 +642,13 @@ gnome:
           upstream git repo (Bluefin does the same) because the EGO
           release (v42) is stuck at GNOME 49 while master (v101)
           supports GNOME 50.
+      - uuid: hide-cursor@elcste.com
+        ego_id: 6727
+        description: >
+          Hide Cursor — Wayland-native auto-hide of the mouse cursor
+          on inactivity (replaces unclutter/xbanish from X11 era).
+          Margine ships it enabled by default; user can disable via
+          Extensions Manager if undesired.
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -738,19 +751,19 @@ gnome:
       # Tiling Shell keybindings (org.gnome.shell.extensions.tilingshell).
       # Schema keys verified against Tiling Shell v18+ on GNOME 48.
       # Replaces Forge, which is unmaintained ("Needs a new maintainer").
-      # Tiling Shell uses span/move/resize verbs and a different mental
-      # model: instead of i3-like container splits, you choose a layout
-      # zone and windows snap to it; SUPER+ARROWS moves focus, SUPER+
-      # SHIFT+ARROWS moves the window across zones, SUPER+CTRL+ARROWS
-      # spans (resizes window to cover the next zone).
-      move-window-right:    '<Super><Shift>Right'
-      move-window-left:     '<Super><Shift>Left'
-      move-window-up:       '<Super><Shift>Up'
-      move-window-down:     '<Super><Shift>Down'
-      focus-window-right:   '<Super>Right'
-      focus-window-left:    '<Super>Left'
-      focus-window-up:      '<Super>Up'
-      focus-window-down:    '<Super>Down'
+      # Mapping mirrors Hyprland muscle memory (daniel's host env):
+      #   SUPER+ARROW           → MOVE the focused window in direction
+      #   SUPER+SHIFT+ARROW     → MOVE focus to neighbour in direction
+      #   SUPER+EQUAL/MINUS     → SPAN window across tiles
+      #   SUPER+T               → UNTILE the focused window
+      move-window-right:    '<Super>Right'
+      move-window-left:     '<Super>Left'
+      move-window-up:       '<Super>Up'
+      move-window-down:     '<Super>Down'
+      focus-window-right:   '<Super><Shift>Right'
+      focus-window-left:    '<Super><Shift>Left'
+      focus-window-up:      '<Super><Shift>Up'
+      focus-window-down:    '<Super><Shift>Down'
       span-window-right:    '<Super>equal'
       span-window-left:     '<Super>minus'
       span-window-up:       '<Super><Shift>equal'

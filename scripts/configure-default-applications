@@ -131,22 +131,41 @@ def run(cmd: list[str], dry_run: bool) -> None:
 
 
 def apply(defaults: dict[str, str], dry_run: bool) -> None:
+    failures = []
     for role, desktop in defaults.items():
         if role == "note":
             continue
         print(f"\n== {role}  →  {desktop}")
 
-        # xdg-settings (high-level GNOME shortcut)
+        # xdg-settings is best-effort: on some GNOME 47+ setups it
+        # rejects values with non-zero exit (e.g. legacy default-mail-
+        # reader, or non-resolvable .desktop). We don't fail the whole
+        # bootstrap chain on this; xdg-mime below is what really
+        # writes the MIME defaults.
         if role in XDG_SETTINGS_KEYS:
             key_parts = XDG_SETTINGS_KEYS[role].split()
-            run(["xdg-settings", "set", *key_parts, desktop], dry_run)
+            try:
+                run(["xdg-settings", "set", *key_parts, desktop], dry_run)
+            except subprocess.CalledProcessError as e:
+                print(f"  (xdg-settings rejected; continuing with xdg-mime)")
+                failures.append(f"xdg-settings {role}")
 
-        # xdg-mime per MIME type
+        # xdg-mime per MIME type — this is what GNOME Settings reads.
         mimes = MIME_BINDINGS.get(role, [])
         if not mimes:
             print("  (no MIME bindings for this role)")
             continue
-        run(["xdg-mime", "default", desktop, *mimes], dry_run)
+        try:
+            run(["xdg-mime", "default", desktop, *mimes], dry_run)
+        except subprocess.CalledProcessError as e:
+            print(f"  ✗ xdg-mime FAILED for {role}: {e}")
+            failures.append(f"xdg-mime {role}")
+
+    if failures:
+        print(f"\nWarnings: {len(failures)} non-fatal failures: {', '.join(failures)}")
+        print("This usually means the .desktop file in declarations doesn't exist")
+        print("on this system. Run `ls /var/lib/flatpak/exports/share/applications/`")
+        print("and `ls /usr/share/applications/` to see actual filenames.")
 
 
 def main() -> int:

@@ -643,7 +643,7 @@ gnome:
       GNOME Settings → Default Applications shows the intended app
       for every role, and "Open with" dialogs default correctly.
     web_browser: app.zen_browser.zen.desktop
-    mail_reader: org.mozilla.Thunderbird.desktop
+    mail_reader: org.mozilla.thunderbird_esr.desktop
     calendar: org.gnome.Calendar.desktop
     music_player: com.github.neithern.g4music.desktop
     video_player: org.gnome.Showtime.desktop

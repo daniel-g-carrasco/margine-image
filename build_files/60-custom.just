@@ -50,7 +50,8 @@ margine-bootstrap MODE="interactive":
         margine-configure-gnome-keybindings \
         margine-configure-gnome-appearance \
         margine-configure-default-applications \
-        margine-configure-gnome-app-folders ; do
+        margine-configure-gnome-app-folders \
+        margine-configure-zen-browser ; do
       echo
       echo "==> $step --apply"
       if ! $step --apply; then

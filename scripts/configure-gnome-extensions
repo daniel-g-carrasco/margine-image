@@ -13,6 +13,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
+import os
 import shutil
 import subprocess
 import sys
@@ -37,17 +39,24 @@ def load_extensions() -> list[str]:
         return []
 
 
-def installed_extensions() -> set[str]:
-    result = subprocess.run(
-        ["gnome-extensions", "list"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        err = (result.stderr or result.stdout or "").strip().splitlines()
-        first = err[0] if err else f"exit {result.returncode}"
-        raise SystemExit(f"gnome-extensions list failed: {first}")
-    return set(result.stdout.splitlines())
+def installed_on_disk() -> set[str]:
+    """Extensions present on disk in user or system extension dirs.
+    Note: gnome-extensions list ONLY returns what the current gnome-
+    shell process has loaded, which doesn't reflect extensions that
+    were just installed (need session restart). Disk check is the
+    authoritative answer."""
+    found = set()
+    candidates = [
+        os.path.expanduser("~/.local/share/gnome-shell/extensions"),
+        "/usr/share/gnome-shell/extensions",
+    ]
+    for root in candidates:
+        if not os.path.isdir(root):
+            continue
+        for entry in os.scandir(root):
+            if entry.is_dir() and os.path.isfile(os.path.join(entry.path, "metadata.json")):
+                found.add(entry.name)
+    return found
 
 
 def run(cmd: list[str], dry: bool) -> None:
@@ -75,14 +84,37 @@ def main() -> int:
         sys.exit("gnome-extensions not found in PATH")
 
     targets = load_extensions()
-    available = set() if dry else installed_extensions()
+    on_disk = set() if dry else installed_on_disk()
 
     print("== GNOME Shell extensions ==")
+    # Each target: if on disk, enable (won't actually apply to current
+    # shell until next session restart, but writes to dconf so the
+    # post-restart session picks it up). If not on disk, warn loud —
+    # caller probably forgot to run install-user-extensions first.
+    enabled_targets = []
     for uuid in targets:
-        if not dry and uuid not in available:
-            print(f"  (skip missing: {uuid})")
+        if not dry and uuid not in on_disk:
+            print(f"  ✗ NOT on disk: {uuid} — run install-user-extensions first")
             continue
         run(["gnome-extensions", "enable", uuid], dry)
+        enabled_targets.append(uuid)
+
+    # Margine declaration is THE source of truth. Anything currently
+    # enabled but NOT in our target list gets explicitly disabled, so
+    # the gsettings list matches the spec instead of accumulating.
+    if not dry:
+        try:
+            current = subprocess.check_output(
+                ["gsettings", "get", "org.gnome.shell", "enabled-extensions"],
+                text=True,
+            ).strip()
+            # Parse the gvariant array literal
+            current_list = ast.literal_eval(current)
+            extras = [x for x in current_list if x not in targets]
+            for uuid in extras:
+                run(["gnome-extensions", "disable", uuid], dry)
+        except (subprocess.CalledProcessError, ValueError, SyntaxError) as e:
+            print(f"  (could not reconcile extra enabled extensions: {e})")
 
     if dry:
         print("\ndry-run only: no settings were changed")

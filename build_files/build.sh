@@ -375,13 +375,13 @@ cat >> /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 picture-uri='file:///usr/share/backgrounds/margine/margine.png'
 picture-uri-dark='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#5B2903'
-secondary-color='#2D1402'
+primary-color='#000000'
+secondary-color='#000000'
 
 [org.gnome.desktop.screensaver]
 picture-uri='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#5B2903'
+primary-color='#000000'
 OVERRIDE
 
 # (c) Plymouth theme → /usr/share/plymouth/themes/margine/
@@ -438,7 +438,7 @@ cat > /etc/dconf/db/gdm.d/01-margine-background <<'EOF'
 picture-uri='file:///usr/share/backgrounds/margine/margine.png'
 picture-uri-dark='file:///usr/share/backgrounds/margine/margine.png'
 picture-options='zoom'
-primary-color='#5B2903'
+primary-color='#000000'
 EOF
 # (d.ter) Replace Bluefin's "F"-logo SVG with a fully transparent one.
 # Bluefin DX drops its own logo into

@@ -249,18 +249,27 @@ def apply_group(
         set_key(schema, gset_key, value, dry)
 
 
-def apply_tilingshell(ts_yaml: dict, dry: bool) -> None:
-    schema = "org.gnome.shell.extensions.tilingshell"
-    print(f"\n== Tiling Shell  ->  {schema} ==")
-    print("  (Tiling Shell schema is loaded only after the extension is enabled;")
-    print("   if gsettings complains about an unknown schema, run:")
-    print("     scripts/install-user-extensions --apply")
-    print("     gnome-extensions enable tilingshell@ferrarodomenico.com")
-    print("   then re-run this script.)")
-    for yaml_key, value in ts_yaml.items():
-        # YAML keys are already in dash-case for tilingshell
+def apply_tiling_extension(yaml_block: dict, schema: str, hint_uuid: str, dry: bool) -> None:
+    """Apply keybindings for a tiling extension (o-tiling or
+    tilingshell). Both use the same gsettings-key-per-binding pattern;
+    only the schema name differs."""
+    print(f"\n== Tiling extension  ->  {schema} ==")
+    print(f"  (schema is loaded only after the extension is enabled;")
+    print(f"   if gsettings complains about an unknown schema, run:")
+    print(f"     scripts/install-user-extensions --apply")
+    print(f"     gnome-extensions enable {hint_uuid}")
+    print(f"   then re-run this script. If still unknown, write the")
+    print(f"   binding via `dconf write /org/gnome/shell/extensions/.../<key>`")
+    print(f"   instead — dconf bypasses schema check.)")
+    for yaml_key, value in yaml_block.items():
+        # YAML keys are already in dash-case
         gset_key = yaml_key
-        set_key(schema, gset_key, value, dry)
+        # Empty string = clear binding (override an upstream default
+        # that conflicts with another Margine binding).
+        if value == "":
+            set_key(schema, gset_key, [], dry)
+        else:
+            set_key(schema, gset_key, value, dry)
 
 
 def apply_custom(custom_list: list[dict], dry: bool) -> None:
@@ -362,7 +371,23 @@ def main() -> int:
             dry,
         )
         apply_custom(kb.get("custom", []), dry)
-        apply_tilingshell(kb.get("tilingshell", {}), dry)
+        # Default Margine tiling engine: o-tiling. Tiling Shell is
+        # still supported in declarations (kb.tilingshell) for users
+        # who flipped back via Extensions Manager.
+        if "o_tiling" in kb:
+            apply_tiling_extension(
+                kb["o_tiling"],
+                "org.gnome.shell.extensions.o-tiling",
+                "o-tiling@oliwebd.github.com",
+                dry,
+            )
+        if "tilingshell" in kb:
+            apply_tiling_extension(
+                kb["tilingshell"],
+                "org.gnome.shell.extensions.tilingshell",
+                "tilingshell@ferrarodomenico.com",
+                dry,
+            )
 
     if dry:
         print("\ndry-run only: no settings were changed")

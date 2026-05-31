@@ -607,7 +607,13 @@ gnome:
       - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
       - search-light@icedman.github.com
-      - tilingshell@ferrarodomenico.com
+      # Tiling Shell installed but NOT enabled — superseded by
+      # o-tiling (binary-tree auto-split is closer to Hyprland muscle
+      # memory, and Tiling Shell's ghost-border bug at v18 was
+      # unpleasant). Disable line kept so a flip back via Extensions
+      # Manager is a 1-click operation.
+      # - tilingshell@ferrarodomenico.com
+      - o-tiling@oliwebd.github.com
       - hide-cursor@elcste.com
       - caffeine@patapon.info     # daniel asked for a "keep screen awake" toggle; awake@vixalien.com is upstream-deprecated, points users to Caffeine
     installed_but_not_enabled_note: >
@@ -650,6 +656,16 @@ gnome:
           on inactivity (replaces unclutter/xbanish from X11 era).
           Margine ships it enabled by default; user can disable via
           Extensions Manager if undesired.
+      - uuid: o-tiling@oliwebd.github.com
+        zip_url: https://github.com/oliwebd/o-tiling/releases/download/v2.8.8/o-tiling@oliwebd.github.com-v2.8.8.zip
+        description: >
+          O-tiling — auto-tiling extension (binary-tree split on new
+          window, i3/Hyprland-style). Fork of System76's pop-shell
+          with active GNOME 48-50 support. Replaces Tiling Shell as
+          Margine's default tiling engine; Tiling Shell is kept
+          installed-but-disabled so a user can flip back via
+          Extensions Manager. Pinned to v2.8.8 release zip because
+          o-tiling is not on extensions.gnome.org.
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME
@@ -750,31 +766,36 @@ gnome:
       - name: screenshot_region
         binding: '<Shift>Print'
         command: 'gnome-screenshot -ac'
-    tilingshell:
-      # Tiling Shell keybindings (org.gnome.shell.extensions.tilingshell).
-      # Schema keys verified against Tiling Shell v18+ on GNOME 48.
-      # Replaces Forge, which is unmaintained ("Needs a new maintainer").
-      # Mapping mirrors Hyprland muscle memory (daniel's host env):
+    o_tiling:
+      # o-tiling keybindings (org.gnome.shell.extensions.o-tiling).
+      # Binary-tree auto-split engine (Hyprland/i3-style). Mapping:
       #   SUPER+ARROW           → MOVE the focused window in direction
-      #   SUPER+SHIFT+ARROW     → MOVE focus to neighbour in direction
-      #   SUPER+EQUAL/MINUS     → SPAN window across tiles
-      #   SUPER+T               → UNTILE the focused window
-      move-window-right:    '<Super>Right'
-      move-window-left:     '<Super>Left'
-      move-window-up:       '<Super>Up'
-      move-window-down:     '<Super>Down'
-      focus-window-right:   '<Super><Shift>Right'
-      focus-window-left:    '<Super><Shift>Left'
-      focus-window-up:      '<Super><Shift>Up'
-      focus-window-down:    '<Super><Shift>Down'
-      span-window-right:    '<Super>equal'
-      span-window-left:     '<Super>minus'
-      span-window-up:       '<Super><Shift>equal'
-      span-window-down:     '<Super><Shift>minus'
-      untile-window:        '<Super>t'
-      # Skipped (no Tiling Shell equivalent):
-      #   stacked/tabbed container layout toggles — Tiling Shell uses
-      #   layout zones, not container trees.
+      #                           (tile-move-{dir}-global; defaults
+      #                           are empty so we don't collide)
+      #   SUPER+SHIFT+ARROW     → FOCUS neighbour in direction
+      #                           (overrides default Super+Alt+arrow /
+      #                           Super+hjkl)
+      #   SUPER+T               → toggle auto-tiling on/off (engine
+      #                           soft-disable, lets you float
+      #                           temporarily without losing settings)
+      # Conflicts resolved by clearing o-tiling defaults that overlap:
+      #   - toggle-floating default <Super>f conflicts with Margine
+      #     wm.toggle-fullscreen → cleared.
+      #   - tile-enter default <Super>Return conflicts with Margine
+      #     custom terminal keybinding → cleared.
+      tile-move-right-global:  '<Super>Right'
+      tile-move-left-global:   '<Super>Left'
+      tile-move-up-global:     '<Super>Up'
+      tile-move-down-global:   '<Super>Down'
+      focus-right:             '<Super><Shift>Right'
+      focus-left:              '<Super><Shift>Left'
+      focus-up:                '<Super><Shift>Up'
+      focus-down:              '<Super><Shift>Down'
+      # toggle-tiling kept at upstream default <Super>t. Margine
+      # doesn't use that chord for anything else.
+      # Explicit clears for upstream defaults that collide:
+      toggle-floating:         ''
+      tile-enter:              ''
   app_folders:
     naming_note: >
       App folders in the GNOME Activities grid. Margine takes a

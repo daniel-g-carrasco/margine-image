@@ -159,17 +159,48 @@ def install_from_git(uuid: str, git_url: str, git_ref: str | None, dry: bool) ->
     print(f"  Installed: {target_dir}")
 
 
+def install_from_zip(uuid: str, zip_url: str, dry: bool) -> None:
+    """Download a prebuilt .zip release (e.g. a GitHub Releases asset)
+    and extract into the user extension dir. Used for extensions not
+    on extensions.gnome.org that ship release zips on their git host
+    (o-tiling, etc.). Asset must be a standard gnome-shell extension
+    zip with metadata.json at the root."""
+    print(f"\n== {uuid} (source=zip: {zip_url}) ==")
+    target_dir = USER_EXT_DIR / uuid
+    print(f"  Target: {target_dir}")
+    if dry:
+        return
+    USER_EXT_DIR.mkdir(parents=True, exist_ok=True)
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True)
+    req = urllib.request.Request(
+        zip_url,
+        headers={"User-Agent": "margine-install-user-extensions/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        blob = resp.read()
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        zf.extractall(target_dir)
+    if not (target_dir / "metadata.json").is_file():
+        print(f"  (warning: metadata.json missing — zip layout may be unusual)")
+    print(f"  Installed: {target_dir}")
+
+
 def install_one(uuid: str, entry: dict, dry: bool, shell_version: str) -> None:
-    # entry may have 'ego_id' OR 'git_url' (+optional 'git_ref').
+    # entry may have 'ego_id', 'git_url' (+optional 'git_ref'), or 'zip_url'.
     target_dir = USER_EXT_DIR / uuid
     git_url = entry.get("git_url")
-    if git_url:
+    zip_url = entry.get("zip_url")
+    if zip_url:
+        install_from_zip(uuid, zip_url, dry)
+    elif git_url:
         install_from_git(uuid, git_url, entry.get("git_ref"), dry)
     elif entry.get("ego_id"):
         install_from_ego(uuid, entry["ego_id"], dry, shell_version)
     else:
         print(f"\n== {uuid} ==")
-        print("  (skip: entry has neither ego_id nor git_url)")
+        print("  (skip: entry has none of ego_id, git_url, zip_url)")
         return
 
     if dry:

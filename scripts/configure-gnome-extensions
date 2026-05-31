@@ -87,34 +87,39 @@ def main() -> int:
     on_disk = set() if dry else installed_on_disk()
 
     print("== GNOME Shell extensions ==")
-    # Each target: if on disk, enable (won't actually apply to current
-    # shell until next session restart, but writes to dconf so the
-    # post-restart session picks it up). If not on disk, warn loud —
-    # caller probably forgot to run install-user-extensions first.
-    enabled_targets = []
+    # Build the final list from the declaration. Anything on disk but
+    # not currently loaded by the live shell would be refused by
+    # `gnome-extensions enable` ("doesn't exist"), so we write the
+    # canonical list directly to dconf. The next session restart will
+    # then activate everything in the list that's on disk.
+    final: list[str] = []
     for uuid in targets:
         if not dry and uuid not in on_disk:
             print(f"  ✗ NOT on disk: {uuid} — run install-user-extensions first")
             continue
-        run(["gnome-extensions", "enable", uuid], dry)
-        enabled_targets.append(uuid)
+        print(f"  + enable {uuid}")
+        final.append(uuid)
 
-    # Margine declaration is THE source of truth. Anything currently
-    # enabled but NOT in our target list gets explicitly disabled, so
-    # the gsettings list matches the spec instead of accumulating.
     if not dry:
+        # Anything currently enabled but absent from our declaration
+        # gets dropped — the declaration is the source of truth, not
+        # an additive overlay.
         try:
-            current = subprocess.check_output(
+            current_raw = subprocess.check_output(
                 ["gsettings", "get", "org.gnome.shell", "enabled-extensions"],
                 text=True,
             ).strip()
-            # Parse the gvariant array literal
-            current_list = ast.literal_eval(current)
-            extras = [x for x in current_list if x not in targets]
-            for uuid in extras:
-                run(["gnome-extensions", "disable", uuid], dry)
+            current_list = ast.literal_eval(current_raw)
+            for uuid in current_list:
+                if uuid not in final:
+                    print(f"  - disable {uuid} (not declared)")
         except (subprocess.CalledProcessError, ValueError, SyntaxError) as e:
-            print(f"  (could not reconcile extra enabled extensions: {e})")
+            print(f"  (could not read current enabled list: {e})")
+
+        # Serialize as a GVariant array literal. Single quotes are the
+        # gsettings expectation; no UUID will contain one.
+        gvariant = "[" + ", ".join(f"'{u}'" for u in final) + "]"
+        run(["gsettings", "set", "org.gnome.shell", "enabled-extensions", gvariant], dry)
 
     if dry:
         print("\ndry-run only: no settings were changed")

@@ -599,6 +599,84 @@ mkdir -p /etc/skel/.config
 touch /etc/skel/.config/no-show-user-motd
 log "Installed: /etc/skel/.config/no-show-user-motd (disables Bluefin MOTD for new users)"
 
+# ---------------------------------------------------------------------------
+# 5d. Bug 6 v2 — boot-time seed of /etc/passwd + /etc/group
+# ---------------------------------------------------------------------------
+# Build-time seed (step 0.bis) IS run, Layer A confirms 65 entries in
+# /etc/passwd at the end of buildah. But rechunk subsequently strips
+# /etc/passwd / /etc/group from /usr/etc/ when it re-commits the image
+# as an ostree-canonical tree (verified 2026-05-31 on a fresh-VM
+# rebase: Layer A says 65 entries, deployed image has 1). So Bug 6
+# returns post-rebase.
+#
+# Workaround: ship a systemd oneshot that re-applies the seed at
+# every boot, before sysinit. Idempotent (only seeds if /etc/passwd
+# is below the entry threshold). Doesn't depend on rechunk preserving
+# /etc — it doesn't need to.
+log "Installing /usr/libexec/margine-seed-etc-passwd + systemd oneshot"
+mkdir -p /usr/libexec
+cat > /usr/libexec/margine-seed-etc-passwd <<'SEED'
+#!/usr/bin/env python3
+"""Boot-time seed of /etc/passwd + /etc/group from /usr/lib factory.
+Runs only if /etc/passwd has fewer than 20 entries (the post-rebase
+stripped state). Otherwise no-op."""
+import os, sys
+def load(p):
+    try:
+        with open(p) as f: return [l.rstrip("\n") for l in f if l.strip()]
+    except FileNotFoundError: return []
+def by_name(lines): return {l.split(":",1)[0]: l for l in lines}
+need_seed = False
+for kind in ("passwd","group"):
+    cur = load(f"/etc/{kind}")
+    if len(cur) < 20:
+        need_seed = True
+        break
+if not need_seed:
+    print("/etc/passwd + /etc/group look populated, no seeding needed")
+    sys.exit(0)
+for kind in ("passwd","group"):
+    local = by_name(load(f"/etc/{kind}"))
+    factory = by_name(load(f"/usr/lib/{kind}"))
+    merged = dict(factory); merged.update(local)
+    def k(line):
+        try:
+            u = int(line.split(":")[2]); return (u >= 1000, u)
+        except Exception:
+            return (True, 999999)
+    tmp = f"/etc/{kind}.new"
+    with open(tmp,"w") as f:
+        for l in sorted(merged.values(), key=k): f.write(l+"\n")
+    os.replace(tmp, f"/etc/{kind}")
+    print(f"/etc/{kind}: was {len(local)} → now {len(merged)} (+{len(merged)-len(local)} from factory)")
+SEED
+chmod 0755 /usr/libexec/margine-seed-etc-passwd
+
+cat > /usr/lib/systemd/system/margine-seed-etc-passwd.service <<'UNIT'
+[Unit]
+Description=Margine: seed /etc/passwd + /etc/group from /usr/lib if stripped
+Documentation=https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+DefaultDependencies=no
+Before=sysinit.target systemd-sysusers.service systemd-tmpfiles-setup.service
+After=local-fs.target
+ConditionFileNotEmpty=/usr/lib/passwd
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-seed-etc-passwd
+RemainAfterExit=yes
+# Self-recovery if a previous boot left /etc files mid-write
+ProtectSystem=no
+
+[Install]
+WantedBy=sysinit.target
+UNIT
+
+mkdir -p /usr/lib/systemd/system/sysinit.target.wants
+ln -sf ../margine-seed-etc-passwd.service \
+   /usr/lib/systemd/system/sysinit.target.wants/margine-seed-etc-passwd.service
+log "Wired margine-seed-etc-passwd.service to sysinit.target"
+
 log "Installing /etc/xdg/autostart/margine-first-boot.desktop"
 mkdir -p /etc/xdg/autostart
 cat > /etc/xdg/autostart/margine-first-boot.desktop <<'EOF'
@@ -610,8 +688,13 @@ Exec=/usr/bin/bash -c 'test -f "$HOME/.config/margine/bootstrapped" || ujust mar
 NoDisplay=true
 OnlyShowIn=GNOME;
 X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Phase=Applications
 EOF
+# NOTE: do NOT add X-GNOME-Autostart-Phase=Applications. GNOME 50+
+# dropped session-phase management; gnome-session-service warns
+# "App ... sets X-GNOME-Autostart-Phase, but gnome-session no longer
+# manages session services" and SKIPS the entire entry, so the
+# bootstrap never runs at login. The other keys above (Type/Exec/
+# OnlyShowIn/Autostart-enabled) are sufficient for standard autostart.
 chmod 0644 /etc/xdg/autostart/margine-first-boot.desktop
 
 # ---------------------------------------------------------------------------

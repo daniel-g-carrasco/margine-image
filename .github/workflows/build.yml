@@ -135,6 +135,18 @@ jobs:
           fi
           df -h /
 
+      - name: Pre-build login to GHCR for base-image pull
+        # buildah pull of `ghcr.io/ublue-os/bluefin-dx:stable` is
+        # anonymous by default. ghcr.io applies a strict per-IP rate
+        # limit to anonymous pulls (~100/h, often 1 effective for fresh
+        # IPs); the self-hosted runner shares an IP with everything on
+        # the LAN, so a transient 403 Forbidden was hitting us as soon
+        # as the post-`qm reset` cache miss forced a real pull
+        # (2026-05-31). The GITHUB_TOKEN gives us 5000/h authenticated.
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | timeout 30 podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
       - name: Get current date
         id: date
         run: |

@@ -609,6 +609,7 @@ gnome:
       - search-light@icedman.github.com
       - tilingshell@ferrarodomenico.com
       - hide-cursor@elcste.com
+      - caffeine@patapon.info     # daniel asked for a "keep screen awake" toggle; awake@vixalien.com is upstream-deprecated, points users to Caffeine
     installed_but_not_enabled_note: >
       These are still installed (host layer or user_install) but NOT in
       the enable list, so configure-gnome-extensions leaves them off.
@@ -692,9 +693,11 @@ gnome:
         - SUPER+P      pseudotile (Hyprland-specific concept)
         - SUPER+S      scratchpad (Forge has no direct equivalent)
     workspace:
-      switch_next:        '<Super>Tab'
-      switch_previous:    '<Super><Shift>Tab'
-      switch_last_used:   '<Super><Ctrl>Tab'
+      # Super+Tab / Super+Shift+Tab intentionally NOT mapped to workspace
+      # navigation: they're the GNOME default switch-applications chord
+      # (cycle through open application windows) and most users expect
+      # that. For workspace switching use Super+1..0 direct-jump below,
+      # or the GNOME default Super+Page_Up/Down for next/prev.
       switch_to_1:        '<Super>1'
       switch_to_2:        '<Super>2'
       switch_to_3:        '<Super>3'

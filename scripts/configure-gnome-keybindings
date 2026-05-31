@@ -98,13 +98,18 @@ SHELL_KEYS_TO_CLEAR = (
 
 # WM keybindings whose defaults shadow our intent.
 WM_KEYS_TO_CLEAR = (
-    # switch-applications + backward default to <Super>Tab / <Shift>+<Super>Tab,
-    # which we redirect to switch-to-workspace-right / left.
-    "switch-applications",
-    "switch-applications-backward",
-    # move-to-monitor-* default to <Super><Shift>arrow, which we use for
-    # Tiling Shell move-window-*. Without clearing these the chord is
-    # captured by mutter to move-to-monitor instead of the extension.
+    # NOTE: switch-applications + switch-applications-backward are
+    # INTENTIONALLY LEFT AT THEIR GNOME DEFAULT (<Super>Tab / <Shift>+
+    # <Super>Tab). They cycle through open windows of all applications,
+    # which is what most users expect from Super+Tab. Earlier versions
+    # of Margine repurposed those chords for workspace switching, but
+    # daniel asked to restore the GNOME default — workspace switching
+    # still works via Super+1..0 direct-jump.
+    #
+    # move-to-monitor-* default to <Super><Shift>arrow, which Margine
+    # uses for Tiling Shell focus-window-* (after swap). Without
+    # clearing these the chord is captured by mutter to move-to-monitor
+    # instead of the extension.
     "move-to-monitor-up",
     "move-to-monitor-down",
     "move-to-monitor-left",

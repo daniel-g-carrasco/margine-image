@@ -282,6 +282,7 @@ for s in \
     configure-gnome-extensions \
     configure-gnome-keybindings \
     configure-home-layout \
+    configure-zen-browser \
     install-user-extensions \
     validate-atomic-layout \
     validate-cachyos-kernel \

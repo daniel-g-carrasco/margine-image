@@ -226,9 +226,21 @@ accent-color='yellow'
 [org.gnome.shell.extensions.tilingshell]
 enable-autotiling=true
 enable-snap-assist=true
-enable-window-border=true
+# enable-window-border is intentionally false: with true the extension
+# leaves a "ghost" colored border on screen after a window closes, on
+# Tiling Shell ≤ v23 (Margine ships ~v18 from EGO). Re-evaluate when
+# upstream releases a fix.
+enable-window-border=false
 inner-gaps=4
 outer-gaps=4
+
+# Focus follows mouse (sloppy mode) — Hyprland muscle memory.
+# `sloppy` keeps focus when the pointer leaves a window (vs `mouse`
+# which removes it). auto-raise=false so hover doesn't pop windows
+# above each other unexpectedly (only an explicit click raises).
+[org.gnome.desktop.wm.preferences]
+focus-mode='sloppy'
+auto-raise=false
 OVERRIDE
 
 log "Compiling glib schemas"
@@ -552,6 +564,29 @@ install -Dm0644 /ctx/60-custom.just /usr/share/ublue-os/just/60-custom.just
 # Without this, the configure-* scripts only ever run if the user
 # happens to know they have to type the ujust command — which is
 # exactly the "nothing's configured" bug we just fixed.
+# ---------------------------------------------------------------------------
+# 5c. Mask systemd-remount-fs.service (Bug 8 — composefs noise)
+# ---------------------------------------------------------------------------
+# The legacy "remount root rw from /etc/fstab" service is incompatible
+# with composefs root: the overlay refuses reconfigure and the unit
+# always lands in `failed` state. The system works fine — `/` is
+# already rw via the overlay upper layer — but `systemctl --failed`
+# always shows it and confuses humans. Mask it so the unit never
+# starts and `--failed` returns empty on a clean boot.
+log "Masking systemd-remount-fs.service (overlay rejects remount; see Bug 8 in lessons-learned)"
+ln -sf /dev/null /etc/systemd/system/systemd-remount-fs.service
+
+# /etc/skel default: disable Bluefin MOTD banner at terminal open.
+# Bluefin ships /etc/profile.d/ublue-motd.sh which prints the
+# "Welcome to Bluefin / ujust --choose / brew help" banner unless
+# ~/.config/no-show-user-motd exists. We ship that marker in the
+# skeleton so EVERY new user account inherits the off-by-default
+# behavior. Existing users get the file via configure-home-layout
+# (idempotent), which margine-bootstrap runs at first login.
+mkdir -p /etc/skel/.config
+touch /etc/skel/.config/no-show-user-motd
+log "Installed: /etc/skel/.config/no-show-user-motd (disables Bluefin MOTD for new users)"
+
 log "Installing /etc/xdg/autostart/margine-first-boot.desktop"
 mkdir -p /etc/xdg/autostart
 cat > /etc/xdg/autostart/margine-first-boot.desktop <<'EOF'

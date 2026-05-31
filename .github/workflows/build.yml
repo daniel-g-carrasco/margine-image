@@ -80,10 +80,28 @@ jobs:
         # from the previous build shows a segfault happened, do a
         # full `podman system reset --force`. Otherwise just an
         # aggressive prune of dangling content to keep size bounded.
+        #
+        # 2026-05-31 update: every podman invocation in this step gets
+        # a hard `timeout` wrapper. Without one, a cancelled previous
+        # run can leave a `podman system reset --force` deadlocked in
+        # futex_wait (epoll on parent, futex on child); the IPC/lock
+        # state then blocks every fresh `podman info` indefinitely,
+        # and the storage health check itself hangs forever (observed:
+        # 30+ min). With timeouts we fail fast and the trap below
+        # cleans up so the NEXT step actually has a shot.
         if: runner.environment != 'github-hosted'
+        timeout-minutes: 8
         run: |
           set -uo pipefail
           NEED_RESET=0
+
+          cleanup_orphans() {
+            # Kill anything we left behind so the NEXT build can run.
+            pkill -9 -u "$(id -un)" -f 'podman|buildah|skopeo' 2>/dev/null || true
+            RUID="$(id -u)"
+            rm -rf "/run/user/${RUID}/containers" "/run/user/${RUID}/libpod" 2>/dev/null || true
+          }
+          trap 'rc=$?; [[ $rc -ne 0 ]] && cleanup_orphans; exit $rc' EXIT
 
           # Marker from previous build's post-step (see "Builder
           # post-build hygiene" near the end of this workflow).
@@ -92,20 +110,28 @@ jobs:
             NEED_RESET=1
           fi
 
-          # Cheap integrity probe.
-          if ! podman info >/dev/null 2>&1; then
-            echo "podman info failed — storage likely corrupt."
+          # Cheap integrity probe (15s ceiling — a healthy podman
+          # answers in <1s; anything slower means lock contention).
+          if ! timeout 15 podman info >/dev/null 2>&1; then
+            echo "podman info failed or timed out — storage likely corrupt."
+            cleanup_orphans
             NEED_RESET=1
           fi
 
           if [[ $NEED_RESET -eq 1 ]]; then
             echo "Performing podman system reset (auto-recovery)."
-            podman system reset --force || true
+            # 5 minutes is well above the typical reset time (~30s on
+            # a 15 GiB store); if it exceeds that, the reset itself is
+            # the problem and the trap below will clean up orphans.
+            if ! timeout 300 podman system reset --force; then
+              echo "::error::podman system reset hung — orphans will be killed by trap."
+              exit 1
+            fi
             rm -f "$HOME/.cache/margine-builder-needs-reset"
           else
             echo "Storage healthy. Pruning dangling layers + containers > 24h."
-            podman container prune -f --filter "until=24h" || true
-            podman image prune -f --filter "dangling=true" || true
+            timeout 60 podman container prune -f --filter "until=24h" || true
+            timeout 60 podman image prune -f --filter "dangling=true" || true
           fi
           df -h /
 
@@ -519,18 +545,25 @@ jobs:
         # Bug 14: keep podman storage from accumulating between builds.
         # On success: prune everything not currently referenced; cache
         # mounts still survive because they live in BuildKit storage.
-        # On failure: drop a marker so the NEXT build's storage health
-        # check does a full system reset before doing anything.
+        # On failure (including cancellation): drop a marker so the
+        # NEXT build's storage health check does a full system reset
+        # before doing anything, and kill any podman/buildah/skopeo
+        # processes left behind by the cancelled job — those are what
+        # caused the 2026-05-31 multi-hour hang.
         if: always() && runner.environment != 'github-hosted'
+        timeout-minutes: 3
         run: |
           mkdir -p "$HOME/.cache"
           if [[ "${{ job.status }}" == "success" ]]; then
             echo "Build succeeded → aggressive prune (keep cache mounts via filter)."
-            podman image prune -af --filter "until=24h" 2>&1 | tail -3 || true
-            podman container prune -f 2>&1 | tail -3 || true
+            timeout 60 podman image prune -af --filter "until=24h" 2>&1 | tail -3 || true
+            timeout 60 podman container prune -f 2>&1 | tail -3 || true
             rm -f "$HOME/.cache/margine-builder-needs-reset"
           else
-            echo "Build failed → mark storage for reset on next build."
+            echo "Build failed/cancelled → mark storage for reset on next build and kill leftovers."
             touch "$HOME/.cache/margine-builder-needs-reset"
+            pkill -9 -u "$(id -un)" -f 'podman|buildah|skopeo' 2>/dev/null || true
+            RUID="$(id -u)"
+            rm -rf "/run/user/${RUID}/containers" "/run/user/${RUID}/libpod" 2>/dev/null || true
           fi
           df -h /

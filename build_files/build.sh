@@ -223,14 +223,25 @@ accent-color='yellow'
 # org.gnome.desktop.default-applications.terminal. Users who want a
 # different terminal can install one and flip the setting per session.
 
+[org.gnome.shell.extensions.o-tiling]
+# Default tiling engine for Margine (replaces Tiling Shell since
+# 2026-05-31). Binary-tree auto-split, Hyprland/pop-shell-style.
+active-hint=true
+active-hint-border-radius=14
+active-hint-border-width=4
+gap-inner=4
+gap-outer=4
+mouse-cursor-follows-active-window=true
+skip-overview=false
+
 [org.gnome.shell.extensions.tilingshell]
+# Tiling Shell is installed but disabled by default — flip back via
+# Extensions Manager if o-tiling doesn't suit a particular workflow.
+# Keep these prefs sensible so the experience is consistent if the
+# user re-enables it:
 enable-autotiling=true
 enable-snap-assist=true
-# enable-window-border is intentionally false: with true the extension
-# leaves a "ghost" colored border on screen after a window closes, on
-# Tiling Shell ≤ v23 (Margine ships ~v18 from EGO). Re-evaluate when
-# upstream releases a fix.
-enable-window-border=false
+enable-window-border=false   # ghost-border bug at v18, see lessons
 inner-gaps=4
 outer-gaps=4
 

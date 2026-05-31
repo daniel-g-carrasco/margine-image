@@ -1,10 +1,10 @@
-// Margine Plymouth theme — minimal: solid background + centered logo.
+// Margine Plymouth theme — minimal: solid black background + centered logo.
 // Plymouth Script language (not JS/C).
 
-// Background: dark warm brown gradient, matches /etc/os-release ANSI_COLOR
-// and the desktop wallpaper.
-Window.SetBackgroundTopColor    (0.173, 0.094, 0.063);  // #2C1810
-Window.SetBackgroundBottomColor (0.102, 0.055, 0.031);  // #1A0E08
+// Background: pure black, standard splash convention. Maximum contrast
+// with the centered Margine logo, matches the GDM greeter background.
+Window.SetBackgroundTopColor    (0.0, 0.0, 0.0);  // #000000
+Window.SetBackgroundBottomColor (0.0, 0.0, 0.0);  // #000000
 
 // Logo, pre-scaled to a sane size by build.sh.
 logo.image  = Image("watermark.png");

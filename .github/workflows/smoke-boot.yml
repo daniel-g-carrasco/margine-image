@@ -96,16 +96,49 @@ jobs:
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
           echo "Booting: $QCOW"
 
+          # Auto-detect OVMF firmware paths. Ubuntu 24.04 renamed the
+          # files in 2024 to a *_4M.* convention (4 MB layout); older
+          # docs/templates still reference the 2 MB names. Try modern
+          # names first, fall back to legacy.
+          OVMF_CODE=""
+          for c in \
+              /usr/share/OVMF/OVMF_CODE_4M.secboot.fd \
+              /usr/share/OVMF/OVMF_CODE.secboot.fd \
+              /usr/share/OVMF/OVMF_CODE_4M.fd \
+              /usr/share/OVMF/OVMF_CODE.fd ; do
+            [[ -f "$c" ]] && OVMF_CODE="$c" && break
+          done
+          OVMF_VARS_SRC=""
+          for v in \
+              /usr/share/OVMF/OVMF_VARS_4M.fd \
+              /usr/share/OVMF/OVMF_VARS.fd ; do
+            [[ -f "$v" ]] && OVMF_VARS_SRC="$v" && break
+          done
+          if [[ -z "$OVMF_CODE" || -z "$OVMF_VARS_SRC" ]]; then
+            echo "✗ OVMF firmware not found. Files present:"
+            ls -la /usr/share/OVMF/ 2>&1
+            exit 1
+          fi
+          # Copy VARS to a writable location (guest mutates it).
+          cp "$OVMF_VARS_SRC" ovmf_vars.fd
+          chmod 0644 ovmf_vars.fd
+          echo "Using OVMF_CODE=$OVMF_CODE OVMF_VARS=$OVMF_VARS_SRC"
+
           # Start QEMU in the background, capture serial console to file.
           # -no-reboot exits when guest shuts down.
-          # Plenty of RAM/CPU so we're not the bottleneck.
+          # Note: Secure Boot is INTENTIONALLY DISABLED for smoke-boot.
+          # SB-enabled would require the Margine MOK pre-enrolled into
+          # the VARS file (interactive on first boot otherwise). The
+          # CachyOS kernel signature is verified by build-time Layer A
+          # checks; SB is exercised on the real hardware lab VM. Layer
+          # B's job here is "does ostree+composefs+systemd reach
+          # multi-user?", not "does SB chain trust intact?".
           sudo qemu-system-x86_64 \
             -enable-kvm \
             -m 4096 -smp 4 \
-            -machine q35,smm=on \
-            -global driver=cfi.pflash01,property=secure,value=on \
-            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.secboot.fd \
-            -drive if=pflash,format=raw,file=/usr/share/OVMF/OVMF_VARS.fd \
+            -machine q35 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=ovmf_vars.fd \
             -drive file="$QCOW",format=qcow2,if=virtio \
             -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
             -serial file:serial.log \

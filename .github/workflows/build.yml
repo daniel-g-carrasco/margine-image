@@ -19,7 +19,12 @@ env:
   IMAGE_KEYWORDS: "bootc,ublue,bluefin,cachyos,margine"
   IMAGE_NAME: "margine"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  DEFAULT_TAG: "stable"
+  # The build pipeline uses this tag END-TO-END as the routing tag
+  # (image:candidate locally, ghcr.io/.../image:candidate after push).
+  # `smoke-boot.yml` promotes the validated digest to :stable / :stable.<date>
+  # / :<date> ONLY after a successful QEMU boot to multi-user.target.
+  # See the comment on the Image metadata step below.
+  DEFAULT_TAG: "candidate"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -186,8 +191,8 @@ jobs:
           # represent if it survives. It's just the registry routing
           # (the tag) that delays promotion.
           tags: |
-            type=raw,value=candidate
-            type=raw,value=candidate.{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.DEFAULT_TAG }}
+            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |

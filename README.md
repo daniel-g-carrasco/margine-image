@@ -2,15 +2,25 @@
 
 **A bootc image: Bluefin DX (Fedora 44) + CachyOS signed kernel + Margine deltas.**
 
-Built nightly by GitHub Actions, pushed to
-`ghcr.io/daniel-g-carrasco/margine:stable`.
+<p align="center">
+  <img src="docs/screenshots/lock-screen.png" alt="Margine lock screen with autumn-leaves wallpaper" width="46%">
+  &nbsp;
+  <img src="docs/screenshots/activities-search.png" alt="Margine GNOME activities + search with Margine extensions and dock" width="46%">
+</p>
+
+Built by GitHub Actions on push (and on demand), pushed to
+`ghcr.io/daniel-g-carrasco/margine:stable` **only** after a candidate
+image survives an end-to-end QEMU boot smoke-test (see [Build](#build)
+below). Installable ISOs and qcow2 are published over BitTorrent +
+HTTP mirror via Internet Archive, with the magnet/HTTP index served
+at <https://files.the-empty.place/>.
 
 This is the **image** repo. The companion repo
 [`margine-fedora-atomic`](https://github.com/daniel-g-carrasco/margine-fedora-atomic)
 holds the declarative spec (`declarations/margine-atomic.yaml`), ADRs,
-lab docs, and the `configure-gnome-*` helpers. The image bakes the
-helpers into `/usr/bin/margine-configure-*` and the YAML into
-`/usr/share/margine/declarations.yaml`.
+lab docs, and the `configure-gnome-*` / `validate-*` helpers. The
+image bakes the helpers into `/usr/bin/margine-configure-*` and the
+YAML into `/usr/share/margine/declarations.yaml`.
 
 ## What Margine adds on top of Bluefin DX
 
@@ -37,8 +47,10 @@ toolbox/distrobox, …) is **inherited unchanged** from Bluefin DX.
 
 ### 2 · Preinstalled Flatpak applications
 
-System-wide via `/etc/ublue-os/system-flatpaks.list` (Universal Blue's
-reconciliation mechanism). Installed on first boot from Flathub.
+System-wide via `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`
+(systemd's standard preinstall API, picked up by Bluefin/Universal Blue at
+first boot — replaced the legacy `/etc/ublue-os/system-flatpaks.list`
+which Bluefin no longer honors). Installed on first boot from Flathub.
 
 | Application | Flatpak ID | Category |
 | --- | --- | --- |
@@ -76,7 +88,10 @@ reconciliation mechanism). Installed on first boot from Flathub.
 | Gradia Integration | host RPM (inherited from Bluefin) | **enabled** by Margine — adds an "Open in Gradia" action to the screenshot flow ([Gradia](https://github.com/AlexanderVanhee/Gradia) is a screenshot beautifier) |
 | GSConnect | host RPM (inherited from Bluefin) | **enabled** by Margine |
 | Search Light | git clone of [`icedman/search-light`](https://github.com/icedman/search-light) (user-installed) | **added** by Margine |
-| Tiling Shell | [EGO 7065](https://extensions.gnome.org/extension/7065/tiling-shell/) (user-installed via `margine-install-user-extensions`) | **added** by Margine — replaces the unmaintained Forge |
+| **o-tiling** | [oliwebd/o-tiling](https://github.com/oliwebd/o-tiling) (zip release v2.8.8, user-installed via `margine-install-user-extensions`) | **added** by Margine — binary-tree auto-split (Hyprland-style muscle memory). Replaced Tiling Shell mid-2026 after its v18 ghost-border bug. |
+| **Hide Cursor** | [EGO 7252](https://extensions.gnome.org/extension/7252/hide-cursor/) (user-installed) | **added** by Margine — hides the mouse cursor when typing |
+| **Caffeine** | [EGO 517](https://extensions.gnome.org/extension/517/caffeine/) (user-installed) | **added** by Margine — keep-screen-on toggle in the top bar |
+| Tiling Shell | [EGO 7065](https://extensions.gnome.org/extension/7065/tiling-shell/) (still user-installed) | **installed but disabled** by Margine — kept around so you can switch back from Extensions Manager if you don't like o-tiling. |
 | LogoMenu | host RPM (Bluefin default) | **disabled** by Margine — replaces the "Activities" text button with a distro-logo dropdown; pure branding (package stays installed) |
 
 ### 4 · GNOME defaults (via `zz1-margine.gschema.override`)
@@ -87,11 +102,14 @@ so the keys below win.
 | Setting | Value |
 | --- | --- |
 | `org.gnome.desktop.interface accent-color` | `yellow` |
+| `org.gnome.desktop.interface color-scheme` | `prefer-dark` |
 | `org.gnome.shell favorite-apps` | Zen, Thunderbird, Nautilus, Ptyxis, VS Code |
-| `org.gnome.shell enabled-extensions` | the 6 enabled extensions above |
-| Tiling Shell auto-tiling | `enable-autotiling=true`, `enable-snap-assist=true`, gaps=4 |
+| `org.gnome.shell enabled-extensions` | the 10 enabled extensions above (canonical list, **replace-style** — `tilingshell` is removed if found in the existing list) |
+| App folders | 6 folders: Office / Grafica / Foto / Audio / Video / Sistema |
+| o-tiling | binary-tree auto-split active by default, `Super+Arrow` = move, `Super+Shift+Arrow` = focus |
 | Default terminal | inherits Bluefin's **Ptyxis** (no override) |
 | Default web browser | Zen (set by `margine-configure-default-applications`) |
+| Zen Browser default search | DuckDuckGo via per-profile `user.js` (set by `margine-configure-zen-browser`) |
 
 ### 5 · User-state helpers (in `/usr/bin`)
 
@@ -104,11 +122,12 @@ All are idempotent and default to dry-run; use `--apply` to act.
 | --- | --- |
 | `margine-configure-default-applications` | Set MIME / `xdg-settings` handlers (browser, mail, terminal, image viewer, …) per Margine defaults |
 | `margine-configure-gnome-appearance` | Apply `gsettings` values from the declarative spec (theme, fonts, dconf for extensions) |
-| `margine-configure-gnome-extensions` | Enable / disable extensions per Margine policy |
-| `margine-configure-gnome-keybindings` | Apply the Hyprland-style keybindings (`SUPER+1..0` workspaces, `SUPER+RETURN` Ptyxis, `SUPER+E` Nautilus, Tiling Shell directional binds, …) |
-| `margine-configure-gnome-app-folders` | Group apps in the Activities grid by category (Internet / Productivity / Graphics / …) |
+| `margine-configure-gnome-extensions` | Enable extensions present on disk and **replace** `enabled-extensions` with the canonical Margine list (drops anything no longer declared, e.g. `tilingshell`) |
+| `margine-configure-gnome-keybindings` | Apply the Hyprland-style keybindings (`SUPER+1..0` workspaces, `SUPER+RETURN` Ptyxis, `SUPER+E` Nautilus, o-tiling directional binds — `Super+Arrow` move / `Super+Shift+Arrow` focus, …) |
+| `margine-configure-gnome-app-folders` | Group apps in the Activities grid into 6 folders (Office, Grafica, Foto, Audio, Video, Sistema) |
 | `margine-configure-home-layout` | Create `~/data`, `~/dev`, `~/scratch` and their declared subdirs; rewrite `~/.config/user-dirs.dirs` and `~/.config/gtk-{3,4}.0/bookmarks` to match the spec (XDG remap + Nautilus sidebar) |
-| `margine-install-user-extensions` | Install Tiling Shell + Search Light into `~/.local/share/gnome-shell/extensions/` |
+| `margine-configure-zen-browser` | Write a per-profile `user.js` that sets Zen Browser's default search engine to DuckDuckGo |
+| `margine-install-user-extensions` | Install o-tiling, Hide Cursor, Caffeine, Tiling Shell, Search Light into `~/.local/share/gnome-shell/extensions/` (zip + git sources) |
 | `margine-fetch` | Run `fastfetch` with Margine's ASCII logo and curated module set (os, kernel, packages, shell, GPU, memory, …) |
 | `margine-collect-diagnostics` | Read-only system snapshot for troubleshooting |
 | `margine-validate-atomic-layout` | Read-only health check (ostree layout, mounts, Secure Boot, TPM2) |
@@ -134,11 +153,12 @@ All are idempotent and default to dry-run; use `--apply` to act.
 ### 7 · ujust recipes added by Margine
 
 Bluefin ships [`ujust`](https://github.com/casey/just) (the `just` wrapper)
-with its own recipes for common tasks. Margine adds two more, available
+with its own recipes for common tasks. Margine adds three more, available
 from any terminal as `ujust <recipe>`:
 
 | Recipe | Group | What it does |
 | --- | --- | --- |
+| `ujust margine-bootstrap` | Margine | Run all `margine-configure-*` helpers in sequence to apply the Margine user-state on a fresh login (idempotent, re-runnable). Optional flag `unattended` for non-interactive use (autostart). |
 | `ujust margine-gaming` | Gaming | Opt into the gaming layer (see row above) |
 | `ujust margine-gaming-remove` | Gaming | Roll back what `margine-gaming` installed |
 
@@ -146,7 +166,19 @@ Run `ujust` with no argument to see the full list (Bluefin's recipes + Margine's
 
 ## Install
 
-### Step 1 · Install Bluefin from ISO
+You have two paths.
+
+- **Option A — Rebase from Bluefin.** The well-trodden path. Install a
+  standard Bluefin from ISO, then `rpm-ostree rebase` to Margine. Steps
+  1-4 below.
+- **Option B — Margine ISO (single install).** Skip the Bluefin step
+  entirely: download the Margine Anaconda ISO, install, done. See
+  [Margine ISO](#option-b--install-from-margine-iso) at the end of this
+  section.
+
+### Option A — rebase from Bluefin
+
+#### Step 1 · Install Bluefin from ISO
 
 > **Important — there is no "Bluefin DX" ISO.** Universal Blue does not
 > publish a separate DX (Developer Experience) installation image. DX is
@@ -175,7 +207,7 @@ Install it. Recommended choices in Anaconda:
 - Btrfs (Anaconda default — keep it)
 - Standard partitioning (we don't need custom Btrfs subvolumes for the smoke test)
 
-### Step 2 · Rebase to Margine
+#### Step 2 · Rebase to Margine
 
 After Bluefin is installed and you're at the desktop:
 
@@ -184,7 +216,7 @@ rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine
 systemctl reboot
 ```
 
-### Step 3 · Enroll the Margine MOK (one-time)
+#### Step 3 · Enroll the Margine MOK (one-time)
 
 - **First boot after rebase** — `mok-enroll.service` runs once and queues
   the Margine MOK certificate for import.
@@ -200,7 +232,7 @@ systemctl reboot
   uname -r                    # 7.0.x-cachyos*.fc44.x86_64
   ```
 
-### Step 4 · Apply user-state (one-time)
+#### Step 4 · Apply user-state (one-time)
 
 ```sh
 ujust margine-bootstrap
@@ -214,7 +246,7 @@ Idempotent. Re-runnable after upgrades.
 
 Log out and back in to refresh GNOME Shell.
 
-### (Optional) Step 5 · Opt into the gaming layer
+#### (Optional) Step 5 · Opt into the gaming layer
 
 ```sh
 ujust margine-gaming
@@ -223,20 +255,94 @@ ujust margine-gaming
 See §6 ("Channel cheat sheet") and §1 ("System layer") above for what
 each layer brings in.
 
+### Option B · Install from Margine ISO
+
+Skip the Bluefin step. Download the Margine Anaconda installer ISO and
+install in one go.
+
+Two equivalent sources (same bytes, sha256 cross-checkable):
+
+- **BitTorrent (recommended)** — magnet link + `.torrent` file from
+  <https://files.the-empty.place/>. Hosted by Internet Archive,
+  seeded for as long as IA is up, distributed peer-to-peer.
+- **Direct HTTP** — same URL, link to the IA mirror, also linked to the
+  `.iso` copy on `files.the-empty.place` for the first ~7 days after
+  each release (faster local fetch while IA propagation is fresh).
+
+Installation flow:
+
+1. Boot the ISO. Anaconda installer comes up.
+2. Standard install, Btrfs default, LUKS2 strongly recommended.
+3. On first boot you're already on Margine — no rebase step needed.
+4. Steps 3 (MOK enrollment) and 4 (`ujust margine-bootstrap`) above
+   still apply.
+
+Behind the scenes the ISO carries a `bootc switch
+ghcr.io/daniel-g-carrasco/margine:stable` in its kickstart `%post`, so
+`bootc upgrade` from then on follows the same `:stable` tag as
+Option A installs.
+
 ## Build
 
-Triggered automatically by GitHub Actions on push to `main` and nightly
-at 10:05 UTC. The pipeline:
+Triggered by GitHub Actions on every push to `main`. The pipeline runs
+on a **self-hosted runner** (Proxmox VM `margine-builder`) and follows
+a **candidate → stable** promotion model so a broken image can never
+reach `:stable`:
 
-1. Stages MOK private key, certificate, and password from repo secrets
-   (`MOK_KEY`, `MOK_CERT`, `MOK_PASSWORD`) into `/tmp/margine-secrets/`.
-2. Runs `buildah build` with the secrets mounted to
-   `/tmp/certs/MOK.{key,pem}` and `/tmp/certs/mok-password` so
-   `custom-kernel/install.sh` can sign vmlinuz and the modules.
-3. Pushes the image to `ghcr.io/<owner>/margine:stable` (plus dated
-   tags).
-4. Signs the published image with `cosign` using `COSIGN_PRIVATE_KEY`
-   from repo secrets.
+1. **Stage MOK secrets** — `MOK_KEY` / `MOK_CERT` / `MOK_PASSWORD`
+   from repo secrets into `/tmp/margine-secrets/` (wiped at end of job).
+2. **Pre-build login to GHCR** — `podman login ghcr.io` with the
+   workflow `GITHUB_TOKEN` so the base-image pull of
+   `ghcr.io/ublue-os/bluefin-dx:stable` is authenticated (rate limit
+   5000 req/h instead of 100 req/h for anonymous IP).
+3. **Build image** — `buildah build` with MOK secrets mounted, runs
+   `custom-kernel/install.sh` to install + sign vmlinuz / modules.
+4. **Layer A guardrails** (`Verify image internals`) — inspect the
+   freshly built image without booting: initramfs presence + sanity
+   size, ostree-prepare-root in initramfs, kernel features
+   (dm-crypt, btrfs, virtio_blk), MOK certificate, Plymouth theme,
+   `/etc/passwd` not stripped post-rechunk, helpers under `/usr/bin`,
+   bootstrap effects, branding assets, and a `systemd-analyze verify
+   default.target` to catch any ordering-cycle regression
+   before push.
+5. **Move built image to root storage** — `podman save --format
+   oci-archive` into `/var/tmp/margine.oci.tar` with sha256
+   verify-twice, then `sudo skopeo copy oci-archive: containers-storage:`.
+   The roundtrip via the OCI archive avoids the silent corruption
+   that affected an in-memory `podman save | sudo podman load` pipe
+   on the degraded-ZFS host.
+6. **ReChunk** (`hhd-dev/rechunk@v1.2.4`) — re-commits the image to
+   ostree-canonical form with composefs-friendly layering.
+7. **Push to `:candidate` + `:candidate.YYYYMMDD`** — NOT to
+   `:stable`. Only the candidate tag is updated by this workflow.
+8. **Cosign sign** — signs the candidate digest with
+   `COSIGN_PRIVATE_KEY`.
+9. **Notify ntfy** — push notification to the maintainer's phone
+   with the build outcome (success/failure) and a click-through to
+   the run URL.
+
+A separate workflow, **`smoke-boot.yml`**, is triggered by
+`workflow_run` of the build above. It:
+
+1. Pulls `ghcr.io/.../margine:candidate`.
+2. Builds a qcow2 with `bootc-image-builder`.
+3. Boots the qcow2 in QEMU + KVM on a GHA-hosted runner.
+4. Watches the serial console for any of three signals that mean the
+   boot reached a usable state: `gdm.service` started, or
+   `graphical.target` reached, or `margine login:` getty banner.
+5. **Only if that succeeds**, `skopeo copy --preserve-digests` promotes
+   the candidate digest to `:stable` + `:stable.YYYYMMDD` + `:YYYYMMDD`.
+
+So `:stable` is, by construction, an image that booted to a usable
+state inside QEMU. If smoke-boot ever fails, `:stable` is not touched
+and the maintainer gets a high-priority ntfy push to investigate.
+
+A third workflow, **`build-disk.yml`**, runs on demand to produce
+qcow2 + Anaconda ISO from the current `:stable`, uploads them to
+Internet Archive (which auto-generates torrent + 3 HTTP mirrors), and
+publishes a small HTML index page on `files.the-empty.place` with the
+download links. Origin upload bandwidth stays free because the big
+binaries are seeded by IA.
 
 Required GitHub repo secrets:
 
@@ -256,21 +362,35 @@ be uploaded as GitHub Actions secrets.
 
 ```
 .
-├── Containerfile               # bootc image recipe
+├── Containerfile                       # bootc image recipe
 ├── build_files/
-│   ├── build.sh                # Margine deltas (kitty Flatpak,
-│   │                             gschema override, fetch configure-*
-│   │                             scripts from margine-fedora-atomic)
+│   ├── build.sh                        # Margine deltas (Flatpak preinstall,
+│   │                                     gschema override, /etc/os-release
+│   │                                     branding, Plymouth, MOTD suppression,
+│   │                                     /etc/passwd seed unit, /etc/skel
+│   │                                     systemd-user units, fetch configure-*
+│   │                                     + validate-* helpers from
+│   │                                     margine-fedora-atomic)
+│   ├── 60-custom.just                  # ujust recipes (margine-bootstrap,
+│   │                                     margine-gaming, margine-gaming-remove)
 │   └── custom-kernel/
-│       ├── install.sh          # CachyOS kernel install + MOK sign
-│       └── origami-upstream.sh # Origami's reference script (kept for
-│                                 attribution + future merges)
-├── disk_config/                # ISO/disk metadata (unused for plain rebase)
+│       ├── install.sh                  # CachyOS kernel install + MOK sign
+│       └── origami-upstream.sh         # Origami's reference script (kept
+│                                         for attribution + future merges)
+├── disk_config/                        # bootc-image-builder configs
+│   ├── disk.toml                       # qcow2 disk image
+│   └── iso-gnome.toml                  # Anaconda installer ISO (does the
+│                                         `bootc switch` in %post)
+├── docs/screenshots/                   # README images (lock + activities)
 ├── secrets/
-│   ├── MOK.pem                 # PUBLIC X509 cert (commit OK)
-│   ├── MOK.der                 # PUBLIC DER cert (commit OK)
-│   └── cosign.pub              # PUBLIC cosign key (commit OK)
-├── .github/workflows/build.yml # CI: build + sign + push + cosign
+│   ├── MOK.pem                         # PUBLIC X509 cert (commit OK)
+│   ├── MOK.der                         # PUBLIC DER cert (commit OK)
+│   └── cosign.pub                      # PUBLIC cosign key (commit OK)
+├── .github/workflows/
+│   ├── build.yml                       # main CI: build + sign + push :candidate
+│   ├── smoke-boot.yml                  # QEMU boot test + promote → :stable
+│   └── build-disk.yml                  # ISO + qcow2 + Internet Archive upload
+├── CHANGELOG.md
 └── README.md
 ```
 

@@ -7,6 +7,36 @@ versioned tag, semantic versioning (`v0.X.Y`) will start.
 
 ## [Unreleased]
 
+### Added (2026-06-01)
+- `scripts/validate-margine-system`: end-to-end acceptance test that
+  wraps the individual `validate-*` checks plus a verdict-line summary.
+  Used in the smoke-boot CI step and after every manual `bootc upgrade`.
+- `scripts/configure-zen-browser`: writes a per-profile `user.js` that
+  sets Zen Browser's default search to DuckDuckGo.
+- `docs/18-observability.md`: ntfy push + `margine-staleness.timer` +
+  `margine-upgrade-notify.service` (three independent notification
+  layers for build pipeline + deployed systems).
+- `docs/19-iso-distribution.md`: torrent-first ISO/qcow2 publishing
+  via Internet Archive + Caddy index on `files.the-empty.place`.
+- `docs/lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md`:
+  postmortem of the emergency-mode boot caused by a unit's
+  `After=local-fs.target` + the architectural shift to the
+  `:candidate → :stable` smoke-boot-gated promotion.
+- Extensions: `o-tiling@oliwebd.github.com` (binary-tree auto-split,
+  closer to Hyprland muscle memory), `hide-cursor@elcste.com` (hide
+  pointer while typing), `caffeine@patapon.info` (keep-screen-on
+  toggle).
+
+### Changed (2026-06-01)
+- `scripts/configure-gnome-extensions` is now replace-style and uses
+  an on-disk presence check instead of `gnome-extensions list`. The
+  enabled-extensions list is written via `gsettings set` in one
+  shot from the declaration, dropping anything no longer declared.
+- Tiling extension: `tilingshell` is now installed-but-not-enabled,
+  superseded by `o-tiling` as the default tiling experience.
+- App folders: 6 Italian-named folders (Office / Grafica / Foto /
+  Audio / Video / Sistema) curated from Flatpak metadata.
+
 ### Changed
 - **System identity**: declarations now describe Margine as a published
   bootc image (`ghcr.io/daniel-g-carrasco/margine:stable`) derived from

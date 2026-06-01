@@ -1,99 +1,135 @@
 # Roadmap
 
-This document describes the four phases of the Margine Fedora Atomic project,
-their objectives, and the decision gates between them. Phases are sequential:
-each gate must pass before the next phase begins.
+The phases below were drafted when Margine was a manual VM-lab on
+Fedora Silverblue. The plan changed (see [ADR
+0005](adr/0005-base-on-bluefin-dx.md)): Margine ships as a real
+bootc image derived from Bluefin DX, with a CI pipeline that gates
+`:stable` on a QEMU smoke-boot test. This page now records the **status
+as of 2026-06-01**, what we delivered against each original milestone,
+and what's still pending.
 
-## Phase 1 — Manual VM lab
+## Phase 1 — Validate the Atomic model
 
-**Status:** Active
+**Status:** Done.
 
-**Objective:** Understand and validate Fedora Atomic Desktop as it actually
-behaves before building anything on top of it.
+**Original intent:** Understand and validate Fedora Atomic Desktop as
+it actually behaves before building anything on top of it.
 
-The deliverable is not a bootable Margine image. The deliverable is a verified
-lab model and a declarative source of truth that reflects real observations.
+**Delivered:**
 
-**Milestones:**
+- ✅ Bluefin DX in a UEFI VM with Secure Boot + vTPM 2.0
+  (chose Bluefin DX over stock Silverblue per ADR 0005 — it already
+  brings the developer / virt / container toolbox we'd otherwise add)
+- ✅ `scripts/validate-atomic-layout` validates the deployed ostree
+  layout and is now baked into the image as `/usr/bin/margine-validate-atomic-layout`
+- ✅ Baseline diagnostic bundle automated as
+  `scripts/collect-diagnostics` (idem `/usr/bin/margine-collect-diagnostics`)
+- ✅ Secure Boot + MOK signing for the CachyOS kernel (sbsign vmlinuz,
+  sign-file modules), first-boot enrollment via `mok-enroll.service`
+- ⏸ TPM2 auto-unlock via systemd-cryptenroll: documented in
+  [`07-secure-boot-tpm2.md`](07-secure-boot-tpm2.md), runtime
+  enrollment intentionally manual (one-time `systemd-cryptenroll`
+  command on first boot)
+- ✅ CachyOS kernel deployed and signed in CI; baseline image is
+  `7.0.x-cachyos*.fc44.x86_64`
+- ✅ Rollback tested and documented (`bootc rollback`, plus libvirt
+  snapshot pattern for VM lab work)
+- ✅ Declarative source of truth in `declarations/margine-atomic.yaml`
+  drives the helpers
+- ✅ Risks documented in [`05-known-risks.md`](05-known-risks.md) and
+  in `lessons-learned/`
 
-- Fedora Silverblue 44 installed from official media in a UEFI VM with Secure Boot and vTPM 2.0
-- First update and reboot into the updated rpm-ostree deployment
-- `scripts/validate-atomic-layout` run and reviewed; layout matches the ostree model
-- Baseline diagnostic bundle collected before any third-party repositories
-- Stock Fedora Secure Boot path confirmed as working
-- TPM2 auto-unlock enrolled via systemd-cryptenroll with passphrase recovery still available
-- Update and rollback tested with TPM2 enrollment intact
-- Draft declaration in `declarations/margine-atomic.yaml` reflects observed decisions
-- CachyOS kernel experiment run in the VM, or explicitly deferred with rationale
-- Rollback to a Fedora kernel deployment tested
-- Observed risks documented in `docs/05-known-risks.md`
+## Phase 2 — Drift detection / validators
 
-**Decision gate:** All milestones above complete before moving to phase 2.
+**Status:** Done (in a different shape than originally planned).
 
-## Phase 2 — Drift detection
+**Original intent:** read-only `validate-declared-state` script that
+diffs declarations against running system.
 
-**Status:** Future
+**Delivered, differently:** rather than a single drift-detector, the
+repo ships **per-aspect validators** that are each baked into the
+image. They cover the same surface and run faster:
 
-**Objective:** Build read-only tooling that compares the running system against
-the declarations without applying changes.
+- `validate-atomic-layout` — ostree layout, mounts, Secure Boot, TPM2
+- `validate-cachyos-kernel` — version, signatures, MOK enrollment
+- `validate-hardware-media-stack` — Mesa, Vulkan, VA-API, PipeWire, OpenCL
+- `validate-gaming-runtime` — gaming-relevant runtime bits
+- `validate-margine-system` — end-to-end acceptance test (sums up
+  the others + branding + GNOME + flatpaks + helpers + bootstrap +
+  failed-units detector). Used in the smoke-boot CI step and by the
+  user after every `bootc upgrade`.
 
-The deliverable is a `validate-declared-state` script that reads
-`declarations/margine-atomic.yaml` and reports deviations between declared
-intent and the actual system state. Each channel (rpm-ostree, Flatpak, toolbox,
-GNOME settings, home layout) gets its own check.
+Still **TODO**, of the original intent:
 
-**Milestones:**
+- ⏳ A dedicated drift check for GNOME `dconf` settings vs the
+  declaration (today the validators check key presence, not value
+  diff). Lower priority — `configure-gnome-appearance` is
+  idempotent, so users just re-run it.
 
-- Channel-specific drift check for rpm-ostree layered packages
-- Channel-specific drift check for installed Flatpak applications
-- Channel-specific drift check for GNOME dconf settings
-- Channel-specific drift check for home layout (XDG dirs, fonts, folder metadata)
-- Drift check exposed as `margine-validate-declared-state` (on-demand, not wired into uupd)
-- Declaration schema documented in `declarations/README.md`
+## Phase 3 — Plan-first adapters / declarative apply
 
-**Decision gate:** Drift detection covers all declared channels before moving to phase 3.
+**Status:** Largely done (under a different name).
 
-## Phase 3 — Plan-first adapters
+**Original intent:** plan-first adapters that compute a diff and
+apply changes per channel.
 
-**Status:** Future
+**Delivered:** the `configure-*` helpers each read
+`declarations/margine-atomic.yaml`, default to **dry-run**, and only
+mutate on `--apply`. They are channel-specific (extensions, keybinds,
+app folders, appearance, home layout, default applications, zen
+browser). The `ujust margine-bootstrap` recipe runs the full chain
+in sequence.
 
-**Objective:** Build channel-specific apply adapters that turn declarations into
-system state, with explicit plan-then-confirm workflow.
+Still **TODO**:
 
-The deliverable is a provisioner per channel that takes the declaration as
-input, computes the required changes, shows a diff, and applies only after
-confirmation. Each adapter is independent and does not assume other adapters
-have run.
+- ⏳ A coarser drift report layered on top of the existing helpers
+  (think `margine-status` that prints "OK / drifted / unknown" per
+  channel without applying). Nice-to-have, not blocking.
 
-**Milestones:**
+## Phase 4 — Native bootc image + CI
 
-- rpm-ostree adapter: compute layered package additions/removals, confirm, apply
-- Flatpak adapter: compute app additions/removals, confirm, apply
-- GNOME dconf adapter: compute setting changes, confirm, apply
-- Home layout adapter: create XDG dirs, set folder metadata, install fonts
-- Toolbox adapter: create declared containers with declared packages
-- All adapters available as standalone `margine-apply-*` commands (on-demand, post-rebase only)
-- Adapters are dry-run capable and idempotent
+**Status:** Done and operating.
 
-**Decision gate:** All adapters pass dry-run and apply in the VM before moving to phase 4.
+**Delivered:**
 
-## Phase 4 — Native image or bootc
+- ✅ `margine-image` repo builds a bootc image (Bluefin DX +
+  CachyOS signed kernel + Margine deltas) via GH Actions on a
+  self-hosted runner
+- ✅ Layer A guardrails (image internals check before push)
+- ✅ `:candidate → :stable` promotion model with QEMU smoke-boot
+  test on every build (see [lessons-learned 2026-06-01](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md))
+- ✅ Cosign signature on the published image
+- ✅ ISO + qcow2 publishing via Internet Archive (torrent + 3 HTTP
+  mirrors) + HTML index on `files.the-empty.place` (see
+  [19-iso-distribution.md](19-iso-distribution.md))
+- ✅ Observability via ntfy push (build / smoke-boot / disk-build
+  outcomes) + client-side `margine-staleness.timer` +
+  `margine-upgrade-notify.service` (see [18-observability.md](18-observability.md))
 
-**Status:** Future (requires phase 3 complete)
+Still **TODO**:
 
-**Objective:** Evaluate whether rpm-ostree layering can be replaced or
-supplemented with a native image build or bootc-managed image.
+- ⏳ Move the `:stable` redirect to a *signed cosign verification* on
+  the user side (today `bootc` trusts the registry; we could
+  configure rpm-ostree's `verify-by-key` to enforce cosign at the
+  client). Defense in depth.
+- ⏳ Build cadence: today builds run on push to main + on demand.
+  A nightly cron is documented but not wired (would catch upstream
+  drift in Bluefin DX even on quiet days).
 
-This phase is intentionally underspecified. The correct approach depends on
-what phases 1–3 reveal about the real operating model. Likely candidates:
+## Beyond the original phases
 
-- A bootc-compatible Containerfile that reproduces the layered package set
-- A native ostree compose that replaces the stock Silverblue base
-- Continued rpm-ostree layering with bootc as an opt-in update mechanism
+Two pieces of platform infrastructure landed in 2026-05/06 that
+weren't on the original roadmap but are now part of how Margine
+operates:
 
-**Milestones to define before starting:**
+- **`proxmox-pve1` integration**: the self-hosted runner lives on a
+  PVE1 VM (`margine-builder`), guarded by `podman-guardian.timer`
+  + I/O caps + cleanup hygiene; documented in
+  `proxmox-pve1/docs/operations/{provision-margine-builder,builder-podman-guardian,builder-dashboard,notifications-ntfy,auto-updates,iso-distribution}.md`.
+- **Builder dashboard**: small FastAPI on `http://192.168.2.40:8765`
+  that aggregates GH Actions runs + podman/disk/process health on
+  the builder + `qm list` on PVE.
 
-- Secure Boot and TPM2 strategy for a custom image (custom keys vs. Fedora shim)
-- Persistent host state strategy in a container-image model
-- Migration path from existing rpm-ostree deployments
-- Rollback strategy with the new image mechanism
+Those are operational, not Margine-spec proper, so they live in the
+`proxmox-pve1` repo. They're documented here for context because
+they directly affect the build reliability story.

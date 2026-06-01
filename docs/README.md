@@ -44,7 +44,9 @@ install guide is self-contained.
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
 | [15-host-layer.md](15-host-layer.md) | **Legacy** Bluefin-style host baseline for stock Silverblue (superseded by ADR 0005 — Margine now rebases to Bluefin DX). Preserved for audit / fallback path. |
 | [16-developer-toolbox.md](16-developer-toolbox.md) | Daily-use guide for the developer surfaces: toolbox tools (just, glow, gum, fastfetch), distrobox for non-Fedora distros, Homebrew on Linux, starship prompt, GNOME app folders, daily workflow |
-| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (Ptyxis terminal, SUPER+E Nautilus), Tiling Shell tiling actions; full Hyprland→GNOME mapping |
+| [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (Ptyxis terminal, SUPER+E Nautilus), o-tiling actions (`Super+Arrow` move / `Super+Shift+Arrow` focus); full Hyprland→GNOME mapping |
+| [18-observability.md](18-observability.md) | Three independent notification mechanisms: ntfy push on every build/smoke-boot/ISO outcome, `margine-staleness.timer` (warn if `:stable` hasn't refreshed in >7 days), `margine-upgrade-notify` (notify-send after a reboot picks up a new deployment) |
+| [19-iso-distribution.md](19-iso-distribution.md) | ISO + qcow2 publishing pipeline: builder → Internet Archive (torrent + 3 HTTP mirrors, seeded forever) + `files.the-empty.place` HTML index + sha256sums + 7-day local fallback. Why torrent-first instead of direct Caddy hosting. |
 
 ## System design
 
@@ -76,3 +78,10 @@ Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base 
 | Document | What it covers |
 | --- | --- |
 | [13-ai-validation-prompt.md](13-ai-validation-prompt.md) | Reusable AI audit prompt for structured validation of this repository |
+
+## Lessons learned (postmortems)
+
+| Document | What it covers |
+| --- | --- |
+| [lessons-learned/2026-05-28-initramfs-and-bootc-labels.md](lessons-learned/2026-05-28-initramfs-and-bootc-labels.md) | First bring-up of the bootc image: initramfs path, ostree labels, why we rechunk |
+| [lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md) | Emergency-mode boot from an `After=local-fs.target` ordering cycle; introduction of the `:candidate → :stable` smoke-boot-gated promotion model |

@@ -1,10 +1,28 @@
+# Margine GNOME ISO config for bootc-image-builder.
+#
+# This config produces an Anaconda installer ISO that:
+#   1. Boots into Anaconda (graphical installer).
+#   2. Installs the embedded bootc image to disk.
+#   3. After install, runs the %post kickstart which sets the
+#      ostree origin to ghcr.io/daniel-g-carrasco/margine:stable
+#      so the first `bootc upgrade` on the installed system pulls
+#      from there instead of the embedded snapshot.
+
 [customizations.installer.kickstart]
 contents = """
-%post
-bootc switch --mutate-in-place --transport registry ghcr.io/ublue-os/image-template:latest
+%post --erroronfail
+# Point the freshly installed system at our public registry so
+# subsequent `bootc upgrade` calls follow margine:stable. Without
+# this the ostree origin remains the embedded snapshot URI from
+# bootc-image-builder, and the system never sees new releases.
+bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
 """
 
+# Trim the Anaconda module set to what we actually need on a Margine
+# install: storage + runtime. Network is auto-configured by NetworkManager
+# at first boot; users/security/services/subscription/timezone come from
+# Margine's own bootstrap (configure-* chain) at first login.
 [customizations.installer.modules]
 enable = [
   "org.fedoraproject.Anaconda.Modules.Storage",

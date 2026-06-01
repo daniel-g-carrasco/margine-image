@@ -93,16 +93,136 @@ jobs:
           done
           echo "files=$(find "$OUTDIR" -type f -name '*.iso' -o -name '*.qcow2' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to edge over rsync
-        # Uses a dedicated SSH key on the builder restricted (via
-        # authorized_keys command="rsync ...") to scp/rsync into
-        # /var/www/files-margine. The key itself is generated and
-        # authorized via docs/operations/iso-distribution.md.
+      - name: Install Internet Archive CLI (ia)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          if ! command -v ia >/dev/null; then
+            python3 -m pip install --user --quiet internetarchive
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+          ~/.local/bin/ia --version || ia --version
+
+      - name: Upload to Internet Archive (torrent-first distribution)
+        # IA auto-generates a BitTorrent .torrent + magnet + 3 HTTP
+        # mirrors for everything we upload, and seeds it forever.
+        # This is the same pattern Bluefin/Bazzite use to avoid
+        # Cloudflare TOS (no large binary content served from origin)
+        # and to keep our home-server upload bandwidth free.
+        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
+        env:
+          IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
+          IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          OUTDIR="${{ steps.outputs.outdir }}"
+          DATE_TAG="$(date -u +%Y%m%d)"
+          IDENTIFIER="margine-${{ matrix.disk-type }}-${DATE_TAG}"
+          export IA_CONFIG_FILE=/tmp/ia.ini
+          cat > "$IA_CONFIG_FILE" <<EOF
+          [s3]
+          access = ${IA_S3_ACCESS}
+          secret = ${IA_S3_SECRET}
+          EOF
+          chmod 0600 "$IA_CONFIG_FILE"
+          ia --config-file "$IA_CONFIG_FILE" upload "$IDENTIFIER" \
+            "$OUTDIR"/*.iso "$OUTDIR"/SHA256SUMS \
+            --metadata="mediatype:software" \
+            --metadata="collection:opensource" \
+            --metadata="title:Margine Linux ISO ${DATE_TAG}" \
+            --metadata="description:Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}" \
+            --metadata="subject:linux;fedora;bootc;bluefin;cachyos;margine" \
+            --metadata="creator:daniel-g-carrasco" \
+            --metadata="licenseurl:https://www.apache.org/licenses/LICENSE-2.0"
+          echo "identifier=$IDENTIFIER" >> "$GITHUB_OUTPUT"
+          echo "Uploaded as https://archive.org/details/$IDENTIFIER"
+        id: ia_upload
+
+      - name: Wait for IA to derive (gen torrent + mirrors)
+        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
+        timeout-minutes: 25
+        env:
+          IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
+        run: |
+          set -euo pipefail
+          # IA needs a few minutes to derive a .torrent + magnet for
+          # the upload. Poll until the *_archive.torrent file shows up.
+          for i in $(seq 1 60); do
+            sleep 20
+            if ia --config-file /tmp/ia.ini list "$IDENTIFIER" 2>/dev/null | grep -q '_archive\.torrent$'; then
+              echo "Torrent ready after ~$((i*20))s"
+              ia --config-file /tmp/ia.ini list "$IDENTIFIER"
+              exit 0
+            fi
+            echo "  (poll $i) torrent not yet derived, retrying…"
+          done
+          echo "::warning::IA torrent not derived within 20 min — index will use HTTP mirrors only"
+
+      - name: Generate index.html for files.the-empty.place
+        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
+        env:
+          IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
+        run: |
+          set -euo pipefail
+          OUTDIR="${{ steps.outputs.outdir }}"
+          DATE_TAG="$(date -u +%Y%m%d)"
+          ISO_NAME=$(basename "$OUTDIR"/*.iso)
+          # Magnet URI for the IA-generated torrent. IA URL pattern:
+          # https://archive.org/download/<id>/<id>_archive.torrent
+          # We construct a magnet directly with the xt= sha1 left empty
+          # (most clients will fetch the .torrent from the tr= URL).
+          TORRENT_URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
+          MIRROR_HTTP="https://archive.org/download/${IDENTIFIER}/${ISO_NAME}"
+          cat > "$OUTDIR/index.html" <<HTML
+          <!doctype html>
+          <html lang="en"><head>
+            <meta charset="utf-8">
+            <title>Margine ${DATE_TAG} — downloads</title>
+            <style>
+              body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+              h1 { font-size: 22px; }
+              code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+              .pkg { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 16px 20px; margin-top: 12px; }
+              a { color: #1e5fb6; }
+              footer { margin-top: 32px; color: #888; font-size: 13px; }
+            </style>
+          </head><body>
+            <h1>Margine ${DATE_TAG}</h1>
+            <p>Margine — Bluefin DX + CachyOS signed kernel.
+               Build dal commit <code>${{ github.sha }}</code>.</p>
+
+            <div class="pkg">
+              <strong>Anaconda installer ISO</strong> · <code>${ISO_NAME}</code><br>
+              <p>
+                ⤓ <a href="${TORRENT_URL}">Download .torrent</a> (consigliato)<br>
+                ⤓ <a href="${MIRROR_HTTP}">Download HTTP diretto</a> (IA mirror)<br>
+                🗂 <a href="https://archive.org/details/${IDENTIFIER}">Pagina Internet Archive</a> (tutti i mirror)
+              </p>
+            </div>
+
+            <p>Hash di verifica: <a href="SHA256SUMS">SHA256SUMS</a></p>
+
+            <footer>
+              Pubblicato il $(date -u +%Y-%m-%dT%H:%MZ).
+              ISO ospitate da <a href="https://archive.org">Internet Archive</a>;
+              questo sito serve solo magnet/HTML.
+              Sorgente: <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a>.
+            </footer>
+          </body></html>
+          HTML
+
+      - name: Publish index + SHA256SUMS to edge over rsync
+        # Only the lightweight pieces go to edge: HTML index page,
+        # SHA256SUMS, and (for the 7-day fallback) a copy of the ISO.
+        # The large binaries' authoritative location is Internet Archive.
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           OUTDIR="${{ steps.outputs.outdir }}"
-          rsync -av --progress \
+          # Ship index, sha, and any small artifact. The ISO/qcow2 go too
+          # for the 7-day local fallback (cleanup timer on edge removes
+          # them after).
+          rsync -rtvz --progress \
             -e "ssh -i /home/gha-runner/.ssh/edge-files-margine -o StrictHostKeyChecking=accept-new" \
             "$OUTDIR"/ \
             edge-files-margine@192.168.2.31:/var/www/files-margine/
@@ -137,7 +257,7 @@ jobs:
               TITLE="Disk image ${DISK} published"
               PRIO="default"
               TAGS="cd,white_check_mark"
-              MSG="Disponibile su https://files.the-empty.place/margine/"
+              MSG="Torrent + HTTP mirror disponibili su https://files.the-empty.place/"
               ;;
             failure)
               TITLE="Disk image ${DISK} BUILD FAILED"

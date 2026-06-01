@@ -37,89 +37,16 @@ operations.
 
 ## What you get
 
-### A complete media stack from first boot
-The base image includes Mesa with the freeworld codecs (proprietary
-codecs not shipped in Fedora's stock Mesa for licensing reasons),
-hardware video acceleration via VA-API/VDPAU, full ffmpeg with H.264 /
-H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM
-content in Firefox/Chromium-based browsers works without additional
-setup.
-
-### CachyOS kernel, signed for Secure Boot
-Mainline kernel from the
-[`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR,
-which includes the BORE scheduler (lower-latency desktop response under
-load) and several upstream-pending performance patches. Margine signs
-the kernel image and every kernel module at build time with its own
-MOK, so Secure Boot stays enabled. The first boot after install enrolls
-the public key into shim's MOK store via a one-shot service; from
-then on the kernel chain of trust is verified at every boot.
-
-### Immutable filesystem and atomic upgrades
-The `/usr` tree is part of the bootc deployment and is mounted
-read-only. Software updates pull a new OCI image from the registry
-and stage it as a new deployment; the previous deployment is kept
-on disk. After reboot the new deployment becomes active; if it fails
-to boot or otherwise misbehaves, `bootc rollback` switches back to
-the previous one at the next reboot. Daily updates are orchestrated
-in the background by Bluefin's `uupd.timer`.
-
-### GNOME with a tiling workflow
-Stock GNOME Shell, configured with the
-[o-tiling](https://github.com/oliwebd/o-tiling) extension
-(binary-tree auto-split inspired by Hyprland) and a Hyprland-style
-keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move
-the focused window, `Super+Shift+Arrow` to move focus, `Super+Return`
-for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and
-Search Light are added to the default Bluefin extension set; LogoMenu
-is disabled. None of this is enforced — the Extensions Manager
-remains fully functional and any choice is reversible.
-
-### Curated application set
-Installed automatically on first boot via the systemd
-`/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden,
-LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio,
-EasyEffects, Reaper, Apostrophe. Visual Studio Code is inherited from
-Bluefin DX (Microsoft repo). Optional categories (gaming, retro,
-content creation extras) are documented in the spec and can be added
-with one command.
-
-### Disk encryption and TPM2
-Anaconda installs default to LUKS2 with a strong passphrase. After
-install you can enroll TPM2 unlock with `systemd-cryptenroll`, keeping
-the passphrase as recovery. Documented in
-[`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md).
-
-### Verified build pipeline
-Every published image is exercised through three CI gates before users
-can pull it:
-
-1. **Layer A guardrails** — static inspection of the built image
-   without booting: initramfs presence and size, presence of
-   `ostree-prepare-root`, critical kernel features
-   (`dm-crypt`, `btrfs`, `virtio_blk`), MOK certificate, Plymouth
-   theme, helpers under `/usr/bin`, `/etc/passwd` not stripped by
-   rechunk, branding assets, and `systemd-analyze verify
-   default.target` to detect ordering cycles.
-2. **OCI archive verification** — the image is serialized to an OCI
-   archive with double sha256 check before being copied into the
-   destination storage, to defend against silent corruption on the
-   builder.
-3. **Smoke boot in QEMU** — the candidate image is converted to a
-   qcow2 with `bootc-image-builder` and booted under QEMU/KVM. Only
-   if the boot reaches a usable state (one of: `gdm.service` started,
-   `graphical.target` reached, or the `margine login:` getty banner)
-   is the candidate digest promoted to `:stable` with
-   `skopeo copy --preserve-digests`.
-
-The `:stable` tag therefore points, by construction, to an image that
-has booted to a usable state in a controlled environment. A failed
-candidate does not advance `:stable`.
-
-### Localized application folders
-GNOME's activities grid is organized into six folders with Italian
-labels: Office, Grafica, Foto, Audio, Video, Sistema. Editable in the
-declarative spec; English / other-language sets can be added.
+| | |
+| --- | --- |
+| 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
+| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; the public key is enrolled into shim's MOK store on first boot via a one-shot service. Secure Boot remains enabled and the kernel chain of trust is verified at every boot. |
+| 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
+| 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
+| 📦 **Curated application set** | Installed automatically on first boot via the systemd `/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden, LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe. Visual Studio Code is inherited from Bluefin DX (Microsoft repo). Optional categories (gaming, retro, content creation extras) are documented in the spec and can be added with one command. |
+| 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
+| 🧪 **Verified build pipeline** | Every published image passes three CI gates before promotion: **Layer A guardrails** (static inspection of initramfs, kernel features, MOK certificate, Plymouth theme, helpers, branding, `/etc/passwd` integrity, plus `systemd-analyze verify default.target` to detect ordering cycles); **OCI archive verification** (double sha256 of the serialized image to defend against silent corruption on the builder); **smoke boot in QEMU** (the candidate is booted under QEMU/KVM, and only if it reaches a usable state — `gdm.service` started, `graphical.target` reached, or the `margine login:` banner — is the digest promoted to `:stable` with `skopeo copy --preserve-digests`). |
+| 🇮🇹 **Localized application folders** | GNOME's activities grid is organized into six folders with Italian labels: Office, Grafica, Foto, Audio, Video, Sistema. Editable in the declarative spec; English or other-language sets can be added. |
 
 ## Screenshots
 

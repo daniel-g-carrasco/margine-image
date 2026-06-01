@@ -119,7 +119,18 @@ jobs:
           # so does Margine's Anaconda installer config (Btrfs default
           # in Anaconda).
           rootfs: btrfs
-          additional-args: --use-librepo=True
+          # --distro=fedora-44 overrides BIB's autodetect, which reads
+          # /etc/os-release and looks up a definition file by
+          # ${ID}-${VERSION_ID}. Margine sets ID=margine (build_files/build.sh
+          # rewrites os-release for the GNOME About panel etc.), so BIB
+          # looks for a non-existent margine-44 definition and aborts with
+          # "could not find def file for distro margine-44" — *only* for
+          # anaconda-iso, since qcow2 doesn't need distro-specific anaconda
+          # templates. ID_LIKE="fedora bluefin" *should* trigger a fallback
+          # but current BIB doesn't honour it. Forcing fedora-44 matches
+          # what Bluefin DX 44 is built from upstream. Bump in lockstep
+          # when Bluefin moves to F45.
+          additional-args: --use-librepo=True --distro=fedora-44
 
       - name: List + sha256 outputs
         id: outputs

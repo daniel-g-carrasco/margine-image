@@ -70,6 +70,27 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | timeout 30 podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
+      - name: Pre-pull bootc-image-builder (resilient to quay.io 5xx)
+        # quay.io occasionally returns 5xx for minutes at a time
+        # (observed 2026-06-01: a Cloudflare/quay outage that the
+        # downstream action surfaced only as a single failed pull).
+        # Retry explicitly with exponential backoff so the image is
+        # in the local store by the time the action runs; the action
+        # then finds it cached and proceeds.
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if sudo podman pull "${{ env.BIB_IMAGE }}"; then
+              echo "bootc-image-builder pulled on attempt $attempt"
+              exit 0
+            fi
+            backoff=$((attempt * 30))
+            echo "pull attempt $attempt failed; sleeping ${backoff}s before retry"
+            sleep $backoff
+          done
+          echo "::error::Unable to pull ${{ env.BIB_IMAGE }} after 8 attempts; quay.io may be down"
+          exit 1
+
       - name: Build disk image
         id: build
         uses: osbuild/bootc-image-builder-action@main

@@ -1,12 +1,21 @@
 <div align="center">
 
-<img src="docs/branding/margine-logo-wide.png" alt="Margine" width="420">
+<img src="docs/branding/margine-logo-wide.png" alt="Margine" width="640">
 
 ### An immutable Linux desktop distribution.
 
 Built on [Bluefin DX](https://projectbluefin.io/), with a Secure Boot-signed
 [CachyOS](https://cachyos.org/) kernel, GNOME configured for tiling workflows,
 a complete media stack, and a curated set of preinstalled applications.
+
+<p>
+  <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
+  <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
+  <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://files.the-empty.place/"><img alt="Download" src="https://img.shields.io/badge/download-ISO%20%2B%20torrent-D97757"></a>
+  <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/github/license/daniel-g-carrasco/margine-image?color=4D9F4A"></a>
+</p>
 
 [**Download**](https://files.the-empty.place/) ·
 [What it is](#what-it-is) ·
@@ -45,8 +54,8 @@ operations.
 | 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set** | Installed automatically on first boot via the systemd `/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden, LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe. Visual Studio Code is inherited from Bluefin DX (Microsoft repo). Optional categories (gaming, retro, content creation extras) are documented in the spec and can be added with one command. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
-| 🧪 **Verified build pipeline** | Every published image passes three CI gates before promotion: **Layer A guardrails** (static inspection of initramfs, kernel features, MOK certificate, Plymouth theme, helpers, branding, `/etc/passwd` integrity, plus `systemd-analyze verify default.target` to detect ordering cycles); **OCI archive verification** (double sha256 of the serialized image to defend against silent corruption on the builder); **smoke boot in QEMU** (the candidate is booted under QEMU/KVM, and only if it reaches a usable state — `gdm.service` started, `graphical.target` reached, or the `margine login:` banner — is the digest promoted to `:stable` with `skopeo copy --preserve-digests`). |
-| 🇮🇹 **Localized application folders** | GNOME's activities grid is organized into six folders with Italian labels: Office, Grafica, Foto, Audio, Video, Sistema. Editable in the declarative spec; English or other-language sets can be added. |
+| 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
+| 🗂 **Organized application folders** | GNOME's activities grid is organized into six folders: Office, Graphics, Photography, Audio, Video, System. High-frequency apps (browser, mail, files, terminal, code editor) stay at the top level for one-click access. Editable in the declarative spec. |
 
 ## Screenshots
 
@@ -74,10 +83,7 @@ directly.
 2. Boot the ISO. Anaconda's standard installation flow applies:
    recommended UEFI with Secure Boot enabled, LUKS2 on the root disk,
    Btrfs filesystem (the default).
-3. Reboot. The first boot is already on Margine; the installer's
-   `%post` kickstart has set the ostree origin to
-   `ghcr.io/daniel-g-carrasco/margine:stable`, so subsequent
-   `bootc upgrade` calls follow the same channel.
+3. Reboot when the installation completes — you are on Margine.
 4. Apply the user-state once:
    ```sh
    ujust margine-bootstrap
@@ -99,13 +105,12 @@ systemctl reboot
 
 After the reboot, two more one-time steps:
 
-1. **MOK enrollment.** The first boot after the rebase queues the
-   Margine MOK key for shim to enroll. On the next reboot the
-   firmware presents the **MOK Manager** screen (shim's blue/grey
-   UI). Choose `Enroll MOK` → `Continue` → `Yes`, type the MOK
-   password, reboot. From this point on the CachyOS kernel boots
-   under Secure Boot.
-2. **`ujust margine-bootstrap`**, as in Option A.
+1. **Enroll the Margine signing key into Secure Boot.** On the next
+   reboot a blue/grey screen called **MOK Manager** appears
+   automatically. Choose `Enroll MOK` → `Continue` → `Yes`, type the
+   MOK password, and reboot. From this point on the kernel boots
+   normally under Secure Boot.
+2. Run **`ujust margine-bootstrap`**, as in Option A.
 
 ### Post-install verification
 

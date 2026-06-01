@@ -479,35 +479,59 @@ jobs:
       #       and tries to ping https://localhost:443 → connection
       #       refused → build fails.
       #
-      # Previous approach: `podman save | sudo podman load`. Failed on
-      # 2026-06-01 with `file integrity checksum failed for sysroot/
-      # ostree/repo/objects/de/...` after the rpool degraded ZFS lost
-      # checksum verification for a single-disk write. The blob arrived
-      # corrupt and podman load (correctly) refused to import it.
+      # Three approaches tried, each one because the previous failed:
       #
-      # Current approach: `skopeo copy containers-storage:...
-      # containers-storage:...`. Skopeo writes directly to the destination
-      # storage's ostree object store and runs sha256 verification per
-      # blob at write-time with retry. No 15 GB TAR pipe → no memory
-      # pressure path. If a single blob fails, skopeo retries that blob
-      # alone rather than restarting the full image transfer.
+      # 1. `podman save | sudo podman load` — original. Failed 2026-06-01
+      #    night with "file integrity checksum failed for sysroot/
+      #    ostree/repo/objects/de/..." — a 15 GB TAR pipe under memory
+      #    pressure on a degraded ZFS lost blob integrity silently.
       #
-      # The destination tag drops `localhost/` so subsequent steps that
-      # do `sudo podman create margine:stable` find it via local lookup.
+      # 2. `sudo skopeo copy containers-storage:... containers-storage:...`
+      #    — failed 2026-06-01 morning with "reference does not resolve
+      #    to an image ID". Skopeo run as root looks in /var/lib/
+      #    containers (root storage), but buildah-build@v2 leaves the
+      #    image in ~gha-runner/.local/share/containers (rootless).
+      #    Specifying [overlay@<rootless>] explicitly hits permission
+      #    issues on the rootless lockfile.
+      #
+      # 3. Current: dump as oci-archive (rootless), verify sha256 of the
+      #    archive file, then skopeo copy oci-archive into root storage.
+      #    oci-archive is the OCI standard format and has its own per-blob
+      #    SHA-256 verification at parse time. The intermediate file uses
+      #    ~5 GB of disk (cleaned at end of job by GHA workspace cleanup).
       - name: Move built image to root storage for rechunk
         run: |
           set -euo pipefail
-          SRC="containers-storage:localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-          DST="containers-storage:[overlay@/var/lib/containers/storage+/run/containers/storage]${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-          echo "Copying $SRC → $DST"
-          sudo skopeo copy --retry-times 3 --preserve-digests "$SRC" "$DST"
-          echo "Root-storage images:"
-          sudo podman images
-          # Sanity: confirm the image is reachable under the expected
-          # short name. If skopeo wrote it under a different reference,
-          # rechunk would fail downstream with a much less obvious error.
-          sudo podman image exists "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+          IMG="${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          ARCHIVE="/tmp/${{ env.IMAGE_NAME }}.oci.tar"
+
+          echo "Step 1: dump rootless image to oci-archive"
+          rm -f "$ARCHIVE"
+          podman save --format oci-archive --output "$ARCHIVE" "localhost/$IMG"
+          ARCHIVE_SIZE=$(stat -c '%s' "$ARCHIVE")
+          ARCHIVE_SHA=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+          echo "  size: $((ARCHIVE_SIZE / 1024 / 1024)) MiB"
+          echo "  sha256: $ARCHIVE_SHA"
+
+          echo "Step 2: verify archive sha256 is stable (defend against ZFS silent corruption)"
+          ARCHIVE_SHA_RECHECK=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+          if [[ "$ARCHIVE_SHA" != "$ARCHIVE_SHA_RECHECK" ]]; then
+            echo "::error::archive sha256 changed between writes — disk silently corrupted bytes"
+            exit 1
+          fi
+
+          echo "Step 3: skopeo copy oci-archive → root containers-storage"
+          sudo skopeo copy --retry-times 3 --preserve-digests \
+            "oci-archive:$ARCHIVE" \
+            "containers-storage:$IMG"
+
+          echo "Step 4: sanity check"
+          sudo podman image exists "$IMG" \
             || { echo "::error::image not found in root storage after skopeo copy"; exit 1; }
+          sudo podman images
+
+          echo "Step 5: cleanup intermediate archive"
+          rm -f "$ARCHIVE"
 
       # Fix B — rechunk the image into ostree-canonical form. This is
       # the architecturally correct step that:

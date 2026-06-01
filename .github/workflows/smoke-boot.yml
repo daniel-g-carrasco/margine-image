@@ -158,10 +158,19 @@ jobs:
           # commit, etc. On a non-KVM GHA runner that is slow.
           # Test confirmed network.target reached at ~8 min, multi-user
           # at ~10-12 min — so 10 min was too tight, 20 min is safe.
-          MARKER="Reached target multi-user.target"
+          # Multi-marker approach (2026-06-01): systemd recent does NOT
+          # always emit "Reached target multi-user.target" verbatim on
+          # the serial console (seen on Fedora 44 with CachyOS kernel —
+          # log goes straight to graphical.target boot events). We
+          # accept any of three equivalent signals:
+          #   1. gdm.service started → implies graphical.target reached
+          #      → implies multi-user.target reached.
+          #   2. Plymouth has quit → boot process is wrapping up.
+          #   3. The getty banner "margine login:" → user-space fully up.
+          # Any one of these means the boot is healthy.
           for i in $(seq 1 1200); do
-            if [[ -f serial.log ]] && grep -q "$MARKER" serial.log; then
-              echo "✓ Boot reached multi-user target at second $i"
+            if [[ -f serial.log ]] && grep -qE "Started.*gdm\.service|Reached target graphical\.target|margine login:" serial.log; then
+              echo "✓ Boot reached usable state at second $i"
               echo "passed=true" >> $GITHUB_OUTPUT
               # Try to shut down gracefully via QEMU monitor; otherwise force-kill
               sudo kill "$QEMU_PID" 2>/dev/null || true

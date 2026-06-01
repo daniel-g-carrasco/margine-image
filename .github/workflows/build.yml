@@ -1,30 +1,40 @@
 ---
+# Margine bootc image build, on a GitHub-hosted ubuntu-24.04 runner.
+#
+# History (2026-06-01): we used to run this on a self-hosted PVE VM
+# (margine-builder, VM 170). After two freezes — the second one
+# taking the entire PVE host down with ZFS spacemap corruption (see
+# proxmox-pve1/docs/operations/zfs-spacemap-corruption-recovery.md)
+# — the self-hosted runner has been decommissioned. GitHub-hosted
+# is exactly the "container that wakes up when a job arrives and
+# shuts down after" model we wanted.
+#
+# Triggers: push to main, weekly cron (sun 04:00 UTC), and on-demand
+# via workflow_dispatch.
+#
+# Output: publishes to `:candidate` and `:candidate.<date>`. The
+# smoke-boot.yml workflow then runs an end-to-end QEMU boot test on
+# the candidate; only if QEMU reaches multi-user.target does the
+# candidate digest get promoted to `:stable` (skopeo copy
+# --preserve-digests).
+
 name: Build Margine image
+
 on:
-  pull_request:
-    branches:
-      - main
-  schedule:
-    - cron: '05 10 * * *'  # daily 10:05 UTC
   push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/README.md'
-      - 'docs/**'
+    branches: [main]
+  schedule:
+    # Weekly nightly: Sunday 04:00 UTC = 06:00 CEST. Picks up upstream
+    # Bluefin DX changes even if there are no commits to this repo.
+    - cron: '0 4 * * 0'
   workflow_dispatch:
 
 env:
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+  IMAGE_NAME: margine
   IMAGE_DESC: "Margine — Bluefin DX + CachyOS signed kernel + Margine deltas"
   IMAGE_KEYWORDS: "bootc,ublue,bluefin,cachyos,margine"
-  IMAGE_NAME: "margine"
-  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  # The build pipeline uses this tag END-TO-END as the routing tag
-  # (image:candidate locally, ghcr.io/.../image:candidate after push).
-  # `smoke-boot.yml` promotes the validated digest to :stable / :stable.<date>
-  # / :<date> ONLY after a successful QEMU boot to multi-user.target.
-  # See the comment on the Image metadata step below.
-  DEFAULT_TAG: "candidate"
+  CANDIDATE_TAG: "candidate"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -32,142 +42,40 @@ concurrency:
 
 jobs:
   build_push:
-    name: Build, sign kernel, push, cosign
-    # Self-hosted runner hosted on pve1 (VM 170 builder).
-    # See proxmox-pve1 ADR 0003. Fallback to ubuntu-24.04 by switching
-    # this line manually if the self-hosted runner is offline.
-    runs-on: [self-hosted, margine-builder]
-
+    name: Build, sign kernel, push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
       id-token: write
 
     steps:
-      - name: Prepare environment
-        run: |
-          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
-          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
-
-      - name: Clean workspace before checkout
-        # Self-hosted-only workaround: the rechunk action writes
-        # intermediate files (margine_stable/blobs/, *.manifest.json, ...)
-        # owned by root because it runs via `sudo podman`. On the next
-        # run, actions/checkout cleans the workspace as gha-runner and
-        # cannot unlink those files → EACCES. GHA-hosted runners don't
-        # hit this because every job gets a fresh VM. Nuke as root here.
-        if: runner.environment != 'github-hosted' && github.workspace != ''
-        run: |
-          if [[ -d "$GITHUB_WORKSPACE" ]]; then
-            sudo find "$GITHUB_WORKSPACE" -mindepth 1 -delete 2>/dev/null || true
-          fi
+      - name: Maximize build space
+        # ubuntu-24.04 has ~14 GiB of free disk by default; we need
+        # ~30+ GiB for the buildah cache + base image + Margine layers
+        # + rechunk staging. This action removes Android/Haskell/.NET/
+        # Swift/CodeQL/GHC pre-installed bundles, freeing ~30 GiB.
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need the helpers under scripts/ from margine-fedora-atomic
+          # via build.sh fetch; the checkout of THIS repo is just for
+          # Containerfile + build_files/.
+          fetch-depth: 1
 
-      - name: Maximize build space
-        # GHA-hosted runners only: this step uses sudo + paths
-        # (/opt/PyPy, /usr/lib/llvm-*, ...) that are specific to
-        # ubuntu-24.04 GHA images. Self-hosted (pve1 builder) has plenty
-        # of disk and no passwordless sudo for the runner user.
-        if: runner.environment == 'github-hosted'
-        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
-
-      - name: Builder storage health check (self-hosted only)
-        # Bug 14 guardrail: persistent rootless podman storage on the
-        # pve1 builder VM accumulates and occasionally gets internally
-        # inconsistent — buildah then segfaults during `buildah bud`
-        # (random go runtime panic in image-spec layer code). This is
-        # invisible to GHA-hosted runners which get a fresh VM per job.
-        #
-        # Strategy: try a cheap integrity check (`podman info` works
-        # only when storage is sane). If it fails OR if a marker file
-        # from the previous build shows a segfault happened, do a
-        # full `podman system reset --force`. Otherwise just an
-        # aggressive prune of dangling content to keep size bounded.
-        #
-        # 2026-05-31 update: every podman invocation in this step gets
-        # a hard `timeout` wrapper. Without one, a cancelled previous
-        # run can leave a `podman system reset --force` deadlocked in
-        # futex_wait (epoll on parent, futex on child); the IPC/lock
-        # state then blocks every fresh `podman info` indefinitely,
-        # and the storage health check itself hangs forever (observed:
-        # 30+ min). With timeouts we fail fast and the trap below
-        # cleans up so the NEXT step actually has a shot.
-        if: runner.environment != 'github-hosted'
-        timeout-minutes: 8
+      - name: Pre-build login to GHCR
+        # Authenticated pull of ghcr.io/ublue-os/bluefin-dx:stable
+        # (5000 req/h vs 100 anonymous).
         run: |
-          set -uo pipefail
-          NEED_RESET=0
-
-          cleanup_orphans() {
-            # Kill anything we left behind so the NEXT build can run.
-            pkill -9 -u "$(id -un)" -f 'podman|buildah|skopeo' 2>/dev/null || true
-            RUID="$(id -u)"
-            rm -rf "/run/user/${RUID}/containers" "/run/user/${RUID}/libpod" 2>/dev/null || true
-          }
-          trap 'rc=$?; [[ $rc -ne 0 ]] && cleanup_orphans; exit $rc' EXIT
-
-          # /tmp on this VM is a 3.9 GB tmpfs; previous failed builds
-          # may have left multi-GB oci-archives in it that prevent any
-          # subsequent step from writing temp files. Sweep them upfront.
-          sudo rm -f /tmp/*.oci.tar /tmp/margine*.tar 2>/dev/null || true
-          rm -f /var/tmp/*.oci.tar /var/tmp/margine*.tar 2>/dev/null || true
-
-          # Marker from previous build's post-step (see "Builder
-          # post-build hygiene" near the end of this workflow).
-          if [[ -f "$HOME/.cache/margine-builder-needs-reset" ]]; then
-            echo "Previous build flagged storage for reset."
-            NEED_RESET=1
-          fi
-
-          # Cheap integrity probe (15s ceiling — a healthy podman
-          # answers in <1s; anything slower means lock contention).
-          if ! timeout 15 podman info >/dev/null 2>&1; then
-            echo "podman info failed or timed out — storage likely corrupt."
-            cleanup_orphans
-            NEED_RESET=1
-          fi
-
-          if [[ $NEED_RESET -eq 1 ]]; then
-            echo "Performing podman system reset (auto-recovery)."
-            # 5 minutes is well above the typical reset time (~30s on
-            # a 15 GiB store); if it exceeds that, the reset itself is
-            # the problem and the trap below will clean up orphans.
-            if ! timeout 300 podman system reset --force; then
-              echo "::error::podman system reset hung — orphans will be killed by trap."
-              exit 1
-            fi
-            rm -f "$HOME/.cache/margine-builder-needs-reset"
-          else
-            echo "Storage healthy. Pruning dangling layers + containers > 24h."
-            timeout 60 podman container prune -f --filter "until=24h" || true
-            timeout 60 podman image prune -f --filter "dangling=true" || true
-          fi
-          df -h /
-
-      - name: Pre-build login to GHCR for base-image pull
-        # buildah pull of `ghcr.io/ublue-os/bluefin-dx:stable` is
-        # anonymous by default. ghcr.io applies a strict per-IP rate
-        # limit to anonymous pulls (~100/h, often 1 effective for fresh
-        # IPs); the self-hosted runner shares an IP with everything on
-        # the LAN, so a transient 403 Forbidden was hitting us as soon
-        # as the post-`qm reset` cache miss forced a real pull
-        # (2026-05-31). The GITHUB_TOKEN gives us 5000/h authenticated.
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | timeout 30 podman login ghcr.io \
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
-      - name: Get current date
-        id: date
-        run: |
-          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
-          echo "ymd=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
-
       - name: Stage MOK secrets for BuildKit
-        # Write the MOK key/cert/password from GH Actions secrets to disk
-        # so the buildah --secret mount can read them. Files are removed
-        # by the runner after the job ends.
         env:
           MOK_KEY:      ${{ secrets.MOK_KEY }}
           MOK_CERT:     ${{ secrets.MOK_CERT }}
@@ -180,27 +88,19 @@ jobs:
           printf '%s' "$MOK_PASSWORD" > /tmp/margine-secrets/mok-password
           chmod 600 /tmp/margine-secrets/*
 
+      - name: Get current date
+        id: date
+        run: |
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "ymd=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
+
       - name: Image metadata
         uses: docker/metadata-action@v5
         id: metadata
         with:
-          # Candidate/stable promotion model (introduced 2026-06-01):
-          # Build pushes ONLY candidate tags. Smoke-boot, after the
-          # image survives an end-to-end QEMU boot to multi-user.target,
-          # promotes the candidate-<date> digest to :stable, :stable.<date>
-          # and :<date>. This prevents an emergency-mode-on-boot image
-          # from ever reaching :stable, which is what `bootc upgrade`
-          # follows by default.
-          #
-          # The OCI metadata version label still uses "stable.<date>"
-          # because that's the version label the IMAGE *claims* to
-          # represent if it survives. It's just the registry routing
-          # (the tag) that delays promotion.
           tags: |
-            type=raw,value=${{ env.DEFAULT_TAG }}
-            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=sha,enable=${{ github.event_name == 'pull_request' }}
-            type=ref,event=pr
+            type=raw,value=${{ env.CANDIDATE_TAG }}
+            type=raw,value=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}}
           labels: |
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
@@ -209,7 +109,7 @@ jobs:
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
             org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
-            org.opencontainers.image.version=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
+            org.opencontainers.image.version=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}}
             io.artifacthub.package.deprecated=false
             io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
             io.artifacthub.package.license=Apache-2.0
@@ -233,343 +133,29 @@ jobs:
             --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
             --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
 
-      # Layer A: image-internals inspection. Runs BEFORE rechunk/push
-      # so a broken image never reaches :stable. Catches:
-      #   1. dracut silently producing no initramfs
-      #   2. initramfs missing crypto/btrfs/virtio_blk modules
-      #   3. initramfs at /boot/ instead of /usr/lib/modules/$KVER/
-      #
-      # Note: pre-rechunk ostree.linux label is INTENTIONALLY stale here
-      # (we inherit Bluefin's). The check that used to enforce label
-      # correctness has been MOVED to post-rechunk where it actually
-      # matters — rechunk regenerates all ostree-related labels from
-      # the actual image content.
-      - name: Verify image internals (Layer A guardrails)
-        run: |
-          set -euo pipefail
-
-          IMG="localhost/${{ env.IMAGE_NAME }}:$(echo '${{ steps.metadata.outputs.tags }}' | awk '{print $1}')"
-          echo "Inspecting image: $IMG"
-          podman images "$IMG"
-
-          # Helper: run command inside the image.
-          # Use bash explicitly so shell globs expand.
-          inspect() { podman run --rm --entrypoint="" "$IMG" bash -c "$1"; }
-
-          fail=0
-          check() {
-            local label="$1"; shift
-            if "$@"; then
-              echo "  ✓ $label"
-            else
-              echo "  ✗ FAIL: $label"
-              fail=1
-            fi
-          }
-
-          echo
-          echo "== 1. bootc-canonical initramfs path =="
-          check "/usr/lib/modules/*/initramfs.img exists" \
-            inspect 'test -f /usr/lib/modules/*/initramfs.img'
-          check "/usr/lib/modules/*/vmlinuz exists" \
-            inspect 'test -f /usr/lib/modules/*/vmlinuz'
-
-          echo
-          echo "== 2. initramfs size sanity (>50 MB; host-only is <30) =="
-          size=$(inspect 'stat -c%s /usr/lib/modules/*/initramfs.img' || echo 0)
-          echo "  initramfs size: $size bytes ($((size / 1024 / 1024)) MB)"
-          if (( size < 50000000 )); then
-            echo "  ✗ FAIL: initramfs too small — likely host-only / missing modules"
-            fail=1
-          else
-            echo "  ✓ size acceptable"
-          fi
-
-          echo
-          echo "== 2c. ostree-prepare-root inside initramfs (Bug 5 guardrail) =="
-          # Without this binary in initrd, switch-root cannot pivot /sysroot
-          # to the deployment view → "Failed to switch root: os-release file
-          # is missing" → dracut emergency shell. Caught by --add ostree in
-          # dracut. See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
-          # Bug 5.
-          if inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q 'usr/lib/ostree/ostree-prepare-root'"; then
-            echo "  ✓ ostree-prepare-root present in initramfs"
-          else
-            echo "  ✗ FAIL: ostree-prepare-root MISSING — initramfs cannot pivot to deployment"
-            fail=1
-          fi
-
-          echo
-          echo "== 3. critical kernel features (module in initramfs OR built into kernel) =="
-          # Map module-name → CONFIG symbol. A feature counts as present if
-          # EITHER (a) its .ko is in the initramfs OR (b) it's compiled into
-          # the kernel (CONFIG_*=y). CachyOS is monolithic for btrfs/virtio_blk
-          # (=y), so they never appear as .ko — earlier check was a false
-          # positive on those.
-          for entry in \
-              "dm-crypt:CONFIG_DM_CRYPT" \
-              "dm-mod:CONFIG_BLK_DEV_DM" \
-              "btrfs:CONFIG_BTRFS_FS" \
-              "virtio_blk:CONFIG_VIRTIO_BLK" ; do
-            mod="${entry%:*}"
-            cfg="${entry#*:}"
-            if inspect "lsinitrd /usr/lib/modules/*/initramfs.img 2>/dev/null | grep -q '/${mod}\\.ko'"; then
-              echo "  ✓ $mod (loadable module in initramfs)"
-            elif inspect "grep -q '^${cfg}=y' /usr/lib/modules/*/config"; then
-              echo "  ✓ $mod (built into kernel: ${cfg}=y)"
-            else
-              echo "  ✗ FAIL: $mod (no .ko in initramfs AND ${cfg} not =y)"
-              fail=1
-            fi
-          done
-
-          # (Removed: ostree.linux label check. Pre-rechunk this label
-          # is intentionally Bluefin's stale value; rechunk regenerates
-          # it from the actual /usr/lib/modules/ content. The check now
-          # lives in the post-rechunk verification step.)
-
-          echo
-          echo "== 4. boot-security infrastructure =="
-          check "mok-enroll.service enabled" \
-            inspect 'systemctl --root=/ is-enabled mok-enroll.service >/dev/null'
-          check "/usr/share/cert/MOK.der present" \
-            inspect 'test -f /usr/share/cert/MOK.der'
-          # (skip vmlinuz signature verify here — sbverify is part of
-          # sbsigntools which is transient and removed at end of kernel
-          # install. If signing was broken, MOK enrollment would fail
-          # at first boot — that's a Layer B smoke-boot concern.)
-
-          echo
-          echo "== 4b. Flatpak preinstall list (Bug 9 guardrail) =="
-          # Bluefin DX uses the upstream `flatpak preinstall` mechanism
-          # — /usr/share/flatpak/preinstall.d/*.preinstall — at boot.
-          # The legacy /etc/ublue-os/system-flatpaks.list is ignored.
-          PREINSTALL_FILE=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
-          if inspect "test -f $PREINSTALL_FILE"; then
-            echo "  ✓ $PREINSTALL_FILE present"
-          else
-            echo "  ✗ FAIL: $PREINSTALL_FILE missing — flatpaks won't be preinstalled"
-            fail=1
-          fi
-          for app in app.zen_browser.zen com.bitwarden.desktop org.gimp.GIMP org.gnome.gitlab.somas.Apostrophe; do
-            if inspect "grep -q '\\[Flatpak Preinstall $app\\]' $PREINSTALL_FILE"; then
-              echo "  ✓ entry [$app] present"
-            else
-              echo "  ✗ FAIL: entry [$app] missing from preinstall file"
-              fail=1
-            fi
-          done
-
-          echo
-          echo "== 5. Margine identity =="
-          check "NAME=Margine in /etc/os-release" \
-            inspect 'grep -q "^NAME=\"Margine\"" /etc/os-release'
-          check "ID=margine in /etc/os-release" \
-            inspect 'grep -q "^ID=margine" /etc/os-release'
-          # Bug 7 v2: LOGO= empty so GDM/widgets don't try to render
-          # a missing icon (and don't fall back to fedora-logo-sprite).
-          check "no LOGO= line in /etc/os-release" \
-            inspect '! grep -q "^LOGO=" /etc/os-release'
-          # Bug 7 v2: fedora-logo-sprite.svg replaced with empty SVG
-          # (Bluefin uses it for their "F"; we want no logo at all).
-          check "fedora-logo-sprite.svg is the empty placeholder (<200 bytes)" \
-            inspect '[[ $(stat -c%s /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg 2>/dev/null) -lt 200 ]]'
-
-          echo
-          echo "== 5b. /etc/passwd + /etc/group populated from factory =="
-          # If only "root" and the install-time user are present, the
-          # post-rebase ostree 3-way merge will strip system users and
-          # cause boot-time "Unknown group 'audio/tty/kvm/...'" errors.
-          # build.sh seeds these from /usr/lib/{passwd,group}.
-          passwd_n=$(inspect 'wc -l < /etc/passwd' || echo 0)
-          group_n=$(inspect 'wc -l < /etc/group' || echo 0)
-          echo "  /etc/passwd entries: $passwd_n"
-          echo "  /etc/group entries:  $group_n"
-          if (( passwd_n >= 30 )) && (( group_n >= 50 )); then
-            echo "  ✓ system users + groups present (will survive rechunk)"
-          else
-            echo "  ✗ FAIL: /etc/passwd or /etc/group looks stripped — Bug 6 will recur"
-            fail=1
-          fi
-          for need_group in audio disk kvm tty utmp tss; do
-            if inspect "grep -q '^${need_group}:' /etc/group"; then
-              echo "  ✓ group '$need_group' present"
-            else
-              echo "  ✗ FAIL: group '$need_group' missing from /etc/group"
-              fail=1
-            fi
-          done
-
-          echo
-          echo "== 6. Plymouth theme =="
-          check "Plymouth default theme = margine" \
-            inspect 'plymouth-set-default-theme 2>/dev/null | grep -q margine'
-          check "/usr/share/plymouth/themes/margine exists" \
-            inspect 'test -d /usr/share/plymouth/themes/margine'
-          check "plymouth-plugin-script.so present" \
-            inspect 'test -f /usr/lib64/plymouth/script.so'
-
-          echo
-          echo "== 7. margine-* helpers in /usr/bin =="
-          for h in \
-              configure-default-applications \
-              configure-gnome-app-folders \
-              configure-gnome-appearance \
-              configure-gnome-extensions \
-              configure-gnome-keybindings \
-              configure-home-layout \
-              install-user-extensions \
-              validate-atomic-layout \
-              validate-cachyos-kernel \
-              validate-hardware-media-stack \
-              validate-gaming-runtime \
-              collect-diagnostics \
-              fetch ; do
-            check "/usr/bin/margine-$h" \
-              inspect "test -x /usr/bin/margine-$h"
-          done
-
-          echo
-          echo "== 8. ujust recipes + declarations =="
-          check "/usr/share/ublue-os/just/60-custom.just" \
-            inspect 'test -f /usr/share/ublue-os/just/60-custom.just'
-          check "/usr/share/margine/declarations.yaml" \
-            inspect 'test -f /usr/share/margine/declarations.yaml'
-          check "/usr/share/margine/ascii-logo.txt" \
-            inspect 'test -f /usr/share/margine/ascii-logo.txt'
-
-          echo
-          echo "== 9. branding assets =="
-          check "/usr/share/pixmaps/margine-logo.png" \
-            inspect 'test -f /usr/share/pixmaps/margine-logo.png'
-          check "/usr/share/backgrounds/margine/margine.png" \
-            inspect 'test -f /usr/share/backgrounds/margine/margine.png'
-          check "/etc/dconf/db/gdm.d/01-margine-background" \
-            inspect 'test -f /etc/dconf/db/gdm.d/01-margine-background'
-          check "/etc/issue mentions Margine" \
-            inspect 'grep -q Margine /etc/issue'
-
-          echo
-          echo "== 10. systemd ordering (cycle/syntax pre-flight) =="
-          # Catch ordering cycles at BUILD time instead of letting them
-          # trip the next boot into emergency.target. Bug history:
-          # 2026-06-01 margine-seed-etc-passwd.service had a cycle
-          # through local-fs.target → systemd-tmpfiles-setup-dev →
-          # back to sysusers; took a power-cycle to recover.
-          #
-          # systemd-analyze inside the built image checks the WHOLE
-          # default.target dependency graph against the same logic the
-          # init uses at boot. If it errors here, the image would have
-          # errored at first boot — better to fail the build.
-          if inspect 'command -v systemd-analyze' >/dev/null 2>&1; then
-            if ! inspect 'SYSTEMD_OFFLINE=1 systemd-analyze verify default.target 2>&1'; then
-              echo "  ✗ systemd-analyze verify reported errors in default.target"
-              fail=1
-            else
-              echo "  ✓ systemd-analyze verify clean on default.target"
-            fi
-          else
-            echo "  (skipped: systemd-analyze not present in image)"
-          fi
-
-          echo
-          if (( fail )); then
-            echo "ONE OR MORE LAYER A CHECKS FAILED — image will NOT be published."
-            exit 1
-          fi
-          echo "All Layer A image checks PASSED. Proceeding to push."
-
-      # Move built image to root podman storage with an unqualified tag,
-      # so rechunk (which runs `sudo podman create REF`) can find it.
-      #
-      # The buildah-build action stores its output in the GHA user's
-      # podman storage as `localhost/margine:stable`. The rechunk action
-      # then does `sudo podman create localhost/margine:stable` which:
-      #   (a) doesn't see the user-storage image (sudo = root storage)
-      #   (b) interprets `localhost/...` as a remote registry hostname
-      #       and tries to ping https://localhost:443 → connection
-      #       refused → build fails.
-      #
-      # Three approaches tried, each one because the previous failed:
-      #
-      # 1. `podman save | sudo podman load` — original. Failed 2026-06-01
-      #    night with "file integrity checksum failed for sysroot/
-      #    ostree/repo/objects/de/..." — a 15 GB TAR pipe under memory
-      #    pressure on a degraded ZFS lost blob integrity silently.
-      #
-      # 2. `sudo skopeo copy containers-storage:... containers-storage:...`
-      #    — failed 2026-06-01 morning with "reference does not resolve
-      #    to an image ID". Skopeo run as root looks in /var/lib/
-      #    containers (root storage), but buildah-build@v2 leaves the
-      #    image in ~gha-runner/.local/share/containers (rootless).
-      #    Specifying [overlay@<rootless>] explicitly hits permission
-      #    issues on the rootless lockfile.
-      #
-      # 3. Current: dump as oci-archive (rootless), verify sha256 of the
-      #    archive file, then skopeo copy oci-archive into root storage.
-      #    oci-archive is the OCI standard format and has its own per-blob
-      #    SHA-256 verification at parse time. The intermediate file uses
-      #    ~5 GB of disk (cleaned at end of job by GHA workspace cleanup).
       - name: Move built image to root storage for rechunk
+        # rechunk uses `sudo podman create` and looks in root storage;
+        # buildah leaves the image in the gha user's rootless storage.
+        # Use oci-archive intermediate (same approach as build.yml).
         run: |
           set -euo pipefail
-          IMG="${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-          # NB: /var/tmp, not /tmp. On the self-hosted builder VM 170
-          # /tmp is a 3.9 GB tmpfs (RAM-backed); a ~5 GB OCI archive
-          # cannot fit there. /var/tmp lives on the rootfs disk
-          # (~80 GB, ~55 GB free during a build).
-          ARCHIVE="/var/tmp/${{ env.IMAGE_NAME }}.oci.tar"
-
-          echo "Step 1: dump rootless image to oci-archive"
+          IMG="${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+          ARCHIVE="/tmp/${{ env.IMAGE_NAME }}.oci.tar"
           rm -f "$ARCHIVE"
           podman save --format oci-archive --output "$ARCHIVE" "localhost/$IMG"
-          ARCHIVE_SIZE=$(stat -c '%s' "$ARCHIVE")
-          ARCHIVE_SHA=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
-          echo "  size: $((ARCHIVE_SIZE / 1024 / 1024)) MiB"
-          echo "  sha256: $ARCHIVE_SHA"
-
-          echo "Step 2: verify archive sha256 is stable (defend against ZFS silent corruption)"
-          ARCHIVE_SHA_RECHECK=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
-          if [[ "$ARCHIVE_SHA" != "$ARCHIVE_SHA_RECHECK" ]]; then
-            echo "::error::archive sha256 changed between writes — disk silently corrupted bytes"
-            exit 1
-          fi
-
-          echo "Step 3: skopeo copy oci-archive → root containers-storage"
           sudo skopeo copy --retry-times 3 --preserve-digests \
             "oci-archive:$ARCHIVE" \
             "containers-storage:$IMG"
-
-          echo "Step 4: sanity check"
-          sudo podman image exists "$IMG" \
-            || { echo "::error::image not found in root storage after skopeo copy"; exit 1; }
+          sudo podman image exists "$IMG"
           sudo podman images
-
-          echo "Step 5: cleanup intermediate archive"
           rm -f "$ARCHIVE"
 
-      # Fix B — rechunk the image into ostree-canonical form. This is
-      # the architecturally correct step that:
-      #   1. Re-commits the image content to OSTree, regenerating
-      #      ostree.commit, ostree.linux, ostree.bootable, etc., from
-      #      what's actually in the image (vs the stale labels we
-      #      inherited from Bluefin DX).
-      #   2. Sets up composefs correctly so /usr is mounted in time for
-      #      systemd's switch-root validation (eliminates the entire
-      #      class of "os-release missing at switch-root" bugs).
-      #   3. Re-chunks into optimal layers (typically 5-10x smaller
-      #      delta updates, which uupd users will appreciate).
-      #
-      # See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
-      # ("Meta-lessons → Inherited OCI labels are dangerous") for why
-      # we need this. The matching memory entry is
-      # project_todo_margine_rechunk_fixB.md.
-      - name: ReChunk image (ostree-canonical commit + label refresh)
+      - name: ReChunk image
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
         with:
-          ref: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
-          version: ${{ env.DEFAULT_TAG }}.${{ steps.date.outputs.ymd }}
+          ref: ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+          version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
           labels: |
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
@@ -583,52 +169,28 @@ jobs:
           revision: ${{ github.sha }}
 
       - name: Login to GHCR
-        # docker/login-action requires `docker` in PATH. Our self-hosted
-        # runner only has podman/skopeo. Use podman login writing to the
-        # docker config.json location so cosign sign (which reads
-        # ~/.docker/config.json) also picks it up.
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p ~/.docker
-          chmod 700 ~/.docker
-          echo "${GHCR_TOKEN}" | podman login \
-            --authfile ~/.docker/config.json \
-            -u "${GHCR_USER}" \
-            --password-stdin \
-            ghcr.io
-          chmod 600 ~/.docker/config.json
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo skopeo login \
+            -u "${{ github.actor }}" --password-stdin ghcr.io
 
-      # Push the rechunked image (which is an oci:dir on disk) to GHCR
-      # under every tag. Use skopeo copy because rechunk's output is
-      # oci-format, not loaded into podman. --all preserves both arch
-      # variants if any (we're x86_64-only today, but cheap).
       - name: Push rechunked image to GHCR
-        id: push
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
           set -euo pipefail
-          IMG_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
-          # `--dest-creds=USER:TOKEN` is the right flag for `skopeo copy`
-          # (which has a separate source/dest). The blobs only upload on
-          # the first tag; subsequent tags just update the registry
-          # pointers, so this is fast.
+          IMG_FULL="${IMAGE_REGISTRY,,}/${IMAGE_NAME,,}"
           for tag in ${{ steps.metadata.outputs.tags }}; do
-            echo "Pushing → docker://${IMG_FULL}:${tag}"
-            sudo skopeo copy --all \
+            sudo skopeo copy --retry-times 3 \
               --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               "${{ steps.rechunk.outputs.ref }}" \
               "docker://${IMG_FULL}:${tag}"
           done
 
       - name: Install Cosign
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         uses: sigstore/cosign-installer@v3
 
       - name: Sign image with cosign
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ""
@@ -642,41 +204,6 @@ jobs:
         if: always()
         run: rm -rf /tmp/margine-secrets
 
-      - name: Builder post-build hygiene (self-hosted only)
-        # Bug 14: keep podman storage from accumulating between builds.
-        # On success: prune everything not currently referenced; cache
-        # mounts still survive because they live in BuildKit storage.
-        # On failure (including cancellation): drop a marker so the
-        # NEXT build's storage health check does a full system reset
-        # before doing anything, and kill any podman/buildah/skopeo
-        # processes left behind by the cancelled job — those are what
-        # caused the 2026-05-31 multi-hour hang.
-        if: always() && runner.environment != 'github-hosted'
-        timeout-minutes: 3
-        run: |
-          mkdir -p "$HOME/.cache"
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "Build succeeded → aggressive prune (keep cache mounts via filter)."
-            timeout 60 podman image prune -af --filter "until=24h" 2>&1 | tail -3 || true
-            timeout 60 podman container prune -f 2>&1 | tail -3 || true
-            rm -f "$HOME/.cache/margine-builder-needs-reset"
-          else
-            echo "Build failed/cancelled → mark storage for reset on next build and kill leftovers."
-            touch "$HOME/.cache/margine-builder-needs-reset"
-            pkill -9 -u "$(id -un)" -f 'podman|buildah|skopeo' 2>/dev/null || true
-            RUID="$(id -u)"
-            rm -rf "/run/user/${RUID}/containers" "/run/user/${RUID}/libpod" 2>/dev/null || true
-          fi
-          df -h /
-
-      # Send a push notification to Daniel's phone via ntfy.sh. Topic
-      # URL lives in a GH secret (unguessable string acts as the
-      # subscription token). Phone app: ntfy from F-Droid / App Store
-      # subscribed to the same topic.
-      #
-      # NB: this is the build outcome. The promotion to :stable happens
-      # in smoke-boot.yml only if QEMU validates the image; that workflow
-      # sends its own notification on the promotion event.
       - name: Notify ntfy (build outcome)
         if: always()
         env:
@@ -693,21 +220,25 @@ jobs:
               TITLE="Build OK → :candidate pushed"
               PRIO="default"
               TAGS="white_check_mark,construction"
+              MSG="Run #${{ github.run_number }} done. Smoke-boot will now QEMU-validate and promote to :stable if green."
               ;;
             failure)
               TITLE="Build FAILED"
               PRIO="high"
               TAGS="x,fire"
+              MSG="See run for details."
               ;;
             cancelled)
               TITLE="Build cancelled"
               PRIO="low"
               TAGS="warning"
+              MSG=""
               ;;
             *)
-              TITLE="Build status: $STATUS"
+              TITLE="Build status: ${STATUS}"
               PRIO="default"
               TAGS="warning"
+              MSG=""
               ;;
           esac
           curl --silent --show-error --fail \
@@ -715,5 +246,5 @@ jobs:
             -H "Priority: ${PRIO}" \
             -H "Tags: ${TAGS}" \
             -H "Click: ${RUN_URL}" \
-            -d "Run ${{ github.run_number }} on $(date -u +%H:%MZ). Commit ${GITHUB_SHA:0:7}." \
+            -d "$MSG" \
             "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"

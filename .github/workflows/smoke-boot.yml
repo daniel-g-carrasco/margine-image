@@ -33,9 +33,9 @@ on:
   workflow_dispatch:
     inputs:
       image_ref:
-        description: 'OCI ref to smoke-boot (default: :stable)'
+        description: 'OCI ref to smoke-boot (default: :candidate)'
         required: false
-        default: 'ghcr.io/daniel-g-carrasco/margine:stable'
+        default: 'ghcr.io/daniel-g-carrasco/margine:candidate'
   # Auto-trigger after every successful Build Margine image on main.
   # The guard `if: github.event.workflow_run.conclusion == 'success'`
   # on the job ensures we don't waste a runner on cancelled / failed
@@ -55,6 +55,9 @@ jobs:
       || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 40   # bootc-image-builder ~5min + first-boot ~12-15min + slack
+    permissions:
+      contents: read
+      packages: write   # needed for the candidate→stable promotion step
 
     steps:
       - name: Install QEMU + OVMF + tools
@@ -188,3 +191,30 @@ jobs:
           name: smoke-boot-serial-log
           path: serial.log
           retention-days: 7
+
+      # Promotion step: only runs when the boot actually reached
+      # multi-user.target (steps.boot.outputs.passed == 'true').
+      # Copies the *exact digest* of :candidate (which we just tested)
+      # to the public-facing tags :stable, :stable.<date>, :<date>.
+      # Using --preserve-digests ensures the bytes on disk are identical
+      # to what we booted — no rebuild, no re-rechunk, no surprise.
+      - name: Promote candidate → stable (only if boot passed)
+        if: success() && steps.boot.outputs.passed == 'true'
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATE_TAG="$(date -u +%Y%m%d)"
+          SRC_REF="${{ github.event.inputs.image_ref || 'ghcr.io/daniel-g-carrasco/margine:candidate' }}"
+          # Strip any explicit candidate.<date> in favor of plain :candidate
+          # so we always promote the latest tested candidate, not a stale one.
+          REGISTRY_IMAGE="${SRC_REF%:*}"
+          echo "$GHCR_TOKEN" | sudo skopeo login --username "$GHCR_USER" --password-stdin ghcr.io
+          for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
+            echo "Promoting → ${REGISTRY_IMAGE}:${promo_tag}"
+            sudo skopeo copy --retry-times 3 --preserve-digests \
+              "docker://${SRC_REF}" \
+              "docker://${REGISTRY_IMAGE}:${promo_tag}"
+          done
+          echo "Candidate digest promoted to :stable, :stable.${DATE_TAG}, :${DATE_TAG}"

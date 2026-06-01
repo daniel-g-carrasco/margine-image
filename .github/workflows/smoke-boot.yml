@@ -192,6 +192,35 @@ jobs:
           path: serial.log
           retention-days: 7
 
+      - name: Notify ntfy (boot test outcome)
+        if: always() && steps.boot.outcome != 'skipped'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          if [[ -z "${NTFY_URL:-}" ]]; then
+            echo "NTFY_TOPIC_URL secret not set, skipping notification."
+            exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [[ "${{ steps.boot.outputs.passed }}" == "true" ]]; then
+            TITLE="QEMU boot OK → promoting :stable"
+            PRIO="default"
+            TAGS="rocket,white_check_mark"
+            MSG="Candidate is healthy. New :stable available for bootc upgrade."
+          else
+            TITLE="QEMU boot FAILED — :stable NOT advanced"
+            PRIO="high"
+            TAGS="x,boom"
+            MSG="Boot never reached multi-user.target. Investigate before any bootc upgrade."
+          fi
+          curl --silent --show-error --fail \
+            -H "Title: ${TITLE}" \
+            -H "Priority: ${PRIO}" \
+            -H "Tags: ${TAGS}" \
+            -H "Click: ${RUN_URL}" \
+            -d "$MSG" \
+            "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"
+
       # Promotion step: only runs when the boot actually reached
       # multi-user.target (steps.boot.outputs.passed == 'true').
       # Copies the *exact digest* of :candidate (which we just tested)

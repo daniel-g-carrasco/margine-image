@@ -668,3 +668,52 @@ jobs:
             rm -rf "/run/user/${RUID}/containers" "/run/user/${RUID}/libpod" 2>/dev/null || true
           fi
           df -h /
+
+      # Send a push notification to Daniel's phone via ntfy.sh. Topic
+      # URL lives in a GH secret (unguessable string acts as the
+      # subscription token). Phone app: ntfy from F-Droid / App Store
+      # subscribed to the same topic.
+      #
+      # NB: this is the build outcome. The promotion to :stable happens
+      # in smoke-boot.yml only if QEMU validates the image; that workflow
+      # sends its own notification on the promotion event.
+      - name: Notify ntfy (build outcome)
+        if: always()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          if [[ -z "${NTFY_URL:-}" ]]; then
+            echo "NTFY_TOPIC_URL secret not set, skipping notification."
+            exit 0
+          fi
+          STATUS="${{ job.status }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          case "$STATUS" in
+            success)
+              TITLE="Build OK → :candidate pushed"
+              PRIO="default"
+              TAGS="white_check_mark,construction"
+              ;;
+            failure)
+              TITLE="Build FAILED"
+              PRIO="high"
+              TAGS="x,fire"
+              ;;
+            cancelled)
+              TITLE="Build cancelled"
+              PRIO="low"
+              TAGS="warning"
+              ;;
+            *)
+              TITLE="Build status: $STATUS"
+              PRIO="default"
+              TAGS="warning"
+              ;;
+          esac
+          curl --silent --show-error --fail \
+            -H "Title: ${TITLE}" \
+            -H "Priority: ${PRIO}" \
+            -H "Tags: ${TAGS}" \
+            -H "Click: ${RUN_URL}" \
+            -d "Run ${{ github.run_number }} on $(date -u +%H:%MZ). Commit ${GITHUB_SHA:0:7}." \
+            "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"

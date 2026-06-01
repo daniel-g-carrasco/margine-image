@@ -685,6 +685,154 @@ ln -sf ../margine-seed-etc-passwd.service \
    /usr/lib/systemd/system/sysinit.target.wants/margine-seed-etc-passwd.service
 log "Wired margine-seed-etc-passwd.service to sysinit.target"
 
+# ---------------------------------------------------------------------------
+# Observability helpers: notify the user when (a) the build pipeline goes
+# stale (no new :stable on ghcr for >7 days = something broken upstream),
+# and (b) when an actual upgrade has just occurred (so the user knows
+# their reboot did something).
+#
+# Both helpers run as user-systemd (no root needed at runtime). They use
+# the freedesktop notification API via notify-send, so they integrate
+# with GNOME's normal popup stream.
+# ---------------------------------------------------------------------------
+
+log "Installing /usr/libexec/margine-staleness-check (staleness watchdog)"
+cat > /usr/libexec/margine-staleness-check <<'PYEOF'
+#!/usr/bin/env python3
+"""Notify user if ghcr.io/.../margine:stable hasn't been refreshed
+in >7 days. Either the build pipeline is broken, or upstream has
+genuinely paused — either way the user should know."""
+import json
+import subprocess
+import sys
+import time
+
+WARN_AGE_DAYS = 7
+CRIT_AGE_DAYS = 14
+
+def run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+# Get current booted image reference
+r = run(["bootc", "status", "--json"])
+if r.returncode != 0:
+    sys.exit(0)  # no bootc, no-op
+booted = json.loads(r.stdout)["status"]["booted"]
+image_ref = booted["image"]["image"]["image"]  # e.g. ghcr.io/daniel-g-carrasco/margine:stable
+
+# Inspect upstream :stable to find its creation timestamp
+r = run(["skopeo", "inspect", "--no-tags", f"docker://{image_ref}"])
+if r.returncode != 0:
+    sys.exit(0)  # network down? skip silently this round
+created = json.loads(r.stdout)["Created"]  # ISO 8601
+
+created_ts = time.mktime(time.strptime(created.split(".")[0], "%Y-%m-%dT%H:%M:%S"))
+age_days = (time.time() - created_ts) / 86400
+
+if age_days < WARN_AGE_DAYS:
+    sys.exit(0)
+
+urgency = "critical" if age_days >= CRIT_AGE_DAYS else "normal"
+title = "Margine: upstream stale"
+body  = f"Latest :stable is {age_days:.0f} days old. Build pipeline may be broken."
+subprocess.run([
+    "notify-send", "-u", urgency, "-a", "Margine",
+    "-i", "system-software-update", title, body,
+])
+PYEOF
+chmod 0755 /usr/libexec/margine-staleness-check
+
+log "Installing /usr/libexec/margine-upgrade-notify (post-upgrade notification)"
+cat > /usr/libexec/margine-upgrade-notify <<'PYEOF'
+#!/usr/bin/env python3
+"""On first graphical login after a reboot, if the booted deployment's
+image digest differs from the one recorded at last run, raise a
+notification telling the user *which version they just upgraded to*.
+Reassures them that the reboot actually did something."""
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+state_dir = pathlib.Path(os.environ["HOME"]) / ".cache" / "margine"
+state_dir.mkdir(parents=True, exist_ok=True)
+state_file = state_dir / "last-booted-digest"
+
+r = subprocess.run(["bootc", "status", "--json"], capture_output=True, text=True, timeout=15)
+if r.returncode != 0:
+    sys.exit(0)
+booted = json.loads(r.stdout)["status"]["booted"]
+digest  = booted["image"].get("imageDigest", "?")
+version = booted["image"].get("version", "?")
+
+previous = state_file.read_text().strip() if state_file.exists() else ""
+
+if previous and previous != digest:
+    title = "Margine updated"
+    body  = f"Now running: {version}\nDigest: {digest[:23]}…"
+    subprocess.run([
+        "notify-send", "-u", "normal", "-a", "Margine",
+        "-i", "system-software-update", title, body,
+    ])
+
+state_file.write_text(digest)
+PYEOF
+chmod 0755 /usr/libexec/margine-upgrade-notify
+
+# User systemd units live in /etc/skel so every NEW user account picks
+# them up on first login. Existing accounts get them through the bootstrap
+# helper (configure-home-layout, idempotent).
+mkdir -p /etc/skel/.config/systemd/user/timers.target.wants \
+         /etc/skel/.config/systemd/user/default.target.wants
+
+# Staleness watchdog: timer every 12h after boot.
+cat > /etc/skel/.config/systemd/user/margine-staleness.service <<'UNIT'
+[Unit]
+Description=Margine: check ghcr.io/:stable staleness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-staleness-check
+UNIT
+
+cat > /etc/skel/.config/systemd/user/margine-staleness.timer <<'UNIT'
+[Unit]
+Description=Margine: schedule staleness check every 12h
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=12h
+AccuracySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+ln -sf ../margine-staleness.timer \
+   /etc/skel/.config/systemd/user/timers.target.wants/margine-staleness.timer
+
+# Upgrade notify: oneshot, fires on every graphical login.
+cat > /etc/skel/.config/systemd/user/margine-upgrade-notify.service <<'UNIT'
+[Unit]
+Description=Margine: notify if booted deployment changed since last login
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-upgrade-notify
+
+[Install]
+WantedBy=default.target
+UNIT
+ln -sf ../margine-upgrade-notify.service \
+   /etc/skel/.config/systemd/user/default.target.wants/margine-upgrade-notify.service
+
+log "Wired observability user units (staleness 12h + upgrade-notify) into /etc/skel"
+
 log "Installing /etc/xdg/autostart/margine-first-boot.desktop"
 mkdir -p /etc/xdg/autostart
 cat > /etc/xdg/autostart/margine-first-boot.desktop <<'EOF'

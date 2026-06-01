@@ -1,19 +1,14 @@
 <div align="center">
 
-<img src="assets/branding/margine-logo-wide.png" alt="Margine" width="500">
+<img src="assets/branding/margine-logo-wide.png" alt="Margine" width="420">
 
-# margine-fedora-atomic
+### The *what* of Margine.
 
-**Il "cosa" di Margine.** Spec dichiarativa, helper di configurazione,
-e validator dello stato di sistema per la
-[distro Margine](https://github.com/daniel-g-carrasco/margine-image).
+Declarative spec, configuration helpers, and system-state validators for
+the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
-<img src="https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/docs/screenshots/lock-screen.png" alt="Margine lock screen" width="46%">
-&nbsp;
-<img src="https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/docs/screenshots/activities-search.png" alt="Margine activities" width="46%">
-
-[**📥 Scarica Margine**](https://files.the-empty.place/) ·
-[**📖 Documentazione**](docs/README.md) ·
+[**📥 Download Margine**](https://files.the-empty.place/) ·
+[**📖 Documentation**](docs/README.md) ·
 [**📋 Roadmap**](docs/roadmap.md) ·
 [**🛠 Build pipeline**](https://github.com/daniel-g-carrasco/margine-image)
 
@@ -21,79 +16,79 @@ e validator dello stato di sistema per la
 
 ---
 
-> **Cerchi la distro?** [margine-image](https://github.com/daniel-g-carrasco/margine-image)
-> è il punto giusto: ha il README con cosa Margine È, e le istruzioni di
-> install/download. Questo repo è il *codice sorgente* di tutto quello
-> che la distro applica al sistema.
+> **Looking for the distro itself?** Go to
+> [margine-image](https://github.com/daniel-g-carrasco/margine-image)
+> — that repo's README has *what Margine is*, screenshots, and the
+> download/install instructions. This repo is the *source code* of
+> everything the distro applies to the system.
 
-## A cosa serve questo repo
+## What this repo is for
 
-Margine non è "una cartella di dotfile copiati a mano". È una **distro
-costruita da una pipeline CI**, e quella pipeline (in
+Margine isn't "a folder of dotfiles copied by hand". It's a **distribution
+built by a CI pipeline**, and that pipeline (in
 [`margine-image`](https://github.com/daniel-g-carrasco/margine-image))
-ha bisogno di sapere:
+needs to know:
 
-- **Cosa** vogliamo nel sistema (quali estensioni, app, keybind, app folder,
-  default applications, home layout, ecc.)
-- **Come** applicarlo (script idempotenti che leggono la spec)
-- **Come verificarlo** (validator read-only che dicono "OK" o "drift")
+- **What** we want on the system (which extensions, apps, keybinds,
+  app folders, default applications, home layout, …)
+- **How** to apply it (idempotent scripts that read the spec)
+- **How to verify it** (read-only validators that report "OK" or "drift")
 
-Questo repo è esattamente quel "cosa + come + verifica".
+This repo is exactly that "what + how + verify".
 
-| Cartella | Contenuto |
+| Directory | Contents |
 | --- | --- |
-| `declarations/` | La **spec dichiarativa** (`margine-atomic.yaml`). Single source of truth per estensioni GNOME, app folder, keybind, gsettings, app preinstallate, home layout. |
-| `scripts/configure-*` | Helper idempotenti che leggono la spec e applicano. Default dry-run; pass `--apply` per agire. Diventano `/usr/bin/margine-configure-*` nell'immagine. |
-| `scripts/validate-*` | Validator read-only (atomic layout, kernel CachyOS, hardware/media stack, gaming runtime, acceptance test end-to-end). Diventano `/usr/bin/margine-validate-*`. |
-| `scripts/install-user-extensions` | Installa le estensioni GNOME non-RPM (o-tiling, Hide Cursor, Caffeine, Tiling Shell, Search Light) sotto `~/.local/share/gnome-shell/extensions/`. |
-| `docs/` | Architettura, ADR, install lab, lessons-learned, runbook validazione, roadmap. |
-| `assets/branding/` | Logo, wallpaper, tema Plymouth. |
-| `files/margine-fetch/` | Script `margine-fetch` + config fastfetch + ASCII logo. |
+| `declarations/` | The **declarative spec** (`margine-atomic.yaml`). Single source of truth for GNOME extensions, app folders, keybinds, gsettings, preinstalled apps, home layout. |
+| `scripts/configure-*` | Idempotent helpers that read the spec and apply. Default to dry-run; pass `--apply` to act. Become `/usr/bin/margine-configure-*` in the image. |
+| `scripts/validate-*` | Read-only validators (atomic layout, CachyOS kernel, hardware/media stack, gaming runtime, end-to-end acceptance test). Become `/usr/bin/margine-validate-*`. |
+| `scripts/install-user-extensions` | Installs the non-RPM GNOME extensions (o-tiling, Hide Cursor, Caffeine, Tiling Shell, Search Light) under `~/.local/share/gnome-shell/extensions/`. |
+| `docs/` | Architecture, ADRs, install lab, lessons-learned, validation runbook, roadmap. |
+| `assets/branding/` | Logos, wallpaper, Plymouth theme. |
+| `files/margine-fetch/` | `margine-fetch` script + fastfetch config + ASCII logo. |
 
-## Quick check su un sistema deployato
+## Quick check on a deployed system
 
 ```sh
-margine-validate-atomic-layout          # ostree, mount, Secure Boot, TPM2
-margine-validate-cachyos-kernel         # versione, firma, MOK
+margine-validate-atomic-layout          # ostree, mounts, Secure Boot, TPM2
+margine-validate-cachyos-kernel         # version, signature, MOK
 margine-validate-hardware-media-stack   # Mesa/Vulkan/VA-API/PipeWire
 margine-validate-gaming-runtime         # gaming runtime
-margine-collect-diagnostics             # snapshot per troubleshooting
+margine-collect-diagnostics             # snapshot for troubleshooting
 ```
 
-Plus c'è `scripts/validate-margine-system` (acceptance test end-to-end
-con verdetto PASS/FAIL singolo) che è usato sia in CI sia dopo un
-`bootc upgrade` manuale.
+Plus there's `scripts/validate-margine-system` (end-to-end acceptance
+test with a single PASS/FAIL verdict line) used both in CI and after a
+manual `bootc upgrade`.
 
-## Documentazione
+## Documentation
 
-Indice completo: [**docs/README.md**](docs/README.md). Per chi inizia:
+Full index: [**docs/README.md**](docs/README.md). To get started:
 
-| Doc | Cosa copre |
+| Doc | What it covers |
 | --- | --- |
-| [00-goals](docs/00-goals.md) | Obiettivi, non-obiettivi, ipotesi di lavoro |
+| [00-goals](docs/00-goals.md) | Goals, non-goals, working hypotheses |
 | [01-architecture](docs/01-architecture.md) | bootc / composefs / rpm-ostree model |
-| [04-validation](docs/04-validation.md) | Validator read-only + acceptance test |
-| [09-declarative-model](docs/09-declarative-model.md) | Come la spec guida gli helper |
-| [18-observability](docs/18-observability.md) | ntfy + staleness + post-upgrade notify |
-| [19-iso-distribution](docs/19-iso-distribution.md) | Pipeline ISO via Internet Archive |
-| [roadmap](docs/roadmap.md) | Stato attuale delle fasi del progetto |
-| [adr/](docs/adr) | Decisioni architetturali |
-| [lessons-learned/](docs/lessons-learned) | Postmortem operativi |
+| [04-validation](docs/04-validation.md) | Read-only validators + acceptance test |
+| [09-declarative-model](docs/09-declarative-model.md) | How the spec drives the helpers |
+| [18-observability](docs/18-observability.md) | ntfy + staleness check + post-upgrade notify |
+| [19-iso-distribution](docs/19-iso-distribution.md) | ISO pipeline via Internet Archive |
+| [roadmap](docs/roadmap.md) | Current state of the project phases |
+| [adr/](docs/adr) | Architectural decisions |
+| [lessons-learned/](docs/lessons-learned) | Operational postmortems |
 
-## Contribuire
+## Contributing
 
-Modificare *cosa* fa Margine = modificare
+To change *what* Margine does = edit
 [`declarations/margine-atomic.yaml`](declarations/margine-atomic.yaml).
-PR welcome. Ad ogni run del build pipeline (in `margine-image`) le
-nuove versioni di spec e helper vengono raccolte automaticamente.
+PR welcome. On every run of the build pipeline (in `margine-image`),
+the new versions of spec and helpers are picked up automatically.
 
-Modificare *come* lo fa = modificare uno script in `scripts/`.
-Tutti sono Python o shell, tutti idempotenti, tutti con `--apply` per
-distinguere dry-run da modifica reale.
+To change *how* it does it = edit a script in `scripts/`. All are
+Python or shell, all idempotent, all with `--apply` to distinguish
+dry-run from actual change.
 
-Modificare *come si verifica* = aggiungere un check a uno dei
-`validate-*`, o un nuovo validator se stiamo coprendo una superficie
-nuova.
+To change *how it's verified* = add a check to one of the `validate-*`,
+or a new validator if we're covering new surface area.
 
 ## License
 

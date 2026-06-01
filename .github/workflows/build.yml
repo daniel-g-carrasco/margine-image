@@ -9,6 +9,26 @@
 # is exactly the "container that wakes up when a job arrives and
 # shuts down after" model we wanted.
 #
+# Pipeline shape (2026-06-01 split, see
+# ~/.claude/.../memory/feedback_ci_split_long_jobs.md for the rule):
+#
+#   build_push  ──┐
+#                 │  (digest output, fanout)
+#                 ▼
+#                sign  ──┐
+#                        ▼
+#                       notify  (if: always())
+#
+# build_push does the heavy work (buildah + rechunk + skopeo push,
+# ~25 min). sign is a separate cheap job (~1 min) that signs the
+# pushed manifest *by digest* instead of by tag — cosign warns
+# against by-tag signing as it's racy.
+#
+# On a failed sign step, `gh run rerun --failed <run-id>` re-runs
+# only the sign job (~1 min) instead of redoing the whole build.
+# That's the whole point of the split — failure cost dominates
+# the few seconds of cross-job overhead.
+#
 # Triggers: push to main, weekly cron (sun 04:00 UTC), and on-demand
 # via workflow_dispatch.
 #
@@ -42,13 +62,17 @@ concurrency:
 
 jobs:
   build_push:
-    name: Build, sign kernel, push
+    name: Build + rechunk + push
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      image_ref: ${{ steps.push.outputs.image_ref }}
+      tags: ${{ steps.metadata.outputs.tags }}
 
     steps:
       - name: Maximize build space
@@ -63,9 +87,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Need the helpers under scripts/ from margine-fedora-atomic
-          # via build.sh fetch; the checkout of THIS repo is just for
-          # Containerfile + build_files/.
           fetch-depth: 1
 
       - name: Pre-build login to GHCR
@@ -136,7 +157,7 @@ jobs:
       - name: Move built image to root storage for rechunk
         # rechunk uses `sudo podman create` and looks in root storage;
         # buildah leaves the image in the gha user's rootless storage.
-        # Use oci-archive intermediate (same approach as build.yml).
+        # Use oci-archive intermediate (same approach as before the split).
         run: |
           set -euo pipefail
           IMG="${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
@@ -174,85 +195,127 @@ jobs:
             -u "${{ github.actor }}" --password-stdin ghcr.io
 
       - name: Push rechunked image to GHCR
+        id: push
         env:
           IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
           set -euo pipefail
           IMG_FULL="${IMAGE_REGISTRY,,}/${IMAGE_NAME,,}"
+          DIGEST=""
+          # Copy each metadata tag → GHCR. All tags point at the same
+          # manifest, so we capture the digest from the first copy
+          # (--digestfile) and reuse it for sign's by-digest reference.
           for tag in ${{ steps.metadata.outputs.tags }}; do
             sudo skopeo copy --retry-times 3 \
               --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --digestfile=/tmp/digest.txt \
               "${{ steps.rechunk.outputs.ref }}" \
               "docker://${IMG_FULL}:${tag}"
+            if [[ -z "$DIGEST" ]]; then
+              DIGEST="$(cat /tmp/digest.txt)"
+            fi
           done
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Cosign login to GHCR
-        # `podman login` and `sudo skopeo login` earlier in the job
-        # wrote credentials into containers-storage / root's auth.json,
-        # but `cosign sign` reads ~/.docker/config.json (or runs its
-        # own internal lookup). Without this step the sign succeeds at
-        # the sigstore transparency log step but the "Pushing signature
-        # to ghcr.io/..." step gets UNAUTHORIZED.
-        run: |
-          cosign login ghcr.io \
-            -u "${{ github.actor }}" \
-            -p "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Sign image with cosign
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ""
-        run: |
-          IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_FULL}:${tag}"
-          done
+          if [[ -z "$DIGEST" || ! "$DIGEST" =~ ^sha256: ]]; then
+            echo "::error::failed to capture manifest digest"
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Pushed manifest: ${IMG_FULL}@${DIGEST}"
 
       - name: Wipe staged secrets
         if: always()
         run: rm -rf /tmp/margine-secrets
 
-      - name: Notify ntfy (build outcome)
-        if: always()
+  sign:
+    name: Cosign sign (by digest)
+    needs: build_push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Cosign login to GHCR
+        # cosign sign reads ~/.docker/config.json; nothing in this fresh
+        # job has populated it, so do an explicit login before signing.
+        run: |
+          cosign login ghcr.io \
+            -u "${{ github.actor }}" \
+            -p "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Sign image by digest
+        # Sign the pushed manifest *by digest* (image@sha256:...), not by
+        # tag — cosign warns that tag-based signing is racy ("This can
+        # lead you to sign a different image than the intended one").
+        # build_push captured the digest from `skopeo copy --digestfile`.
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
+          if [[ -z "$IMAGE_REF" ]]; then
+            echo "::error::needs.build_push.outputs.image_ref is empty"
+            exit 1
+          fi
+          echo "Signing: ${IMAGE_REF}"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
+
+  notify:
+    name: ntfy notification
+    needs: [build_push, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Run after both upstream jobs settle, regardless of their outcome.
+    if: always()
+    steps:
+      - name: Notify ntfy (aggregated)
         env:
           NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+          BUILD_RESULT: ${{ needs.build_push.result }}
+          SIGN_RESULT:  ${{ needs.sign.result }}
         run: |
           if [[ -z "${NTFY_URL:-}" ]]; then
             echo "NTFY_TOPIC_URL secret not set, skipping notification."
             exit 0
           fi
-          STATUS="${{ job.status }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          case "$STATUS" in
-            success)
-              TITLE="Build OK → :candidate pushed"
-              PRIO="default"
-              TAGS="white_check_mark,construction"
-              MSG="Run #${{ github.run_number }} done. Smoke-boot will now QEMU-validate and promote to :stable if green."
-              ;;
-            failure)
-              TITLE="Build FAILED"
-              PRIO="high"
-              TAGS="x,fire"
-              MSG="See run for details."
-              ;;
-            cancelled)
-              TITLE="Build cancelled"
-              PRIO="low"
-              TAGS="warning"
-              MSG=""
-              ;;
-            *)
-              TITLE="Build status: ${STATUS}"
-              PRIO="default"
-              TAGS="warning"
-              MSG=""
-              ;;
-          esac
+
+          # Decision matrix. The interesting case is partial success
+          # (build pushed but signing failed) — surface it explicitly so
+          # daniel can `gh run rerun --failed` instead of guessing.
+          if [[ "$BUILD_RESULT" == "success" && "$SIGN_RESULT" == "success" ]]; then
+            TITLE="Build OK → :candidate pushed + signed"
+            PRIO="default"
+            TAGS="white_check_mark,construction"
+            MSG="Run #${{ github.run_number }} done. Smoke-boot will now QEMU-validate and promote to :stable if green."
+          elif [[ "$BUILD_RESULT" == "failure" ]]; then
+            TITLE="Build FAILED (image push)"
+            PRIO="high"
+            TAGS="x,fire"
+            MSG="The buildah/rechunk/push job failed. See run for details."
+          elif [[ "$SIGN_RESULT" == "failure" ]]; then
+            TITLE="Build PARTIAL → image pushed, sign FAILED"
+            PRIO="high"
+            TAGS="x,closed_lock_with_key"
+            MSG="The image is on GHCR but unsigned. Retry just the sign job: gh run rerun --failed ${{ github.run_id }}"
+          elif [[ "$BUILD_RESULT" == "cancelled" || "$SIGN_RESULT" == "cancelled" ]]; then
+            TITLE="Build cancelled"
+            PRIO="low"
+            TAGS="warning"
+            MSG=""
+          else
+            TITLE="Build status: build=${BUILD_RESULT}, sign=${SIGN_RESULT}"
+            PRIO="default"
+            TAGS="warning"
+            MSG=""
+          fi
           curl --silent --show-error --fail \
             -H "Title: ${TITLE}" \
             -H "Priority: ${PRIO}" \

@@ -125,11 +125,9 @@ declarative spec; English / other-language sets can be added.
 
 <div align="center">
 
-<img src="docs/screenshots/activities-search.png" alt="GNOME Activities with search open showing Margine extensions and dock" width="80%">
-
-<br><br>
-
-<img src="docs/screenshots/lock-screen.png" alt="Lock screen with autumn-leaves wallpaper" width="56%">
+<img src="docs/screenshots/activities-search.png" alt="GNOME Activities with search open showing Margine extensions and dock" width="48%">
+&nbsp;
+<img src="docs/screenshots/lock-screen.png" alt="Lock screen with autumn-leaves wallpaper" width="48%">
 
 </div>
 

@@ -3,16 +3,21 @@
 #
 # Builds Anaconda installer ISO (single-step Margine install) and
 # raw qcow2 (VM-ready disk image) from the currently-promoted
-# ghcr.io/<owner>/margine:stable. ISO and qcow2 are then rsync'd
-# to the `edge` VM (110) on PVE1 which serves them at
-# https://files.the-empty.place/margine/ via Caddy.
+# ghcr.io/<owner>/margine:stable. The big binaries are uploaded to
+# Internet Archive (which generates torrent + 3 HTTP mirrors and
+# seeds forever); a small HTML index page + SHA256SUMS are kept as
+# GHA workflow artifact for download.
 #
-# Runs on the same self-hosted runner as build.yml. We rely on the
-# same storage-health/cleanup primitives.
+# Runs on GitHub-hosted ubuntu-24.04. The self-hosted PVE builder
+# VM (margine-builder, VM 170) was decommissioned on 2026-06-01
+# after two freezes — the second one took the entire PVE host down
+# with ZFS spacemap corruption (see proxmox-pve1/docs/operations/
+# zfs-spacemap-corruption-recovery.md).
 #
-# Cadence: manual trigger only for now (workflow_dispatch). Once
-# `:stable` updates daily, you can switch to workflow_run after
-# smoke-boot promotion to auto-publish a fresh ISO every release.
+# Cadence: manual trigger only (workflow_dispatch). ISOs are heavy
+# (~5 GB each), so we generate one only when there's an actual
+# reason — typically after a notable upstream change or a Margine
+# release event, not on every push.
 
 name: Build disk images
 
@@ -39,8 +44,8 @@ concurrency:
 jobs:
   build:
     name: Build ISO + qcow2 → publish to edge
-    runs-on: [self-hosted, margine-builder]
-    timeout-minutes: 75
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +56,13 @@ jobs:
       id-token: write
 
     steps:
+      - name: Maximize build space
+        # ubuntu-24.04 has ~14 GiB free by default; bootc-image-builder
+        # needs ~30 GiB scratch for qcow2/ISO build + buildah cache.
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
       - name: Prepare environment
         run: |
           USER_UID=$(id -u)
@@ -186,7 +198,7 @@ jobs:
           done
           echo "::warning::IA torrent not derived within 20 min — index will use HTTP mirrors only"
 
-      - name: Generate index.html for files.the-empty.place
+      - name: Generate index.html for the IA upload page
         if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
         env:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
@@ -239,34 +251,21 @@ jobs:
           </body></html>
           HTML
 
-      - name: Publish index + SHA256SUMS to edge over rsync
-        # Only the lightweight pieces go to edge: HTML index page,
-        # SHA256SUMS, and (for the 7-day fallback) a copy of the ISO.
-        # The large binaries' authoritative location is Internet Archive.
-        if: github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          OUTDIR="${{ steps.outputs.outdir }}"
-          # Ship index, sha, and any small artifact. The ISO/qcow2 go too
-          # for the 7-day local fallback (cleanup timer on edge removes
-          # them after).
-          rsync -rtvz --progress \
-            -e "ssh -i /home/gha-runner/.ssh/edge-files-margine -o StrictHostKeyChecking=accept-new" \
-            "$OUTDIR"/ \
-            edge-files-margine@192.168.2.31:/var/www/files-margine/
-
-      - name: Builder post-build hygiene (self-hosted only)
-        if: always() && runner.environment != 'github-hosted'
-        timeout-minutes: 3
-        run: |
-          # Free local copy: edge has it now, no reason to keep ~5 GiB on builder.
-          OUTDIR="${{ steps.outputs.outdir }}"
-          if [[ -n "$OUTDIR" && -d "$OUTDIR" ]]; then
-            rm -rf "$OUTDIR" || true
-          fi
-          # Sweep tmpfs left-overs and prune cache mounts
-          rm -f /var/tmp/margine*.tar /tmp/margine*.tar 2>/dev/null || true
-          df -h /
+      - name: Upload index.html + SHA256SUMS as workflow artifact
+        # The big binaries live authoritatively on Internet Archive
+        # (uploaded above). The lightweight pieces — HTML index page
+        # with magnet links and the SHA256SUMS file — are kept here
+        # as a downloadable GHA artifact. Anyone who wants to publish
+        # them under a friendly URL can grab the artifact and rsync it
+        # to a webserver of their choice.
+        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
+        uses: actions/upload-artifact@v4
+        with:
+          name: margine-iso-index-${{ steps.ia_upload.outputs.identifier }}
+          path: |
+            ${{ steps.outputs.outdir }}/index.html
+            ${{ steps.outputs.outdir }}/SHA256SUMS
+          retention-days: 30
 
       - name: Notify ntfy (disk-build outcome)
         if: always()
@@ -285,7 +284,7 @@ jobs:
               TITLE="Disk image ${DISK} published"
               PRIO="default"
               TAGS="cd,white_check_mark"
-              MSG="Torrent + HTTP mirror disponibili su https://files.the-empty.place/"
+              MSG="Disponibile su Internet Archive (link torrent + HTTP nei dettagli della run)."
               ;;
             failure)
               TITLE="Disk image ${DISK} BUILD FAILED"

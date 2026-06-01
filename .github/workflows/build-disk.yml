@@ -45,7 +45,11 @@ jobs:
   build:
     name: Build ISO + qcow2 → publish to edge
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # 180 = BIB (~15 min) + IA upload (often 60-90 min for multi-GB ISO)
+    # + IA derive wait (up to 25 min) + buffer. Was 90; killed run
+    # #26783621978 mid-upload with no diagnostics, see
+    # ~/.claude/.../memory/feedback_ia_upload_observability.md
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +174,12 @@ jobs:
         # Cloudflare TOS (no large binary content served from origin)
         # and to keep our home-server upload bandwidth free.
         if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
+        # The job-level timeout-minutes (currently 180) covers this step.
+        # Multi-GB ISO uploads to IA can routinely take 60-90 min — see
+        # run #26783621978 (cancelled by old 90-min timeout while still
+        # transferring bytes). The --verbose / --retries / --sleep
+        # combination below is the lesson from that incident; the saved
+        # memory feedback_ia_upload_observability.md explains why each.
         env:
           IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
           IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
@@ -181,6 +191,12 @@ jobs:
             echo "::error::artifact path empty or missing: '$ARTIFACT'"
             exit 1
           fi
+          # Log the file size BEFORE upload so we can tell "is this a 1 GB
+          # ISO or a 5 GB ISO?" from the build log alone.
+          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
+          SIZE_MB=$(( SIZE_BYTES / 1024 / 1024 ))
+          echo "Uploading $(basename "$ARTIFACT") — ${SIZE_MB} MB (${SIZE_BYTES} bytes)"
+
           DATE_TAG="$(date -u +%Y%m%d)"
           IDENTIFIER="margine-${{ matrix.disk-type }}-${DATE_TAG}"
           export IA_CONFIG_FILE=/tmp/ia.ini
@@ -190,8 +206,19 @@ jobs:
           secret = ${IA_S3_SECRET}
           EOF
           chmod 0600 "$IA_CONFIG_FILE"
+          # --verbose: emit per-file progress + speed, instead of the
+          #            default silent transfer (the killer of run
+          #            #26783621978's diagnostics).
+          # --retries 5 (default 3): IA's S3 endpoint returns 503 under
+          #            load; 3 retries isn't always enough for a multi-GB
+          #            multi-part upload.
+          # --sleep 60 (default 30): be a better neighbour to IA during
+          #            backoff.
           ia --config-file "$IA_CONFIG_FILE" upload "$IDENTIFIER" \
             "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
+            --retries 5 \
+            --sleep 60 \
+            --verbose \
             --metadata="mediatype:software" \
             --metadata="collection:opensource" \
             --metadata="title:Margine Linux ISO ${DATE_TAG}" \

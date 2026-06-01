@@ -1,240 +1,238 @@
 <div align="center">
 
-<img src="docs/screenshots/lock-screen.png" alt="Margine" width="700">
+<img src="docs/branding/margine-logo-wide.png" alt="Margine" width="420">
 
-# Margine
+### A polished, immutable Linux desktop that just works.
 
-**Un desktop Linux pronto all'uso, immutabile, veloce, e finalmente *bello*.**
+Built on [Bluefin DX](https://projectbluefin.io/), with a Secure Boot-signed
+[CachyOS](https://cachyos.org/) kernel, a tiling-friendly GNOME, every codec
+already installed, and a curated set of apps.
 
-Basato su [Bluefin DX](https://projectbluefin.io/), con kernel
-[CachyOS](https://cachyos.org/) firmato per Secure Boot, GNOME tiling-friendly,
-codec già installati e app curate.
-
-[**📥 Scarica**](https://files.the-empty.place/) ·
-[Cos'è](#cosè-margine) ·
-[Caratteristiche](#caratteristiche) ·
-[Installa](#install) ·
-[Per gli sviluppatori](#per-gli-sviluppatori)
+[**📥 Download**](https://files.the-empty.place/) ·
+[What it is](#what-it-is) ·
+[Highlights](#highlights) ·
+[Install](#install) ·
+[For developers](#for-developers)
 
 </div>
 
 ---
 
-## Cos'è Margine
+## What it is
 
-Margine è una **distribuzione Linux desktop**, in linea con la tradizione
-*atomic / immutable* di Fedora Silverblue + Universal Blue. È un sistema
-operativo completo che si installa, fa upgrade in modo sicuro, e dove tutto
-quello che serve a un utente normale — codec audio/video, driver, GNOME ben
-configurato, app preinstallate per ufficio / foto / video / sviluppo —
-**funziona da subito**, senza terminale.
+Margine is a **Linux desktop distribution** in the immutable / atomic
+tradition (Fedora Silverblue + Universal Blue). A complete operating
+system that installs in one shot, updates safely, and where everything
+a regular user needs — audio/video codecs, GPU drivers, a well-tuned
+GNOME, apps for office / photo / video / dev — **works from minute
+zero**, without opening a terminal.
 
-Pensata per chi vuole un Linux *che lavori per lui* invece di doverlo
-configurare per ore. Tradizione macOS-style "tutto al suo posto" sopra
-fondamenta Fedora.
+Built for people who want a Linux that *works for them* instead of
+having to be configured for hours. macOS-style "everything in its
+place" on top of Fedora foundations.
 
-## Caratteristiche
+## Highlights
 
 | ✨ | |
 | --- | --- |
-| 🎬 **Tutti i codec preinstallati** | H.264, H.265/HEVC, AAC, MP3, Dolby, DTS — riproduzione e accelerazione hardware fuori dalla scatola. Stesso stack di Bluefin (Mesa freeworld + ffmpeg full). |
-| ⚡ **Kernel CachyOS** | Scheduler `BORE` (più reattivo del default), tuning I/O per SSD/NVMe, parametri ottimizzati per desktop. Sotto cofano: stesso kernel di chi tira fuori più FPS in gaming e meno latenza nelle DAW. Firmato Margine per **Secure Boot** (non serve disabilitare nulla). |
-| 🛡 **Sistema immutabile + atomic** | `/usr` è in sola lettura; ogni aggiornamento è un'**immagine intera** (non pacchetto-per-pacchetto). Se qualcosa va male, `bootc rollback` ti riporta indietro in 5 secondi. Niente "ha rotto pacman", mai. |
-| 🪟 **Tiling intelligente** | GNOME con [o-tiling](https://github.com/oliwebd/o-tiling): auto-split binario alla Hyprland, `Super+frecce` per spostare le finestre, `Super+Shift+frecce` per cambiare focus. Productivity tile-style senza dover imparare un window manager intero. |
-| 🎨 **GNOME accent giallo + dark mode** | Wallpaper foglie d'autunno, Plymouth boot splash nero pulito, GDM senza loghi distro spammosi. Curato fino al pixel. |
-| 📦 **App già pronte** | Zen Browser, Bitwarden, LibreOffice, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe — installate via Flatpak al primo boot. Niente bloatware, niente shopping cart. |
-| 🔒 **Secure Boot + LUKS2 + TPM2** | Stack di sicurezza di default. Disco cifrato, kernel firmato con la chiave Margine, possibile auto-unlock via TPM2. |
-| 🔄 **Update automatici, silenziosi** | `bootc upgrade` di notte. Flatpak update. Niente notifiche "ti devi aggiornare", niente popup. Il sistema si tiene aggiornato da solo, e se mai un update fosse rotto **non te lo dà** (vedi sotto). |
-| 🧪 **Pipeline build verificata** | Ogni immagine viene buildata, ispezionata (Layer A guardrails), **bootata in QEMU** in CI, e solo se sopravvive arriva a `:stable`. Niente release "compila ma non boota". |
-| 🇮🇹 **App folder in italiano** | Categorizzazione delle app del menu GNOME in 6 cartelle italiane: Office, Grafica, Foto, Audio, Video, Sistema. |
+| 🎬 **All codecs preinstalled** | H.264, H.265/HEVC, AAC, MP3, Dolby, DTS — full playback and hardware acceleration out of the box. Same media stack as Bluefin (Mesa freeworld + full ffmpeg). |
+| ⚡ **CachyOS kernel** | `BORE` scheduler (more responsive than the default), SSD/NVMe I/O tuning, parameters tuned for desktop. Under the hood: the same kernel powering people who squeeze more FPS in gaming and lower latency in DAWs. **Signed by Margine for Secure Boot** (no need to disable anything). |
+| 🛡 **Immutable, atomic system** | `/usr` is read-only; every update is a **whole image** (not package-by-package). If something goes wrong, `bootc rollback` brings you back in 5 seconds. No "pacman broke my system", ever. |
+| 🪟 **Smart tiling** | GNOME with [o-tiling](https://github.com/oliwebd/o-tiling): binary-tree auto-split à la Hyprland, `Super+Arrow` to move windows, `Super+Shift+Arrow` to switch focus. Tile-style productivity without learning a full window manager. |
+| 🎨 **Yellow accent + dark mode** | Autumn leaves wallpaper, clean black Plymouth boot splash, GDM without distro-spam logos. Polished down to the pixel. |
+| 📦 **Apps ready to go** | Zen Browser, Bitwarden, LibreOffice, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe — installed via Flatpak on first boot. No bloatware, no shopping cart. |
+| 🔒 **Secure Boot + LUKS2 + TPM2** | Security stack on by default. Encrypted disk, kernel signed with the Margine key, optional TPM2 auto-unlock. |
+| 🔄 **Silent, automatic updates** | `bootc upgrade` at night. Flatpak update. No "you must update" pop-ups. The system keeps itself current; if a release would be broken, **you don't get it** (see CI below). |
+| 🧪 **Verified build pipeline** | Every image is built, inspected (Layer A guardrails), **booted in QEMU** in CI, and only if it survives does it get promoted to `:stable`. No "compiled but won't boot" releases. |
+| 🇮🇹 **Italian app folders** | GNOME activities grid categorized into 6 Italian folders: Office, Grafica, Foto, Audio, Video, Sistema. |
 
-## Galleria
+## Why Margine (vs picking something else)
+
+- **What on stock Fedora needs `rpm-fusion` + `dnf install`, here is
+  already there.** No more "why doesn't H.265 play?" or "why is Netflix
+  capped at 480p?". The media stack is complete from the first boot.
+- **What on Arch needs a month of scripting (CachyOS kernel signed
+  for Secure Boot, a base system that doesn't break on updates, GNOME
+  with tiling configured, disk encryption) is boxed in here.** You
+  save that month and keep your machine.
+- **Updates that don't break.** Immutable system + CI smoke-boot test
+  = the `:stable` you receive has already booted in a test VM. If a
+  day ever turns out bad, `bootc rollback` brings you to the previous
+  deployment in 5 seconds. **There is no scenario "I'm stuck after the
+  update"**.
+- **Real performance.** CachyOS BORE scheduler makes the desktop
+  visibly more responsive under load (compilation, video editing,
+  browsing with 30+ tabs). On laptops, battery life similar to stock
+  Fedora but with snappier response.
+- **GNOME stays GNOME.** No custom DE to learn. Every GNOME extension
+  works; you can add or remove anything from Extensions Manager.
+  Margine's choices are *defaults*, not *enforcement*.
+- **Privacy-first.** No distro telemetry. Zen Browser as default
+  browser. DuckDuckGo as default search engine. Cloudflare DNS-01 for
+  the project's own TLS.
+- **Not alone underneath.** Below the deltas, this is Bluefin DX
+  (actively maintained by Universal Blue, large community), which is
+  Fedora Silverblue (Red Hat). All upstream upstream the whole way.
+
+## Screenshots
 
 <div align="center">
 
-<img src="docs/screenshots/lock-screen.png" alt="Lock screen con wallpaper foglie d'autunno" width="48%">
-&nbsp;
-<img src="docs/screenshots/activities-search.png" alt="GNOME activities con search aperta" width="48%">
+<img src="docs/screenshots/activities-search.png" alt="GNOME Activities with search open showing Margine extensions and dock" width="80%">
+
+<br><br>
+
+<img src="docs/screenshots/lock-screen.png" alt="Lock screen with autumn-leaves wallpaper" width="56%">
 
 </div>
 
-## Vantaggi pratici (perché Margine, non un'altra)
-
-- **Quello che su Fedora vanilla richiede `rpm-fusion` + `dnf install`,
-  qui è già lì.** Niente "perché H.265 non parte?" o "perché Netflix
-  mi dà 480p?". Lo stack media è completo dal primo boot.
-- **Quello che su Arch richiede un mese di scripting (kernel CachyOS
-  firmato per Secure Boot, sistema base che non si rompe agli
-  aggiornamenti, GNOME con tiling configurato, sicurezza disco)
-  qui è inscatolato.** Risparmi quel mese e ti tieni la macchina.
-- **Aggiornamenti che non rompono.** Sistema immutabile + smoke-test
-  in CI = la `:stable` che ricevi ha già bootato in una VM di test.
-  Se mai fosse comunque un giorno no, `bootc rollback` ti riporta al
-  deployment precedente in 5 secondi. **Non esiste lo scenario "sono
-  rimasto bloccato dopo l'update"**.
-- **Performance reali.** CachyOS scheduler BORE rende il desktop
-  visibilmente più reattivo sotto carico (compilation, video editing,
-  navigazione con 30+ tab). Su laptop, autonomia simile a Fedora di
-  default ma con risposta migliore.
-- **GNOME comunque GNOME.** Niente DE custom da imparare. Tutte le
-  estensioni GNOME funzionano, ognuno può togliere o aggiungere
-  liberamente dal Extensions Manager. Le scelte di Margine sono
-  *default*, non *imposizione*.
-- **Privacy-first.** Niente telemetria distro. Zen Browser come browser
-  default. DuckDuckGo come motore di ricerca default. Cloudflare DNS-01
-  per i certificati propri.
-- **Non da soli.** Sotto, è Bluefin DX (manutenuto attivamente da
-  Universal Blue, community grande), che è Fedora Silverblue (Red Hat).
-  Tutto l'upstream upstream sotto.
-
 ## Install
 
-Due strade.
+Two routes.
 
-### 🟢 Opzione A — ISO Margine (consigliata)
+### 🟢 Option A — Margine ISO (recommended)
 
-Installazione "single shot": scarichi l'ISO, installi, sei su Margine.
+Single-shot install: download the ISO, install, you're on Margine.
 
-1. Vai su <https://files.the-empty.place/>
-2. Scarica via **torrent** (raccomandato) o **HTTP diretto**.
-   Sono bytes identici, sha256 cross-checkable; il torrent è più
-   robusto su connessioni instabili.
-3. Boota l'ISO. Anaconda (l'installer Fedora) ti guida:
-   - **UEFI con Secure Boot attivo**
-   - **Disco cifrato (LUKS2)** — passphrase forte, opzionale TPM2 dopo
-   - **Btrfs** (default)
-4. Riavvia, al primo boot sei su Margine.
-5. **Una sola configurazione iniziale**:
+1. Go to <https://files.the-empty.place/>
+2. Download via **BitTorrent** (recommended) or **direct HTTP**.
+   Same bytes, sha256 cross-checkable; the torrent is more robust
+   on flaky connections.
+3. Boot the ISO. Anaconda (Fedora's installer) walks you through:
+   - **UEFI with Secure Boot enabled**
+   - **Encrypted disk (LUKS2)** — strong passphrase, optional TPM2 later
+   - **Btrfs** (the default)
+4. Reboot, and you're on Margine.
+5. **One initial configuration**:
    ```sh
-   ujust margine-bootstrap          # applica home layout + GNOME + estensioni
+   ujust margine-bootstrap          # applies home layout + GNOME + extensions
    ```
-   Logout / login per rinfrescare GNOME Shell.
+   Log out / log back in to refresh GNOME Shell.
 
-### 🟡 Opzione B — Rebase da Bluefin esistente
+### 🟡 Option B — Rebase from existing Bluefin
 
-Se hai già Bluefin (o ne hai un'installazione vergine da fare):
+If you already have Bluefin (or are about to do a fresh install):
 
 ```sh
-# Da Bluefin appena installato:
+# From a fresh Bluefin:
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 ```
 
-Poi:
-1. **Primo boot dopo rebase** — `mok-enroll.service` queue la chiave MOK.
-2. **Secondo riavvio** — appare il **MOK Manager** (schermata blu/grigia
-   di shim). `Enroll MOK` → `Continue` → `Yes` → digita la MOK
-   password → riavvia. Da qui in poi il kernel CachyOS boota sotto
-   Secure Boot.
-3. **`ujust margine-bootstrap`** come sopra.
+Then:
+1. **First boot after rebase** — `mok-enroll.service` queues the MOK key.
+2. **Second reboot** — the **MOK Manager** screen appears (shim's
+   blue-and-grey UI). `Enroll MOK` → `Continue` → `Yes` → type the
+   MOK password → reboot. From here on the CachyOS kernel boots
+   under Secure Boot.
+3. **`ujust margine-bootstrap`** as above.
 
-### Verifica post-install
+### Post-install check
 
 ```sh
-mokutil --sb-state          # SecureBoot enabled
-uname -r                    # 7.0.x-cachyos*.fc44.x86_64
+mokutil --sb-state                       # SecureBoot enabled
+uname -r                                 # 7.0.x-cachyos*.fc44.x86_64
 margine-validate-atomic-layout
 margine-validate-cachyos-kernel
 ```
 
-### Layer Gaming (opt-in)
+### Gaming layer (opt-in)
 
-Steam + Lutris + Heroic + Bottles + Protontricks + ProtonUp-Qt come
-Flatpak, plus gamescope + MangoHud + vkBasalt + GameMode + goverlay
-+ steam-devices come pacchetti RPM. Disinstallabile in qualsiasi
-momento.
+Steam + Lutris + Heroic + Bottles + Protontricks + ProtonUp-Qt as
+Flatpaks, plus gamescope + MangoHud + vkBasalt + GameMode + goverlay
++ steam-devices as RPM packages. Reversible at any time.
 
 ```sh
-ujust margine-gaming            # opt-in
-ujust margine-gaming-remove     # opt-out
+ujust margine-gaming            # opt in
+ujust margine-gaming-remove     # opt out
 ```
 
-## Cosa c'è dentro (per i curiosi)
+## What's inside (for the curious)
 
 <details>
-<summary>Stack tecnico completo</summary>
+<summary>Full technical stack</summary>
 
 ### Base
 - **Bluefin DX (stable)** — Universal Blue's curated developer image
-  basato su Fedora Silverblue 44
-- Codec / Mesa freeworld / virt stack (libvirt, qemu-kvm, virt-manager,
+  built on Fedora Silverblue 44
+- Codecs / Mesa freeworld / virt stack (libvirt, qemu-kvm, virt-manager,
   swtpm, edk2-ovmf) / container tooling (podman, docker, distrobox,
   toolbox) / VS Code (Microsoft repo) / Cockpit / Tailscale / bpftrace
-  / sysprof — tutto inherited unchanged da Bluefin.
+  / sysprof — all inherited unchanged from Bluefin.
 
 ### Kernel
-- **CachyOS mainline** dal COPR `bieszczaders/kernel-cachyos`
-- Firmato da Margine: vmlinuz via `sbsign`, ogni `.ko*` via `sign-file`
-- Enrollment MOK al primo boot tramite `mok-enroll.service`
+- **CachyOS mainline** from the `bieszczaders/kernel-cachyos` COPR
+- Signed by Margine: vmlinuz via `sbsign`, every `.ko*` via `sign-file`
+- MOK enrollment at first boot via `mok-enroll.service`
 
-### Estensioni GNOME abilitate
+### Enabled GNOME extensions
 - AppIndicator Support, Bazaar Integration, Blur My Shell,
-  Dash to Dock, Gradia Integration, GSConnect — *da Bluefin*
-- Search Light — search bar globale
-- **o-tiling** — tiling auto-split binario
-- **Hide Cursor** — nasconde puntatore mentre scrivi
-- **Caffeine** — keep-screen-on toggle nel top bar
+  Dash to Dock, Gradia Integration, GSConnect — *from Bluefin*
+- Search Light — global search bar
+- **o-tiling** — binary-tree tiling auto-split
+- **Hide Cursor** — hides the pointer while typing
+- **Caffeine** — keep-screen-on toggle in the top bar
 
-### App preinstallate (Flatpak)
+### Preinstalled apps (Flatpak)
 Zen Browser, Bitwarden, LibreOffice, Gapless (music player),
 GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects,
 Reaper (DAW), Apostrophe (markdown).
 
-VS Code è già lì da Bluefin (non serve installarlo).
+VS Code is already there from Bluefin (no need to install it).
 
-### Sicurezza
-- Secure Boot abilitato (MOK Margine)
-- LUKS2 disco cifrato
-- TPM2 auto-unlock via `systemd-cryptenroll` (opzionale, manuale)
-- `cosign` signature sull'immagine pushata su ghcr.io
+### Security
+- Secure Boot enabled (Margine MOK)
+- LUKS2 disk encryption
+- TPM2 auto-unlock via `systemd-cryptenroll` (optional, manual)
+- `cosign` signature on the image pushed to ghcr.io
 
-### Aggiornamenti
-- `bootc upgrade` daily via `uupd.timer` (inherited da Bluefin)
-- `flatpak update`, `brew upgrade`, `distrobox upgrade` orchestrati
-  da `uupd`
-- Rollback con `bootc rollback` (cinque secondi, sempre)
+### Updates
+- `bootc upgrade` daily via `uupd.timer` (inherited from Bluefin)
+- `flatpak update`, `brew upgrade`, `distrobox upgrade` orchestrated
+  by `uupd`
+- Rollback via `bootc rollback` (five seconds, always)
 
 ### CI / build pipeline
-- `build.yml` su self-hosted runner: produce `:candidate`
-- `smoke-boot.yml`: boota `:candidate` in QEMU, se OK promuove a `:stable`
-- `build-disk.yml`: produce ISO + qcow2, pubblica via Internet Archive
+- `build.yml` on a self-hosted runner: publishes `:candidate`
+- `smoke-boot.yml`: boots `:candidate` in QEMU; on success, promotes to `:stable`
+- `build-disk.yml`: builds ISO + qcow2, publishes via Internet Archive
 - Layer A guardrails: `systemd-analyze verify default.target` +
   initramfs sanity + helpers/branding/passwd presence
-- ntfy push notifications per build / smoke-boot / disk-build
+- ntfy push notifications for build / smoke-boot / disk-build
 
 </details>
 
-## Per gli sviluppatori
+## For developers
 
-Spec, configurazioni e helpers vivono in
+The spec, configuration, and helpers live in
 [`margine-fedora-atomic`](https://github.com/daniel-g-carrasco/margine-fedora-atomic).
-Questo repo (`margine-image`) è solo il **build pipeline**: Containerfile,
+This repo (`margine-image`) is just the **build pipeline**: Containerfile,
 build.sh, CI workflows.
 
-Per modificare *quali* app Margine preinstalla, *quali* estensioni
-abilita, *quali* keybinds applica, ecc. → vai sull'altro repo, modifica
-`declarations/margine-atomic.yaml`, manda PR. Il build pipeline raccoglie
-automaticamente le nuove versioni dei helpers e della spec ad ogni run.
+To change *which* apps Margine preinstalls, *which* extensions it
+enables, *which* keybinds it applies, etc. → go to the other repo,
+edit `declarations/margine-atomic.yaml`, send a PR. The build pipeline
+picks up the new versions of the helpers and the spec on every run.
 
-Per discutere architettura: [docs/](https://github.com/daniel-g-carrasco/margine-fedora-atomic/tree/main/docs)
-contiene ADR, lessons-learned, e roadmap.
+For architecture discussion: [docs/](https://github.com/daniel-g-carrasco/margine-fedora-atomic/tree/main/docs)
+has ADRs, lessons-learned, and the roadmap.
 
 ## Credits
 
-- [**Bluefin**](https://projectbluefin.io/) — base image, su cui Margine
-  aggiunge poche cose (le 10 nella tabella sopra). Senza Bluefin questo
-  progetto non esisterebbe.
+- [**Bluefin**](https://projectbluefin.io/) — the base image; Margine
+  adds only the few things in the table above. Without Bluefin this
+  project wouldn't exist.
 - [**Universal Blue**](https://universal-blue.org/) — image-template,
   CI patterns, uupd.
-- [**CachyOS**](https://cachyos.org/) — scheduler + kernel patches.
-- [**Origami Linux**](https://gitlab.com/origami-linux/images) — script
-  di reference per la sign-MOK del kernel.
-- [**MorrOS**](https://github.com/morrolinux/morros) — pattern di
-  workflow CI.
+- [**CachyOS**](https://cachyos.org/) — scheduler and kernel patches.
+- [**Origami Linux**](https://gitlab.com/origami-linux/images) — reference
+  script for MOK-signing the kernel.
+- [**MorrOS**](https://github.com/morrolinux/morros) — CI workflow
+  inspiration.
 - [**hhd-dev/rechunk**](https://github.com/hhd-dev/rechunk) — ostree
   rechunking action.
-- [**Internet Archive**](https://archive.org/) — mirror permanente e
-  seed BitTorrent per le ISO.
+- [**Internet Archive**](https://archive.org/) — permanent mirror and
+  BitTorrent seed for the ISOs.
 
 ## License
 

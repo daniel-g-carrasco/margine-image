@@ -173,10 +173,21 @@ jobs:
         uses: docker/metadata-action@v5
         id: metadata
         with:
+          # Candidate/stable promotion model (introduced 2026-06-01):
+          # Build pushes ONLY candidate tags. Smoke-boot, after the
+          # image survives an end-to-end QEMU boot to multi-user.target,
+          # promotes the candidate-<date> digest to :stable, :stable.<date>
+          # and :<date>. This prevents an emergency-mode-on-boot image
+          # from ever reaching :stable, which is what `bootc upgrade`
+          # follows by default.
+          #
+          # The OCI metadata version label still uses "stable.<date>"
+          # because that's the version label the IMAGE *claims* to
+          # represent if it survives. It's just the registry routing
+          # (the tag) that delays promotion.
           tags: |
-            type=raw,value=${{ env.DEFAULT_TAG }}
-            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=raw,value={{date 'YYYYMMDD'}}
+            type=raw,value=candidate
+            type=raw,value=candidate.{{date 'YYYYMMDD'}}
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
@@ -428,6 +439,29 @@ jobs:
             inspect 'grep -q Margine /etc/issue'
 
           echo
+          echo "== 10. systemd ordering (cycle/syntax pre-flight) =="
+          # Catch ordering cycles at BUILD time instead of letting them
+          # trip the next boot into emergency.target. Bug history:
+          # 2026-06-01 margine-seed-etc-passwd.service had a cycle
+          # through local-fs.target → systemd-tmpfiles-setup-dev →
+          # back to sysusers; took a power-cycle to recover.
+          #
+          # systemd-analyze inside the built image checks the WHOLE
+          # default.target dependency graph against the same logic the
+          # init uses at boot. If it errors here, the image would have
+          # errored at first boot — better to fail the build.
+          if inspect 'command -v systemd-analyze' >/dev/null 2>&1; then
+            if ! inspect 'SYSTEMD_OFFLINE=1 systemd-analyze verify default.target 2>&1'; then
+              echo "  ✗ systemd-analyze verify reported errors in default.target"
+              fail=1
+            else
+              echo "  ✓ systemd-analyze verify clean on default.target"
+            fi
+          else
+            echo "  (skipped: systemd-analyze not present in image)"
+          fi
+
+          echo
           if (( fail )); then
             echo "ONE OR MORE LAYER A CHECKS FAILED — image will NOT be published."
             exit 1
@@ -444,20 +478,36 @@ jobs:
       #   (b) interprets `localhost/...` as a remote registry hostname
       #       and tries to ping https://localhost:443 → connection
       #       refused → build fails.
-      # Fix: pipe the built image through `podman save | sudo podman
-      # load` to copy it into root storage, then re-tag it to just
-      # `margine:stable` (no `localhost/` prefix). `sudo podman create
-      # margine:stable` then finds it in root storage by local lookup.
+      #
+      # Previous approach: `podman save | sudo podman load`. Failed on
+      # 2026-06-01 with `file integrity checksum failed for sysroot/
+      # ostree/repo/objects/de/...` after the rpool degraded ZFS lost
+      # checksum verification for a single-disk write. The blob arrived
+      # corrupt and podman load (correctly) refused to import it.
+      #
+      # Current approach: `skopeo copy containers-storage:...
+      # containers-storage:...`. Skopeo writes directly to the destination
+      # storage's ostree object store and runs sha256 verification per
+      # blob at write-time with retry. No 15 GB TAR pipe → no memory
+      # pressure path. If a single blob fails, skopeo retries that blob
+      # alone rather than restarting the full image transfer.
+      #
+      # The destination tag drops `localhost/` so subsequent steps that
+      # do `sudo podman create margine:stable` find it via local lookup.
       - name: Move built image to root storage for rechunk
         run: |
           set -euo pipefail
-          podman save "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
-            | sudo podman load
-          sudo podman tag \
-            "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
-            "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          SRC="containers-storage:localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          DST="containers-storage:[overlay@/var/lib/containers/storage+/run/containers/storage]${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          echo "Copying $SRC → $DST"
+          sudo skopeo copy --retry-times 3 --preserve-digests "$SRC" "$DST"
           echo "Root-storage images:"
           sudo podman images
+          # Sanity: confirm the image is reachable under the expected
+          # short name. If skopeo wrote it under a different reference,
+          # rechunk would fail downstream with a much less obvious error.
+          sudo podman image exists "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+            || { echo "::error::image not found in root storage after skopeo copy"; exit 1; }
 
       # Fix B — rechunk the image into ostree-canonical form. This is
       # the architecturally correct step that:

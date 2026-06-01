@@ -58,8 +58,11 @@ stable release is cut.
   background everywhere (was warm brown).
 - **GDM logo**: empty string (was a 2400x700 banner image that got
   upscaled fullscreen by GNOME 50 greeter).
-- **App folders**: 6 folders (Office / Grafica / Foto / Audio /
-  Video / Sistema), Italian names.
+- **App folders**: 6 folders (Office / Graphics / Photography / Audio /
+  Video / System). The folder set started as Italian-labeled
+  (Grafica/Foto/Sistema) and was renamed to English on 2026-06-01
+  so existing in-the-wild deployments may briefly show either set
+  until `configure-gnome-app-folders` runs again.
 
 ### Changed
 - Dropped the `kitty` Flatpak preinstall (build.sh) and the kitty

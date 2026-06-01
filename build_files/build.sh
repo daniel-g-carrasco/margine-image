@@ -59,11 +59,29 @@ log "Stamping os-release files (real files, NOT symlinks) as Margine"
 FEDORA_VER="$(rpm -E %fedora)"
 BUILD_DATE="$(date -u +%Y%m%d)"
 
+# os-release(5) layout: ID names the OS *family* (Fedora). VARIANT_ID is the
+# specific spin/variant within that family. Fedora itself does this exactly
+# (Workstation/Server/Silverblue/Kinoite all set ID=fedora and a different
+# VARIANT_ID). We follow the same pattern:
+#
+#   * NAME / PRETTY_NAME / VARIANT all say "Margine" — every UI surface that
+#     reads os-release (GNOME About panel, hostnamectl, neofetch, the
+#     gdm/Plymouth themes) reads NAME or PRETTY_NAME, not ID.
+#   * ID=fedora — so distro-tooling that does an exact lookup by ID-VERSION_ID
+#     finds a definition for us. The big motivator is bootc-image-builder,
+#     which fails the anaconda-iso build with "could not find def file for
+#     distro margine-44" if ID=margine (BIB does NOT fall back to ID_LIKE,
+#     and there's no --distro CLI override — confirmed against osbuild/images
+#     pkg/distro/defs/id.go). Setting ID=fedora makes BIB resolve to fedora-44
+#     which is what Bluefin DX is in fact based on.
+#   * VARIANT_ID=margine — the discriminator. validate-margine-system in
+#     margine-fedora-atomic now checks this instead of ID to identify a
+#     Margine install.
 OS_RELEASE_CONTENT=$(cat <<EOF
 NAME="Margine"
 VERSION="${FEDORA_VER} (Margine)"
-ID=margine
-ID_LIKE="fedora bluefin"
+ID=fedora
+ID_LIKE=bluefin
 VERSION_ID=${FEDORA_VER}
 VERSION_CODENAME=""
 PLATFORM_ID="platform:f${FEDORA_VER}"

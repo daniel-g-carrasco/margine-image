@@ -190,6 +190,18 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
+      - name: Cosign login to GHCR
+        # `podman login` and `sudo skopeo login` earlier in the job
+        # wrote credentials into containers-storage / root's auth.json,
+        # but `cosign sign` reads ~/.docker/config.json (or runs its
+        # own internal lookup). Without this step the sign succeeds at
+        # the sigstore transparency log step but the "Pushing signature
+        # to ghcr.io/..." step gets UNAUTHORIZED.
+        run: |
+          cosign login ghcr.io \
+            -u "${{ github.actor }}" \
+            -p "${{ secrets.GITHUB_TOKEN }}"
+
       - name: Sign image with cosign
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}

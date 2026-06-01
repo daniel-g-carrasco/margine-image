@@ -108,6 +108,12 @@ jobs:
           }
           trap 'rc=$?; [[ $rc -ne 0 ]] && cleanup_orphans; exit $rc' EXIT
 
+          # /tmp on this VM is a 3.9 GB tmpfs; previous failed builds
+          # may have left multi-GB oci-archives in it that prevent any
+          # subsequent step from writing temp files. Sweep them upfront.
+          sudo rm -f /tmp/*.oci.tar /tmp/margine*.tar 2>/dev/null || true
+          rm -f /var/tmp/*.oci.tar /var/tmp/margine*.tar 2>/dev/null || true
+
           # Marker from previous build's post-step (see "Builder
           # post-build hygiene" near the end of this workflow).
           if [[ -f "$HOME/.cache/margine-builder-needs-reset" ]]; then
@@ -508,7 +514,11 @@ jobs:
         run: |
           set -euo pipefail
           IMG="${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-          ARCHIVE="/tmp/${{ env.IMAGE_NAME }}.oci.tar"
+          # NB: /var/tmp, not /tmp. On the self-hosted builder VM 170
+          # /tmp is a 3.9 GB tmpfs (RAM-backed); a ~5 GB OCI archive
+          # cannot fit there. /var/tmp lives on the rootfs disk
+          # (~80 GB, ~55 GB free during a build).
+          ARCHIVE="/var/tmp/${{ env.IMAGE_NAME }}.oci.tar"
 
           echo "Step 1: dump rootless image to oci-archive"
           rm -f "$ARCHIVE"

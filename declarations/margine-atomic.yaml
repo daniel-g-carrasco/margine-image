@@ -818,8 +818,8 @@ gnome:
           - org.libreoffice.LibreOffice.math.desktop
         categories:
           - Office
-      - id: Grafica
-        name: Grafica
+      - id: Graphics
+        name: Graphics
         apps:
           - org.gimp.GIMP.desktop
           - org.inkscape.Inkscape.desktop
@@ -829,8 +829,8 @@ gnome:
           - 2DGraphics
           - VectorGraphics
           - RasterGraphics
-      - id: Foto
-        name: Foto
+      - id: Photography
+        name: Photography
         apps:
           - org.darktable.Darktable.desktop
           - org.gnome.Loupe.desktop
@@ -854,8 +854,8 @@ gnome:
         categories:
           - Video
           - AudioVideo
-      - id: Sistema
-        name: Sistema & Utility
+      - id: System
+        name: System & Utilities
         apps:
           # Low-frequency system + utility apps that don't need to
           # clutter the top-level grid. Grouped together because the

@@ -34,8 +34,11 @@ versioned tag, semantic versioning (`v0.X.Y`) will start.
   shot from the declaration, dropping anything no longer declared.
 - Tiling extension: `tilingshell` is now installed-but-not-enabled,
   superseded by `o-tiling` as the default tiling experience.
-- App folders: 6 Italian-named folders (Office / Grafica / Foto /
-  Audio / Video / Sistema) curated from Flatpak metadata.
+- App folders: 6 English-named folders (Office / Graphics /
+  Photography / Audio / Video / System) curated from Flatpak metadata.
+  Renamed from Italian (Grafica/Foto/Sistema) on 2026-06-01;
+  `validate-margine-system` accepts both name sets during the
+  transition window until existing deployments are re-bootstrapped.
 
 ### Changed
 - **System identity**: declarations now describe Margine as a published

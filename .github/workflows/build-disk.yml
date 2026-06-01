@@ -122,16 +122,36 @@ jobs:
           additional-args: --use-librepo=True
 
       - name: List + sha256 outputs
-        id: outputs
+        # Step id was `outputs` previously — that collides with GHA's
+        # reserved `outputs` expression context, and `${{ steps.outputs.outdir }}`
+        # evaluated to empty downstream (see run #26782508735, ia upload step
+        # received OUTDIR=""). Renamed to `disk` to avoid the shadow.
+        id: disk
         run: |
           set -euo pipefail
           OUTDIR="${{ steps.build.outputs.output-directory }}"
+          if [[ -z "$OUTDIR" || ! -d "$OUTDIR" ]]; then
+            echo "::error::bootc-image-builder did not produce an output directory ($OUTDIR)"
+            exit 1
+          fi
           echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
           ls -la "$OUTDIR"
-          find "$OUTDIR" -type f | while read -r f; do
-            sha256sum "$f" | tee -a "$OUTDIR/SHA256SUMS"
-          done
-          echo "files=$(find "$OUTDIR" -type f -name '*.iso' -o -name '*.qcow2' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+          # bootc-image-builder puts artifacts under subdirs (bootiso/install.iso,
+          # qcow2/disk.qcow2). Walk recursively for sha256 and capture artifact
+          # paths so the upload step has the actual file location, not a glob.
+          ARTIFACT=""
+          (cd "$OUTDIR" && find . -type f \( -name '*.iso' -o -name '*.qcow2' \) | sort) > /tmp/disk-files.txt
+          while read -r rel; do
+            sha256sum "$OUTDIR/${rel#./}" | tee -a "$OUTDIR/SHA256SUMS"
+            [[ -z "$ARTIFACT" ]] && ARTIFACT="$OUTDIR/${rel#./}"
+          done < /tmp/disk-files.txt
+          if [[ -z "$ARTIFACT" ]]; then
+            echo "::error::no .iso or .qcow2 produced under $OUTDIR"
+            exit 1
+          fi
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "artifact_basename=$(basename "$ARTIFACT")" >> "$GITHUB_OUTPUT"
+          echo "Artifact: $ARTIFACT ($(stat -c %s "$ARTIFACT") bytes)"
 
       - name: Install Internet Archive CLI (ia)
         if: github.event_name != 'pull_request'
@@ -155,7 +175,12 @@ jobs:
           IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
         run: |
           set -euo pipefail
-          OUTDIR="${{ steps.outputs.outdir }}"
+          OUTDIR="${{ steps.disk.outputs.outdir }}"
+          ARTIFACT="${{ steps.disk.outputs.artifact }}"
+          if [[ -z "$ARTIFACT" || ! -f "$ARTIFACT" ]]; then
+            echo "::error::artifact path empty or missing: '$ARTIFACT'"
+            exit 1
+          fi
           DATE_TAG="$(date -u +%Y%m%d)"
           IDENTIFIER="margine-${{ matrix.disk-type }}-${DATE_TAG}"
           export IA_CONFIG_FILE=/tmp/ia.ini
@@ -166,7 +191,7 @@ jobs:
           EOF
           chmod 0600 "$IA_CONFIG_FILE"
           ia --config-file "$IA_CONFIG_FILE" upload "$IDENTIFIER" \
-            "$OUTDIR"/*.iso "$OUTDIR"/SHA256SUMS \
+            "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
             --metadata="mediatype:software" \
             --metadata="collection:opensource" \
             --metadata="title:Margine Linux ISO ${DATE_TAG}" \
@@ -204,9 +229,9 @@ jobs:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
         run: |
           set -euo pipefail
-          OUTDIR="${{ steps.outputs.outdir }}"
+          OUTDIR="${{ steps.disk.outputs.outdir }}"
           DATE_TAG="$(date -u +%Y%m%d)"
-          ISO_NAME=$(basename "$OUTDIR"/*.iso)
+          ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
           # Magnet URI for the IA-generated torrent. IA URL pattern:
           # https://archive.org/download/<id>/<id>_archive.torrent
           # We construct a magnet directly with the xt= sha1 left empty
@@ -263,8 +288,8 @@ jobs:
         with:
           name: margine-iso-index-${{ steps.ia_upload.outputs.identifier }}
           path: |
-            ${{ steps.outputs.outdir }}/index.html
-            ${{ steps.outputs.outdir }}/SHA256SUMS
+            ${{ steps.disk.outputs.outdir }}/index.html
+            ${{ steps.disk.outputs.outdir }}/SHA256SUMS
           retention-days: 30
 
       - name: Notify ntfy (disk-build outcome)

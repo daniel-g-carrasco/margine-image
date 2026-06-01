@@ -79,6 +79,13 @@ jobs:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
+          # Margine's :stable inherits from Bluefin DX, which doesn't
+          # set the `containers.bootc.rootfs` OCI label; without an
+          # explicit rootfs here bootc-image-builder errors out with
+          # "DefaultRootFs missing". Bluefin's own ISO uses btrfs and
+          # so does Margine's Anaconda installer config (Btrfs default
+          # in Anaconda).
+          rootfs: btrfs
           additional-args: --use-librepo=True
 
       - name: List + sha256 outputs

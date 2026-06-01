@@ -1,12 +1,29 @@
 ---
 # Margine ISO + qcow2 builder.
 #
-# Builds Anaconda installer ISO (single-step Margine install) and
-# raw qcow2 (VM-ready disk image) from the currently-promoted
-# ghcr.io/<owner>/margine:stable. The big binaries are uploaded to
-# Internet Archive (which generates torrent + 3 HTTP mirrors and
-# seeds forever); a small HTML index page + SHA256SUMS are kept as
-# GHA workflow artifact for download.
+# Pipeline shape (2026-06-02 split, see
+# ~/.claude/.../memory/feedback_ci_split_long_jobs.md for the rule):
+#
+#   build_disk (matrix: anaconda-iso, qcow2)  ──┐
+#                                               │  uploads each artifact
+#                                               │  as GHA workflow artifact
+#                                               ▼
+#                              publish_ia (ISO only)  ──┐
+#                                                       ▼
+#                                                      notify (if: always())
+#
+# build_disk does the heavy work — bootc-image-builder (~15-17 min) +
+# checksums + upload-artifact. publish_ia downloads the ISO artifact
+# and pushes it to Internet Archive (the unstable, slow, multi-GB step
+# that for the previous monolithic shape forced a full BIB rerun
+# whenever the upload failed). On a failed publish_ia,
+# `gh run rerun --failed <run-id>` re-runs only the upload step in
+# minutes instead of redoing the whole 15-17 min BIB pipeline.
+#
+# The qcow2 matrix entry doesn't publish anywhere today — its artifact
+# is just retained as a GHA workflow artifact for daniel to grab
+# manually when testing in QEMU/virt-manager. publish_ia downloads
+# only the anaconda-iso artifact.
 #
 # Runs on GitHub-hosted ubuntu-24.04. The self-hosted PVE builder
 # VM (margine-builder, VM 170) was decommissioned on 2026-06-01
@@ -42,14 +59,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build ISO + qcow2 → publish to edge
+  build_disk:
+    name: Build disk (${{ matrix.disk-type }})
     runs-on: ubuntu-24.04
-    # 180 = BIB (~15 min) + IA upload (often 60-90 min for multi-GB ISO)
-    # + IA derive wait (up to 25 min) + buffer. Was 90; killed run
-    # #26783621978 mid-upload with no diagnostics, see
-    # ~/.claude/.../memory/feedback_ia_upload_observability.md
-    timeout-minutes: 180
+    # BIB is ~15-17 min, sha256 + artifact upload ~1-3 min. 45 is a
+    # comfortable cap for the build half of the pipeline.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +73,12 @@ jobs:
       contents: read
       packages: read
       id-token: write
+    outputs:
+      # These are matrix outputs — to consume them from a non-matrix
+      # downstream job (publish_ia), reference the artifact name pattern
+      # directly instead. We expose disk-type just for clarity in the
+      # ntfy step.
+      iso_artifact: ${{ steps.upload.outputs.artifact-id }}
 
     steps:
       - name: Maximize build space
@@ -140,9 +161,10 @@ jobs:
           fi
           echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
           ls -la "$OUTDIR"
-          # bootc-image-builder puts artifacts under subdirs (bootiso/install.iso,
-          # qcow2/disk.qcow2). Walk recursively for sha256 and capture artifact
-          # paths so the upload step has the actual file location, not a glob.
+          # bootc-image-builder puts artifacts under subdirs
+          # (bootiso/install.iso, qcow2/disk.qcow2). Walk recursively
+          # for sha256 and capture artifact paths so downstream steps
+          # have the actual file location, not a glob.
           ARTIFACT=""
           (cd "$OUTDIR" && find . -type f \( -name '*.iso' -o -name '*.qcow2' \) | sort) > /tmp/disk-files.txt
           while read -r rel; do
@@ -153,12 +175,72 @@ jobs:
             echo "::error::no .iso or .qcow2 produced under $OUTDIR"
             exit 1
           fi
+          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
           echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
           echo "artifact_basename=$(basename "$ARTIFACT")" >> "$GITHUB_OUTPUT"
-          echo "Artifact: $ARTIFACT ($(stat -c %s "$ARTIFACT") bytes)"
+          echo "size_bytes=$SIZE_BYTES" >> "$GITHUB_OUTPUT"
+          echo "Artifact: $ARTIFACT ($((SIZE_BYTES / 1024 / 1024)) MB / $SIZE_BYTES bytes)"
+
+      - name: Upload disk artifact + SHA256SUMS
+        # Pass the disk image to publish_ia via GHA workflow artifacts.
+        # ~3-5 GB transfer takes ~30-90 sec each direction on GHA's
+        # internal CAS — the net cost vs the old monolithic shape is
+        # ~2-3 min, vs ~15-17 min saved on every IA-upload failure.
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: margine-disk-${{ matrix.disk-type }}
+          # Pack the *whole* output dir (artifact + SHA256SUMS); the
+          # publish_ia step needs both.
+          path: ${{ steps.disk.outputs.outdir }}
+          # ISOs are timestamped daily; one day of retention is plenty
+          # for the publish_ia handoff. Bump to 7 if you want to retry
+          # publish manually a few days later.
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0  # ISOs/qcow2s are not further compressible
+
+  publish_ia:
+    name: Publish ISO to Internet Archive
+    needs: build_disk
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    # 180 = IA upload (often 60-90 min for multi-GB ISO) + derive wait
+    # (up to 25 min) + slack. The fact that we can re-run just this
+    # job on flakiness is the whole point of the split.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    outputs:
+      identifier: ${{ steps.ia_upload.outputs.identifier }}
+    steps:
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: margine-disk-anaconda-iso
+          path: ./disk
+
+      - name: Locate ISO + verify integrity
+        id: disk
+        run: |
+          set -euo pipefail
+          OUTDIR="$(pwd)/disk"
+          ARTIFACT="$(find "$OUTDIR" -type f -name '*.iso' | head -1)"
+          if [[ -z "$ARTIFACT" || ! -f "$ARTIFACT" ]]; then
+            echo "::error::no .iso found in downloaded artifact at $OUTDIR"
+            ls -la "$OUTDIR" || true
+            exit 1
+          fi
+          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
+          echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "artifact_basename=$(basename "$ARTIFACT")" >> "$GITHUB_OUTPUT"
+          echo "Will upload $(basename "$ARTIFACT") — $((SIZE_BYTES / 1024 / 1024)) MB ($SIZE_BYTES bytes)"
+          # Re-verify checksum locally — catches any artifact-transit
+          # corruption before we burn an hour pushing it to IA.
+          (cd "$OUTDIR" && sha256sum -c SHA256SUMS)
 
       - name: Install Internet Archive CLI (ia)
-        if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           if ! command -v ia >/dev/null; then
@@ -169,17 +251,23 @@ jobs:
 
       - name: Upload to Internet Archive (torrent-first distribution)
         # IA auto-generates a BitTorrent .torrent + magnet + 3 HTTP
-        # mirrors for everything we upload, and seeds it forever.
-        # This is the same pattern Bluefin/Bazzite use to avoid
-        # Cloudflare TOS (no large binary content served from origin)
-        # and to keep our home-server upload bandwidth free.
-        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
-        # The job-level timeout-minutes (currently 180) covers this step.
-        # Multi-GB ISO uploads to IA can routinely take 60-90 min — see
-        # run #26783621978 (cancelled by old 90-min timeout while still
-        # transferring bytes). The --verbose / --retries / --sleep
-        # combination below is the lesson from that incident; the saved
-        # memory feedback_ia_upload_observability.md explains why each.
+        # mirrors for everything we upload, and seeds it forever. This
+        # is the same pattern Bluefin/Bazzite use to avoid Cloudflare
+        # TOS (no large binary content served from origin) and to keep
+        # our home-server upload bandwidth free.
+        #
+        # -l info: top-level `--log-level info` makes the ia CLI emit
+        #            per-request log lines (the closest thing it has to
+        #            "show me the upload is making progress"). Default
+        #            level is `error` — silent during a 60+ min upload.
+        # --retries 5 (default 3): IA's S3 endpoint returns 503 under
+        #            load; 3 retries isn't always enough for a multi-GB
+        #            multi-part upload.
+        # --sleep 60 (default 30): be a better neighbour to IA during
+        #            backoff.
+        # NOTE: `ia upload --verbose` does NOT exist as a subcommand
+        # flag — the previous attempt failed with `unrecognized
+        # arguments: --verbose`. -l is the right knob.
         env:
           IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
           IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
@@ -187,18 +275,8 @@ jobs:
           set -euo pipefail
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
-          if [[ -z "$ARTIFACT" || ! -f "$ARTIFACT" ]]; then
-            echo "::error::artifact path empty or missing: '$ARTIFACT'"
-            exit 1
-          fi
-          # Log the file size BEFORE upload so we can tell "is this a 1 GB
-          # ISO or a 5 GB ISO?" from the build log alone.
-          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
-          SIZE_MB=$(( SIZE_BYTES / 1024 / 1024 ))
-          echo "Uploading $(basename "$ARTIFACT") — ${SIZE_MB} MB (${SIZE_BYTES} bytes)"
-
           DATE_TAG="$(date -u +%Y%m%d)"
-          IDENTIFIER="margine-${{ matrix.disk-type }}-${DATE_TAG}"
+          IDENTIFIER="margine-anaconda-iso-${DATE_TAG}"
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
           [s3]
@@ -206,19 +284,10 @@ jobs:
           secret = ${IA_S3_SECRET}
           EOF
           chmod 0600 "$IA_CONFIG_FILE"
-          # --verbose: emit per-file progress + speed, instead of the
-          #            default silent transfer (the killer of run
-          #            #26783621978's diagnostics).
-          # --retries 5 (default 3): IA's S3 endpoint returns 503 under
-          #            load; 3 retries isn't always enough for a multi-GB
-          #            multi-part upload.
-          # --sleep 60 (default 30): be a better neighbour to IA during
-          #            backoff.
-          ia --config-file "$IA_CONFIG_FILE" upload "$IDENTIFIER" \
+          ia --config-file "$IA_CONFIG_FILE" -l info upload "$IDENTIFIER" \
             "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
             --retries 5 \
             --sleep 60 \
-            --verbose \
             --metadata="mediatype:software" \
             --metadata="collection:opensource" \
             --metadata="title:Margine Linux ISO ${DATE_TAG}" \
@@ -231,7 +300,6 @@ jobs:
         id: ia_upload
 
       - name: Wait for IA to derive (gen torrent + mirrors)
-        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
         timeout-minutes: 25
         env:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
@@ -251,7 +319,6 @@ jobs:
           echo "::warning::IA torrent not derived within 20 min — index will use HTTP mirrors only"
 
       - name: Generate index.html for the IA upload page
-        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
         env:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
         run: |
@@ -259,10 +326,6 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           DATE_TAG="$(date -u +%Y%m%d)"
           ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
-          # Magnet URI for the IA-generated torrent. IA URL pattern:
-          # https://archive.org/download/<id>/<id>_archive.torrent
-          # We construct a magnet directly with the xt= sha1 left empty
-          # (most clients will fetch the .torrent from the tr= URL).
           TORRENT_URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
           MIRROR_HTTP="https://archive.org/download/${IDENTIFIER}/${ISO_NAME}"
           cat > "$OUTDIR/index.html" <<HTML
@@ -304,13 +367,12 @@ jobs:
           HTML
 
       - name: Upload index.html + SHA256SUMS as workflow artifact
-        # The big binaries live authoritatively on Internet Archive
+        # The big binary lives authoritatively on Internet Archive
         # (uploaded above). The lightweight pieces — HTML index page
         # with magnet links and the SHA256SUMS file — are kept here
         # as a downloadable GHA artifact. Anyone who wants to publish
         # them under a friendly URL can grab the artifact and rsync it
         # to a webserver of their choice.
-        if: github.event_name != 'pull_request' && matrix.disk-type == 'anaconda-iso'
         uses: actions/upload-artifact@v4
         with:
           name: margine-iso-index-${{ steps.ia_upload.outputs.identifier }}
@@ -319,38 +381,54 @@ jobs:
             ${{ steps.disk.outputs.outdir }}/SHA256SUMS
           retention-days: 30
 
-      - name: Notify ntfy (disk-build outcome)
-        if: always()
+  notify:
+    name: ntfy notification (aggregated)
+    needs: [build_disk, publish_ia]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Notify ntfy
         env:
           NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+          BUILD_RESULT: ${{ needs.build_disk.result }}
+          PUBLISH_RESULT: ${{ needs.publish_ia.result }}
         run: |
           if [[ -z "${NTFY_URL:-}" ]]; then
             echo "NTFY_TOPIC_URL secret not set, skipping notification."
             exit 0
           fi
-          STATUS="${{ job.status }}"
-          DISK="${{ matrix.disk-type }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          case "$STATUS" in
-            success)
-              TITLE="Disk image ${DISK} published"
-              PRIO="default"
-              TAGS="cd,white_check_mark"
-              MSG="Disponibile su Internet Archive (link torrent + HTTP nei dettagli della run)."
-              ;;
-            failure)
-              TITLE="Disk image ${DISK} BUILD FAILED"
-              PRIO="high"
-              TAGS="x,cd"
-              MSG="Vedi i log: ${RUN_URL}"
-              ;;
-            *)
-              TITLE="Disk image ${DISK} status: ${STATUS}"
-              PRIO="low"
-              TAGS="warning"
-              MSG=""
-              ;;
-          esac
+
+          # Decision matrix — the partial-success case (BIB OK, IA failed)
+          # is the interesting one: it tells daniel exactly how to retry
+          # without redoing the whole BIB pipeline.
+          if [[ "$BUILD_RESULT" == "success" && "$PUBLISH_RESULT" == "success" ]]; then
+            TITLE="Disk images built + ISO on Internet Archive"
+            PRIO="default"
+            TAGS="cd,white_check_mark"
+            MSG="Run #${{ github.run_number }} done. Both qcow2 and ISO built; ISO + magnet on archive.org/details/."
+          elif [[ "$BUILD_RESULT" == "failure" ]]; then
+            TITLE="Disk build FAILED (BIB)"
+            PRIO="high"
+            TAGS="x,cd"
+            MSG="bootc-image-builder failed. See logs: ${RUN_URL}"
+          elif [[ "$PUBLISH_RESULT" == "failure" ]]; then
+            TITLE="ISO built but IA upload FAILED — retry only the publish job"
+            PRIO="high"
+            TAGS="cd,closed_lock_with_key"
+            MSG="The ISO + qcow2 are built and saved as GHA artifacts. Retry just the publish_ia job: gh run rerun --failed ${{ github.run_id }}"
+          elif [[ "$BUILD_RESULT" == "cancelled" || "$PUBLISH_RESULT" == "cancelled" ]]; then
+            TITLE="Disk pipeline cancelled"
+            PRIO="low"
+            TAGS="warning"
+            MSG=""
+          else
+            TITLE="Disk pipeline status: build=${BUILD_RESULT}, publish=${PUBLISH_RESULT}"
+            PRIO="default"
+            TAGS="warning"
+            MSG=""
+          fi
           curl --silent --show-error --fail \
             -H "Title: ${TITLE}" \
             -H "Priority: ${PRIO}" \

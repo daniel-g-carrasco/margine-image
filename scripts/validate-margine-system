@@ -39,7 +39,14 @@ fi
 # Expected values — canonical Margine state.
 # Keep in sync with declarations/margine-atomic.yaml and build.sh.
 EXPECTED_OS_NAME="Margine"
-EXPECTED_OS_ID="margine"
+# os-release(5): ID is the family (we use "fedora", same as Bluefin's own
+# upstream now does, so bootc-image-builder can find its distro definition);
+# VARIANT_ID is the specific spin within the family. Margine identifies as
+# the latter — matches Fedora's own convention for Workstation/Silverblue/
+# Kinoite. The change happened on 2026-06-01 alongside the first ISO build;
+# pre-2026-06-01 images had ID=margine.
+EXPECTED_OS_ID="fedora"
+EXPECTED_OS_VARIANT_ID="margine"
 EXPECTED_KERNEL_PATTERN="cachyos"
 EXPECTED_PLYMOUTH_THEME="margine"
 EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/margine.png"
@@ -93,9 +100,11 @@ hdr "1. OS identity"
 # ---------------------------------------------------------------------------
 NAME=$(grep -E '^NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
 ID=$(grep -E '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
-info "os-release NAME=$NAME ID=$ID"
-[[ "$NAME" == "$EXPECTED_OS_NAME" ]] && ok "NAME == $EXPECTED_OS_NAME" || bad "NAME is '$NAME', expected '$EXPECTED_OS_NAME'"
-[[ "$ID"   == "$EXPECTED_OS_ID"   ]] && ok "ID == $EXPECTED_OS_ID"     || bad "ID is '$ID', expected '$EXPECTED_OS_ID'"
+VARIANT_ID=$(grep -E '^VARIANT_ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+info "os-release NAME=$NAME ID=$ID VARIANT_ID=$VARIANT_ID"
+[[ "$NAME"       == "$EXPECTED_OS_NAME"        ]] && ok "NAME == $EXPECTED_OS_NAME"               || bad "NAME is '$NAME', expected '$EXPECTED_OS_NAME'"
+[[ "$ID"         == "$EXPECTED_OS_ID"          ]] && ok "ID == $EXPECTED_OS_ID"                   || bad "ID is '$ID', expected '$EXPECTED_OS_ID'"
+[[ "$VARIANT_ID" == "$EXPECTED_OS_VARIANT_ID"  ]] && ok "VARIANT_ID == $EXPECTED_OS_VARIANT_ID"   || bad "VARIANT_ID is '$VARIANT_ID', expected '$EXPECTED_OS_VARIANT_ID'"
 
 # ---------------------------------------------------------------------------
 hdr "2. Kernel and boot integrity"

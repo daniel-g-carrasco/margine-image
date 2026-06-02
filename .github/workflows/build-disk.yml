@@ -165,16 +165,28 @@ jobs:
           # (bootiso/install.iso, qcow2/disk.qcow2). Walk recursively
           # for sha256 and capture artifact paths so downstream steps
           # have the actual file location, not a glob.
-          ARTIFACT=""
-          (cd "$OUTDIR" && find . -type f \( -name '*.iso' -o -name '*.qcow2' \) | sort) > /tmp/disk-files.txt
-          while read -r rel; do
-            sha256sum "$OUTDIR/${rel#./}" | tee -a "$OUTDIR/SHA256SUMS"
-            [[ -z "$ARTIFACT" ]] && ARTIFACT="$OUTDIR/${rel#./}"
-          done < /tmp/disk-files.txt
-          if [[ -z "$ARTIFACT" ]]; then
+          #
+          # CRITICAL: write SHA256SUMS with paths RELATIVE TO $OUTDIR
+          # (e.g. "bootiso/install.iso", not "./output/bootiso/install.iso").
+          # Run #26789024483's publish_ia failed verification because the
+          # download-artifact unpacks the dir at ./disk, not ./output —
+          # absolute or build-side-relative paths in SHA256SUMS become
+          # unreadable downstream. Relative paths verify correctly from
+          # any CWD that contains the same internal directory layout.
+          ARTIFACT_REL=""
+          (cd "$OUTDIR" && find . -type f \( -name '*.iso' -o -name '*.qcow2' \) -print | sort) > /tmp/disk-files.txt
+          ( cd "$OUTDIR" && while read -r rel; do
+              rel="${rel#./}"
+              sha256sum "$rel"
+            done < /tmp/disk-files.txt
+          ) > "$OUTDIR/SHA256SUMS"
+          cat "$OUTDIR/SHA256SUMS"
+          ARTIFACT_REL="$(head -1 /tmp/disk-files.txt | sed 's|^\./||')"
+          if [[ -z "$ARTIFACT_REL" ]]; then
             echo "::error::no .iso or .qcow2 produced under $OUTDIR"
             exit 1
           fi
+          ARTIFACT="$OUTDIR/$ARTIFACT_REL"
           SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
           echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
           echo "artifact_basename=$(basename "$ARTIFACT")" >> "$GITHUB_OUTPUT"

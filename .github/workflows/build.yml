@@ -85,7 +85,11 @@ jobs:
           remove-codeql: true
 
       - name: Checkout
-        uses: actions/checkout@v4
+        # SHA-pinned for supply-chain safety. Comment is the human-readable
+        # version Dependabot uses to bump both fields in lockstep. See the
+        # tj-actions/changed-files incident (2025-03) for why @vN alone
+        # is unsafe.
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 1
 
@@ -116,7 +120,7 @@ jobs:
           echo "ymd=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
 
       - name: Image metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: metadata
         with:
           tags: |

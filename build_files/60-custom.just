@@ -119,6 +119,22 @@ margine-gaming:
           gamescope -- %command%   in Steam launch options.
       - To roll this back: ujust margine-gaming-remove
 
+    Trade-off — host RPMs are layered via rpm-ostree, which means:
+      - Your booted deployment becomes "branched" from the base OCI
+        image: `rpm-ostree status` will show LayeredPackages: …
+      - Every `bootc upgrade` re-applies the layer on top of the new
+        base, which is slower (~30-60s extra per upgrade) and can
+        occasionally fail on file conflicts when upstream relocates a
+        file in a layered RPM.
+      - You cannot ship this state as an OCI image.
+    The pure-Fedora-Atomic alternative is a separate image variant
+    (`bootc switch ghcr.io/.../margine-gaming:stable`), which gives an
+    ostree-canonical deployment with zero overlay. That path is on the
+    Margine TODO list but not built yet; for now this ujust recipe
+    is the supported way to get the gaming layer. The Flatpak clients
+    above (Steam/Lutris/Heroic/Bottles/Protontricks/ProtonUp-Qt/
+    RetroArch) DO NOT layer — they're proper Flatpaks.
+
     EOF
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac

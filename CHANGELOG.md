@@ -7,6 +7,17 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-03)
+- **11 GNOME core Flatpaks added to the preinstall set** (Calculator,
+  Calendar, clocks, Contacts, Weather, Maps, TextEditor, baobab,
+  Characters, Logs, font-viewer). Closes the visible gap "the
+  standard GNOME utility set isn't here" against a vanilla Fedora
+  Silverblue install — Silverblue ships these as RPM in /usr, Bluefin
+  DX intentionally strips them, so we restore the set as Flatpaks
+  (atomic-friendly, ~120 MB cumulative thanks to shared
+  org.gnome.Platform runtime). `EXPECTED_FLATPAKS` in
+  margine-fedora-atomic updated in lockstep.
+
 ### Added (2026-06-02, part 2)
 - **9 Flatpaks added to the preinstall set** (Thunderbird ESR,
   GNOME Snapshot/Showtime/Papers/Loupe/SoundRecorder, Blanket,

@@ -89,6 +89,7 @@ PRETTY_NAME="Margine ${FEDORA_VER} (${BUILD_DATE})"
 VARIANT="Margine"
 VARIANT_ID=margine
 ANSI_COLOR="0;38;2;232;186;0"
+LOGO=margine-logo
 CPE_NAME="cpe:/o:daniel-g-carrasco:margine:${FEDORA_VER}"
 HOME_URL="https://github.com/daniel-g-carrasco/margine-image"
 DOCUMENTATION_URL="https://github.com/daniel-g-carrasco/margine-fedora-atomic"
@@ -560,7 +561,20 @@ cat > /usr/bin/margine-fetch <<'EOF'
 exec fastfetch --config /usr/share/fastfetch/margine.jsonc "$@"
 EOF
 chmod 0755 /usr/bin/margine-fetch
-log "Installed: /usr/share/fastfetch/margine.jsonc + /usr/bin/margine-fetch"
+
+# (f.bis) System-wide fastfetch default config.
+# Without this, vanilla `fastfetch` (no --config) walks its own search
+# path: $XDG_CONFIG_HOME/fastfetch/config.jsonc (user, empty on a fresh
+# install) → /etc/fastfetch/config.jsonc (we own this slot) →
+# built-in default (= Fedora ASCII logo). Daniel noticed `fastfetch`
+# was showing Fedora art instead of Margine even though
+# /usr/share/margine/ascii-logo.txt was correctly installed.
+# Pointing /etc/fastfetch/config.jsonc at our margine.jsonc fixes
+# the default invocation; margine-fetch still works as before.
+mkdir -p /etc/fastfetch
+cp /usr/share/fastfetch/margine.jsonc /etc/fastfetch/config.jsonc
+chmod 0644 /etc/fastfetch/config.jsonc
+log "Installed: /etc/fastfetch/config.jsonc (default config → Margine ASCII)"
 
 # Recompile glib schemas so the appended background override takes effect.
 glib-compile-schemas /usr/share/glib-2.0/schemas

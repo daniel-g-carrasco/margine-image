@@ -49,7 +49,6 @@ on:
       - './.github/workflows/build-disk.yml'
 
 env:
-  IMAGE_NAME: margine
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
   BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
@@ -60,7 +59,7 @@ concurrency:
 
 jobs:
   build_disk:
-    name: Build disk (${{ matrix.disk-type }})
+    name: Build disk (${{ matrix.image }} / ${{ matrix.disk-type }})
     runs-on: ubuntu-24.04
     # BIB is ~15-17 min, sha256 + artifact upload ~1-3 min. 45 is a
     # comfortable cap for the build half of the pipeline.
@@ -68,6 +67,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Both flavours: base Margine and the gaming variant. Both
+        # get qcow2 (smoke testing in QEMU/virt-manager) + anaconda-iso
+        # (real-hardware install). 4 jobs total run in parallel.
+        image: ["margine", "margine-gaming"]
         disk-type: ["qcow2", "anaconda-iso"]
     permissions:
       contents: read
@@ -93,6 +96,8 @@ jobs:
           USER_UID=$(id -u)
           USER_GID=$(id -g)
           DISK_TYPE=$(echo "${{ matrix.disk-type }}" | tr ' ' '-')
+          # IMAGE_NAME comes from the matrix (margine or margine-gaming).
+          IMAGE_NAME="${{ matrix.image }}"
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
           echo "DISK_TYPE=${DISK_TYPE}" >> ${GITHUB_ENV}
@@ -201,7 +206,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: margine-disk-${{ matrix.disk-type }}
+          name: ${{ matrix.image }}-disk-${{ matrix.disk-type }}
           # Pack the *whole* output dir (artifact + SHA256SUMS); the
           # publish_ia step needs both.
           path: ${{ steps.disk.outputs.outdir }}
@@ -213,7 +218,7 @@ jobs:
           compression-level: 0  # ISOs/qcow2s are not further compressible
 
   publish_ia:
-    name: Publish ISO to Internet Archive
+    name: Publish ISO (${{ matrix.image }}) to Internet Archive
     needs: build_disk
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
@@ -221,15 +226,21 @@ jobs:
     # (up to 25 min) + slack. The fact that we can re-run just this
     # job on flakiness is the whole point of the split.
     timeout-minutes: 180
+    strategy:
+      # Run base + gaming uploads in parallel — they're independent,
+      # and a failure of one doesn't invalidate the other.
+      fail-fast: false
+      matrix:
+        image: ["margine", "margine-gaming"]
     permissions:
       contents: read
     outputs:
       identifier: ${{ steps.ia_upload.outputs.identifier }}
     steps:
-      - name: Download ISO artifact
+      - name: Download ISO artifact (${{ matrix.image }})
         uses: actions/download-artifact@v4
         with:
-          name: margine-disk-anaconda-iso
+          name: ${{ matrix.image }}-disk-anaconda-iso
           path: ./disk
 
       - name: Locate ISO + verify integrity
@@ -312,7 +323,19 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
           DATE_TAG="$(date -u +%Y%m%d)"
-          IDENTIFIER="margine-anaconda-iso-${DATE_TAG}"
+          # Per-variant IA identifier + human-readable title. The base
+          # keeps the historical "margine-anaconda-iso-YYYYMMDD"
+          # identifier; the gaming variant gets its own item.
+          IDENTIFIER="${{ matrix.image }}-anaconda-iso-${DATE_TAG}"
+          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
+            TITLE="Margine Gaming Linux ISO ${DATE_TAG}"
+            DESCRIPTION="Margine Gaming — Margine base + gamescope/mangohud/vkBasalt/gamemode/etc. + Steam/Lutris/Heroic/Bottles/Protontricks/ProtonUp-Qt/RetroArch preinstalled. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+            SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine;gaming;steam"
+          else
+            TITLE="Margine Linux ISO ${DATE_TAG}"
+            DESCRIPTION="Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+            SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
+          fi
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
           [s3]
@@ -326,9 +349,9 @@ jobs:
             --sleep 60 \
             --metadata="mediatype:software" \
             --metadata="collection:opensource" \
-            --metadata="title:Margine Linux ISO ${DATE_TAG}" \
-            --metadata="description:Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}" \
-            --metadata="subject:linux;fedora;bootc;bluefin;cachyos;margine" \
+            --metadata="title:${TITLE}" \
+            --metadata="description:${DESCRIPTION}" \
+            --metadata="subject:${SUBJECT}" \
             --metadata="creator:daniel-g-carrasco" \
             --metadata="licenseurl:https://www.apache.org/licenses/LICENSE-2.0"
           echo "identifier=$IDENTIFIER" >> "$GITHUB_OUTPUT"
@@ -362,13 +385,20 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           DATE_TAG="$(date -u +%Y%m%d)"
           ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
+          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
+            HEADER="Margine Gaming ${DATE_TAG}"
+            SUBHEAD="Margine Gaming — Margine + Steam/Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/gamemode preinstalled."
+          else
+            HEADER="Margine ${DATE_TAG}"
+            SUBHEAD="Margine — Bluefin DX + CachyOS signed kernel."
+          fi
           TORRENT_URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
           MIRROR_HTTP="https://archive.org/download/${IDENTIFIER}/${ISO_NAME}"
           cat > "$OUTDIR/index.html" <<HTML
           <!doctype html>
           <html lang="en"><head>
             <meta charset="utf-8">
-            <title>Margine ${DATE_TAG} — downloads</title>
+            <title>${HEADER} — downloads</title>
             <style>
               body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
               h1 { font-size: 22px; }
@@ -378,8 +408,8 @@ jobs:
               footer { margin-top: 32px; color: #888; font-size: 13px; }
             </style>
           </head><body>
-            <h1>Margine ${DATE_TAG}</h1>
-            <p>Margine — Bluefin DX + CachyOS signed kernel.
+            <h1>${HEADER}</h1>
+            <p>${SUBHEAD}
                Build dal commit <code>${{ github.sha }}</code>.</p>
 
             <div class="pkg">
@@ -411,7 +441,7 @@ jobs:
         # to a webserver of their choice.
         uses: actions/upload-artifact@v4
         with:
-          name: margine-iso-index-${{ steps.ia_upload.outputs.identifier }}
+          name: ${{ matrix.image }}-iso-index-${{ steps.ia_upload.outputs.identifier }}
           path: |
             ${{ steps.disk.outputs.outdir }}/index.html
             ${{ steps.disk.outputs.outdir }}/SHA256SUMS

@@ -724,6 +724,59 @@ rm -f /usr/bin/bluefin-dx-groups \
       /usr/bin/ublue-system-setup \
       /usr/bin/ublue-user-setup
 
+# (j) /etc/profile.d/ Bluefin shell init.
+# - ublue-fastfetch.sh sets   alias fastfetch=ublue-fastfetch (which we
+#   just deleted), making vanilla `fastfetch` crash with "command not
+#   found". Same for neofetch/neowofetch aliases.
+# - ublue-motd.sh calls ublue-motd (deleted) at every shell login →
+#   prints "ublue-motd: command not found" before the prompt.
+# - 91-bluefin-aliases.sh ships `alias rl=ramalama`. Branding, not
+#   functional for Margine.
+# - 90-bluefin-starship.sh wires up Bluefin's starship theme; Margine
+#   doesn't ship starship by default so the file is a no-op, but the
+#   'bluefin' in the name is misleading.
+# All four also live in /usr/etc/profile.d/ (ostree factory). We
+# strip both copies so the 3-way merge at user-boot doesn't restore
+# them.
+rm -f /etc/profile.d/ublue-fastfetch.sh \
+      /etc/profile.d/ublue-motd.sh \
+      /etc/profile.d/91-bluefin-aliases.sh \
+      /etc/profile.d/90-bluefin-starship.sh \
+      /usr/etc/profile.d/ublue-fastfetch.sh \
+      /usr/etc/profile.d/ublue-motd.sh \
+      /usr/etc/profile.d/91-bluefin-aliases.sh \
+      /usr/etc/profile.d/90-bluefin-starship.sh
+
+# (k) /etc/dconf/db/distro.d/ — Bluefin dconf overrides for app folder
+# layout, keybindings, Ptyxis colour palette, and extension prefs.
+# Several actively conflict with Margine intent:
+# - 02-bluefin-keybindings: Bluefin window-manager binds collide with
+#   the Hyprland-style ones margine-bootstrap applies (Super+1..0
+#   workspaces, Super+arrow focus, Super+return terminal).
+# - 03-bluefin-ptyxis-palette: Bluefin terminal colours — Margine
+#   should pick its own palette (yellow accent, autumn-warm) later.
+# - 04-bluefin-logomenu-extension: logo-menu prefs that point at the
+#   Bluefin LogoMenu icon — extension is in zz0's enabled-extensions
+#   but our zz1 overrides remove it from enabled set anyway.
+# - 05-bluefin-searchlight-extension: search-light prefs, partially
+#   useful but tinted with Bluefin defaults.
+# - 01-bluefin-folders: Gaming/Utilities/Games app folder layout.
+#   Margine has its own folder layout via configure-gnome-folders
+#   (margine-fedora-atomic).
+# - locks/01-bluefin-locked-settings: dconf locks that prevent the
+#   user from overriding any of the above. With the overrides gone,
+#   the locks reference non-existent keys.
+# Plus the /usr/etc/ factory copies (same 3-way-merge concern as
+# profile.d above).
+rm -f /etc/dconf/db/distro.d/*bluefin* \
+      /etc/dconf/db/distro.d/locks/*bluefin* \
+      /usr/etc/dconf/db/distro.d/*bluefin* \
+      /usr/etc/dconf/db/distro.d/locks/*bluefin*
+# Rebuild dconf db so removed overrides don't keep being compiled.
+if command -v dconf >/dev/null 2>&1; then
+  dconf update 2>/dev/null || true
+fi
+
 # Update the icon-theme cache so removed SVGs disappear from icon
 # lookups immediately at first boot.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then

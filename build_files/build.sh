@@ -665,6 +665,21 @@ rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
       /usr/share/icons/hicolor/scalable/places/ublue-update.svg \
       /usr/share/icons/hicolor/scalable/actions/ublue-logo-symbolic.svg
 
+# (b.bis) gnome-initial-setup's welcome page (first screen, language
+# picker) renders <GtkImage icon_name='start-here-symbolic' pixel_size=96>
+# as a 96px header above the locale list. Bluefin DX has overridden
+# /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+# with a velociraptor footprint (their mascot) — daniel saw that
+# 'dinosaur' on the Benvenuti page of a fresh Margine install.
+# Replace it with the Margine wordmark 'm' glyph (pixel art SVG,
+# same source as the favicon). Tracked in
+# margine-fedora-atomic assets/branding/start-here-symbolic.svg.
+curl --fail --silent --show-error -L \
+    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" \
+    -o /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+chmod 0644 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+log "Replaced start-here-symbolic.svg with Margine 'm' glyph"
+
 # (c) Bluefin wallpaper collection (Settings → Background spam).
 rm -rf /usr/share/backgrounds/bluefin
 

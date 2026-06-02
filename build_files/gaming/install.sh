@@ -7,20 +7,24 @@ set -ouex pipefail
 
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
+# Verified 2026-06-03 against ghcr.io/ublue-os/bluefin-dx:stable:
+# gamemode, input-remapper, tuned, tuned-ppd are ALREADY in the
+# Bluefin DX base (and therefore in margine:stable) — listing them
+# again makes dnf5 fail with "Package already installed".
+# rom-properties-gtk does NOT exist in Fedora 44 / RPMFusion (no
+# matches found in dnf search); the upstream rom-properties project
+# ships a COPR (eyalroz/rom-properties) but it's a separate decision
+# whether we want a third repo just for ROM metadata. Dropped for now.
 GAMING_RPMS=(
   gamescope
   mangohud
   vkBasalt
-  gamemode
   goverlay
   steam-devices
-  input-remapper
-  tuned
-  tuned-ppd
-  rom-properties-gtk
 )
 
 log "Installing ${#GAMING_RPMS[@]} gaming RPMs into the base image"
+log "(gamemode, input-remapper, tuned, tuned-ppd inherited from base)"
 
 # RPMFusion is REQUIRED for most of the gaming RPM stack (gamescope,
 # mangohud, vkBasalt, gamemode, goverlay, steam-devices) — Bluefin

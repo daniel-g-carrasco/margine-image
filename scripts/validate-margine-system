@@ -237,17 +237,46 @@ fi
 # etc.) and the user will see Bluefin app menu items / wallpaper
 # carousel entries / mascots again.
 hdr "5b. Bluefin leftover absence (post-strip guardrail)"
+# Filesystem-level Bluefin leftover that build.sh's section 4.bis
+# strips. If any of these come back, something undid the strip step
+# (rebase to an unfixed parent, manual cp, RPM update reinstalling
+# what was rm'd).
 declare -A BLUEFIN_LEFTOVER_PATHS=(
+  # App-menu entries pointing at projectbluefin
   ['app menu — discourse']='/usr/share/applications/discourse.desktop'
   ['app menu — Bluefin docs']='/usr/share/applications/documentation.desktop'
   ['app menu — Bluefin system update']='/usr/share/applications/system-update.desktop'
+  # Branding-only assets
   ['Bluefin wallpapers']='/usr/share/backgrounds/bluefin'
   ['Bluefin mascots']='/usr/share/ublue-os/bluefin-logos'
   ['Bluefin docs']='/usr/share/doc/bluefin'
   ['Bluefin Firefox config']='/usr/share/ublue-os/firefox-config'
   ['Bluefin fastfetch config']='/usr/share/ublue-os/fastfetch.jsonc'
-  ['ublue motd (Bluefin tipline on every login)']='/usr/bin/ublue-motd'
   ['Bazaar carousel wallpapers']='/usr/etc/bazaar/01-bluefin-day.jxl'
+  # /usr/bin orphan helpers (not RPM-owned, dropped by image-build scripts).
+  # ublue-motd specifically spammed Bluefin tipline at every shell login.
+  ['ublue-motd binary']='/usr/bin/ublue-motd'
+  ['ublue-fastfetch binary']='/usr/bin/ublue-fastfetch'
+  ['ublue-bling binary']='/usr/bin/ublue-bling'
+  ['ublue-bling-fastfetch binary']='/usr/bin/ublue-bling-fastfetch'
+  ['ublue-privileged-setup binary']='/usr/bin/ublue-privileged-setup'
+  ['ublue-system-setup binary']='/usr/bin/ublue-system-setup'
+  ['ublue-user-setup binary']='/usr/bin/ublue-user-setup'
+  ['bluefin-dx-groups binary']='/usr/bin/bluefin-dx-groups'
+  # /etc/profile.d/ shell init files (caused fastfetch / login errors
+  # in commit 40a6392's pre-state when ublue-fastfetch / ublue-motd
+  # were deleted but the alias / autorun files remained)
+  ['profile.d ublue-fastfetch aliases']='/etc/profile.d/ublue-fastfetch.sh'
+  ['profile.d ublue-motd autorun']='/etc/profile.d/ublue-motd.sh'
+  ['profile.d Bluefin aliases']='/etc/profile.d/91-bluefin-aliases.sh'
+  ['profile.d Bluefin starship']='/etc/profile.d/90-bluefin-starship.sh'
+  # /etc/dconf/db/distro.d/ overrides that hijack desktop defaults
+  ['dconf Bluefin app-folders']='/etc/dconf/db/distro.d/01-bluefin-folders'
+  ['dconf Bluefin keybindings']='/etc/dconf/db/distro.d/02-bluefin-keybindings'
+  ['dconf Bluefin Ptyxis palette']='/etc/dconf/db/distro.d/03-bluefin-ptyxis-palette'
+  ['dconf Bluefin logomenu config']='/etc/dconf/db/distro.d/04-bluefin-logomenu-extension'
+  ['dconf Bluefin searchlight config']='/etc/dconf/db/distro.d/05-bluefin-searchlight-extension'
+  ['dconf Bluefin locks']='/etc/dconf/db/distro.d/locks/01-bluefin-locked-settings'
 )
 for label in "${!BLUEFIN_LEFTOVER_PATHS[@]}"; do
   p=${BLUEFIN_LEFTOVER_PATHS[$label]}
@@ -257,6 +286,42 @@ for label in "${!BLUEFIN_LEFTOVER_PATHS[@]}"; do
     ok "$label removed ($p absent)"
   fi
 done
+
+# Behavioural checks — file presence isn't enough, the runtime behaviour
+# has to match too. Catches the case where a file is correctly removed
+# but its effect (alias, autorun) lingers via shell init caches.
+echo
+info "Behavioural checks (alias state + login banner)"
+
+# Vanilla `fastfetch` (no flag) must not error out. The previous
+# regression was 'ublue-fastfetch: command not found' from the
+# alias in /etc/profile.d/ublue-fastfetch.sh. We test by running it
+# in a fresh login shell so /etc/profile.d/ is re-sourced.
+if FF=$(bash -lc 'fastfetch --pipe 2>&1 | head -5') && [[ -n "$FF" ]] && ! echo "$FF" | grep -qiE "command not found|comando non trovato"; then
+  ok "fastfetch runs cleanly (no leftover alias to deleted binary)"
+else
+  bad "fastfetch broken — alias likely still resolves to a removed ublue-fastfetch / ublue-motd"
+fi
+
+# The Margine logo PNG must exist where os-release's LOGO key
+# resolves it (i.e. /usr/share/pixmaps/<LOGO>.png).
+RESOLVED_LOGO="/usr/share/pixmaps/${LOGO_KEY:-margine-logo}.png"
+[[ -f "$RESOLVED_LOGO" ]] \
+  && ok "LOGO=$LOGO_KEY resolves to $RESOLVED_LOGO" \
+  || bad "$RESOLVED_LOGO missing — GNOME About panel will fall back to a generic logo"
+
+# Extension Manager (Margine's chosen GUI for GNOME Shell extensions).
+# Margine preinstalls com.mattjakeman.ExtensionManager via the flatpak
+# preinstall API (commit 517b520). On a fresh-rebased system this
+# triggers async at first user login; warn if absent rather than
+# bad-fail, since it may still be queued.
+if command -v flatpak >/dev/null 2>&1; then
+  if flatpak info com.mattjakeman.ExtensionManager >/dev/null 2>&1; then
+    ok "Extension Manager (com.mattjakeman.ExtensionManager) installed"
+  else
+    warn "Extension Manager not installed — flatpak preinstall may still be running, or the user removed it"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 hdr "6. GDM greeter overrides (Bug 7 guardrail)"
@@ -318,9 +383,39 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   else
     warn "desktop wallpaper resolves to '$cur_bg_real' (expected '$exp_real'; user may have changed)"
   fi
+
+  # 10 workspaces — Margine ships fixed (not dynamic) workspaces so the
+  # Hyprland-style SUPER+1..0 keybinds land on stable targets. Set by
+  # zz1-margine.gschema.override.
+  CUR_NW=$(gsettings get org.gnome.desktop.wm.preferences num-workspaces 2>/dev/null)
+  [[ "$CUR_NW" == "10" ]] \
+    && ok "num-workspaces = 10 (Margine fixed-workspaces layout)" \
+    || bad "num-workspaces = $CUR_NW (expected 10) — zz1-margine override missing or shadowed"
+
+  CUR_DYN=$(gsettings get org.gnome.mutter dynamic-workspaces 2>/dev/null)
+  [[ "$CUR_DYN" == "false" ]] \
+    && ok "dynamic-workspaces disabled (required for SUPER+N binds)" \
+    || bad "dynamic-workspaces = $CUR_DYN (expected false) — SUPER+1..0 binds will misbehave"
 else
   warn "running as root — skipping GNOME session-level gsettings checks"
 fi
+
+# Margine-branded replacements for the 3 Bluefin app-menu entries we
+# stripped (system-update, documentation). Reasonable Margine should
+# offer its own versions in their place rather than leaving holes in
+# the app menu.
+declare -A MARGINE_DESKTOP_REPLACEMENTS=(
+  ['Margine System Update']='/usr/share/applications/margine-system-update.desktop'
+  ['Margine Documentation']='/usr/share/applications/margine-documentation.desktop'
+)
+for label in "${!MARGINE_DESKTOP_REPLACEMENTS[@]}"; do
+  p=${MARGINE_DESKTOP_REPLACEMENTS[$label]}
+  if [[ -f "$p" ]]; then
+    ok "$label present at $p"
+  else
+    warn "$label missing ($p) — stripped Bluefin entry has no Margine replacement in app menu"
+  fi
+done
 
 # ---------------------------------------------------------------------------
 hdr "8. Default Flatpak applications (Bug 9 guardrail)"
@@ -385,18 +480,18 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     && ok "color-scheme = prefer-dark" \
     || bad "color-scheme is '$CUR_SCHEME' (expected 'prefer-dark') — configure-gnome-appearance didn't run"
 
-  # Tiling Shell extension installed in user-extensions dir
-  if compgen -G "$HOME/.local/share/gnome-shell/extensions/tilingshell@*" >/dev/null; then
-    ok "Tiling Shell installed under ~/.local"
+  # o-tiling extension installed in user-extensions dir.
+  # (Tiling Shell was Margine default until 2026-06-02; removed because
+  # user only wanted o-tiling. Presence of tilingshell@* is now a sign
+  # of stale install — warn so the user knows they can prune it.)
+  if compgen -G "$HOME/.local/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
+    ok "o-tiling installed under ~/.local"
   else
-    bad "Tiling Shell NOT installed — install-user-extensions didn't run"
+    bad "o-tiling NOT installed — install-user-extensions didn't run"
   fi
-
-  # Tiling Shell autotile actually flipped on
-  TS_AUTO=$(gsettings get org.gnome.shell.extensions.tilingshell enable-autotiling 2>/dev/null)
-  [[ "$TS_AUTO" == "true" ]] \
-    && ok "Tiling Shell autotile = true" \
-    || warn "Tiling Shell autotile is '$TS_AUTO' (extension schema may not be present yet — log out/in)"
+  if compgen -G "$HOME/.local/share/gnome-shell/extensions/tilingshell@*" >/dev/null; then
+    warn "Tiling Shell present under ~/.local — stale (removed from Margine defaults 2026-06-02). Remove with: rm -rf ~/.local/share/gnome-shell/extensions/tilingshell@ferrarodomenico.com"
+  fi
 
   # App folders configured (Margine canonical set vs empty/Bluefin default).
   # Margine ships English-named folders: Office, Graphics, Photography,
@@ -418,6 +513,67 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   fi
 else
   warn "running as root — skipping user-state bootstrap effect checks"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9c. Gaming layer (opt-in — checks only run if the layer was installed)"
+# ---------------------------------------------------------------------------
+# Margine gaming layer = `ujust margine-gaming`. Installs 7 Flatpaks
+# + 10 layered RPMs (see margine-image/build_files/60-custom.just).
+# Detection heuristic: if any of the layered RPMs are present, treat
+# the layer as installed and validate the full set. Otherwise skip
+# silently with an INFO so a fresh-install check isn't penalised.
+GAMING_RPMS=(gamescope mangohud vkBasalt gamemode goverlay steam-devices input-remapper tuned tuned-ppd rom-properties-gtk)
+GAMING_FLATPAKS=(
+  com.valvesoftware.Steam
+  net.lutris.Lutris
+  com.heroicgameslauncher.hgl
+  com.usebottles.bottles
+  com.github.Matoking.protontricks
+  net.davidotek.pupgui2
+  org.libretro.RetroArch
+)
+GAMING_PRESENT=0
+for rpm in "${GAMING_RPMS[@]}"; do
+  if rpm -q "$rpm" >/dev/null 2>&1; then GAMING_PRESENT=1; break; fi
+done
+
+if (( GAMING_PRESENT == 0 )); then
+  info "Gaming layer not installed — skipping (run 'ujust margine-gaming' to install)"
+else
+  info "Gaming layer detected — validating full set"
+  for rpm in "${GAMING_RPMS[@]}"; do
+    if rpm -q "$rpm" >/dev/null 2>&1; then
+      ok "rpm-layered: $rpm"
+    else
+      bad "rpm-layered $rpm MISSING — gaming-layer install was partial; re-run 'ujust margine-gaming'"
+    fi
+  done
+  # Flatpaks
+  for fp in "${GAMING_FLATPAKS[@]}"; do
+    if flatpak info --system "$fp" >/dev/null 2>&1; then
+      ok "flatpak: $fp"
+    else
+      bad "flatpak $fp MISSING — gaming-layer install was partial"
+    fi
+  done
+  # Behavioural: the host binaries layered above must actually be on PATH
+  # after reboot. If they exist on disk but aren't on $PATH the layer
+  # hasn't been booted into yet.
+  for bin in gamescope mangohud gamemoded goverlay; do
+    if command -v "$bin" >/dev/null 2>&1; then
+      ok "$bin on PATH"
+    else
+      warn "$bin not on PATH — did you reboot after 'ujust margine-gaming'?"
+    fi
+  done
+  # tuned daemon present + a profile is active
+  if systemctl is-active tuned >/dev/null 2>&1; then
+    TUNED_PROFILE=$(tuned-adm active 2>/dev/null | awk -F': ' '/Current active profile/ {print $2}')
+    ok "tuned active (profile: ${TUNED_PROFILE:-unknown})"
+  else
+    warn "tuned.service not active — gaming layer installed but service disabled"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -311,12 +311,15 @@ host_packages:
       - adw-gtk3-theme
       - showtime
     gnome_tools_note: >
-      Tiling extension: we use Tiling Shell (tilingshell@ferrarodomenico.com),
-      not Forge. Forge is marked "Needs a new maintainer" upstream and its
-      gsettings schema breaks between releases. Tiling Shell is actively
-      maintained but is NOT in Fedora 44 repos, so it's installed user-level
-      by scripts/install-user-extensions (zip from extensions.gnome.org into
-      ~/.local/share/gnome-shell/extensions/). See docs/17-keyboard-bindings.md.
+      Tiling extension: we use o-tiling (o-tiling@oliwebd.github.com),
+      not Forge or Tiling Shell. Forge is marked "Needs a new maintainer"
+      upstream and its gsettings schema breaks between releases. Tiling
+      Shell was Margine's default until 2026-06-02 but its ghost-border
+      bug at v18 was unpleasant; o-tiling (binary-tree auto-split, fork
+      of System76's pop-shell) is closer to Hyprland muscle memory.
+      o-tiling is NOT on extensions.gnome.org, so it's installed
+      user-level from a pinned upstream release zip by
+      scripts/install-user-extensions. See docs/17-keyboard-bindings.md.
 
       The other extensions are inspired by Bluefin's
       zz0-bluefin-modifications.gschema.override: blur-my-shell adds the
@@ -552,18 +555,9 @@ gnome:
       pipeline: pipeline_default
     org.gnome.shell.extensions.blur-my-shell.applications:
       blur: false
-    org.gnome.shell.extensions.tilingshell:
-      note: >
-        Tiling Shell config. enable-autotiling=true makes new windows
-        auto-snap to the active layout — closer to i3/Hyprland auto-
-        tiling than the default snap-assist-only behaviour. The
-        keybindings themselves live in gnome.keybindings.tilingshell
-        and are applied by configure-gnome-keybindings.
-      enable-autotiling: true
-      enable-snap-assist: true
-      enable-window-border: false   # ghost-border bug on Tiling Shell when a window closes
-      inner-gaps: 4
-      outer-gaps: 4
+    # org.gnome.shell.extensions.tilingshell — removed 2026-06-02
+    # along with the user_install entry. o-tiling has its own
+    # schema (no comparable per-key surface to declare here yet).
     org.gnome.shell.extensions.search-light:
       note: >
         Settings staged for when search-light v43+ supports GNOME 50.
@@ -607,12 +601,9 @@ gnome:
       - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
       - search-light@icedman.github.com
-      # Tiling Shell installed but NOT enabled — superseded by
-      # o-tiling (binary-tree auto-split is closer to Hyprland muscle
-      # memory, and Tiling Shell's ghost-border bug at v18 was
-      # unpleasant). Disable line kept so a flip back via Extensions
-      # Manager is a 1-click operation.
-      # - tilingshell@ferrarodomenico.com
+      # Tiling Shell removed entirely (2026-06-02). o-tiling is the
+      # Margine default tiling engine. To A/B compare Tiling Shell,
+      # install it from Extensions Manager (EGO ID 7065).
       - o-tiling@oliwebd.github.com
       - hide-cursor@elcste.com
       - caffeine@patapon.info     # daniel asked for a "keep screen awake" toggle; awake@vixalien.com is upstream-deprecated, points users to Caffeine
@@ -637,10 +628,20 @@ gnome:
       search-light's last EGO upload (v42) supports up to GNOME Shell
       49, while the upstream master (v101) supports 48-50. Bluefin uses
       git submodule for the same reason.
-    user_install:
+    removed_user_install_note: >
+      UUIDs that used to be in user_install but are no longer Margine
+      defaults. install-user-extensions --apply removes any of these
+      it finds in ~/.local/share/gnome-shell/extensions/, so users who
+      upgrade a Margine system pick up the removal without manual
+      cleanup. Add an entry (don't just delete from user_install)
+      whenever a default extension is dropped.
+    removed_user_install:
       - uuid: tilingshell@ferrarodomenico.com
-        ego_id: 7065
-        description: Tiling Shell — active EGO upload, GNOME 48+
+        removed_at: 2026-06-02
+        reason: >
+          Superseded by o-tiling. User does not want Tiling Shell
+          preinstalled. Re-installable via Extensions Manager (EGO 7065).
+    user_install:
       - uuid: search-light@icedman.github.com
         git_url: https://github.com/icedman/search-light.git
         git_ref: main

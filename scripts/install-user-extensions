@@ -262,13 +262,40 @@ def main() -> int:
         entries = data["gnome"]["extensions"]["user_install"] or []
     except (KeyError, TypeError):
         entries = []
-    if not entries:
-        print("No user_install extensions declared. Nothing to do.")
-        return 0
+    try:
+        removed = data["gnome"]["extensions"]["removed_user_install"] or []
+    except (KeyError, TypeError):
+        removed = []
 
     shell_version = gnome_shell_version()
     print(f"Detected GNOME Shell version: {shell_version}")
     print(f"User extension dir: {USER_EXT_DIR}")
+
+    # Prune extensions Margine used to ship but no longer wants. Runs
+    # on every --apply so an upgraded user account converges to the
+    # current default set without manual cleanup. Also runs on --remove
+    # (since removal of all user_install entries should include the
+    # removed-but-formerly-shipped ones).
+    if removed:
+        print("\n== Pruning extensions removed from Margine defaults ==")
+        for entry in removed:
+            uuid = entry["uuid"]
+            if (USER_EXT_DIR / uuid).exists():
+                print(f"  {uuid}: present, will remove (removed_at={entry.get('removed_at', '?')})")
+                remove_one(uuid, dry)
+                if not dry:
+                    # Also disable in gsettings so GNOME Shell stops
+                    # trying to load the now-missing extension.
+                    subprocess.run(
+                        ["gnome-extensions", "disable", uuid],
+                        check=False, capture_output=True,
+                    )
+            else:
+                print(f"  {uuid}: already absent — no action")
+
+    if not entries:
+        print("No user_install extensions declared. Nothing to install.")
+        return 0
 
     for entry in entries:
         uuid = entry["uuid"]

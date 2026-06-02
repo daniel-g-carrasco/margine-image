@@ -7,6 +7,43 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-02)
+- **Margine Gaming OCI variant** — a separate, signed image at
+  `ghcr.io/daniel-g-carrasco/margine-gaming:stable`. Built `FROM`
+  the already-validated `margine:stable` and adds the gaming host
+  stack (gamescope, MangoHud, vkBasalt, GameMode, goverlay,
+  steam-devices, input-remapper, tuned, tuned-ppd, rom-properties-gtk)
+  at image-build time plus a Flatpak preinstall list (Steam, Lutris,
+  Heroic, Bottles, Protontricks, ProtonUp-Qt, RetroArch). End-user
+  switch: `sudo bootc switch ghcr.io/daniel-g-carrasco/margine-gaming:stable`.
+  Identifies itself as `VARIANT_ID=gaming`, `PRETTY_NAME="Margine Gaming"`.
+  Files: `Containerfile.gaming`, `build_files/gaming/{install.sh,
+  stamp-os-release.sh,margine-gaming.preinstall}`.
+- **`build-gaming.yml` workflow** — `build_push → sign → promote_to_stable
+  → notify`. Triggers on `workflow_dispatch`, `workflow_run` after a
+  successful `Smoke-boot published image` (so the variant rebuilds
+  automatically when a new base `:stable` is promoted), and weekly
+  Sun 05:00 UTC. No MOK secrets needed: the kernel is already signed
+  in the base layer. Promotes `:candidate → :stable` immediately
+  after signing (the base was smoke-booted; the variant only adds
+  RPMs + Flatpak declarations, no boot-path changes that warrant
+  a second 25-min QEMU test).
+- **`build-disk.yml` matrix on image** — produces 4 disk artifacts
+  in parallel (margine + margine-gaming × qcow2 + anaconda-iso) and
+  publishes both ISOs to Internet Archive under per-variant
+  identifiers (`margine-anaconda-iso-YYYYMMDD`,
+  `margine-gaming-anaconda-iso-YYYYMMDD`).
+- **RPMFusion enabled in the gaming variant** — the base image strips
+  RPMFusion after using it transiently for the CachyOS kernel install;
+  the gaming variant re-enables free + nonfree and keeps them, since
+  the entire gaming RPM stack lives there and users will need the
+  same repo set for `dnf upgrade` / `rpm-ostree upgrade`.
+- **Trade-off note in `ujust margine-gaming`** — the existing `ujust`
+  recipe (rpm-ostree overlay) now prints, before its confirmation
+  prompt, what the layering choice implies (`LayeredPackages` branch,
+  slower upgrades, occasional file-conflict rebases) and points users
+  to the variant image as the ostree-canonical alternative.
+
 ### Added (2026-06-01)
 - **Candidate → stable promotion model**: `build.yml` now publishes
   only `:candidate` + `:candidate.YYYYMMDD`; `smoke-boot.yml` boots

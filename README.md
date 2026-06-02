@@ -52,7 +52,8 @@ operations.
 | ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; the public key is enrolled into shim's MOK store on first boot via a one-shot service. Secure Boot remains enabled and the kernel chain of trust is verified at every boot. |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
 | 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
-| 📦 **Curated application set** | Installed automatically on first boot via the systemd `/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden, LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe. Visual Studio Code is inherited from Bluefin DX (Microsoft repo). Optional categories (gaming, retro, content creation extras) are documented in the spec and can be added with one command. |
+| 📦 **Curated application set** | Installed automatically on first boot via the systemd `/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden, LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe, Extension Manager. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
+| 🎮 **Gaming variant (optional)** | A separate OCI image — `ghcr.io/daniel-g-carrasco/margine-gaming:stable` — that bakes gamescope, MangoHud, vkBasalt, GameMode, goverlay, steam-devices, input-remapper, tuned, and rom-properties into the image at build time, plus a Flatpak preinstall set with Steam, Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt, and RetroArch. Switch with `sudo bootc switch ghcr.io/daniel-g-carrasco/margine-gaming:stable`; switch back any time. A `ujust margine-gaming` recipe also lets the base install the same stack as a `rpm-ostree` overlay if you prefer not to swap variants. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
 | 🗂 **Organized application folders** | GNOME's activities grid is organized into six folders: Office, Graphics, Photography, Audio, Video, System. High-frequency apps (browser, mail, files, terminal, code editor) stay at the top level for one-click access. Editable in the declarative spec. |
@@ -69,21 +70,37 @@ operations.
 
 ## Install
 
-Two install paths are supported.
+Margine ships in two flavours: **Margine** (general-purpose desktop)
+and **Margine Gaming** (everything in Margine, plus the host gaming
+stack baked into the image). Both are bootable ISOs and both can be
+reached from an existing Margine / Bluefin install without a fresh
+install.
 
-### Option A — Margine ISO
+| | Margine | Margine Gaming |
+| --- | --- | --- |
+| Base | Bluefin DX + CachyOS signed kernel + Margine deltas | Margine + gamescope, MangoHud, vkBasalt, GameMode, goverlay, steam-devices, input-remapper, tuned, tuned-ppd, rom-properties-gtk |
+| Pre-installed apps | Curated Flatpak set (browser, office, creative, audio) | Same, plus Steam, Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt, RetroArch |
+| OCI image | `ghcr.io/daniel-g-carrasco/margine:stable` | `ghcr.io/daniel-g-carrasco/margine-gaming:stable` |
+| ISO (Internet Archive) | `archive.org/details/margine-anaconda-iso-YYYYMMDD` | `archive.org/details/margine-gaming-anaconda-iso-YYYYMMDD` |
+| Identifies as | `VARIANT_ID=margine` | `VARIANT_ID=gaming` |
+
+If in doubt, install **Margine** first. You can switch to the gaming
+variant any time with `bootc switch …` (see option C) — no reinstall.
+
+### Option A — Install from ISO
 
 The recommended path. Downloads in one step, installs Margine
 directly.
 
 1. Open <https://files.the-empty.place/> and download the Anaconda
-   installer ISO. Available as a BitTorrent magnet/`.torrent` and as
-   a direct HTTP mirror (Internet Archive). The same bytes are
-   served by both; `SHA256SUMS` is published alongside.
+   installer ISO of the flavour you want. Available as a BitTorrent
+   magnet/`.torrent` and as a direct HTTP mirror (Internet Archive).
+   The same bytes are served by both; `SHA256SUMS` is published
+   alongside.
 2. Boot the ISO. Anaconda's standard installation flow applies:
    recommended UEFI with Secure Boot enabled, LUKS2 on the root disk,
    Btrfs filesystem (the default).
-3. Reboot when the installation completes — you are on Margine.
+3. Reboot when the installation completes.
 4. Apply the user-state once:
    ```sh
    ujust margine-bootstrap
@@ -96,7 +113,7 @@ directly.
 ### Option B — Rebase from an existing Bluefin install
 
 Useful if you already have a Bluefin DX installation and don't want
-to reinstall from ISO.
+to reinstall from ISO. Picks the base Margine flavour.
 
 ```sh
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
@@ -112,6 +129,28 @@ After the reboot, two more one-time steps:
    normally under Secure Boot.
 2. Run **`ujust margine-bootstrap`**, as in Option A.
 
+### Option C — Switch between Margine and Margine Gaming
+
+The two variants share the same MOK key and the same base ostree
+commits, so switching either direction is a single `bootc switch` +
+reboot. Your user data, layered packages, and Flatpaks survive
+untouched.
+
+```sh
+# Margine → Margine Gaming  (pulls the gaming variant, ~5 min)
+sudo bootc switch ghcr.io/daniel-g-carrasco/margine-gaming:stable
+systemctl reboot
+
+# Margine Gaming → Margine  (rollback to the base, ~3 min)
+sudo bootc switch ghcr.io/daniel-g-carrasco/margine:stable
+systemctl reboot
+```
+
+On the first boot of the gaming variant, `flatpak-preinstall.service`
+installs the 7 gaming Flatpaks (Steam, Lutris, Heroic, Bottles,
+Protontricks, ProtonUp-Qt, RetroArch) in the background — count on
+~2-3 minutes after the desktop appears.
+
 ### Post-install verification
 
 ```sh
@@ -121,17 +160,24 @@ margine-validate-atomic-layout
 margine-validate-cachyos-kernel
 ```
 
-### Optional gaming layer
+### Optional gaming layer on the base Margine
 
-A separate `ujust` recipe installs Steam, Lutris, Heroic, Bottles,
-Protontricks, and ProtonUp-Qt as Flatpaks, plus gamescope, MangoHud,
-vkBasalt, GameMode, goverlay, and steam-devices as RPM packages
-(rpm-ostree layer; requires reboot). Fully reversible.
+If you installed plain Margine and just want the gaming stack
+without switching variant, a separate `ujust` recipe installs
+the same set as a `rpm-ostree` overlay + Flatpaks:
 
 ```sh
-ujust margine-gaming            # install
+ujust margine-gaming            # install (LayeredPackages overlay)
 ujust margine-gaming-remove     # remove
 ```
+
+This is convenient (one command) but the resulting deployment is
+not ostree-canonical — `rpm-ostree status` will show
+`LayeredPackages: gamescope mangohud …`, and every `bootc upgrade`
+re-applies the layer on top of the new base (~30-60s extra). For
+a stable gaming setup prefer Option C above (the variant image).
+The `ujust margine-gaming` recipe prints the same warning before
+the install prompt.
 
 ## What's inside (technical reference)
 

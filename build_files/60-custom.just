@@ -96,6 +96,7 @@ margine-gaming:
         - com.usebottles.bottles
         - com.github.Matoking.protontricks
         - net.davidotek.pupgui2
+        - org.libretro.RetroArch   (multi-emulator: PS1/N64/GBA/SNES/…)
 
       Host RPMs (layered via rpm-ostree — requires reboot to take effect):
         - gamescope       (HDR / per-game compositor / scaling)
@@ -104,6 +105,9 @@ margine-gaming:
         - gamemode        (CPU governor + niceness during gameplay)
         - goverlay        (GUI configurator for MangoHud + vkBasalt)
         - steam-devices   (controller udev rules)
+        - input-remapper  (remap keyboard/mouse/gamepad without per-device drivers)
+        - tuned, tuned-ppd (CPU governor switching balanced↔performance)
+        - rom-properties  (Nautilus column extension for ROM metadata)
 
     Notes:
       - GameMode auto-engages when Steam launches a game. No setup.
@@ -127,17 +131,26 @@ margine-gaming:
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
-        net.davidotek.pupgui2
+        net.davidotek.pupgui2 \
+        org.libretro.RetroArch
 
     echo
     echo "== Layering gaming host helpers (rpm-ostree) =="
+    # tuned + tuned-ppd (separate package since Fedora 39: ppd shim that
+    # makes GNOME's power-profiles-daemon UI control tuned profiles).
+    # rom-properties has a -gtk subpackage for the Nautilus column
+    # extension (the bare package only ships the CLI).
     sudo rpm-ostree install \
         gamescope \
         mangohud \
         vkBasalt \
         gamemode \
         goverlay \
-        steam-devices
+        steam-devices \
+        input-remapper \
+        tuned \
+        tuned-ppd \
+        rom-properties-gtk
 
     echo
     cat <<'EOF'
@@ -155,8 +168,11 @@ margine-gaming-remove:
     set -euo pipefail
 
     echo "This will:"
-    echo "  - rpm-ostree uninstall gamescope mangohud vkBasalt gamemode goverlay steam-devices"
-    echo "  - flatpak uninstall the 6 gaming Flatpaks (Steam, Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt)"
+    echo "  - rpm-ostree uninstall the layered host helpers (gamescope, mangohud,"
+    echo "    vkBasalt, gamemode, goverlay, steam-devices, input-remapper, tuned,"
+    echo "    tuned-ppd, rom-properties-gtk)"
+    echo "  - flatpak uninstall the 7 gaming Flatpaks (Steam, Lutris, Heroic,"
+    echo "    Bottles, Protontricks, ProtonUp-Qt, RetroArch)"
     echo
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
@@ -167,7 +183,11 @@ margine-gaming-remove:
         vkBasalt \
         gamemode \
         goverlay \
-        steam-devices || true
+        steam-devices \
+        input-remapper \
+        tuned \
+        tuned-ppd \
+        rom-properties-gtk || true
 
     flatpak uninstall --system -y \
         com.valvesoftware.Steam \
@@ -175,7 +195,8 @@ margine-gaming-remove:
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
-        net.davidotek.pupgui2 || true
+        net.davidotek.pupgui2 \
+        org.libretro.RetroArch || true
 
     echo
     echo "Done. Reboot to release the rpm-ostree layer."

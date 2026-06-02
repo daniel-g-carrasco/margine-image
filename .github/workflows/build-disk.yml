@@ -268,18 +268,23 @@ jobs:
         # TOS (no large binary content served from origin) and to keep
         # our home-server upload bandwidth free.
         #
-        # -l info: top-level `--log-level info` makes the ia CLI emit
-        #            per-request log lines (the closest thing it has to
-        #            "show me the upload is making progress"). Default
-        #            level is `error` — silent during a 60+ min upload.
+        # ia 5.x CLI surface (verified against the installed pip
+        # internetarchive==5.9.0, run #26789968571):
+        #   - `--verbose` does NOT exist as an `ia upload` subcommand
+        #     flag (run #26787945599 failed: "unrecognized arguments:
+        #     --verbose").
+        #   - `-l` is a *flag* (no value) at the top level that means
+        #     "also write logs to a file". Passing `-l info` (run
+        #     #26789968571) makes argparse interpret 'info' as the
+        #     positional command and reject:
+        #     "invalid choice: 'info' (choose from 'upload', …)".
+        #   - `-d` / `--debug` at the top level enables verbose stderr
+        #     logging — that's the actual knob for "show progress".
         # --retries 5 (default 3): IA's S3 endpoint returns 503 under
         #            load; 3 retries isn't always enough for a multi-GB
         #            multi-part upload.
         # --sleep 60 (default 30): be a better neighbour to IA during
         #            backoff.
-        # NOTE: `ia upload --verbose` does NOT exist as a subcommand
-        # flag — the previous attempt failed with `unrecognized
-        # arguments: --verbose`. -l is the right knob.
         env:
           IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
           IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
@@ -296,7 +301,7 @@ jobs:
           secret = ${IA_S3_SECRET}
           EOF
           chmod 0600 "$IA_CONFIG_FILE"
-          ia --config-file "$IA_CONFIG_FILE" -l info upload "$IDENTIFIER" \
+          ia --config-file "$IA_CONFIG_FILE" --debug upload "$IDENTIFIER" \
             "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
             --retries 5 \
             --sleep 60 \

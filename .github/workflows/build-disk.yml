@@ -244,13 +244,32 @@ jobs:
             exit 1
           fi
           SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
+          BASE="$(basename "$ARTIFACT")"
           echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
           echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
-          echo "artifact_basename=$(basename "$ARTIFACT")" >> "$GITHUB_OUTPUT"
-          echo "Will upload $(basename "$ARTIFACT") — $((SIZE_BYTES / 1024 / 1024)) MB ($SIZE_BYTES bytes)"
+          echo "artifact_basename=$BASE" >> "$GITHUB_OUTPUT"
+          echo "Will upload $BASE — $((SIZE_BYTES / 1024 / 1024)) MB ($SIZE_BYTES bytes)"
           # Re-verify checksum locally — catches any artifact-transit
-          # corruption before we burn an hour pushing it to IA.
+          # corruption before we burn an hour pushing it to IA. We chdir
+          # to the dir that contains the file (bootiso/) so paths in
+          # SHA256SUMS ("bootiso/install.iso") resolve correctly here,
+          # where the OUTDIR root sits one level above.
           (cd "$OUTDIR" && sha256sum -c SHA256SUMS)
+
+          # Regenerate SHA256SUMS for the PUBLISHED layout. Internet
+          # Archive serves the uploaded file at the item root
+          # (archive.org/download/<id>/install.iso, not
+          # /bootiso/install.iso), so the SHA256SUMS we ship next to
+          # it must reference the basename only. End-users who do
+          # `sha256sum -c SHA256SUMS` after downloading both files from
+          # IA expect them to be siblings — the build-side
+          # bootiso/install.iso layout makes that check fail.
+          # cd into the artifact's dir so sha256sum prints just the
+          # basename (its argument), then write the result back to
+          # OUTDIR/SHA256SUMS (overwriting the build-side version).
+          ( cd "$(dirname "$ARTIFACT")" && sha256sum "$BASE" ) > "$OUTDIR/SHA256SUMS"
+          echo "SHA256SUMS rewritten for IA layout:"
+          cat "$OUTDIR/SHA256SUMS"
 
       - name: Install Internet Archive CLI (ia)
         run: |

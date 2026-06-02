@@ -178,12 +178,85 @@ hdr "5. Margine branding assets"
 [[ -f /usr/share/margine/ascii-logo.txt ]] && ok "fastfetch ASCII logo present" \
   || warn "fastfetch ASCII logo missing (cosmetic)"
 
+# os-release(5) LOGO key — GNOME About panel reads it to render the
+# distro logo. Without LOGO=, GNOME falls back to the inherited Bluefin
+# asset → wrong logo. Fixed 2026-06-02 (commit f40d793 margine-image).
+LOGO_KEY=$(grep -E '^LOGO=' /etc/os-release | cut -d= -f2- | tr -d '"')
+[[ "$LOGO_KEY" == "margine-logo" ]] \
+  && ok "os-release LOGO=margine-logo (GNOME About will find /usr/share/pixmaps/margine-logo.png)" \
+  || bad "os-release LOGO='$LOGO_KEY' (expected 'margine-logo') — GNOME About will show wrong distro logo"
+
+# /etc/fastfetch/config.jsonc is the system-wide default config that
+# vanilla `fastfetch` (no --config flag) picks up. Without it,
+# fastfetch falls back to its built-in default → Fedora ASCII +
+# generic modules instead of Margine ASCII. Fixed 2026-06-02
+# (commit f40d793 margine-image). margine-fetch wrapper still works
+# regardless because it explicitly passes --config.
+[[ -f /etc/fastfetch/config.jsonc ]] \
+  && ok "/etc/fastfetch/config.jsonc present (vanilla fastfetch → Margine config)" \
+  || warn "/etc/fastfetch/config.jsonc missing — vanilla fastfetch will show Fedora default (cosmetic)"
+
+# Plymouth watermark dimensions — Margine ships at 480x120 (≈25% of a
+# 1080p viewport, consistent with Fedora/Bluefin stock).
+# Pre-2026-06-02 was 720x180 (too big, daniel flagged it).
+if command -v identify >/dev/null 2>&1 && [[ -f /usr/share/plymouth/themes/margine/watermark.png ]]; then
+  PLY_DIM=$(identify -format '%wx%h' /usr/share/plymouth/themes/margine/watermark.png 2>/dev/null)
+  [[ "$PLY_DIM" == "480x120" ]] \
+    && ok "Plymouth watermark = 480x120 (expected)" \
+    || warn "Plymouth watermark = '$PLY_DIM' (expected 480x120; cosmetic)"
+fi
+
+# start-here-symbolic.svg — Bluefin overrides this Adwaita icon with
+# a velociraptor footprint glyph that bleeds through into the
+# gnome-initial-setup welcome page first-screen header. Margine
+# overlays its wordmark 'm' / full wordmark SVG. Fixed 2026-06-02
+# (commit 209ad7b margine-image / a759244 margine-fedora-atomic).
+START_HERE=/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+if [[ -f "$START_HERE" ]]; then
+  # Bluefin's footprint SVG is small (~1.2 KB single-color vector).
+  # Margine's wordmark embeds a PNG and is ~58 KB. Quick heuristic
+  # is the file size: >10 KB → Margine. Strict but cheap.
+  size=$(stat -c %s "$START_HERE")
+  if (( size > 10000 )); then
+    ok "start-here-symbolic.svg looks like Margine wordmark (${size} bytes)"
+  else
+    bad "start-here-symbolic.svg is small (${size} bytes) — probably still Bluefin's velociraptor footprint"
+  fi
+fi
+
 if command -v plymouth-set-default-theme >/dev/null; then
   CUR_PLY=$(plymouth-set-default-theme 2>/dev/null | tr -d '\n')
   [[ "$CUR_PLY" == "$EXPECTED_PLYMOUTH_THEME" ]] \
     && ok "Plymouth default theme = $EXPECTED_PLYMOUTH_THEME" \
     || bad "Plymouth default theme is '$CUR_PLY', expected '$EXPECTED_PLYMOUTH_THEME'"
 fi
+
+# Bluefin leftover that we deliberately stripped at image build time
+# (commits f239ad5, d120e8d). If any of these come back, something
+# undid the strip step (rebase to an unfixed parent, manual install,
+# etc.) and the user will see Bluefin app menu items / wallpaper
+# carousel entries / mascots again.
+hdr "5b. Bluefin leftover absence (post-strip guardrail)"
+declare -A BLUEFIN_LEFTOVER_PATHS=(
+  ['app menu — discourse']='/usr/share/applications/discourse.desktop'
+  ['app menu — Bluefin docs']='/usr/share/applications/documentation.desktop'
+  ['app menu — Bluefin system update']='/usr/share/applications/system-update.desktop'
+  ['Bluefin wallpapers']='/usr/share/backgrounds/bluefin'
+  ['Bluefin mascots']='/usr/share/ublue-os/bluefin-logos'
+  ['Bluefin docs']='/usr/share/doc/bluefin'
+  ['Bluefin Firefox config']='/usr/share/ublue-os/firefox-config'
+  ['Bluefin fastfetch config']='/usr/share/ublue-os/fastfetch.jsonc'
+  ['ublue motd (Bluefin tipline on every login)']='/usr/bin/ublue-motd'
+  ['Bazaar carousel wallpapers']='/usr/etc/bazaar/01-bluefin-day.jxl'
+)
+for label in "${!BLUEFIN_LEFTOVER_PATHS[@]}"; do
+  p=${BLUEFIN_LEFTOVER_PATHS[$label]}
+  if [[ -e "$p" ]]; then
+    bad "$label still present at $p (strip step regression)"
+  else
+    ok "$label removed ($p absent)"
+  fi
+done
 
 # ---------------------------------------------------------------------------
 hdr "6. GDM greeter overrides (Bug 7 guardrail)"

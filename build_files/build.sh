@@ -237,6 +237,34 @@ favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop',
 
 [org.gnome.desktop.interface]
 accent-color='yellow'
+# Bluefin's zz0 hard-sets Adwaita Sans (their pick). We leave fonts as
+# GNOME default here — daniel hasn't picked a Margine type system yet;
+# revisit when there's a documented choice. Removing the keys lets
+# GNOME's distro defaults win over Bluefin's, which is what we want
+# until we have an opinion.
+
+# Number of dynamic workspaces — Margine binds Super+1..0 (Hyprland
+# muscle memory) via the user-level bootstrap, so the base default
+# should give us 10 slots ready at first login.
+[org.gnome.mutter]
+dynamic-workspaces=true
+
+[org.gnome.desktop.wm.preferences]
+# Override Bluefin's num-workspaces=4. The Hyprland binding chain in
+# margine-fedora-atomic's configure-gnome-keybindings expects 10.
+num-workspaces=10
+
+[org.gnome.desktop.wm.keybindings]
+# Bluefin remaps Super+d → show-desktop and Super+Tab → switch-apps,
+# both of which collide with Margine's Hyprland-style Super+number
+# workspace + Super+arrow focus binds applied by configure-gnome-
+# keybindings. Reset to the GNOME defaults here so the user-state
+# bootstrap can overlay the Hyprland binds cleanly.
+show-desktop=@as []
+switch-applications=@as []
+switch-applications-backward=@as []
+switch-windows=@as []
+switch-windows-backward=@as []
 
 # Terminal default: leave Bluefin's choice (Ptyxis) — do NOT override
 # org.gnome.desktop.default-applications.terminal. Users who want a
@@ -580,6 +608,92 @@ log "Installed: /etc/fastfetch/config.jsonc (default config → Margine ASCII)"
 glib-compile-schemas /usr/share/glib-2.0/schemas
 
 # ---------------------------------------------------------------------------
+# 4.bis Strip residual Bluefin/ublue branding from the inherited image
+# ---------------------------------------------------------------------------
+# Bluefin DX ships a pile of assets that bleed through into Margine's
+# user-facing surfaces: app menu entries pointing at projectbluefin.io,
+# a "/usr/share/backgrounds/bluefin/" wallpaper collection that shows
+# up in Settings → Background, /usr/share/ublue-os/bluefin-logos/
+# (chicken.png, dolly.png, karl.png mascots etc.), and a Firefox
+# distribution config that injects Bluefin homepage/bookmarks.
+#
+# We can't avoid pulling them at build time (they're in the upstream
+# RPMs), but we can scrub them after install. The dirs we DO keep
+# under /usr/share/ublue-os/ are the functional ones: etc/ (akmods
+# repos + certs), homebrew/, bling/, just/ — they're behavior, not
+# branding.
+log "Stripping Bluefin/ublue branding leftover from /usr/share + /usr/share/applications"
+
+# (a) Visible app-menu entries that point at Bluefin docs/community.
+# `discourse.desktop` opens github.com/ublue-os/bluefin/discussions →
+# not a Margine resource at all → delete.
+# `documentation.desktop` opens docs.projectbluefin.io → repoint at
+# Margine's spec repo + rename.
+# `system-update.desktop` says "Update Bluefin, Flatpaks, …" → keep
+# the underlying uupd flow (Margine uses it too) but rebrand.
+rm -f /usr/share/applications/discourse.desktop
+
+cat > /usr/share/applications/margine-documentation.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+NoDisplay=false
+Terminal=false
+Exec=xdg-open https://github.com/daniel-g-carrasco/margine-fedora-atomic
+Icon=help-browser
+Name=Margine documentation
+Comment=Spec + architecture for Margine OS (margine-fedora-atomic on GitHub)
+Categories=System;Documentation;
+EOF
+rm -f /usr/share/applications/documentation.desktop
+
+cat > /usr/share/applications/margine-system-update.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+NoDisplay=false
+Terminal=true
+Exec=ujust update
+Icon=system-software-update
+Name=Margine system update
+Comment=Run Margine's full system update (bootc + flatpak + distrobox via uupd)
+Categories=ConsoleOnly;System;
+EOF
+rm -f /usr/share/applications/system-update.desktop
+
+# (b) Icons that only served the deleted/rebrand entries.
+rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
+      /usr/share/icons/hicolor/scalable/places/ublue-docs.svg \
+      /usr/share/icons/hicolor/scalable/places/ublue-update.svg \
+      /usr/share/icons/hicolor/scalable/actions/ublue-logo-symbolic.svg
+
+# (c) Bluefin wallpaper collection (Settings → Background spam).
+rm -rf /usr/share/backgrounds/bluefin
+
+# (d) Bluefin mascot logos (chicken.png, dolly.png, karl.png, bluefin.png)
+# referenced by some Bluefin custom fastfetch configs / banner scripts
+# that we override anyway. Safe to remove.
+rm -rf /usr/share/ublue-os/bluefin-logos
+
+# (e) Bluefin Firefox distribution config (bookmarks + start page injection).
+# Margine ships Zen Browser via Flatpak; the Bluefin Firefox config is
+# noise.
+rm -rf /usr/share/ublue-os/firefox-config
+
+# (f) Bluefin's fastfetch config (we ship our own at /etc/fastfetch/
+# and /usr/share/fastfetch/margine.jsonc).
+rm -f /usr/share/ublue-os/fastfetch.jsonc
+
+# (g) Bluefin docs in /usr/share/doc/ — non-functional, just clutter.
+rm -rf /usr/share/doc/bluefin
+
+# Update the icon-theme cache so removed SVGs disappear from icon
+# lookups immediately at first boot.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+log "Bluefin branding stripped"
+
+# ---------------------------------------------------------------------------
 # 5. Margine ujust recipes (gaming layer opt-in)
 # ---------------------------------------------------------------------------
 # Bluefin's /usr/share/ublue-os/just/00-entry.just hardcodes the list
@@ -872,7 +986,7 @@ cat > /etc/xdg/autostart/margine-first-boot.desktop <<'EOF'
 Type=Application
 Name=Margine first-login user-state bootstrap
 Comment=Apply Margine home layout, GNOME extensions, keybindings, defaults
-Exec=/usr/bin/bash -c 'test -f "$HOME/.config/margine/bootstrapped" || ujust margine-bootstrap unattended > "$HOME/.config/margine/bootstrap.log" 2>&1'
+Exec=/usr/bin/bash -c 'mkdir -p "$HOME/.config/margine" && { test -f "$HOME/.config/margine/bootstrapped" || ujust margine-bootstrap unattended > "$HOME/.config/margine/bootstrap.log" 2>&1; }'
 NoDisplay=true
 OnlyShowIn=GNOME;
 X-GNOME-Autostart-enabled=true

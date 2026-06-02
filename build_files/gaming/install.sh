@@ -22,6 +22,24 @@ GAMING_RPMS=(
 
 log "Installing ${#GAMING_RPMS[@]} gaming RPMs into the base image"
 
+# RPMFusion is REQUIRED for most of the gaming RPM stack (gamescope,
+# mangohud, vkBasalt, gamemode, goverlay, steam-devices) — Bluefin
+# DX intentionally ships without it, and Margine's base also strips
+# it after using it transiently for the CachyOS kernel install (see
+# custom-kernel/install.sh:254-255 which removes rpmfusion-free-release
+# at end-of-build). For the gaming variant we KEEP RPMFusion enabled
+# in the final image because:
+#   1. Users will run `dnf upgrade` (via rpm-ostree update / topgrade)
+#      and need the same repo set the original install came from.
+#   2. The whole point of the gaming variant is to make Vulkan layer
+#      tooling + controller drivers easy — that ecosystem lives in
+#      RPMFusion. Hiding it post-install would be a footgun.
+log "Enabling RPMFusion (free + nonfree) — required for gaming stack"
+FEDORA_VER=$(rpm -E %fedora)
+dnf -y install \
+  "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
+  "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+
 # Retry loop — Fedora/RPMFusion mirrors occasionally time out and we
 # don't want a transient repo blip to cost a 25-min rebuild. Same
 # pattern as custom-kernel/install.sh (COPR retry from 2026-06-01).

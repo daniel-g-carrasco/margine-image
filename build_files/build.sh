@@ -313,6 +313,92 @@ outer-gaps=4
 [org.gnome.desktop.wm.preferences]
 focus-mode='sloppy'
 auto-raise=false
+
+# ---------------------------------------------------------------------------
+# Blur My Shell / Search Light / Dash to Dock defaults
+# ---------------------------------------------------------------------------
+# Captured 2026-06-02 from daniel's running VM via `dconf dump
+# /org/gnome/shell/extensions/<ext>/`. These are now the Margine
+# defaults: a fresh install will get this exact look out of the box,
+# without the user having to open Extension Manager. The user can
+# still tune any of them — gschema.override is a default-not-a-lock.
+#
+# We deliberately skip the internal `pipelines` (dict-of-dicts dynamic
+# state), `rounded-blur-found`, and `settings-version` keys: those
+# are managed by the extension itself and should be allowed to evolve.
+
+# Blur My Shell — root + per-surface tuning
+[org.gnome.shell.extensions.blur-my-shell.appfolder]
+brightness=0.4
+sigma=70
+
+[org.gnome.shell.extensions.blur-my-shell.applications]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.coverflow-alt-tab]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.dash-to-dock]
+blur=true
+brightness=0.6
+pipeline='pipeline_default_rounded'
+sigma=30
+static-blur=true
+style-dash-to-dock=0
+unblur-in-overview=true
+
+[org.gnome.shell.extensions.blur-my-shell.dash-to-panel]
+blur-original-panel=true
+
+[org.gnome.shell.extensions.blur-my-shell.hidetopbar]
+compatibility=false
+
+[org.gnome.shell.extensions.blur-my-shell.lockscreen]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.overview]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.panel]
+brightness=0.4
+corner-radius=0
+override-background=true
+pipeline='pipeline_default'
+sigma=70
+static-blur=false
+unblur-in-overview=true
+
+[org.gnome.shell.extensions.blur-my-shell.screenshot]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.window-list]
+brightness=0.4
+sigma=70
+
+# Search Light — Spotlight-like popup. Compact panel (10 % of screen),
+# centred dark background, Super+Space toggle.
+[org.gnome.shell.extensions.search-light]
+animation-speed=240.0
+background-color=(0.0, 0.0, 0.0, 0.74)
+blur-background=false
+blur-brightness=0.6
+blur-sigma=30.0
+border-radius=2.6529680365296802
+entry-font-size=1
+monitor-count=1
+popup-at-cursor-monitor=true
+preferred-monitor=0
+scale-height=0.1
+scale-width=0.1
+shortcut-search=['<Super>space']
+show-panel-icon=false
+
+# Dash to Dock — Margine disables hot-keys (Super+1..0 binds belong to
+# workspace navigation, not dash launchers). Other dock keys are left
+# at upstream defaults so users get the standard Bluefin/Margine dock
+# behaviour without surprise.
+[org.gnome.shell.extensions.dash-to-dock]
+hot-keys=false
 OVERRIDE
 
 log "Compiling glib schemas"

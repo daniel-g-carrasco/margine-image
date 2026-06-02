@@ -1,72 +1,38 @@
 ---
-# Margine bootc image build, on a GitHub-hosted ubuntu-24.04 runner.
+# Margine Gaming variant — separate OCI image built FROM the already-
+# validated margine:stable. Trigger model:
 #
-# History (2026-06-01): we used to run this on a self-hosted PVE VM
-# (margine-builder, VM 170). After two freezes — the second one
-# taking the entire PVE host down with ZFS spacemap corruption (see
-# proxmox-pve1/docs/operations/zfs-spacemap-corruption-recovery.md)
-# — the self-hosted runner has been decommissioned. GitHub-hosted
-# is exactly the "container that wakes up when a job arrives and
-# shuts down after" model we wanted.
+#   workflow_dispatch  → manual rebuild any time
+#   workflow_run       → automatically after every successful smoke-boot
+#                        of the base image (so the variant is always
+#                        within minutes of the latest blessed :stable)
+#   schedule           → weekly Sun 05:00 UTC, after the base nightly
 #
-# Pipeline shape (2026-06-01 split, see
-# ~/.claude/.../memory/feedback_ci_split_long_jobs.md for the rule):
-#
-#   build_push  ──┐
-#                 │  (digest output, fanout)
-#                 ▼
-#                sign  ──┐
-#                        ▼
-#                       notify  (if: always())
-#
-# build_push does the heavy work (buildah + rechunk + skopeo push,
-# ~25 min). sign is a separate cheap job (~1 min) that signs the
-# pushed manifest *by digest* instead of by tag — cosign warns
-# against by-tag signing as it's racy.
-#
-# On a failed sign step, `gh run rerun --failed <run-id>` re-runs
-# only the sign job (~1 min) instead of redoing the whole build.
-# That's the whole point of the split — failure cost dominates
-# the few seconds of cross-job overhead.
-#
-# Triggers: push to main, weekly cron (sun 04:00 UTC), and on-demand
-# via workflow_dispatch.
-#
-# Output: publishes to `:candidate` and `:candidate.<date>`. The
-# smoke-boot.yml workflow then runs an end-to-end QEMU boot test on
-# the candidate; only if QEMU reaches multi-user.target does the
-# candidate digest get promoted to `:stable` (skopeo copy
-# --preserve-digests).
+# Pipeline shape mirrors build.yml: build_push → sign → notify, split
+# (see ~/.claude/.../memory/feedback_ci_split_long_jobs.md). No MOK
+# secrets needed (kernel already signed in the base image).
 
-name: Build Margine image
+name: Build Margine Gaming image
 
 on:
-  push:
-    branches: [main]
-    # Don't rebuild the base image when only the gaming-variant
-    # files change — they're built by build-gaming.yml on top of
-    # the existing :stable, no base rebuild needed. Also skip
-    # disk/IA workflow changes and pure-docs commits.
-    paths-ignore:
-      - 'Containerfile.gaming'
-      - 'build_files/gaming/**'
-      - '.github/workflows/build-gaming.yml'
-      - '.github/workflows/build-disk.yml'
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - 'docs/**'
-  schedule:
-    # Weekly nightly: Sunday 04:00 UTC = 06:00 CEST. Picks up upstream
-    # Bluefin DX changes even if there are no commits to this repo.
-    - cron: '0 4 * * 0'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Smoke-boot published image"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # Weekly: Sun 05:00 UTC = 1h after the base nightly. The base
+    # candidate will have been promoted to :stable by then (smoke-boot
+    # runs immediately after build.yml and finishes in ~25 min).
+    - cron: '0 5 * * 0'
 
 env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  IMAGE_NAME: margine
-  IMAGE_DESC: "Margine — Bluefin DX + CachyOS signed kernel + Margine deltas"
-  IMAGE_KEYWORDS: "bootc,ublue,bluefin,cachyos,margine"
+  IMAGE_NAME: margine-gaming
+  IMAGE_DESC: "Margine Gaming — Margine + gamescope/mangohud/etc. + gaming Flatpaks"
+  IMAGE_KEYWORDS: "bootc,ublue,bluefin,cachyos,margine,gaming,steam"
   CANDIDATE_TAG: "candidate"
+  BASE_IMAGE: "ghcr.io/${{ github.repository_owner }}/margine:stable"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -74,9 +40,14 @@ concurrency:
 
 jobs:
   build_push:
-    name: Build + rechunk + push
+    name: Build + rechunk + push (gaming variant)
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # Skip when triggered by workflow_run if the upstream smoke-boot
+    # wasn't a clean success. workflow_dispatch / schedule pass through.
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -88,42 +59,20 @@ jobs:
 
     steps:
       - name: Maximize build space
-        # ubuntu-24.04 has ~14 GiB of free disk by default; we need
-        # ~30+ GiB for the buildah cache + base image + Margine layers
-        # + rechunk staging. This action removes Android/Haskell/.NET/
-        # Swift/CodeQL/GHC pre-installed bundles, freeing ~30 GiB.
         uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
         with:
           remove-codeql: true
 
       - name: Checkout
-        # SHA-pinned for supply-chain safety. Comment is the human-readable
-        # version Dependabot uses to bump both fields in lockstep. See the
-        # tj-actions/changed-files incident (2025-03) for why @vN alone
-        # is unsafe.
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
           fetch-depth: 1
 
       - name: Pre-build login to GHCR
-        # Authenticated pull of ghcr.io/ublue-os/bluefin-dx:stable
-        # (5000 req/h vs 100 anonymous).
+        # Authenticated pull of the base ghcr.io/.../margine:stable.
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
-
-      - name: Stage MOK secrets for BuildKit
-        env:
-          MOK_KEY:      ${{ secrets.MOK_KEY }}
-          MOK_CERT:     ${{ secrets.MOK_CERT }}
-          MOK_PASSWORD: ${{ secrets.MOK_PASSWORD }}
-        run: |
-          mkdir -p /tmp/margine-secrets
-          chmod 700 /tmp/margine-secrets
-          printf '%s' "$MOK_KEY"      > /tmp/margine-secrets/MOK.key
-          printf '%s' "$MOK_CERT"     > /tmp/margine-secrets/MOK.pem
-          printf '%s' "$MOK_PASSWORD" > /tmp/margine-secrets/mok-password
-          chmod 600 /tmp/margine-secrets/*
 
       - name: Get current date
         id: date
@@ -139,12 +88,12 @@ jobs:
             type=raw,value=${{ env.CANDIDATE_TAG }}
             type=raw,value=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}}
           labels: |
-            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/margine-image/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile
+            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/margine-image/blob/${{ github.sha }}/Containerfile.gaming
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/margine-image/tree/${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.version=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}}
             io.artifacthub.package.deprecated=false
@@ -155,25 +104,20 @@ jobs:
           sep-tags: " "
           sep-annotations: " "
 
-      - name: Build image (kernel signing via BuildKit secrets)
+      - name: Build image (no MOK — kernel pre-signed in base)
         id: build_image
         uses: redhat-actions/buildah-build@v2
         with:
           containerfiles: |
-            ./Containerfile
+            ./Containerfile.gaming
           image: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           oci: false
-          extra-args: |
-            --secret=id=mok-key,src=/tmp/margine-secrets/MOK.key
-            --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
-            --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
+          build-args: |
+            BASE_IMAGE=${{ env.BASE_IMAGE }}
 
       - name: Move built image to root storage for rechunk
-        # rechunk uses `sudo podman create` and looks in root storage;
-        # buildah leaves the image in the gha user's rootless storage.
-        # Use oci-archive intermediate (same approach as before the split).
         run: |
           set -euo pipefail
           IMG="${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
@@ -184,7 +128,6 @@ jobs:
             "oci-archive:$ARCHIVE" \
             "containers-storage:$IMG"
           sudo podman image exists "$IMG"
-          sudo podman images
           rm -f "$ARCHIVE"
 
       - name: ReChunk image
@@ -219,9 +162,6 @@ jobs:
           set -euo pipefail
           IMG_FULL="${IMAGE_REGISTRY,,}/${IMAGE_NAME,,}"
           DIGEST=""
-          # Copy each metadata tag → GHCR. All tags point at the same
-          # manifest, so we capture the digest from the first copy
-          # (--digestfile) and reuse it for sign's by-digest reference.
           for tag in ${{ steps.metadata.outputs.tags }}; do
             sudo skopeo copy --retry-times 3 \
               --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
@@ -240,10 +180,6 @@ jobs:
           echo "image_ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Pushed manifest: ${IMG_FULL}@${DIGEST}"
 
-      - name: Wipe staged secrets
-        if: always()
-        run: rm -rf /tmp/margine-secrets
-
   sign:
     name: Cosign sign (by digest)
     needs: build_push
@@ -258,18 +194,12 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       - name: Cosign login to GHCR
-        # cosign sign reads ~/.docker/config.json; nothing in this fresh
-        # job has populated it, so do an explicit login before signing.
         run: |
           cosign login ghcr.io \
             -u "${{ github.actor }}" \
             -p "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Sign image by digest
-        # Sign the pushed manifest *by digest* (image@sha256:...), not by
-        # tag — cosign warns that tag-based signing is racy ("This can
-        # lead you to sign a different image than the intended one").
-        # build_push captured the digest from `skopeo copy --digestfile`.
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ""
@@ -283,12 +213,45 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
-  notify:
-    name: ntfy notification
+  promote_to_stable:
+    name: Promote candidate → stable (no smoke-boot needed — base was validated)
+    # The base image (margine:stable) was already smoke-booted before this
+    # variant build was triggered (we run on smoke-boot success). The
+    # variant only adds RPMs + Flatpak preinstall lines; a second
+    # full smoke-boot would be ~25 min for very low marginal signal.
+    # Keep the door open via a follow-up smoke-boot-gaming workflow
+    # in the future, but for now promote immediately after signing.
     needs: [build_push, sign]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo skopeo login \
+            --username "${{ github.actor }}" --password-stdin ghcr.io
+
+      - name: Copy :candidate → :stable, :stable.YYYYMMDD, :YYYYMMDD
+        env:
+          IMG_REF: ${{ needs.build_push.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          DATE_TAG="$(date -u +%Y%m%d)"
+          REGISTRY_IMAGE="${IMG_REF%@*}"   # strip @sha256:... → ghcr.io/.../margine-gaming
+          for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
+            echo "Promoting → ${REGISTRY_IMAGE}:${promo_tag}"
+            sudo skopeo copy --retry-times 3 --preserve-digests \
+              "docker://${IMG_REF}" \
+              "docker://${REGISTRY_IMAGE}:${promo_tag}"
+          done
+
+  notify:
+    name: ntfy notification
+    needs: [build_push, sign, promote_to_stable]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # Run after both upstream jobs settle, regardless of their outcome.
     if: always()
     steps:
       - name: Notify ntfy (aggregated)
@@ -296,40 +259,37 @@ jobs:
           NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
           BUILD_RESULT: ${{ needs.build_push.result }}
           SIGN_RESULT:  ${{ needs.sign.result }}
+          PROMOTE_RESULT: ${{ needs.promote_to_stable.result }}
         run: |
           if [[ -z "${NTFY_URL:-}" ]]; then
             echo "NTFY_TOPIC_URL secret not set, skipping notification."
             exit 0
           fi
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-          # Decision matrix. The interesting case is partial success
-          # (build pushed but signing failed) — surface it explicitly so
-          # daniel can `gh run rerun --failed` instead of guessing.
-          if [[ "$BUILD_RESULT" == "success" && "$SIGN_RESULT" == "success" ]]; then
-            TITLE="Build OK → :candidate pushed + signed"
+          if [[ "$BUILD_RESULT" == "success" && "$SIGN_RESULT" == "success" && "$PROMOTE_RESULT" == "success" ]]; then
+            TITLE="Gaming variant OK → :stable promoted"
             PRIO="default"
-            TAGS="white_check_mark,construction"
-            MSG="Run #${{ github.run_number }} done. Smoke-boot will now QEMU-validate and promote to :stable if green."
+            TAGS="white_check_mark,video_game"
+            MSG="margine-gaming:stable now available. End users: bootc switch ghcr.io/${{ github.repository_owner }}/margine-gaming:stable"
           elif [[ "$BUILD_RESULT" == "failure" ]]; then
-            TITLE="Build FAILED (image push)"
+            TITLE="Gaming build FAILED (image build)"
             PRIO="high"
-            TAGS="x,fire"
-            MSG="The buildah/rechunk/push job failed. See run for details."
+            TAGS="x,video_game"
+            MSG="Containerfile.gaming or gaming/install.sh failed. See ${RUN_URL}"
           elif [[ "$SIGN_RESULT" == "failure" ]]; then
-            TITLE="Build PARTIAL → image pushed, sign FAILED"
+            TITLE="Gaming PARTIAL → image pushed, sign FAILED"
             PRIO="high"
-            TAGS="x,closed_lock_with_key"
-            MSG="The image is on GHCR but unsigned. Retry just the sign job: gh run rerun --failed ${{ github.run_id }}"
-          elif [[ "$BUILD_RESULT" == "cancelled" || "$SIGN_RESULT" == "cancelled" ]]; then
-            TITLE="Build cancelled"
-            PRIO="low"
-            TAGS="warning"
-            MSG=""
+            TAGS="x,closed_lock_with_key,video_game"
+            MSG="Retry just the sign job: gh run rerun --failed ${{ github.run_id }}"
+          elif [[ "$PROMOTE_RESULT" == "failure" ]]; then
+            TITLE="Gaming PARTIAL → signed but promotion FAILED"
+            PRIO="high"
+            TAGS="x,video_game"
+            MSG="margine-gaming:candidate is signed; promotion to :stable failed. Retry: gh run rerun --failed ${{ github.run_id }}"
           else
-            TITLE="Build status: build=${BUILD_RESULT}, sign=${SIGN_RESULT}"
+            TITLE="Gaming build status: build=${BUILD_RESULT}, sign=${SIGN_RESULT}, promote=${PROMOTE_RESULT}"
             PRIO="default"
-            TAGS="warning"
+            TAGS="warning,video_game"
             MSG=""
           fi
           curl --silent --show-error --fail \

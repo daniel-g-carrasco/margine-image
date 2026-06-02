@@ -1,0 +1,17 @@
+# Margine Gaming — Flatpaks installed on first user login by
+# flatpak-preinstall.service. Same 7 clients that `ujust margine-gaming`
+# would install on the base image, but declarative + pulled at first
+# login of the variant, so the user does not have to remember a ujust
+# recipe to round out their gaming setup.
+#
+# Manpage: flatpak-preinstall(5). Lines starting with '#' are comments;
+# blank lines are ignored. Each non-comment line is "<app-id> [collection-id]"
+# (collection-id optional and rarely needed for flathub apps).
+
+com.valvesoftware.Steam
+net.lutris.Lutris
+com.heroicgameslauncher.hgl
+com.usebottles.bottles
+com.github.Matoking.protontricks
+net.davidotek.pupgui2
+org.libretro.RetroArch

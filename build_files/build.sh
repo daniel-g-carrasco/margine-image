@@ -203,7 +203,15 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.obsproject.Studio \
       com.github.wwmm.easyeffects \
       fm.reaper.Reaper \
-      org.gnome.gitlab.somas.Apostrophe ; do
+      org.gnome.gitlab.somas.Apostrophe \
+      com.mattjakeman.ExtensionManager ; do
+    # Extension Manager (jakeman): GUI per browsare/installare/configurare
+    # estensioni GNOME Shell. Margine ne ha ~10 abilitate (o-tiling,
+    # search-light, caffeine, hide-cursor, etc.) e l'utente non ha modo
+    # di scoprirle/regolarle senza un'app dedicata. GNOME stock
+    # `org.gnome.Extensions` (gnome-extensions-app) NON è in Bluefin DX
+    # base image, Extension Manager (jakeman) è il sostituto comunità
+    # più capable (anche browse + install da extensions.gnome.org).
     echo "[Flatpak Preinstall $app]"
     echo "Branch=stable"
     echo "IsRuntime=false"
@@ -232,7 +240,7 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # Drop Bluefin's branding extensions from the default enabled set. We
 # keep the packages installed so the user can flip them back on per
 # session, but they don't auto-load on first boot.
-enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'tilingshell@ferrarodomenico.com']
+enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info']
 favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'code.desktop']
 
 [org.gnome.desktop.interface]
@@ -270,9 +278,15 @@ switch-windows-backward=@as []
 # org.gnome.desktop.default-applications.terminal. Users who want a
 # different terminal can install one and flip the setting per session.
 
+# Default tiling engine for Margine — o-tiling@oliwebd.github.com
+# (binary-tree auto-split, Hyprland/pop-shell-style). Was tilingshell
+# until 2026-05-31. The UUID was wrong in zz1 historically
+# (the relocatable schema path was right but the enabled-extensions
+# list had 'tilingshell' instead of o-tiling); margine-bootstrap
+# applied the correct UUID at user-level, so daniel's session worked,
+# but a freshly-rebased VM that doesn't run the bootstrap would see
+# tilingshell as default. Fixed in enabled-extensions above.
 [org.gnome.shell.extensions.o-tiling]
-# Default tiling engine for Margine (replaces Tiling Shell since
-# 2026-05-31). Binary-tree auto-split, Hyprland/pop-shell-style.
 active-hint=true
 active-hint-border-radius=14
 active-hint-border-width=4
@@ -283,7 +297,7 @@ skip-overview=false
 
 [org.gnome.shell.extensions.tilingshell]
 # Tiling Shell is installed but disabled by default — flip back via
-# Extensions Manager if o-tiling doesn't suit a particular workflow.
+# Extension Manager if o-tiling doesn't suit a particular workflow.
 # Keep these prefs sensible so the experience is consistent if the
 # user re-enables it:
 enable-autotiling=true

@@ -188,8 +188,31 @@ log "Cleaning dnf packages + metadata to avoid cache poisoning on persistent run
 dnf -y clean packages metadata
 
 log "Installing CachyOS kernel: $KERNEL_PACKAGES"
+# COPR (copr.fedorainfracloud.org) is occasionally slow or returns 5xx
+# / curl timeouts for several minutes — observed 2026-06-02 with run
+# #26838562527 dying at "Curl error (28): Timeout was reached" after
+# 5 internal librepo retries. Wrap the install in an outer retry loop
+# with backoff so transient COPR brownouts don't sink the whole 28-min
+# image build. Each attempt does `dnf clean metadata` first to dodge
+# the bad-metadata-cached failure mode (see comment above).
+attempt=1
+max_attempts=5
+while :; do
+  if dnf -y install --refresh $KERNEL_PACKAGES akmods; then
+    log "CachyOS kernel install OK on attempt $attempt"
+    break
+  fi
+  if (( attempt >= max_attempts )); then
+    log "CachyOS kernel install FAILED after $max_attempts attempts (COPR likely down)"
+    exit 1
+  fi
+  backoff=$(( attempt * 30 ))
+  log "attempt $attempt failed; sleeping ${backoff}s, cleaning metadata, retry"
+  sleep $backoff
+  dnf -y clean metadata || true
+  attempt=$(( attempt + 1 ))
+done
 # shellcheck disable=SC2086
-dnf -y install --refresh $KERNEL_PACKAGES akmods
 
 KERNEL_VERSION="$(rpm -q "$KERNEL_PKG" --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}')"
 log "Installed kernel: $KERNEL_VERSION"

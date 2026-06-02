@@ -700,6 +700,30 @@ rm -f /usr/share/ublue-os/fastfetch.jsonc
 # (g) Bluefin docs in /usr/share/doc/ — non-functional, just clutter.
 rm -rf /usr/share/doc/bluefin
 
+# (h) Bazaar app-store carousel wallpapers from Bluefin (16 .jxl files
+# in /usr/etc/bazaar/, named NN-bluefin-{day,night}.jxl). They show up
+# in Bazaar's spotlight banner / promo carousel. Replaced at build
+# time with nothing — Bazaar falls back to its own placeholders. If
+# we ever want Margine-branded promo art in Bazaar, drop matching
+# 01-margine-{day,night}.jxl into /usr/etc/bazaar/ here.
+rm -f /usr/etc/bazaar/*-bluefin-*.jxl /etc/bazaar/*-bluefin-*.jxl
+
+# (i) Bluefin/ublue custom helper binaries that were dropped into
+# /usr/bin by image-build scripts (not RPM-owned, so rpm verify
+# misses them). Most are no-ops on Margine because the surrounding
+# Bluefin infrastructure isn't here. Keep the ublue-image-info.sh +
+# ublue-rollback-helper which integrate with bootc/ostree (functional);
+# drop the rest. ublue-motd in particular spawns Bluefin's tipline at
+# every shell login, very visible regression for a Margine user.
+rm -f /usr/bin/bluefin-dx-groups \
+      /usr/bin/ublue-bling \
+      /usr/bin/ublue-bling-fastfetch \
+      /usr/bin/ublue-fastfetch \
+      /usr/bin/ublue-motd \
+      /usr/bin/ublue-privileged-setup \
+      /usr/bin/ublue-system-setup \
+      /usr/bin/ublue-user-setup
+
 # Update the icon-theme cache so removed SVGs disappear from icon
 # lookups immediately at first boot.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then

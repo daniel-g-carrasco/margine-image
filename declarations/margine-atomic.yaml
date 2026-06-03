@@ -692,32 +692,55 @@ gnome:
         reason: >
           Superseded by o-tiling. User does not want Tiling Shell
           preinstalled. Re-installable via Extensions Manager (EGO 7065).
-    user_install:
+      # 2026-06-03 PR A — These three were originally installed per-user
+      # at first-login via install-user-extensions. That had three
+      # failure modes that all bit hard on the 2026-06-03 fresh-VM
+      # smoke test:
+      #   1. Race with flatpak-preinstall.service at first login.
+      #   2. ~/.local/share/gnome-shell/extensions/search-light shadowed
+      #      Bluefin's own /usr/share/.../search-light (older user-side
+      #      version didn't support GNOME Shell 50.1, GNOME silently
+      #      skipped the system one — "will not be loaded" in journal).
+      #   3. Silent failure if the user logged in before the autostart
+      #      bootstrap completed.
+      # Now installed system-wide at margine-image build time by
+      # build_files/build-margine-extensions.sh — exactly the Bluefin/
+      # Bazzite pattern. Listed here as removed_user_install so any
+      # existing Margine system that still has them user-side gets
+      # them pruned on next install-user-extensions --apply, removing
+      # the shadowing problem on upgrade. The system-wide copy stays.
       - uuid: search-light@icedman.github.com
-        git_url: https://github.com/icedman/search-light.git
-        git_ref: main
-        description: >
-          Search Light — Spotlight-like popup. Installed from the
-          upstream git repo (Bluefin does the same) because the EGO
-          release (v42) is stuck at GNOME 49 while master (v101)
-          supports GNOME 50.
+        removed_at: 2026-06-03
+        reason: >
+          Bluefin DX already installs search-light system-wide from
+          upstream git (newer than EGO v42). Margine's user-side install
+          shadowed Bluefin's copy — see "Extension search-light already
+          installed in ~/.local — /usr/share will not be loaded" in
+          journalctl. Removed from user_install; Bluefin's system copy
+          is the source of truth.
       - uuid: hide-cursor@elcste.com
-        ego_id: 6727
-        description: >
-          Hide Cursor — Wayland-native auto-hide of the mouse cursor
-          on inactivity (replaces unclutter/xbanish from X11 era).
-          Margine ships it enabled by default; user can disable via
-          Extensions Manager if undesired.
+        removed_at: 2026-06-03
+        reason: >
+          Moved to system-wide install in margine-image's
+          build-margine-extensions.sh (EGO id 6727). Lives in
+          /usr/share/gnome-shell/extensions/hide-cursor@elcste.com/
+          and is enabled by zz1-margine.gschema.override.
       - uuid: o-tiling@oliwebd.github.com
-        zip_url: https://github.com/oliwebd/o-tiling/releases/download/v2.8.8/o-tiling@oliwebd.github.com-v2.8.8.zip
-        description: >
-          O-tiling — auto-tiling extension (binary-tree split on new
-          window, i3/Hyprland-style). Fork of System76's pop-shell
-          with active GNOME 48-50 support. Replaces Tiling Shell as
-          Margine's default tiling engine; Tiling Shell is kept
-          installed-but-disabled so a user can flip back via
-          Extensions Manager. Pinned to v2.8.8 release zip because
-          o-tiling is not on extensions.gnome.org.
+        removed_at: 2026-06-03
+        reason: >
+          Moved to system-wide install in margine-image's
+          build-margine-extensions.sh (zip from GitHub release v2.8.8).
+          Lives in /usr/share/gnome-shell/extensions/o-tiling@oliwebd.
+          github.com/ and is enabled by zz1-margine.gschema.override.
+    user_install:
+      # Empty as of 2026-06-03 PR A. All extensions Margine adds on top
+      # of Bluefin DX are now installed system-wide at OCI build time
+      # via margine-image's build-margine-extensions.sh — Bluefin/
+      # Bazzite pattern. See removed_user_install above for what moved.
+      # Leaving an empty list (rather than removing the key) so the
+      # install-user-extensions script continues to parse without
+      # change.
+      []
   default_applications:
     note: >
       Applied by scripts/configure-default-applications. Sets MIME

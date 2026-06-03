@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Margine first-boot status notifier.
+#
+# Designed for the case where the user installs Margine, lands on
+# the desktop, and asks "where are my apps?" The Margine ISO bakes
+# ~22 fundamental Flatpaks into /var/lib/flatpak at install time
+# (kickstart Bazzite-pattern, see disk_config/iso-gnome.toml), so
+# the visible-on-day-one set IS there. But a separate ~12 deferred
+# Flatpaks (GIMP, Inkscape, OBS, Reaper, ...) are scheduled by
+# flatpak-preinstall.service to download in the background at first
+# boot. That takes 5-15 minutes depending on Flathub speed, and
+# without UX feedback the user thinks the system is broken.
+#
+# This script — autostarted by GDM via /etc/xdg/autostart/ — posts
+# two GNOME notifications:
+#   1. On first login, if flatpak-preinstall.service is still
+#      running: "Margine sta scaricando alcune app aggiuntive in
+#      background. ~5-15 min. Tieni la rete attiva."
+#   2. When the service completes: "Margine pronto: apri Activities
+#      per vedere tutte le app."
+#
+# Idempotent: ~/.cache/margine/first-boot-notified marks the
+# notification done so subsequent logins stay quiet. If
+# flatpak-preinstall.service had already finished by the time the
+# user logs in (e.g. fast network), we skip both notifications and
+# just write the marker — silence is the right behaviour there.
+set -uo pipefail
+
+MARKER_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/margine"
+MARKER="$MARKER_DIR/first-boot-notified"
+LOG="$MARKER_DIR/first-boot-notify.log"
+
+mkdir -p "$MARKER_DIR"
+
+log() {
+  printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*" >> "$LOG"
+}
+
+# Idempotency: only run once per user.
+if [[ -f "$MARKER" ]]; then
+  log "marker $MARKER exists — exit"
+  exit 0
+fi
+
+# notify-send is in libnotify, always present on GNOME / Bluefin DX.
+if ! command -v notify-send >/dev/null 2>&1; then
+  log "notify-send not available — exit"
+  date -uIs > "$MARKER"
+  exit 0
+fi
+
+# Service-status check via DBus (no sudo needed for is-active).
+svc_state() {
+  systemctl is-active flatpak-preinstall.service 2>/dev/null || echo "unknown"
+}
+
+# Give GDM/GNOME shell ~10s to settle before we pop notifications —
+# otherwise the toast can land in the same frame as the dock
+# animation and look glitchy.
+sleep 10
+
+initial="$(svc_state)"
+log "initial flatpak-preinstall.service state = $initial"
+
+case "$initial" in
+  active|activating|reloading)
+    # Service is still working. Tell the user.
+    notify-send \
+      --app-name="Margine" \
+      --icon="org.gnome.Software" \
+      --urgency=low \
+      --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
+      "Margine sta installando alcune app aggiuntive" \
+      "GIMP, Inkscape, darktable, OBS, Reaper e altre stanno arrivando in background. ~5-15 minuti. Tieni la rete attiva — riceverai un'altra notifica quando avrà finito."
+    log "posted START notification"
+
+    # Poll for completion. Cap at 60 min so we don't sit here forever
+    # if the service hangs.
+    deadline=$(( $(date +%s) + 3600 ))
+    while (( $(date +%s) < deadline )); do
+      sleep 30
+      state="$(svc_state)"
+      log "poll state=$state"
+      case "$state" in
+        inactive|deactivating|failed|unknown)
+          break
+          ;;
+      esac
+    done
+
+    final="$(svc_state)"
+    log "final flatpak-preinstall.service state = $final"
+    if [[ "$final" == "failed" ]]; then
+      notify-send \
+        --app-name="Margine" \
+        --icon="dialog-warning" \
+        --urgency=normal \
+        "Alcune app non sono state installate" \
+        "L'installazione di alcune app aggiuntive non è riuscita (rete?). Riprova manualmente da Bazaar, oppure esegui: systemctl restart flatpak-preinstall.service"
+      log "posted FAIL notification"
+    else
+      installed=$(flatpak list --app --columns=application 2>/dev/null | wc -l)
+      notify-send \
+        --app-name="Margine" \
+        --icon="emblem-ok" \
+        --urgency=low \
+        --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
+        "Margine pronto" \
+        "Tutte le app aggiuntive sono installate (${installed} Flatpak totali). Apri Activities (tasto Super) per vederle."
+      log "posted DONE notification (apps=$installed)"
+    fi
+    ;;
+  inactive|failed|unknown)
+    # Service already done by the time user logged in — no toasts.
+    log "service already $initial at login — skip notifications"
+    ;;
+  *)
+    log "unexpected initial state: $initial — skip notifications"
+    ;;
+esac
+
+date -uIs > "$MARKER"
+log "wrote marker $MARKER — done"

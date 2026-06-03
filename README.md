@@ -4,8 +4,6 @@
 
 ### The *what* of Margine.
 
-## 🌐 [**margine.the-empty.place**](https://margine.the-empty.place/) — official site, downloads, install guide
-
 Declarative spec, configuration helpers, and system-state validators for
 the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 

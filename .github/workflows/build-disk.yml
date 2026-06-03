@@ -204,7 +204,7 @@ jobs:
         # internal CAS — the net cost vs the old monolithic shape is
         # ~2-3 min, vs ~15-17 min saved on every IA-upload failure.
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ matrix.image }}-disk-${{ matrix.disk-type }}
           # Pack the *whole* output dir (artifact + SHA256SUMS); the
@@ -238,7 +238,7 @@ jobs:
       identifier: ${{ steps.ia_upload.outputs.identifier }}
     steps:
       - name: Download ISO artifact (${{ matrix.image }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: ${{ matrix.image }}-disk-anaconda-iso
           path: ./disk
@@ -439,7 +439,7 @@ jobs:
         # as a downloadable GHA artifact. Anyone who wants to publish
         # them under a friendly URL can grab the artifact and rsync it
         # to a webserver of their choice.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ${{ matrix.image }}-iso-index-${{ steps.ia_upload.outputs.identifier }}
           path: |

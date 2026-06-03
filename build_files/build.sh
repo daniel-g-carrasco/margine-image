@@ -516,6 +516,7 @@ for s in \
     validate-cachyos-kernel \
     validate-hardware-media-stack \
     validate-gaming-runtime \
+    validate-margine-system \
     collect-diagnostics ; do
   curl --fail --silent --show-error -L \
        "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \

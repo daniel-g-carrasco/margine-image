@@ -60,6 +60,17 @@ jobs:
       packages: write   # needed for the candidate→stable promotion step
 
     steps:
+      - name: Maximize build space
+        # ubuntu-24.04 ships with ~14 GiB free, but BIB needs to
+        # extract the 14 GB Margine bootc image into /sysroot/ostree/
+        # repo and then build a qcow2 from it — easily 25 GB peak.
+        # Without this step we hit "no space left on device" mid-
+        # extraction (build #26919583711, 2026-06-04). Same action
+        # that build-disk.yml uses for the same reason.
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
       - name: Install QEMU + OVMF + tools
         run: |
           sudo apt-get update -qq

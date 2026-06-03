@@ -216,6 +216,17 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.bitwarden.desktop \
       org.libreoffice.LibreOffice \
       com.mattjakeman.ExtensionManager \
+      org.gnome.Calculator \
+      org.gnome.Calendar \
+      org.gnome.clocks \
+      org.gnome.Contacts \
+      org.gnome.Weather \
+      org.gnome.Maps \
+      org.gnome.TextEditor \
+      org.gnome.baobab \
+      org.gnome.Characters \
+      org.gnome.Logs \
+      org.gnome.font-viewer \
       org.gnome.Snapshot \
       org.gnome.Showtime \
       org.gnome.Papers \
@@ -253,6 +264,16 @@ mkdir -p /usr/share/flatpak/preinstall.d
     #   re-add the modern (-not-deprecated) versions: Snapshot
     #   replaces Cheese, Showtime replaces Totem, Papers replaces
     #   Evince, Loupe replaces Eye of GNOME.
+    #
+    # Calculator / Calendar / clocks / Contacts / Weather / Maps /
+    # TextEditor / baobab / Characters / Logs / font-viewer:
+    #   The GNOME core productivity + utility set that Fedora
+    #   Silverblue/Workstation ship as RPM in /usr but Bluefin DX
+    #   strips. We restore them as Flatpaks (atomic-friendly,
+    #   no /usr layer cost, ~120 MB cumulative thanks to shared
+    #   org.gnome.Platform runtime). This closes the visible gap
+    #   "the standard GNOME calculator / calendar / text editor
+    #   aren't here" against a vanilla Silverblue install.
     #
     # Pinta: lightweight image editor (Paint.NET-style). Bluefin's
     #   own Bazaar preinstall list includes it; we lost it via the

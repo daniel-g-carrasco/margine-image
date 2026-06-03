@@ -3,10 +3,30 @@
 # This config produces an Anaconda installer ISO that:
 #   1. Boots into Anaconda (graphical installer).
 #   2. Installs the embedded bootc image to disk.
-#   3. After install, runs the %post kickstart which sets the
-#      ostree origin to ghcr.io/daniel-g-carrasco/margine:stable
-#      so the first `bootc upgrade` on the installed system pulls
-#      from there instead of the embedded snapshot.
+#   3. Runs the %post kickstart which:
+#      a. Points the freshly installed system at our public registry
+#         (`bootc switch`) so subsequent `bootc upgrade` calls follow
+#         margine:stable.
+#      b. (Bazzite pattern) Installs the Margine "fundamentals"
+#         Flatpak set INTO the installer environment's
+#         /var/lib/flatpak, then rsyncs that dir into the target's
+#         /var/lib/flatpak — so when the user first boots into the
+#         installed system, the desktop is ALREADY populated with
+#         browser, mail, password manager, office, viewers, GNOME
+#         productivity suite. No 10-15 minute first-boot wait.
+#
+# The "fundamentals" list is per-flavor:
+#   /usr/share/margine/installer-flatpaks-base
+#       (always present, written by build_files/build.sh)
+#   /usr/share/margine/installer-flatpaks-gaming
+#       (present only on margine-gaming, written by
+#        build_files/gaming/install.sh)
+# The kickstart concatenates the two if both exist.
+#
+# Heavy creative apps (GIMP, Inkscape, darktable, OBS, Reaper, ...)
+# are NOT in the BAKE list — they ship via
+# /usr/share/flatpak/preinstall.d/margine-defaults.preinstall and
+# install at first boot via flatpak-preinstall.service.
 
 [customizations.installer.kickstart]
 contents = """
@@ -17,19 +37,108 @@ contents = """
 # bootc-image-builder, and the system never sees new releases.
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
+
+%post --nochroot --erroronfail --log=/tmp/anaconda-post-flatpak-bake.log
+# === Margine Flatpak BAKE (PR D / 2026-06-04) ===
+#
+# Stage 1: install the Margine "fundamentals" Flatpak set INTO the
+# running Anaconda installer environment's /var/lib/flatpak.
+# This is the live OS the installer is running from, which is the
+# Margine bootc image. flatpak install --system writes into this
+# live env's /var/lib/flatpak.
+#
+# Stage 2: rsync that populated /var/lib/flatpak into the target's
+# /var/lib/flatpak. ostree+bootc reset /var per-deployment when
+# they install, so Stage 1's installs would NOT survive otherwise.
+# The rsync makes them survive — at next boot, the installed
+# system has the Flatpaks waiting in /var/lib/flatpak. They appear
+# in Activities immediately.
+#
+# Pattern: lifted from Bazzite installer/system_files/.../usr/share/
+# anaconda/post-scripts/install-flatpaks.ks.
+
+set -eo pipefail
+
+# Stage 1 — install in installer env
+log() { printf '[%s] %s\\n' "$(date -u +%H:%M:%S)" "$*"; }
+log "Stage 1: ensure flathub remote in installer env"
+flatpak remote-add --if-not-exists --system flathub \
+    https://dl.flathub.org/repo/flathub.flatpakrepo || true
+
+# Collect the per-flavor BAKE list(s). installer-flatpaks-gaming
+# exists only on the gaming variant; missing on base, which is fine.
+BAKE_FILES=(
+  /usr/share/margine/installer-flatpaks-base
+  /usr/share/margine/installer-flatpaks-gaming
+)
+TO_INSTALL=()
+for f in "${BAKE_FILES[@]}"; do
+  if [[ -f "$f" ]]; then
+    log "Reading BAKE list: $f ($(grep -cv '^#\\|^$' "$f") apps)"
+    while IFS= read -r line; do
+      # Strip comments + blank lines
+      app=$(echo "$line" | sed -E 's/#.*$//' | xargs)
+      [[ -n "$app" ]] && TO_INSTALL+=( "$app" )
+    done < "$f"
+  fi
+done
+
+if (( ${#TO_INSTALL[@]} > 0 )); then
+  log "Stage 1: flatpak install ${#TO_INSTALL[@]} apps (this will take ~3-8 min)"
+  # --or-update: tolerate the case where the app is already
+  # installed (e.g. Bluefin DX's bazaar.preinstall ran during a
+  # previous build and pre-baked Bazaar in the image).
+  # NB: --noninteractive returns 0 even on partial failure — we
+  # rely on the rsync in Stage 2 to faithfully copy whatever
+  # actually landed.
+  flatpak install --system --noninteractive --or-update flathub "${TO_INSTALL[@]}" || \
+    log "WARN: some Flatpaks failed to install (continuing — rsync will copy what we got)"
+else
+  log "Stage 1: no BAKE lists found, skipping flatpak install"
+fi
+
+# Stage 2 — rsync installer env's /var/lib/flatpak into target
+log "Stage 2: locate target deployment under /mnt/sysimage/ostree/deploy/"
+DEPLOY_DIR=$(ls -d /mnt/sysimage/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)
+if [[ -z "$DEPLOY_DIR" ]]; then
+  log "ERROR: no ostree deployment found under /mnt/sysimage — cannot rsync flatpaks"
+  ls -la /mnt/sysimage/ostree/deploy/ 2>&1 || true
+  exit 1
+fi
+log "Stage 2: target deploy dir = $DEPLOY_DIR"
+
+mkdir -p "$DEPLOY_DIR/var/lib"
+if [[ -d /var/lib/flatpak ]]; then
+  installed=$(find /var/lib/flatpak/app -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+  log "Stage 2: rsync /var/lib/flatpak ($installed installed apps) → $DEPLOY_DIR/var/lib/"
+  rsync -aAXUHK --open-noatime /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
+  sync
+  log "Stage 2: rsync complete"
+else
+  log "WARN: /var/lib/flatpak does not exist on installer env, nothing to rsync"
+fi
+
+log "Flatpak BAKE complete. Target system /var/lib/flatpak populated."
+%end
 """
 
 # Trim the Anaconda module set to what we actually need on a Margine
 # install: storage + runtime. Network is auto-configured by NetworkManager
 # at first boot; users/security/services/subscription/timezone come from
 # Margine's own bootstrap (configure-* chain) at first login.
+#
+# BUT: Network module is INTENTIONALLY ENABLED now — the %post --nochroot
+# above does `flatpak install` from Flathub, which needs network. NM
+# auto-configures wired DHCP without a Network module GUI, so this is
+# usually transparent on test VMs; but on a real laptop with Wi-Fi the
+# user needs the Network UI to pick an AP. Re-enabled.
 [customizations.installer.modules]
 enable = [
   "org.fedoraproject.Anaconda.Modules.Storage",
-  "org.fedoraproject.Anaconda.Modules.Runtime"
+  "org.fedoraproject.Anaconda.Modules.Runtime",
+  "org.fedoraproject.Anaconda.Modules.Network"
 ]
 disable = [
-  "org.fedoraproject.Anaconda.Modules.Network",
   "org.fedoraproject.Anaconda.Modules.Security",
   "org.fedoraproject.Anaconda.Modules.Services",
   "org.fedoraproject.Anaconda.Modules.Users",

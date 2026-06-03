@@ -78,8 +78,44 @@ done
 log "Enabling tuned.service via preset"
 systemctl enable tuned.service || true
 
+# ---------------------------------------------------------------------------
+# Gaming "fundamentals" Flatpak BAKE list (PR D, 2026-06-04)
+# ---------------------------------------------------------------------------
+# Per the hybrid-Flatpak design in build_files/build.sh, gaming-critical
+# launchers (Steam + the four big launchers a player reaches for
+# immediately) are baked into the freshly-installed system by the
+# Anaconda kickstart in disk_config/iso-gnome.toml. The kickstart
+# reads BOTH installer-flatpaks-base AND installer-flatpaks-gaming;
+# the gaming-only file exists ONLY on margine-gaming images, so the
+# base ISO ignores it (the kickstart skips missing files).
+#
+# Protontricks + RetroArch stay in margine-gaming.preinstall (first-
+# boot deferred) — they are utilities/emu, not the launcher the
+# player opens 30 seconds after first login.
+log "Writing /usr/share/margine/installer-flatpaks-gaming (BAKE: kickstart-installed)"
+mkdir -p /usr/share/margine
+cat > /usr/share/margine/installer-flatpaks-gaming <<'BAKE_LIST'
+# Margine Gaming "fundamentals" — baked into the freshly installed
+# system by the Anaconda kickstart in disk_config/iso-gnome.toml.
+# A gamer who installs Margine Gaming and opens Activities for the
+# first time finds Steam already there.
+com.valvesoftware.Steam
+net.lutris.Lutris
+com.heroicgameslauncher.hgl
+com.usebottles.bottles
+net.davidotek.pupgui2
+BAKE_LIST
+chmod 0644 /usr/share/margine/installer-flatpaks-gaming
+log "Gaming BAKE list — $(grep -cv '^#\|^$' /usr/share/margine/installer-flatpaks-gaming) apps"
+
 # Final sanity: bootc lint runs later in the Containerfile; we just
-# verify the gaming binaries landed where expected.
+# verify the gaming binaries landed where expected. NOTE: scx_lavd /
+# scx_bpfland are inherited from the BASE layer (see
+# margine-image PR #18 — scx-scheds promotion to base), they are
+# NOT installed by this gaming-layer install.sh. We still smoke-check
+# them here because if base is broken (e.g. autoremove nukes
+# scx-scheds — PR #22) we'd rather fail the gaming build loudly here
+# than ship a gaming ISO whose `ujust margine-scheduler` is broken.
 log "Gaming layer install summary:"
 for bin in gamescope mangohud gamemoded goverlay tuned-adm scx_lavd scx_bpfland; do
   if command -v "$bin" >/dev/null 2>&1; then

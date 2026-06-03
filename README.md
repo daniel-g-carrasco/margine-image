@@ -4,20 +4,27 @@
 
 ### An immutable Linux desktop distribution.
 
+## 🌐 [**margine.the-empty.place**](https://margine.the-empty.place/) — official site, downloads, install guide
+
 Built on [Bluefin DX](https://projectbluefin.io/), with a Secure Boot-signed
 [CachyOS](https://cachyos.org/) kernel, GNOME configured for tiling workflows,
 a complete media stack, and a curated set of preinstalled applications.
 
 <p>
+  <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+</p>
+<p>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
-  <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io margine" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine-gaming"><img alt="ghcr.io margine-gaming" src="https://img.shields.io/badge/ghcr.io-margine--gaming%3Astable-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://margine.the-empty.place/#install"><img alt="Download" src="https://img.shields.io/badge/download-ISO%20%2B%20torrent-D97757"></a>
   <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/github/license/daniel-g-carrasco/margine-image?color=4D9F4A"></a>
 </p>
 
-[**Download**](https://margine.the-empty.place/#install) ·
+[**🌐 Website**](https://margine.the-empty.place/) ·
+[**📥 Download**](https://margine.the-empty.place/#install) ·
 [What it is](#what-it-is) ·
 [What you get](#what-you-get) ·
 [Install](#install) ·

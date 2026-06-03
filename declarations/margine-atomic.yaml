@@ -604,11 +604,19 @@ gnome:
     # defaults so the popup adapts to the user's hardware and
     # accessibility settings rather than being frozen.
     # ------------------------------------------------------------------
+    # Search Light — Margine baseline captured 2026-06-03 from daniel's
+    # VM. border-radius is deliberately NOT declared so the popup uses
+    # the system GNOME default and adapts to theme changes. blur keys
+    # are also not declared — blur-background stays off (rendering
+    # glitches in search-light's blur), making blur-sigma /
+    # blur-brightness operational no-ops.
     org.gnome.shell.extensions.search-light:
-      background-color: '(0.0, 0.0, 0.0, 0.74)'
+      animation-speed: 100.0
+      background-color: '(0.0, 0.0, 0.0, 0.75)'
       blur-background: false
-      blur-brightness: 0.6
-      blur-sigma: 30.0
+      shortcut-search: ['<Super>space']
+      use-animations: true
+      window-effect: 0
     org.gnome.shell.extensions.just-perfection:
       note: >
         Just Perfection lets you trim shell elements (top-bar menus,

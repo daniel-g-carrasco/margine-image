@@ -219,16 +219,18 @@ margine-gaming-remove:
 
 
 # Switch the CPU scheduler at runtime (sched_ext / BPF schedulers).
-# Gaming variant only — needs scx-scheds installed.
+# Available on every Margine flavour — scx-scheds ships in the base
+# image (so creators on regular Margine can use scx_central for
+# pro-audio sessions), gaming variant inherits it.
 #
 #   ujust margine-scheduler            # show what's running
-#   ujust margine-scheduler lavd       # low-latency, gaming default
+#   ujust margine-scheduler lavd       # low-latency, gaming-tuned
 #   ujust margine-scheduler bpfland    # interactive + throughput balance
 #   ujust margine-scheduler rusty      # general-purpose, Rust port of CFS
 #   ujust margine-scheduler central    # pin all decisions to one CPU (RT audio)
 #   ujust margine-scheduler simple     # didactic minimum
 #   ujust margine-scheduler default    # stop scx_*, return to kernel default (BORE on Margine)
-[group('Gaming')]
+[group('Performance')]
 margine-scheduler MODE="status":
     #!/usr/bin/bash
     set -uo pipefail

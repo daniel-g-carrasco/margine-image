@@ -435,9 +435,9 @@ pipeline='pipeline_default'
 
 [org.gnome.shell.extensions.blur-my-shell.dash-to-dock]
 blur=true
-brightness=0.6
+brightness=0.4
 pipeline='pipeline_default_rounded'
-sigma=30
+sigma=70
 static-blur=true
 style-dash-to-dock=0
 unblur-in-overview=true

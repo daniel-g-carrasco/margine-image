@@ -23,12 +23,16 @@ margine-bootstrap MODE="interactive":
 
     Steps:
       1. margine-configure-home-layout         (~/data + ~/dev + ~/scratch + XDG remap + bookmarks)
-      2. margine-install-user-extensions       (Tiling Shell + Search Light into ~/.local)
-      3. margine-configure-gnome-extensions    (enable/disable per Margine policy)
-      4. margine-configure-gnome-keybindings   (Hyprland-style SUPER+1..0, SUPER+E, tiling binds)
-      5. margine-configure-gnome-appearance    (accent, theme, dconf for extensions)
-      6. margine-configure-default-applications (Zen as browser, Ptyxis terminal, etc.)
-      7. margine-configure-gnome-app-folders   (Activities grid grouped by category)
+      2. margine-configure-gnome-keybindings   (Hyprland-style SUPER+1..0, SUPER+E, tiling binds)
+      3. margine-configure-gnome-appearance    (accent, theme, dconf for extensions)
+      4. margine-configure-default-applications (Zen as browser, Ptyxis terminal, etc.)
+      5. margine-configure-gnome-app-folders   (Activities grid grouped by category)
+
+    As of 2026-06-03 PR A, GNOME extensions are no longer installed
+    or enabled per-user: o-tiling and hide-cursor live in /usr/share/
+    gnome-shell/extensions/ (baked by margine-image build), enablement
+    is in /usr/share/glib-2.0/schemas/zz1-margine.gschema.override.
+    Bootstrap no longer touches them.
 
     No package install. No layer staged. Pure user-state under $HOME
     and user-dconf. Reversible by hand.
@@ -43,10 +47,15 @@ margine-bootstrap MODE="interactive":
     fi
 
     FAILED=()
+    # Extension install + enable used to be in this chain (steps 2/3)
+    # but lived per-user under ~/.local/share/gnome-shell/extensions/
+    # and shadowed Bluefin's own copies (search-light), or never ran
+    # at all due to first-login race with flatpak-preinstall.service.
+    # Replaced 2026-06-03 by system-wide install in margine-image's
+    # build-margine-extensions.sh + zz1-margine.gschema.override
+    # enabled-extensions list. Nothing left here for extensions.
     for step in \
         margine-configure-home-layout \
-        margine-install-user-extensions \
-        margine-configure-gnome-extensions \
         margine-configure-gnome-keybindings \
         margine-configure-gnome-appearance \
         margine-configure-default-applications \

@@ -38,7 +38,15 @@ contents = """
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
 
-%post --nochroot --erroronfail --log=/tmp/anaconda-post-flatpak-bake.log
+%post --nochroot --log=/tmp/anaconda-post-flatpak-bake.log
+# (Deliberately NOT --erroronfail. If Flathub is unreachable or the
+# rsync target path doesn't exist for an unexpected layout reason,
+# we want the install to STILL COMPLETE — the user can recover from
+# "GIMP missing" via Bazaar after first boot, but they cannot
+# recover from "Anaconda aborted because flatpak failed". The
+# %post above with `bootc switch` keeps --erroronfail because that
+# IS install-critical.)
+#
 # === Margine Flatpak BAKE (PR D / 2026-06-04) ===
 #
 # Stage 1: install the Margine "fundamentals" Flatpak set INTO the

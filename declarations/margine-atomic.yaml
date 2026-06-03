@@ -523,8 +523,14 @@ gnome:
       allow-volume-above-100-percent: false
     org.gnome.shell.extensions.dash-to-dock:
       note: >
-        Borrowed from Bluefin's zz0-bluefin-modifications.gschema.override.
-        Fixed dock, semi-transparent, dynamic background, app dots.
+        Borrowed from Bluefin's zz0-bluefin-modifications.gschema.override
+        (fixed dock, semi-transparent, dynamic background, app dots).
+        The hot-keys=false override is a keybinding-collision fix
+        (NOT cosmetic): Dash-to-Dock binds Super+1..9 to launch dash
+        slots by default, which collides with Margine's Super+1..0
+        workspace navigation. Disabling the extension's hot-key
+        handler lets configure-gnome-keybindings' workspace binds
+        win cleanly.
       dock-fixed: true
       force-straight-corner: false
       custom-theme-shrink: true
@@ -539,33 +545,70 @@ gnome:
       min-alpha: 0.5
       running-indicator-style: DOTS
       apply-custom-theme: true
-    org.gnome.shell.extensions.blur-my-shell:
-      note: >
-        Bluefin-style transparent/blurred shell. Defaults are good; we
-        only nudge the panel a bit to match Bluefin's look.
-      settings-version: 2
-    org.gnome.shell.extensions.blur-my-shell.panel:
-      blur: true
-      style-panel: 0
-      override-background: true
-      pipeline: pipeline_default
-    org.gnome.shell.extensions.blur-my-shell.overview:
-      blur: true
-      style-components: 0
-      pipeline: pipeline_default
+      hot-keys: false
+    # ------------------------------------------------------------------
+    # Blur My Shell — cosmetic-only defaults captured 2026-06-02 from
+    # daniel's VM, narrowed 2026-06-03 to the cosmetic surface (blur
+    # radius/brightness, transparency, per-surface pipeline assignment).
+    # Source of truth: margine-image build_files/build.sh
+    # zz1-margine.gschema.override; this YAML mirrors it for
+    # configure-gnome-appearance's user-state re-apply.
+    #
+    # Explicitly NOT declared (and why — same reasoning as the gschema):
+    #   * pipelines / rounded-blur-found / settings-version — extension
+    #     internal state.
+    #   * blur-my-shell.hidetopbar.compatibility — not cosmetic
+    #     (interop toggle with another extension).
+    # ------------------------------------------------------------------
+    org.gnome.shell.extensions.blur-my-shell.appfolder:
+      brightness: 0.4
+      sigma: 70
     org.gnome.shell.extensions.blur-my-shell.applications:
-      blur: false
+      pipeline: 'pipeline_default'
+    org.gnome.shell.extensions.blur-my-shell.coverflow-alt-tab:
+      pipeline: 'pipeline_default'
+    org.gnome.shell.extensions.blur-my-shell.dash-to-dock:
+      blur: true
+      brightness: 0.6
+      pipeline: 'pipeline_default_rounded'
+      sigma: 30
+      static-blur: true
+      style-dash-to-dock: 0
+      unblur-in-overview: true
+    org.gnome.shell.extensions.blur-my-shell.dash-to-panel:
+      blur-original-panel: true
+    org.gnome.shell.extensions.blur-my-shell.lockscreen:
+      pipeline: 'pipeline_default'
+    org.gnome.shell.extensions.blur-my-shell.overview:
+      pipeline: 'pipeline_default'
+    org.gnome.shell.extensions.blur-my-shell.panel:
+      brightness: 0.4
+      corner-radius: 0
+      override-background: true
+      pipeline: 'pipeline_default'
+      sigma: 70
+      static-blur: false
+      unblur-in-overview: true
+    org.gnome.shell.extensions.blur-my-shell.screenshot:
+      pipeline: 'pipeline_default'
+    org.gnome.shell.extensions.blur-my-shell.window-list:
+      brightness: 0.4
+      sigma: 70
     # org.gnome.shell.extensions.tilingshell — removed 2026-06-02
     # along with the user_install entry. o-tiling has its own
     # schema (no comparable per-key surface to declare here yet).
+    # ------------------------------------------------------------------
+    # Search Light — cosmetic-only (dark background scrim + blur tuning).
+    # Popup sizing, monitor selection, keybind, font-size, animation
+    # speed, and border-radius are deliberately left at extension
+    # defaults so the popup adapts to the user's hardware and
+    # accessibility settings rather than being frozen.
+    # ------------------------------------------------------------------
     org.gnome.shell.extensions.search-light:
-      note: >
-        Settings staged for when search-light v43+ supports GNOME 50.
-        Currently the extension is OUT OF DATE on shell 50 so these
-        keys are written but inactive until the extension can load.
-      shortcut-search: ['<Super>space']
-      blur-background: true
-      popup-at-cursor-monitor: true
+      background-color: '(0.0, 0.0, 0.0, 0.74)'
+      blur-background: false
+      blur-brightness: 0.6
+      blur-sigma: 30.0
     org.gnome.shell.extensions.just-perfection:
       note: >
         Just Perfection lets you trim shell elements (top-bar menus,

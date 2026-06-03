@@ -4,8 +4,6 @@
 
 ### An immutable Linux desktop distribution.
 
-## 🌐 [**margine.the-empty.place**](https://margine.the-empty.place/) — official site, downloads, install guide
-
 Built on [Bluefin DX](https://projectbluefin.io/), with a Secure Boot-signed
 [CachyOS](https://cachyos.org/) kernel, GNOME configured for tiling workflows,
 a complete media stack, and a curated set of preinstalled applications.

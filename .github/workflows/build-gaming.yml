@@ -105,30 +105,42 @@ jobs:
           sep-annotations: " "
 
       - name: Build image (no MOK — kernel pre-signed in base)
+        # Direct `sudo buildah build` — same pattern as build.yml (see
+        # the long comment there for rationale). The only delta for the
+        # gaming variant: no MOK secrets (kernel already signed in the
+        # base image), plus a single --build-arg passing BASE_IMAGE so
+        # the Containerfile.gaming `FROM ${BASE_IMAGE}` resolves to the
+        # already-validated margine:stable.
         id: build_image
-        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c  # main 2026-04-09 (post v2.13, Node 24; no v3 tag yet — see upstream #155)
-        with:
-          containerfiles: |
-            ./Containerfile.gaming
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          oci: false
-          build-args: |
-            BASE_IMAGE=${{ env.BASE_IMAGE }}
-
-      - name: Move built image to root storage for rechunk
         run: |
           set -euo pipefail
-          IMG="${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
-          ARCHIVE="/tmp/${{ env.IMAGE_NAME }}.oci.tar"
-          rm -f "$ARCHIVE"
-          podman save --format oci-archive --output "$ARCHIVE" "localhost/$IMG"
-          sudo skopeo copy --retry-times 3 --preserve-digests \
-            "oci-archive:$ARCHIVE" \
-            "containers-storage:$IMG"
-          sudo podman image exists "$IMG"
-          rm -f "$ARCHIVE"
+          IMG="${{ env.IMAGE_NAME }}"
+
+          TAG_ARGS=()
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            TAG_ARGS+=(--tag "${IMG}:${tag}")
+          done
+
+          LABEL_ARGS=()
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            LABEL_ARGS+=(--label "$line")
+          done <<< "${{ steps.metadata.outputs.labels }}"
+
+          sudo -E buildah build \
+            --file ./Containerfile.gaming \
+            --format docker \
+            --layers \
+            --build-arg BASE_IMAGE="${{ env.BASE_IMAGE }}" \
+            "${TAG_ARGS[@]}" \
+            "${LABEL_ARGS[@]}" \
+            .
+
+          sudo buildah images "${IMG}:${{ env.CANDIDATE_TAG }}"
+
+      # No "Move to root storage" — `sudo buildah build` already wrote
+      # into /var/lib/containers; rechunk picks it up directly. See
+      # build.yml for the long-form explanation.
 
       - name: ReChunk image
         id: rechunk

@@ -84,40 +84,43 @@ F = Forge).
 | `SUPER+F` | `toggle-fullscreen` |
 | `SUPER+O` | `always-on-top` |
 
-### Tiling actions (T — require Tiling Shell extension)
+### Tiling actions (T — require o-tiling extension)
 
-We use **Tiling Shell** (`tilingshell@ferrarodomenico.com`), not Forge.
-Forge is upstream-marked "Needs a new maintainer" and its gsettings
-schema is unstable across releases (the previous Margine baseline had
-to be patched for Forge 89). Tiling Shell is actively developed and
-ships native GNOME 48 support.
+We use **o-tiling** (`o-tiling@oliwebd.github.com`), an active fork of
+System76's pop-shell with native GNOME 48-50 support. Earlier Margine
+baselines (pre-2026-06-02) shipped Tiling Shell as the default tiler;
+its ghost-border bug at v18 was unpleasant and o-tiling's binary-tree
+auto-split is closer to Hyprland muscle memory. Forge is *not* used —
+upstream-marked "Needs a new maintainer" and its gsettings schema is
+unstable across releases.
 
-Tiling Shell is **not** in Fedora 44 repos. It is installed user-level
-by `scripts/install-user-extensions --apply`, which downloads the right
-release for the running GNOME Shell version from extensions.gnome.org
-and unzips it into `~/.local/share/gnome-shell/extensions/`. Enable
-afterwards with `scripts/configure-gnome-extensions --apply`.
+o-tiling is **not** in Fedora 44 repos nor on extensions.gnome.org. It
+is installed user-level from a pinned upstream release zip by
+`scripts/install-user-extensions --apply`, which unzips it into
+`~/.local/share/gnome-shell/extensions/`. Enable afterwards with
+`scripts/configure-gnome-extensions --apply`.
 
-Mental model differs from Forge / i3:
+Mental model:
 
-- Tiling Shell uses **layout zones**, not container trees. You don't
-  split / rotate / stack — you snap windows to predefined zones.
-- Focus / move / span work directionally relative to the current zone.
-- "span" extends a window across an adjacent zone (closest equivalent
-  to Forge's `window-resize-*-increase`).
+- **Auto-split**: opening a window splits the focused tile in half
+  (binary-tree). Toggle split direction with `SUPER+G`.
+- **Focus / move** are directional and follow the tree, not screen
+  geometry.
+- **Float** lifts the active window out of the tiling tree (Hyprland's
+  pseudofloat).
 
-| Hyprland | Tiling Shell key | Notes |
+| Hyprland | o-tiling action | Notes |
 | --- | --- | --- |
-| `SUPER+arrows` (focus direction) | `focus-window-{left,right,up,down}` | |
-| `SUPER SHIFT+arrows` (move/swap window) | `move-window-{left,right,up,down}` | moves the window to the adjacent zone |
-| `SUPER+equal` / `SUPER+minus` (width) | `span-window-{right,left}` | extends/shrinks across right or left zone |
-| `SUPER SHIFT+equal` / `SUPER SHIFT+minus` (height) | `span-window-{up,down}` | extends/shrinks across up or down zone |
-| `SUPER+T` (untile / toggle floating) | `untile-window` | removes the window from its zone (effectively floating) |
+| `SUPER+arrows` (focus direction) | `focus-{left,right,up,down}` | |
+| `SUPER SHIFT+arrows` (move/swap window) | `move-{left,right,up,down}` | swaps with the neighbour in that direction |
+| `SUPER+G` (toggle split direction) | `toggle-tiling` | flips the active split horizontal ↔ vertical |
+| `SUPER+T` (untile / toggle floating) | `toggle-floating` | lifts the window out of the tree |
+| `SUPER+R` (resize mode) | n/a — use mouse | o-tiling resizes via mouse drag on the gutter |
 
-Skipped (no Tiling Shell equivalent): container layout toggles
-(`stacked` / `tabbed` from Forge). Tiling Shell doesn't have container
-trees, so they don't apply. Zone layouts are edited in Tiling Shell's
-preferences GUI (`gnome-extensions prefs tilingshell@ferrarodomenico.com`).
+Preferences live in the GNOME Extensions Manager UI for
+`o-tiling@oliwebd.github.com`. Tiling Shell is still installable from
+Extensions Manager (EGO ID 7065) for users who want to A/B compare,
+but Margine no longer ships it by default.
 
 ### Shell + screenshot (S)
 

@@ -46,11 +46,12 @@ The "Margine-specific" decisions reduce to five:
 
 | Diff | Direction |
 | --- | --- |
-| Tiling Shell user-installed | Margine **adds** (Bluefin has no tiling extension) |
+| o-tiling user-installed | Margine **adds** (Bluefin has no tiling extension; was Tiling Shell until 2026-06-02, replaced by o-tiling for binary-tree auto-split that's closer to Hyprland muscle memory) |
 | Kernel CachyOS via COPR | Margine **adds** (Bluefin uses its own signed kernel from `ublue-akmods`) |
 | ~~`kitty` as default terminal~~ | ~~Margine replaces~~ — **dropped 2026-05-26**; Margine keeps Bluefin's Ptyxis. (Original delta is preserved here for traceability; the image, YAML keybindings, and adapter scripts no longer reference kitty.) |
 | LogoMenu (`logomenu@aryan_k`) | Margine **disables** (replaces "Activities" with a distro-logo dropdown; pure branding). Bazaar Integration and Gradia Integration were originally listed as branding too but were re-enabled 2026-05-26 — they're functional tools (Flathub app store + screenshot beautifier), not branding. |
-| Hyprland-style keybindings (workspace binds, custom launchers, Tiling Shell binds, default applications) | Margine **adds** via `configure-gnome-keybindings` and `configure-gnome-{appearance,extensions,app-folders,default-applications}` |
+| Hyprland-style keybindings (workspace binds, custom launchers, o-tiling binds, default applications) | Margine **adds** via `configure-gnome-keybindings` and `configure-gnome-{appearance,extensions,app-folders,default-applications}` |
+| **margine-gaming OCI variant** | Margine **adds** (2026-06-02) — separate signed image at `ghcr.io/danielgrasso/margine-gaming:stable` with gamescope/MangoHud/vkBasalt/etc. baked in, switched via `bootc switch`. The ostree-canonical alternative to the per-machine `ujust margine-gaming` overlay. |
 
 Maintaining a hand-rolled clone of 130 packages and 70 settings for the
 sake of five real differences is a maintenance burden out of proportion
@@ -177,8 +178,9 @@ scripts/apply-margine-on-bluefin --apply
    disable`; the package stays installed so the user can re-enable per
    session. Bazaar Integration and Gradia Integration stay enabled
    (re-evaluated 2026-05-26 — they're functional, not branding);
-4. installs Tiling Shell from the EGO release matching the running
-   GNOME Shell (reuses `scripts/install-user-extensions`);
+4. installs o-tiling from a pinned upstream release zip (reuses
+   `scripts/install-user-extensions`; was Tiling Shell from EGO
+   until 2026-06-02);
 5. applies the Hyprland-style keybindings, default applications, app
    folders, and Margine-flavoured tweaks via the existing
    `configure-gnome-{keybindings,extensions,app-folders,appearance,

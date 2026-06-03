@@ -214,8 +214,9 @@ ujust margine-bootstrap
 ```
 
 Creates `~/data ~/dev ~/scratch`, XDG remap, Nautilus bookmarks,
-Tiling Shell, Search Light, GNOME extensions enable/disable,
-keybindings, default apps, app folders. Logout + login.
+o-tiling + Search Light + Hide Cursor + Caffeine extension install,
+GNOME extensions enable/disable, keybindings, default apps,
+app folders. Logout + login.
 
 ## Snapshots and rollback (daily operation)
 

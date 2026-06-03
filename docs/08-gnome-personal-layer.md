@@ -262,16 +262,20 @@ The phase 1 GNOME extension set:
 | Extension | Source | Role |
 | --- | --- | --- |
 | `appindicatorsupport@rgcjonas.gmail.com` | Fedora (`gnome-shell-extension-appindicator`) | legacy tray icons (Bitwarden, Steam, etc.) |
-| `blur-my-shell@aunetx` | Fedora (`gnome-shell-extension-blur-my-shell`) | transparent/blurred top bar + overview (Bluefin-style) |
+| `bazaar-integration@kolunmi.github.io` | inherited from Bluefin DX | Bazaar app store integration |
+| `blur-my-shell@aunetx` | Fedora (`gnome-shell-extension-blur-my-shell`) | transparent/blurred top bar + overview + dash |
 | `dash-to-dock@micxgx.gmail.com` | Fedora (`gnome-shell-extension-dash-to-dock`) | fixed semi-transparent dock with running-app dots |
-| `just-perfection-desktop@just-perfection` | Fedora (`gnome-shell-extension-just-perfection`) | trims shell elements (hot corner, app-menu, weather, etc.) |
-| `workspace-indicator@gnome-shell-extensions.gcampax.github.com` | Fedora (`gnome-shell-extension-workspace-indicator`) | numeric top-bar workspace indicator |
-| `tilingshell@ferrarodomenico.com` | user-install from extensions.gnome.org | tiling window manager (replaces Forge, which is unmaintained) |
+| `gradia-integration@alexandervanhee.github.io` | inherited from Bluefin DX | screenshot-edit tool integration |
+| `gsconnect@andyholmes.github.io` | Fedora (`gnome-shell-extension-gsconnect`) | KDE Connect for GNOME |
+| `search-light@icedman.github.com` | user-install (git, upstream master) | Spotlight-style search popup (Super+Space) |
+| `o-tiling@oliwebd.github.com` | user-install (pinned release zip) | binary-tree auto-split tiling (replaces Tiling Shell as of 2026-06-02) |
+| `hide-cursor@elcste.com` | user-install from extensions.gnome.org | Wayland-native cursor auto-hide on inactivity |
+| `caffeine@patapon.info` | user-install from extensions.gnome.org | keep-screen-awake toggle |
 
 Apply the full set:
 
 ```sh
-scripts/install-user-extensions --apply       # downloads Tiling Shell
+scripts/install-user-extensions --apply       # downloads o-tiling, search-light, hide-cursor, caffeine; prunes anything in removed_user_install
 scripts/configure-gnome-extensions --apply    # enables all listed
 scripts/configure-gnome-keybindings --apply   # workspace + tiling binds
 scripts/configure-gnome-appearance --apply    # dconf settings + ext-specific tweaks

@@ -63,29 +63,41 @@ OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VER
 HIDECURSOR_UUID="hide-cursor@elcste.com"
 HIDECURSOR_EGO_ID=6727
 
-log "Installing transient deps (unzip + jq)"
-# Important post-2026-06-03 lesson: glib-compile-schemas is in the
-# glib2 RPM (always installed in Bluefin DX), NOT in glib2-devel.
-# Earlier version of this script installed glib2-devel and then ran
-# `dnf5 autoremove` to clean up. autoremove walked the dependency
-# graph and found scx-scheds, kernel-cachyos and friends marked as
-# orphans because their source COPR (bieszczaders/kernel-cachyos +
-# kernel-cachyos-addons) was disabled and removed earlier in the
-# build by custom-kernel/install.sh:283-286. autoremove dutifully
-# stripped scx_lavd / scx_bpfland / etc, breaking gaming/install.sh's
-# sanity check (`command -v scx_lavd → not found` → exit 1).
+# NO transient dnf installs. Lesson learned the hard way 2026-06-04
+# (build #26918323253 + #26913265617):
 #
-# Two fixes: (1) DON'T install glib2-devel — we don't need it. (2)
-# DON'T autoremove — never. The base image is curated, we don't get
-# to second-guess what's needed.
+# Earlier versions of this script did:
+#   dnf5 -y install unzip jq glib2-devel
+#   ...
+#   dnf5 -y remove unzip jq glib2-devel
+#   dnf5 -y autoremove                  # PR #20 — removed scx-scheds
 #
-# curl: always present in Bluefin DX, no install.
-# unzip + jq: not guaranteed, install transiently and remove with an
-#   explicit `dnf5 remove`, never `autoremove`.
-dnf5 -y install --setopt=install_weak_deps=False unzip jq
+# Three independent ways this broke scx-scheds:
+#  1. autoremove (PR #20) — fixed by PR #22, removed the autoremove call.
+#  2. `dnf5 remove jq` (PR #22 attempt) — STILL broke things, because
+#     scx-tools-git (installed as a sibling of scx-scheds by the
+#     kernel-cachyos-addons COPR) declares `Requires: jq`. So removing
+#     jq cascades through scx-tools-git → scx-scheds → 16 packages.
+#  3. unzip: smaller blast radius but same class of problem.
+#
+# Robust fix: don't add or remove dnf packages here at all. Use
+# Python stdlib (always present) for JSON parsing + zip extraction.
+# Schema compilation uses glib-compile-schemas (from glib2, always
+# present). curl is always present. Zero dnf operations in this
+# script.
+log "No dnf installs — script uses only python3 + glib-compile-schemas + curl (all stock)"
 
 GNOME_SHELL_MAJOR="$(gnome-shell --version | awk '{print $3}' | cut -d. -f1)"
 log "Running GNOME Shell major version: ${GNOME_SHELL_MAJOR}"
+
+extract_zip() {
+  # python3 zipfile is in stdlib — always present, no dnf install.
+  local zipfile="$1" target="$2"
+  python3 -c "
+import zipfile, sys
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+" "$zipfile" "$target"
+}
 
 install_otiling() {
   local target="${EXT_DIR}/o-tiling@oliwebd.github.com"
@@ -93,7 +105,7 @@ install_otiling() {
   rm -rf "${target}"
   mkdir -p "${target}"
   curl -fL --retry 5 --retry-delay 10 -o /tmp/otiling.zip "${OTILING_URL}"
-  unzip -q -o /tmp/otiling.zip -d "${target}"
+  extract_zip /tmp/otiling.zip "${target}"
   rm -f /tmp/otiling.zip
   if [[ ! -f "${target}/metadata.json" ]]; then
     log "ERROR: ${target}/metadata.json missing after extraction"
@@ -109,15 +121,12 @@ install_hidecursor() {
   local target="${EXT_DIR}/${HIDECURSOR_UUID}"
   log "hide-cursor (EGO id ${HIDECURSOR_EGO_ID}) for shell ${GNOME_SHELL_MAJOR} → ${target}"
 
-  local meta
-  meta="$(curl -fsSL --retry 5 --retry-delay 10 \
-    "https://extensions.gnome.org/extension-info/?uuid=${HIDECURSOR_UUID}&shell_version=${GNOME_SHELL_MAJOR}")"
-
   local version_tag
-  version_tag="$(printf '%s' "${meta}" | jq -r '.version_tag // empty')"
+  version_tag="$(curl -fsSL --retry 5 --retry-delay 10 \
+    "https://extensions.gnome.org/extension-info/?uuid=${HIDECURSOR_UUID}&shell_version=${GNOME_SHELL_MAJOR}" \
+    | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("version_tag",""))')"
   if [[ -z "${version_tag}" ]]; then
     log "ERROR: no EGO release of ${HIDECURSOR_UUID} for GNOME ${GNOME_SHELL_MAJOR}"
-    log "EGO metadata reply: ${meta}"
     exit 1
   fi
   log "hide-cursor resolved to version_tag=${version_tag}"
@@ -127,7 +136,7 @@ install_hidecursor() {
   curl -fL --retry 5 --retry-delay 10 \
     -o /tmp/hidecursor.zip \
     "https://extensions.gnome.org/download-extension/${HIDECURSOR_UUID}.shell-extension.zip?version_tag=${version_tag}"
-  unzip -q -o /tmp/hidecursor.zip -d "${target}"
+  extract_zip /tmp/hidecursor.zip "${target}"
   rm -f /tmp/hidecursor.zip
   if [[ ! -f "${target}/metadata.json" ]]; then
     log "ERROR: ${target}/metadata.json missing after extraction"
@@ -148,25 +157,19 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 log "Final extension inventory under ${EXT_DIR}:"
 ls -la "${EXT_DIR}/" | grep -v '^total' | awk '{print "  " $NF}' | sort
 
-log "metadata.json for the two we just added (verify before stripping jq):"
+log "metadata.json for the two we just added:"
 for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com; do
   if [[ -f "${EXT_DIR}/${uuid}/metadata.json" ]]; then
     printf '  %s: ' "${uuid}"
-    jq -r '"name=\(.name) shell-version=\(.["shell-version"] | join(","))"' \
-      "${EXT_DIR}/${uuid}/metadata.json" 2>/dev/null || cat "${EXT_DIR}/${uuid}/metadata.json"
+    python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(f'name={d.get(\"name\",\"?\")} shell-version={\",\".join(map(str, d.get(\"shell-version\", [])))}')
+" "${EXT_DIR}/${uuid}/metadata.json"
   else
     printf '  %s: MISSING\n' "${uuid}"
     exit 1
   fi
 done
 
-log "Removing transient deps (only unzip + jq, NEVER autoremove)"
-# NO `dnf5 -y autoremove` here. autoremove walks the dependency
-# graph and "orphans" packages whose declared source repo is gone.
-# Our base build disables the kernel-cachyos / kernel-cachyos-addons
-# COPRs after install (see custom-kernel/install.sh end-of-script).
-# autoremove would happily strip kernel-cachyos / scx-scheds / etc
-# — exactly what bit us in build #26913265617 (gaming sanity check:
-# `command -v scx_lavd → not found`). Just remove the names we
-# installed, nothing more.
-dnf5 -y remove jq unzip || true
+log "Done. No dnf operations to clean up — script never installed anything."

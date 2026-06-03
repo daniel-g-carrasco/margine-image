@@ -4,14 +4,46 @@
 # login of the variant, so the user does not have to remember a ujust
 # recipe to round out their gaming setup.
 #
-# Manpage: flatpak-preinstall(5). Lines starting with '#' are comments;
-# blank lines are ignored. Each non-comment line is "<app-id> [collection-id]"
-# (collection-id optional and rarely needed for flathub apps).
+# History (2026-06-03): this file originally listed bare app-IDs one
+# per line (the format the comment claimed but that flatpak-preinstall
+# does not actually accept). systemd-flatpak-preinstall silently
+# ignored the entire file — 0 of these 7 Flatpaks were installed on
+# the fresh-VM smoke test. Confirmed via:
+#   journalctl -u flatpak-preinstall.service | grep -i steam   (empty)
+# Rewritten in the canonical section-based format that
+# flatpak-preinstall(5) actually parses. Same format that
+# margine-defaults.preinstall (base) uses — which works, 34 apps
+# installed on both base and gaming.
+#
+# Format (flatpak-preinstall(5) / Flatpak >= 1.16):
+#   [Flatpak Preinstall <app-id>]
+#   Branch=stable
+#   IsRuntime=false
 
-com.valvesoftware.Steam
-net.lutris.Lutris
-com.heroicgameslauncher.hgl
-com.usebottles.bottles
-com.github.Matoking.protontricks
-net.davidotek.pupgui2
-org.libretro.RetroArch
+[Flatpak Preinstall com.valvesoftware.Steam]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall net.lutris.Lutris]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall com.heroicgameslauncher.hgl]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall com.usebottles.bottles]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall com.github.Matoking.protontricks]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall net.davidotek.pupgui2]
+Branch=stable
+IsRuntime=false
+
+[Flatpak Preinstall org.libretro.RetroArch]
+Branch=stable
+IsRuntime=false

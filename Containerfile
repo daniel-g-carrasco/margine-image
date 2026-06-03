@@ -45,5 +45,19 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     /ctx/build.sh
 
+# ----- Margine GNOME extensions: bake o-tiling + hide-cursor system-wide -----
+# Replaces the old per-user "install at first login via autostart"
+# pattern (margine-install-user-extensions) that was racy, shadowed
+# Bluefin's own search-light, and silently failed if the user logged
+# in before flatpak-preinstall.service had network. Bluefin + Bazzite
+# do this exact thing — extensions live in /usr/share/gnome-shell/
+# extensions/<uuid>/ at build time, dconf enables them, GDM picks them
+# up on first login with zero per-user state.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    /ctx/build-margine-extensions.sh
+
 # ----- Lint: verify final image is a valid bootc container -----
 RUN bootc container lint

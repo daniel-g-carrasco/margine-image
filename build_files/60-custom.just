@@ -216,3 +216,69 @@ margine-gaming-remove:
 
     echo
     echo "Done. Reboot to release the rpm-ostree layer."
+
+
+# Switch the CPU scheduler at runtime (sched_ext / BPF schedulers).
+# Gaming variant only — needs scx-scheds installed.
+#
+#   ujust margine-scheduler            # show what's running
+#   ujust margine-scheduler lavd       # low-latency, gaming default
+#   ujust margine-scheduler bpfland    # interactive + throughput balance
+#   ujust margine-scheduler rusty      # general-purpose, Rust port of CFS
+#   ujust margine-scheduler central    # pin all decisions to one CPU (RT audio)
+#   ujust margine-scheduler simple     # didactic minimum
+#   ujust margine-scheduler default    # stop scx_*, return to kernel default (BORE on Margine)
+[group('Gaming')]
+margine-scheduler MODE="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+
+    pgrep_scx() { pgrep -a 'scx_[a-z]+' 2>/dev/null; }
+
+    case "{{ MODE }}" in
+      status|"")
+        echo "=== Current scheduler ==="
+        if pgrep_scx > /dev/null; then
+          echo "sched_ext active:"
+          pgrep_scx
+        else
+          echo "Kernel default scheduler in use (BORE on Margine)."
+        fi
+        echo
+        echo "Available scx schedulers:"
+        ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||'
+        ;;
+
+      default|stop|off)
+        echo "Stopping any running scx_* scheduler — kernel default takes over."
+        sudo systemctl stop 'scx*.service' 2>/dev/null || true
+        sudo pkill -TERM 'scx_[a-z]+' 2>/dev/null || true
+        sleep 1
+        if pgrep_scx > /dev/null; then
+          echo "warn: scx_* still running:"
+          pgrep_scx
+        else
+          echo "ok — kernel default (BORE) active."
+        fi
+        ;;
+
+      lavd|bpfland|rusty|central|simple)
+        BIN="/usr/bin/scx_{{ MODE }}"
+        if [[ ! -x "$BIN" ]]; then
+          echo "scx_{{ MODE }} not installed at $BIN — install the gaming layer first (ujust margine-gaming)."
+          exit 1
+        fi
+        # Stop any other scx_* first to avoid loader conflict
+        sudo pkill -TERM 'scx_[a-z]+' 2>/dev/null || true
+        sleep 1
+        echo "Starting $BIN (run in foreground; Ctrl-C to stop)."
+        echo "Tip: detach with disown / systemd-run --user if you want it to stick around."
+        sudo "$BIN"
+        ;;
+
+      *)
+        echo "Unknown scheduler: {{ MODE }}"
+        echo "Usage: ujust margine-scheduler [status|default|lavd|bpfland|rusty|central|simple]"
+        exit 2
+        ;;
+    esac

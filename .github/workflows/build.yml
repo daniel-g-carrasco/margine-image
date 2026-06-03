@@ -156,36 +156,68 @@ jobs:
           sep-annotations: " "
 
       - name: Build image (kernel signing via BuildKit secrets)
+        # Direct `sudo buildah build` shell call instead of the
+        # redhat-actions/buildah-build wrapper action. Replicates the
+        # action's behaviour with finer control:
+        #   - containerfiles → --file ./Containerfile
+        #   - image+tags     → expanded into per-tag --tag args
+        #   - labels         → expanded into per-line --label args
+        #   - oci: false     → --format docker
+        #   - extra-args     → inlined as --secret mounts
+        # Pattern mirrors how Bazzite drives buildah in its own build
+        # workflow (ublue-os/bazzite#.github/workflows/build.yml). Wins:
+        #   1. No more "Node.js 20 deprecated" runner warning — there's
+        #      no JavaScript action involved at all.
+        #   2. No more dependency on the buildah-build action publishing
+        #      a Node-24 tag (upstream redhat-actions/buildah-build#155
+        #      is still open).
+        #   3. Direct shell = trivial to debug locally; same flags work
+        #      on a developer laptop.
+        # All env vars referenced below are expanded by GHA before the
+        # shell runs; the build is hermetic at that point.
         id: build_image
-        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c  # main 2026-04-09 (post v2.13, Node 24; no v3 tag yet — see upstream #155)
-        with:
-          containerfiles: |
-            ./Containerfile
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          oci: false
-          extra-args: |
-            --secret=id=mok-key,src=/tmp/margine-secrets/MOK.key
-            --secret=id=mok-cert,src=/tmp/margine-secrets/MOK.pem
-            --secret=id=mok-password,src=/tmp/margine-secrets/mok-password
-
-      - name: Move built image to root storage for rechunk
-        # rechunk uses `sudo podman create` and looks in root storage;
-        # buildah leaves the image in the gha user's rootless storage.
-        # Use oci-archive intermediate (same approach as before the split).
         run: |
           set -euo pipefail
-          IMG="${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
-          ARCHIVE="/tmp/${{ env.IMAGE_NAME }}.oci.tar"
-          rm -f "$ARCHIVE"
-          podman save --format oci-archive --output "$ARCHIVE" "localhost/$IMG"
-          sudo skopeo copy --retry-times 3 --preserve-digests \
-            "oci-archive:$ARCHIVE" \
-            "containers-storage:$IMG"
-          sudo podman image exists "$IMG"
-          sudo podman images
-          rm -f "$ARCHIVE"
+          IMG="${{ env.IMAGE_NAME }}"
+
+          # The metadata-action emits tags space-separated thanks to
+          # `sep-tags: " "` in the metadata step above.
+          TAG_ARGS=()
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            TAG_ARGS+=(--tag "${IMG}:${tag}")
+          done
+
+          # Labels come back newline-separated (no sep override exists
+          # for labels) — read line by line, skip empty.
+          LABEL_ARGS=()
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            LABEL_ARGS+=(--label "$line")
+          done <<< "${{ steps.metadata.outputs.labels }}"
+
+          sudo -E buildah build \
+            --file ./Containerfile \
+            --format docker \
+            --layers \
+            --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
+            --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
+            --secret id=mok-password,src=/tmp/margine-secrets/mok-password \
+            "${TAG_ARGS[@]}" \
+            "${LABEL_ARGS[@]}" \
+            .
+
+          # Sanity: assert the image is in root buildah storage where
+          # the rechunk step will find it. The action used to do this
+          # implicitly; doing it explicitly keeps the contract obvious.
+          sudo buildah images "${IMG}:${{ env.CANDIDATE_TAG }}"
+
+      # NOTE: no "Move to root storage" step here — `sudo buildah build`
+      # above already writes to /var/lib/containers (root storage),
+      # which is exactly where rechunk's `sudo podman create` looks.
+      # The previous step that round-tripped through an oci-archive
+      # existed because the buildah-build action ran rootless and
+      # left the image in ~/.local/share/containers/. Going direct
+      # removes that bounce.
 
       - name: ReChunk image
         id: rechunk

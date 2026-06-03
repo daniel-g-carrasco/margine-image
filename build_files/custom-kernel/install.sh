@@ -270,6 +270,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# scx-scheds — sched_ext BPF schedulers (scx_lavd, scx_bpfland,
+# scx_rusty, scx_central, scx_simple). Ships in the same CachyOS
+# addons COPR as the kernel itself, lives in the base image so the
+# `ujust margine-scheduler` recipe is available on every Margine
+# install — gaming variant inherits it without re-adding. Especially
+# useful on the base for pro-audio sessions (scx_central removes
+# multi-core scheduling jitter, see docs/workflows). Enable the COPR
+# just for the install, then disable + scrub the repo file so user
+# systems don't pull random updates from it outside our pipeline.
+log "Enabling kernel-cachyos-addons COPR for scx-scheds"
+dnf -y copr enable bieszczaders/kernel-cachyos-addons
+dnf -y install scx-scheds
+dnf -y copr disable bieszczaders/kernel-cachyos-addons || true
+rm -f /etc/yum.repos.d/_copr*kernel-cachyos-addons*.repo
+log "scx-scheds installed:"
+ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||' | sort
+
+# ---------------------------------------------------------------------------
 # Signing
 # ---------------------------------------------------------------------------
 log "Signing kernel image with MOK"

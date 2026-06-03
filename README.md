@@ -7,7 +7,7 @@
 Declarative spec, configuration helpers, and system-state validators for
 the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
-[**📥 Download Margine**](https://files.the-empty.place/) ·
+[**📥 Download Margine**](https://margine.the-empty.place/#install) ·
 [**📖 Documentation**](docs/README.md) ·
 [**📋 Roadmap**](docs/roadmap.md) ·
 [**🛠 Build pipeline**](https://github.com/daniel-g-carrasco/margine-image)
@@ -18,9 +18,11 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
 > **Looking for the distro itself?** Go to
 > [margine-image](https://github.com/daniel-g-carrasco/margine-image)
-> — that repo's README has *what Margine is*, screenshots, and the
-> download/install instructions. This repo is the *source code* of
-> everything the distro applies to the system.
+> — that repo's README has *what Margine is*, screenshots, the two
+> flavours (base **Margine** and **Margine Gaming** variant), and
+> the download/install instructions (ISO, `rpm-ostree rebase`,
+> `bootc switch` between flavours). This repo is the *source code*
+> of everything the distro applies to the system.
 
 ## What this repo is for
 
@@ -41,7 +43,7 @@ This repo is exactly that "what + how + verify".
 | `declarations/` | The **declarative spec** (`margine-atomic.yaml`). Single source of truth for GNOME extensions, app folders, keybinds, gsettings, preinstalled apps, home layout. |
 | `scripts/configure-*` | Idempotent helpers that read the spec and apply. Default to dry-run; pass `--apply` to act. Become `/usr/bin/margine-configure-*` in the image. |
 | `scripts/validate-*` | Read-only validators (atomic layout, CachyOS kernel, hardware/media stack, gaming runtime, end-to-end acceptance test). Become `/usr/bin/margine-validate-*`. |
-| `scripts/install-user-extensions` | Installs the non-RPM GNOME extensions (o-tiling, Hide Cursor, Caffeine, Tiling Shell, Search Light) under `~/.local/share/gnome-shell/extensions/`. |
+| `scripts/install-user-extensions` | Installs the non-RPM GNOME extensions (o-tiling, Hide Cursor, Search Light) under `~/.local/share/gnome-shell/extensions/`. Also prunes anything listed under `removed_user_install` in the spec (Tiling Shell, dropped 2026-06-02 in favour of o-tiling). |
 | `docs/` | Architecture, ADRs, install lab, lessons-learned, validation runbook, roadmap. |
 | `assets/branding/` | Logos, wallpaper, Plymouth theme. |
 | `files/margine-fetch/` | `margine-fetch` script + fastfetch config + ASCII logo. |

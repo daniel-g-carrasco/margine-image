@@ -7,6 +7,18 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-02, part 2)
+- **9 Flatpaks added to the preinstall set** (Thunderbird ESR,
+  GNOME Snapshot/Showtime/Papers/Loupe/SoundRecorder, Blanket,
+  Fragments, Pinta). The previous list was an incomplete starter
+  set — users on a fresh install were surprised to find no
+  camera / video player / PDF reader / image viewer / sound
+  recorder / mail client (the latter despite being declared as
+  the system mail handler in declarations/margine-atomic.yaml).
+  The validator's `EXPECTED_FLATPAKS` in margine-fedora-atomic is
+  updated in lockstep so the post-boot acceptance test catches
+  any regression on this set.
+
 ### Added (2026-06-02)
 - **Margine Gaming OCI variant** — a separate, signed image at
   `ghcr.io/daniel-g-carrasco/margine-gaming:stable`. Built `FROM`

@@ -12,12 +12,12 @@ a complete media stack, and a curated set of preinstalled applications.
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
-  <a href="https://files.the-empty.place/"><img alt="Download" src="https://img.shields.io/badge/download-ISO%20%2B%20torrent-D97757"></a>
+  <a href="https://margine.the-empty.place/#install"><img alt="Download" src="https://img.shields.io/badge/download-ISO%20%2B%20torrent-D97757"></a>
   <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/github/license/daniel-g-carrasco/margine-image?color=4D9F4A"></a>
 </p>
 
-[**Download**](https://files.the-empty.place/) ·
+[**Download**](https://margine.the-empty.place/#install) ·
 [What it is](#what-it-is) ·
 [What you get](#what-you-get) ·
 [Install](#install) ·
@@ -92,11 +92,12 @@ variant any time with `bootc switch …` (see option C) — no reinstall.
 The recommended path. Downloads in one step, installs Margine
 directly.
 
-1. Open <https://files.the-empty.place/> and download the Anaconda
-   installer ISO of the flavour you want. Available as a BitTorrent
-   magnet/`.torrent` and as a direct HTTP mirror (Internet Archive).
-   The same bytes are served by both; `SHA256SUMS` is published
-   alongside.
+1. Open the [Margine site Install section](https://margine.the-empty.place/#install)
+   for the latest dated identifiers, or browse the full
+   [Internet Archive collection](https://archive.org/search?query=creator%3A%22daniel-g-carrasco%22+AND+title%3A%22Margine%22&sort=-date)
+   directly. Each release is available as a BitTorrent magnet /
+   `.torrent` (recommended) and as a direct HTTP mirror; the same
+   bytes are served by both. `SHA256SUMS` is published alongside.
 2. Boot the ISO. Anaconda's standard installation flow applies:
    recommended UEFI with Secure Boot enabled, LUKS2 on the root disk,
    Btrfs filesystem (the default).
@@ -220,9 +221,16 @@ signature on the registry image.
   `:candidate`.
 - `smoke-boot.yml` — boots the candidate in QEMU; on success, promotes
   to `:stable`.
-- `build-disk.yml` — builds ISO and qcow2, uploads to Internet
-  Archive (BitTorrent + HTTP mirrors), publishes an HTML index at
-  `files.the-empty.place`.
+- `build-disk.yml` — matrix over `image: [margine, margine-gaming]`
+  × `disk-type: [qcow2, anaconda-iso]` (4 jobs in parallel) +
+  per-variant `publish_ia` jobs that upload to Internet Archive
+  (BitTorrent + 3 HTTP mirrors, seeded forever) under per-variant
+  identifiers `margine-anaconda-iso-YYYYMMDD` /
+  `margine-gaming-anaconda-iso-YYYYMMDD`.
+- `build-gaming.yml` — builds the `margine-gaming` OCI variant
+  (FROM `margine:stable` + gaming RPM stack + Flatpak preinstall).
+  Trigger: `workflow_run` after a successful base smoke-boot, plus
+  weekly Sunday and `workflow_dispatch`.
 
 </details>
 

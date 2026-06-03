@@ -25,36 +25,31 @@ log() { printf '[margine-build] %s\n' "$*"; }
 # ---------------------------------------------------------------------------
 # 0. OS identity — make the system identify as Margine
 # ---------------------------------------------------------------------------
-# Override the os-release file so commands like `cat /etc/os-release`,
-# `hostnamectl`, GNOME's About panel, and our own validate-atomic-layout
-# all see "Margine". We keep ID_LIKE="fedora bluefin" so tools that
-# branch on Fedora-derivative behavior still work.
+# Override the os-release file so `cat /etc/os-release`, `hostnamectl`,
+# GNOME's About panel, and our own validate-atomic-layout all see
+# "Margine". ID_LIKE=fedora keeps distro-tooling that branches on Fedora-
+# derivative behaviour working.
 #
-# IMPORTANT: we write os-release as a REGULAR FILE at BOTH /etc/os-release
-# AND /usr/lib/os-release, not as a symlink. Why:
+# Layout: /usr/lib/os-release is the canonical file (writable here at
+# build time), /etc/os-release is a symlink to the relative path
+# `../usr/lib/os-release`. This is the standard Fedora/Bluefin layout
+# and the only thing modern systemd recognises as "an OS tree".
 #
-# At early boot, systemd's switch-root path checks for os-release in the
-# new root with `openat(fd, "etc/os-release", O_NOFOLLOW)` first, then
-# `openat(fd, "usr/lib/os-release", O_NOFOLLOW)`. If /etc/os-release is
-# a symlink to /usr/lib/os-release, the first open fails (O_NOFOLLOW on
-# a symlink → ELOOP) and falls through to the /usr/lib check.
-#
-# BUT at switch-root time, /usr isn't yet mounted via composefs in
-# bootc-style deployments. The fallback path is therefore inaccessible.
-# Without an os-release available pre-composefs, systemd errors with
-# "Specified switch root path '/sysroot' does not seem to be an OS
-# tree. os-release file is missing." and drops to emergency shell.
-#
-# Bluefin's image happens to work because their rechunk pipeline
-# re-commits everything in an ostree-coherent format where composefs
-# is set up by switch-root time. We don't rechunk (yet — that's a
-# future architectural change), so we route around the problem by
-# making sure /etc/os-release is a standalone file, accessible
-# regardless of composefs/usr state.
+# Historical note: an earlier Margine build (May 2026) shipped both as
+# regular files because our switch-root was failing with "os-release
+# file is missing". Root cause was that /usr wasn't yet mounted via
+# composefs at switch-root time, so the symlink couldn't be followed.
+# Routed around it by writing both as regular files (Fix A). The proper
+# fix (Fix B) was wiring rechunk into the CI pipeline so the published
+# image is ostree-canonical and composefs is up by the time
+# switch-root needs to read os-release. With rechunk in build.yml since
+# 2026-06-01 the workaround is no longer needed — restored the symlink
+# to the canonical Fedora layout.
 #
 # See docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
-# for the full investigation.
-log "Stamping os-release files (real files, NOT symlinks) as Margine"
+# for the full investigation, and docs/lessons-learned/2026-06-03-
+# rechunk-and-fixb.md for the wind-down.
+log "Stamping os-release as Margine (canonical Fedora layout: /etc → /usr/lib symlink)"
 
 FEDORA_VER="$(rpm -E %fedora)"
 BUILD_DATE="$(date -u +%Y%m%d)"
@@ -99,15 +94,14 @@ DEFAULT_HOSTNAME="margine"
 EOF
 )
 
-# /usr/lib/os-release as a regular file (the canonical location).
+# /usr/lib/os-release — the canonical location written as a regular file.
 printf '%s\n' "$OS_RELEASE_CONTENT" > /usr/lib/os-release
 chmod 0644 /usr/lib/os-release
 
-# /etc/os-release as a regular file (NOT a symlink) so systemd's
-# switch-root check finds it before composefs/usr is mounted.
-rm -f /etc/os-release
-printf '%s\n' "$OS_RELEASE_CONTENT" > /etc/os-release
-chmod 0644 /etc/os-release
+# /etc/os-release — relative symlink to the canonical location.
+# Relative (not absolute) so the link resolves correctly inside any
+# chroot / mount namespace, the same way upstream Fedora ships it.
+ln -sf ../usr/lib/os-release /etc/os-release
 
 # ---------------------------------------------------------------------------
 # 0.bis Populate /etc/passwd and /etc/group from factory (/usr/lib/*)

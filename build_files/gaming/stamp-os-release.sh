@@ -4,16 +4,18 @@
 # GNOME's About panel, `lsb_release`, etc. — without changing the
 # Fedora-side ID (we're still Fedora downstream).
 #
-# Why a separate script: build.sh in the base image rewrites os-release
-# as a regular file (Fix A 2026-05-29) so subsequent layers CAN edit
-# it normally. Variant images just sed in their own tags on top of
-# what base wrote.
+# Layout we expect (post-Fix-B / rechunk wind-down, 2026-06-03):
+#   /usr/lib/os-release  — canonical, regular file written by base build.sh
+#   /etc/os-release      — relative symlink → ../usr/lib/os-release
+# We edit the canonical /usr/lib/os-release in place. The symlink
+# automatically reflects the new content; no need to touch /etc.
 set -euo pipefail
 
-OS_RELEASE=/etc/os-release
+OS_RELEASE_CANONICAL=/usr/lib/os-release
 
-if [[ ! -f "$OS_RELEASE" || -L "$OS_RELEASE" ]]; then
-  echo "✗ $OS_RELEASE is not a regular file — base image strip step regressed"
+if [[ ! -f "$OS_RELEASE_CANONICAL" || -L "$OS_RELEASE_CANONICAL" ]]; then
+  echo "✗ $OS_RELEASE_CANONICAL is not a regular file — base image is in an unexpected state"
+  ls -la "$OS_RELEASE_CANONICAL" /etc/os-release
   exit 1
 fi
 
@@ -23,17 +25,27 @@ sed -i \
     -e '/^VARIANT_ID=/d' \
     -e '/^VARIANT=/d' \
     -e 's|^PRETTY_NAME=.*|PRETTY_NAME="Margine Gaming"|' \
-  "$OS_RELEASE"
+  "$OS_RELEASE_CANONICAL"
 {
   echo 'VARIANT="Gaming"'
   echo 'VARIANT_ID=gaming'
-} >> "$OS_RELEASE"
+} >> "$OS_RELEASE_CANONICAL"
 
 echo "Stamped os-release for margine-gaming variant:"
-grep -E '^(NAME|ID|PRETTY_NAME|VARIANT|VARIANT_ID|LOGO)=' "$OS_RELEASE"
+grep -E '^(NAME|ID|PRETTY_NAME|VARIANT|VARIANT_ID|LOGO)=' "$OS_RELEASE_CANONICAL"
 
-# Mirror to /usr/lib/os-release so anything reading the canonical
-# Fedora location sees the same values.
-if [[ -f /usr/lib/os-release && ! -L /usr/lib/os-release ]]; then
-  cp -f "$OS_RELEASE" /usr/lib/os-release
+# Sanity: /etc/os-release (the symlink) should resolve to the updated
+# canonical file. Validate at build time so a future regression that
+# breaks the symlink fails the gaming build loudly instead of shipping
+# a divergent runtime.
+if [[ ! -L /etc/os-release ]]; then
+  echo "✗ /etc/os-release is not a symlink — Fix A workaround has resurfaced upstream"
+  ls -la /etc/os-release
+  exit 1
+fi
+if ! grep -q '^VARIANT_ID=gaming' /etc/os-release; then
+  echo "✗ /etc/os-release does not reflect the gaming stamp via symlink"
+  ls -la /etc/os-release
+  cat /etc/os-release
+  exit 1
 fi

@@ -63,14 +63,26 @@ OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VER
 HIDECURSOR_UUID="hide-cursor@elcste.com"
 HIDECURSOR_EGO_ID=6727
 
-log "Installing build deps (glib2-devel for schema compile + unzip + jq)"
-# curl is always present on Bluefin DX. unzip and jq may not be — install
-# them transiently. glib2-devel is the real build dep (provides
-# glib-compile-schemas). Bluefin's own build-gnome-extensions.sh
-# installs glib2-devel + cmake + dbus-devel + meson + sassc; we only
-# need the schema compiler because o-tiling and hide-cursor ship as
-# prebuilt zips.
-dnf5 -y install --setopt=install_weak_deps=False unzip jq glib2-devel
+log "Installing transient deps (unzip + jq)"
+# Important post-2026-06-03 lesson: glib-compile-schemas is in the
+# glib2 RPM (always installed in Bluefin DX), NOT in glib2-devel.
+# Earlier version of this script installed glib2-devel and then ran
+# `dnf5 autoremove` to clean up. autoremove walked the dependency
+# graph and found scx-scheds, kernel-cachyos and friends marked as
+# orphans because their source COPR (bieszczaders/kernel-cachyos +
+# kernel-cachyos-addons) was disabled and removed earlier in the
+# build by custom-kernel/install.sh:283-286. autoremove dutifully
+# stripped scx_lavd / scx_bpfland / etc, breaking gaming/install.sh's
+# sanity check (`command -v scx_lavd → not found` → exit 1).
+#
+# Two fixes: (1) DON'T install glib2-devel — we don't need it. (2)
+# DON'T autoremove — never. The base image is curated, we don't get
+# to second-guess what's needed.
+#
+# curl: always present in Bluefin DX, no install.
+# unzip + jq: not guaranteed, install transiently and remove with an
+#   explicit `dnf5 remove`, never `autoremove`.
+dnf5 -y install --setopt=install_weak_deps=False unzip jq
 
 GNOME_SHELL_MAJOR="$(gnome-shell --version | awk '{print $3}' | cut -d. -f1)"
 log "Running GNOME Shell major version: ${GNOME_SHELL_MAJOR}"
@@ -148,10 +160,13 @@ for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com; do
   fi
 done
 
-log "Removing build deps (glib2-devel + jq + unzip — leave curl, Bluefin uses it)"
-dnf5 -y remove glib2-devel jq unzip || true
-# glib2-devel pulled in a chain (gobject/gio dev headers); clean
-# orphans so the final image doesn't ship dev headers, but tolerate
-# the rare case where another part of the image already depends on
-# one of the orphans.
-dnf5 -y autoremove || true
+log "Removing transient deps (only unzip + jq, NEVER autoremove)"
+# NO `dnf5 -y autoremove` here. autoremove walks the dependency
+# graph and "orphans" packages whose declared source repo is gone.
+# Our base build disables the kernel-cachyos / kernel-cachyos-addons
+# COPRs after install (see custom-kernel/install.sh end-of-script).
+# autoremove would happily strip kernel-cachyos / scx-scheds / etc
+# — exactly what bit us in build #26913265617 (gaming sanity check:
+# `command -v scx_lavd → not found`). Just remove the names we
+# installed, nothing more.
+dnf5 -y remove jq unzip || true

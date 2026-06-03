@@ -1,0 +1,141 @@
+---
+# Monthly cron that runs scripts/check-upstreams.sh and, if any of the
+# upstream projects we inherit from / borrow patterns from has new
+# commits since our last review, opens (or updates) a single tracking
+# issue with the full report.
+#
+# Why not just rely on GitHub Watch notifications: those drown in
+# noise from upstreams like Bluefin (5+ commits/week typical). The
+# review is *quarterly* by intent — only structural changes matter
+# for us. The cron is the trigger to do that review, not to read
+# every commit.
+#
+# The companion script docs/upstream-inspirations.md has a "Last
+# reviewed" date per upstream. The script counts commits since that
+# date; this workflow surfaces the result as an issue.
+
+name: Check upstream activity
+
+on:
+  # First day of the month, 09:00 UTC. Quarterly-cadence review,
+  # monthly polling — most months produce a "no review needed" log
+  # we can ignore.
+  schedule:
+    - cron: '0 9 1 * *'
+  # Manual trigger for ad-hoc checks (e.g. before a release).
+  workflow_dispatch:
+
+permissions:
+  # Required to open / update / comment on issues with GITHUB_TOKEN.
+  issues: write
+  contents: read
+
+concurrency:
+  group: check-upstreams
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Run check-upstreams.sh + open tracking issue if needed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Ensure 'upstream-review' label exists
+        # `gh label create --force` is idempotent: creates the label
+        # if missing, no-ops if present. Without this, the issue-create
+        # step below would fail on a fresh repo where the label has
+        # never been used.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create upstream-review \
+            --description "Tracks the monthly upstream activity review" \
+            --color BFD200 \
+            --force
+
+      - name: Run check-upstreams.sh
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          OUT="$(bash scripts/check-upstreams.sh)"
+          # Print to the job log unconditionally for traceability.
+          echo "$OUT"
+          # Persist for downstream steps + the issue body.
+          {
+            echo "report<<EOF"
+            echo "$OUT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          # Decide whether any upstream has activity worth flagging.
+          if echo "$OUT" | grep -q "new commit(s)"; then
+            echo "needs_review=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_review=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update tracking issue
+        if: steps.check.outputs.needs_review == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.check.outputs.report }}
+        run: |
+          set -euo pipefail
+          MONTH="$(date -u +%Y-%m)"
+          TITLE="Upstream review due ($MONTH)"
+
+          # If an open issue with the same title already exists
+          # (re-dispatch on same month, or last month's still open),
+          # post the latest report as a comment instead of churning
+          # duplicate issues.
+          EXISTING=$(gh issue list --state open --label upstream-review \
+                        --search "in:title \"Upstream review due\"" \
+                        --json number,title --jq '.[0].number')
+
+          BODY=$(cat <<EOF
+          ${REPORT}
+
+          ---
+
+          _Auto-opened by [\`check-upstreams.yml\`](../.github/workflows/check-upstreams.yml) run #${{ github.run_id }}._
+          _Re-run the script locally with \`bash scripts/check-upstreams.sh\`._
+          _When you've reviewed and the upstream changes are accounted for, bump the "Last reviewed" date in \`docs/upstream-inspirations.md\` and close this issue._
+          EOF
+          )
+
+          if [[ -n "${EXISTING:-}" ]]; then
+            echo "Existing tracking issue #$EXISTING — appending comment"
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            echo "Creating new tracking issue"
+            gh issue create \
+              --title "$TITLE" \
+              --label upstream-review \
+              --body "$BODY"
+          fi
+
+      - name: Notify ntfy (optional)
+        # Skipped silently if NTFY_TOPIC_URL secret isn't set in this
+        # repo — the issue itself is the primary signal anyway.
+        if: steps.check.outputs.needs_review == 'true'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          if [[ -z "${NTFY_URL:-}" ]]; then
+            echo "NTFY_TOPIC_URL not set; skipping push notification."
+            exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl --silent --show-error --fail \
+            -H "Title: Margine: upstream review due" \
+            -H "Priority: low" \
+            -H "Tags: bookmark_tabs,construction" \
+            -H "Click: ${RUN_URL}" \
+            -d "Open the new issue on margine-fedora-atomic for the full report." \
+            "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"

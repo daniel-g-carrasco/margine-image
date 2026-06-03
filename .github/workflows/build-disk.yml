@@ -447,6 +447,136 @@ jobs:
             ${{ steps.disk.outputs.outdir }}/SHA256SUMS
           retention-days: 30
 
+  bump_site:
+    # After publish_ia succeeds for BOTH flavours (margine + margine-gaming),
+    # auto-open a PR on margine-os-1084ca72 that bumps the LATEST_ISO_DATE
+    # constant in src/routes/index.tsx. That single constant drives 8
+    # hardcoded direct-link URLs on the site (4 per flavour:
+    # IA details / .torrent / direct HTTP / SHA256SUMS). Without this,
+    # the site's Hero CTAs and Install Option A direct links would have
+    # to be bumped by hand after every release.
+    #
+    # SETUP REQUIREMENT — repo secret `SITE_BUMP_TOKEN`:
+    #   A fine-grained GitHub PAT scoped to repo
+    #   daniel-g-carrasco/margine-os-1084ca72, with permissions:
+    #     Contents:       Read and write
+    #     Pull requests:  Read and write
+    #   Stored as Actions secret SITE_BUMP_TOKEN in this repo
+    #   (margine-image). Without it the job no-ops with a clear message
+    #   instead of failing the workflow.
+    name: Auto-bump LATEST_ISO_DATE on margine.the-empty.place repo
+    needs: publish_ia
+    # Only runs when both publish_ia matrix children succeeded
+    # (matrix needs uses the strictest of the children — success means
+    # both base + gaming uploaded). PR events skip this step entirely.
+    if: success() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check SITE_BUMP_TOKEN availability
+        id: secret_check
+        env:
+          T: ${{ secrets.SITE_BUMP_TOKEN }}
+        run: |
+          if [[ -z "${T:-}" ]]; then
+            echo "::warning::SITE_BUMP_TOKEN secret not set; skipping auto-bump."
+            echo "::warning::Create a fine-grained PAT scoped to margine-os-1084ca72 (Contents+PR write) and save as SITE_BUMP_TOKEN to enable."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout site repo
+        if: steps.secret_check.outputs.skip != 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          repository: daniel-g-carrasco/margine-os-1084ca72
+          token: ${{ secrets.SITE_BUMP_TOKEN }}
+          path: site
+          fetch-depth: 1
+
+      - name: Bump LATEST_ISO_DATE + open PR
+        if: steps.secret_check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SITE_BUMP_TOKEN }}
+          RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          set -euo pipefail
+          cd site
+
+          NEW_DATE="$(date -u +%Y%m%d)"
+          # Match the line shape exactly: `const LATEST_ISO_DATE = "YYYYMMDD";`
+          OLD_DATE="$(grep -oE 'LATEST_ISO_DATE = "[0-9]+"' src/routes/index.tsx \
+            | head -1 | grep -oE '[0-9]+' || true)"
+
+          if [[ -z "$OLD_DATE" ]]; then
+            echo "::error::Could not find LATEST_ISO_DATE in src/routes/index.tsx"
+            exit 1
+          fi
+          if [[ "$OLD_DATE" == "$NEW_DATE" ]]; then
+            echo "LATEST_ISO_DATE already at $NEW_DATE — no bump needed."
+            exit 0
+          fi
+          echo "Bumping LATEST_ISO_DATE: $OLD_DATE → $NEW_DATE"
+
+          sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
+            src/routes/index.tsx
+
+          # If a PR for the same target date already exists on the head
+          # branch (re-dispatch on same UTC day), skip — don't churn.
+          BRANCH="chore/bump-iso-date-$NEW_DATE"
+          if gh pr list --repo daniel-g-carrasco/margine-os-1084ca72 \
+               --head "$BRANCH" --state open --json number --jq '.[0].number' \
+             | grep -q '^[0-9]'; then
+            echo "PR for branch $BRANCH already exists — leaving in place."
+            exit 0
+          fi
+
+          git config user.email "noreply@margine.the-empty.place"
+          git config user.name "margine-bump-bot"
+          git checkout -b "$BRANCH"
+          git add src/routes/index.tsx
+
+          # Heredoc keeps the YAML scanner happy (no unindented lines
+          # inside the run: block) and bash handles the multiline message.
+          COMMIT_MSG=$(cat <<EOF
+          chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}
+
+          Auto-bump triggered by margine-image build-disk.yml after a
+          successful IA publish for both flavours.
+
+          Previous: ${OLD_DATE}
+          New:      ${NEW_DATE}
+          EOF
+          )
+          git commit -m "$COMMIT_MSG"
+          git push -u origin "$BRANCH"
+
+          PR_BODY=$(cat <<EOF
+          Auto-opened by [margine-image build-disk #${{ github.run_id }}](${RUN_URL}).
+
+          The site's hardcoded direct-link URLs (4 base + 4 gaming) point at
+          \`archive.org/details/margine{,-gaming}-anaconda-iso-\$LATEST_ISO_DATE\`.
+          This PR bumps the date constant after a successful Internet Archive
+          publish so the Hero CTAs and Install Option A reference the just-
+          released ISOs.
+
+          Previous: \`${OLD_DATE}\`
+          New:      \`${NEW_DATE}\`
+
+          If everything looks right, squash-merge. The webhook deploy on
+          VM 110 picks up the change in ~2-3 min.
+          EOF
+          )
+          gh pr create \
+            --repo daniel-g-carrasco/margine-os-1084ca72 \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}" \
+            --body "$PR_BODY"
+
   notify:
     name: ntfy notification (aggregated)
     needs: [build_disk, publish_ia]

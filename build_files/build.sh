@@ -467,14 +467,27 @@ pipeline='pipeline_default'
 brightness=0.4
 sigma=70
 
-# Search Light — only the dark background scrim. Popup sizing, monitor
-# routing, keybind, and font-size left at upstream defaults to keep
-# responsive / accessibility behaviour.
+# Search Light — Margine baseline captured 2026-06-03 from daniel's VM
+# after his tuning pass:
+#   * Slightly darker background scrim (alpha 0.75 vs 0.74)
+#   * Fast animation (100ms) with animations on by default
+#   * Super+Space toggle (kept here rather than in a separate keybind
+#     block — search-light handles its own shortcut binding internally
+#     and reading/writing it via this key is the supported surface)
+#   * Default GNOME corner-radius (border-radius is deliberately NOT
+#     declared so the popup adopts the system default and adapts to
+#     theme changes)
+# Blur keys are NOT declared — blur-background stays off because
+# search-light's blur implementation has rendering glitches we want
+# to avoid; the related blur-sigma / blur-brightness are operational
+# no-ops while blur-background=false.
 [org.gnome.shell.extensions.search-light]
-background-color=(0.0, 0.0, 0.0, 0.74)
+animation-speed=100.0
+background-color=(0.0, 0.0, 0.0, 0.75)
 blur-background=false
-blur-brightness=0.6
-blur-sigma=30.0
+shortcut-search=['<Super>space']
+use-animations=true
+window-effect=0
 OVERRIDE
 
 log "Compiling glib schemas"

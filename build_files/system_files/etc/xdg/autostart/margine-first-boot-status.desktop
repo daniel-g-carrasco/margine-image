@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Margine first-boot status
+GenericName=Margine first-boot status notifier
+Comment=Notifies the user when flatpak-preinstall.service is still installing deferred Flatpaks at first login, and again when it completes.
+Exec=/usr/libexec/margine-first-boot-status
+Icon=org.gnome.Software
+OnlyShowIn=GNOME;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
+X-GNOME-Autostart-Notify=false

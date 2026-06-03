@@ -159,15 +159,102 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 1. Margine default Flatpak apps
+# 0.ter Copy build_files/system_files/ into the rootfs (Bluefin pattern)
 # ---------------------------------------------------------------------------
-# Bluefin ships Flathub already configured. We add the Margine default
-# app set to the system Flatpak preinstall list so it ships preinstalled
-# and works without per-user setup.
+# As of PR E (first-boot notification, 2026-06-04) we ship static
+# system files (autostart .desktop entries, /usr/libexec scripts,
+# systemd unit files, etc.) under build_files/system_files/. The
+# whole tree gets rsync'd into the rootfs at "/" so file paths in
+# the repo mirror their final installed location. Same pattern as
+# Bluefin's system_files/shared/.
+if [[ -d /ctx/system_files ]]; then
+  log "Copying /ctx/system_files/ → / (overlaying base rootfs)"
+  cp -a /ctx/system_files/. /
+  # Set executable bit on libexec scripts (cp -a preserves mode but
+  # git may have flagged them differently across platforms).
+  find /usr/libexec -path '*/margine-*' -type f -exec chmod 0755 {} \;
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Margine default Flatpak apps — two-stage delivery (PR D, 2026-06-04)
+# ---------------------------------------------------------------------------
+# As of PR D ("hybrid bake + defer Flatpaks") Margine ships its default
+# apps in TWO buckets:
 #
-# Terminal: we DO NOT preinstall kitty. Bluefin's default terminal
-# (Ptyxis) is the chosen one. Users who want a different terminal can
-# install it themselves via Flatpak or distrobox.
+#   BAKE (kickstart %post --nochroot at install time, ~22 apps):
+#     Browser, mail, password, office, image+pdf+video viewer,
+#     GNOME productivity suite. Apps the user expects to find ALREADY
+#     INSTALLED on the desktop the first time they log in. Anaconda
+#     does `flatpak install --system` into the installer env's
+#     /var/lib/flatpak, then rsyncs that dir into the target's
+#     /var/lib/flatpak. Cost: +5-10 min Anaconda install time (user
+#     sees "Running post-install scripts..."), 0 GB extra ISO.
+#     Pattern: Bazzite installer/system_files/.../install-flatpaks.ks.
+#
+#   DEFER (.preinstall files + flatpak-preinstall.service at first
+#   boot, ~12 apps):
+#     Heavy creative apps (GIMP, Inkscape, darktable, OBS, Reaper,
+#     ...) the user doesn't need in the first 10 min after first
+#     login. flatpak-preinstall.service downloads them in background.
+#     Pattern: upstream Flatpak preinstall.d API.
+#
+# Lists are kept here and copied at build time into:
+#   /usr/share/margine/installer-flatpaks-base
+#       — read by disk_config/iso-gnome.toml kickstart %post --nochroot.
+#   /usr/share/flatpak/preinstall.d/margine-defaults.preinstall
+#       — read by flatpak-preinstall.service on first boot.
+#
+# VS Code is intentionally NOT in either list: Bluefin DX already
+# preinstalls VS Code from the Microsoft repo with dev container
+# tooling already wired up.
+#
+# The gaming variant adds its own bake list
+# (build_files/gaming/install.sh writes
+# /usr/share/margine/installer-flatpaks-gaming) and its own defer
+# list (build_files/gaming/margine-gaming.preinstall).
+
+# ---- BAKE list (instant at first boot) ----
+log "Writing /usr/share/margine/installer-flatpaks-base (BAKE: kickstart-installed)"
+mkdir -p /usr/share/margine
+cat > /usr/share/margine/installer-flatpaks-base <<'BAKE_LIST'
+# Margine "fundamentals" — baked into the freshly installed system
+# by the Anaconda kickstart in disk_config/iso-gnome.toml. The
+# kickstart runs `flatpak install --system <list>` in the installer
+# environment, then rsyncs /var/lib/flatpak into the target. User
+# sees these apps already in Activities at first login.
+#
+# Rule: an app belongs here if a brand-new Margine user would notice
+# it missing in the first 5 minutes (browser, mail, password manager,
+# office, viewers, basic GNOME suite). Heavy creative apps go in
+# margine-defaults.preinstall instead (first-boot deferred).
+app.zen_browser.zen
+org.mozilla.thunderbird_esr
+com.bitwarden.desktop
+org.libreoffice.LibreOffice
+com.mattjakeman.ExtensionManager
+org.gnome.Snapshot
+org.gnome.Showtime
+org.gnome.Papers
+org.gnome.Loupe
+org.gnome.SoundRecorder
+org.gnome.Calculator
+org.gnome.Calendar
+org.gnome.clocks
+org.gnome.Contacts
+org.gnome.Weather
+org.gnome.Maps
+org.gnome.TextEditor
+org.gnome.baobab
+org.gnome.Characters
+org.gnome.Logs
+org.gnome.font-viewer
+org.gnome.gitlab.somas.Apostrophe
+BAKE_LIST
+chmod 0644 /usr/share/margine/installer-flatpaks-base
+log "BAKE list — $(grep -cv '^#\|^$' /usr/share/margine/installer-flatpaks-base) apps:"
+grep -v '^#\|^$' /usr/share/margine/installer-flatpaks-base | sed 's/^/  /'
+
+# ---- DEFER list (first-boot flatpak-preinstall.service) ----
 log "Writing /usr/share/flatpak/preinstall.d/margine-defaults.preinstall"
 
 # Bluefin DX uses the upstream Flatpak `preinstall` API (introduced in
@@ -175,60 +262,16 @@ log "Writing /usr/share/flatpak/preinstall.d/margine-defaults.preinstall"
 # are read by `flatpak-preinstall.service` at boot. The older uBlue
 # /etc/ublue-os/system-flatpaks.list mechanism is NO LONGER honored
 # on current Bluefin DX — files there are silently ignored.
-#
-# VS Code is intentionally NOT in this list: Bluefin DX preinstalls
-# Visual Studio Code from the Microsoft repo with dev container
-# tooling already wired up; layering VSCodium would create a
-# redundant second editor.
 mkdir -p /usr/share/flatpak/preinstall.d
 {
-  echo "# Margine default applications — installed via flatpak preinstall API."
+  echo "# Margine DEFERRED apps — installed at first boot by"
+  echo "# flatpak-preinstall.service. Heavy creative apps the user"
+  echo "# can wait 5-10 min for (vs the BAKE set in"
+  echo "# /usr/share/margine/installer-flatpaks-base, instant at"
+  echo "# first login)."
   echo "# Generated by build.sh; do not edit by hand."
   echo
-  # Margine canonical preinstall set. The rule is "what a fresh
-  # Margine user expects to find on the desktop after first boot,
-  # without having to open Bazaar and remember 9 app names".
-  #
-  # Three buckets (kept in this order so the file is easy to read):
-  #   1. Core productivity (browser, mail, password, office, dev)
-  #   2. GNOME standard apps that Bluefin DX strips from upstream
-  #      Silverblue/Workstation (Snapshot, Showtime, Papers, Loupe,
-  #      Sound Recorder). We add them back so the desktop feels
-  #      "complete" out of the box.
-  #   3. Creative / utility (GIMP, Inkscape, Pinta, darktable,
-  #      Audacity, OBS, Reaper, EasyEffects, Apostrophe, g4music,
-  #      Blanket, Fragments).
-  #
-  # Keep this list in sync with:
-  #   - declarations/margine-atomic.yaml flatpak section
-  #   - margine-fedora-atomic scripts/validate-margine-system
-  #     EXPECTED_FLATPAKS array (which is the authoritative
-  #     post-boot acceptance test for "did everything install").
   for app in \
-      app.zen_browser.zen \
-      org.mozilla.thunderbird_esr \
-      com.bitwarden.desktop \
-      org.libreoffice.LibreOffice \
-      com.mattjakeman.ExtensionManager \
-      org.gnome.Calculator \
-      org.gnome.Calendar \
-      org.gnome.clocks \
-      org.gnome.Contacts \
-      org.gnome.Weather \
-      org.gnome.Maps \
-      org.gnome.TextEditor \
-      org.gnome.baobab \
-      org.gnome.Characters \
-      org.gnome.Logs \
-      org.gnome.font-viewer \
-      org.gnome.Snapshot \
-      org.gnome.Showtime \
-      org.gnome.Papers \
-      org.gnome.Loupe \
-      org.gnome.SoundRecorder \
-      com.github.neithern.g4music \
-      com.rafaelmardojai.Blanket \
-      de.haeckerfelix.Fragments \
       org.gimp.GIMP \
       org.inkscape.Inkscape \
       com.github.PintaProject.Pinta \
@@ -237,48 +280,34 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.obsproject.Studio \
       com.github.wwmm.easyeffects \
       fm.reaper.Reaper \
-      org.gnome.gitlab.somas.Apostrophe ; do
-    # Why each non-obvious entry is here:
+      com.github.neithern.g4music \
+      com.rafaelmardojai.Blanket \
+      de.haeckerfelix.Fragments ; do
+    # Why each non-obvious DEFERRED entry is here:
     #
-    # thunderbird_esr: declared as the system's mail_reader in
-    #   declarations/margine-atomic.yaml; configure-default-applications
-    #   sets it as MIME handler, so the app actually has to exist.
+    # GIMP / Inkscape / Pinta / darktable: image creation/editing.
+    #   Several hundred MB each, slow to download. User typically
+    #   reaches for them not on day 1 but when they need them, so
+    #   acceptable to arrive a few minutes after first login.
     #
-    # Extension Manager (jakeman): GUI to browse/install/configure
-    #   GNOME Shell extensions. Margine has ~10 enabled (o-tiling,
-    #   search-light, caffeine, hide-cursor, etc.) and users have no
-    #   way to discover/tune them without a dedicated app. GNOME's
-    #   own `org.gnome.Extensions` is NOT in Bluefin DX base.
+    # OBS Studio: streaming/recording, ~500 MB chain. Heavy.
+    # Audacity: audio editor, medium.
+    # EasyEffects: PipeWire effects framework.
+    # Reaper: proprietary DAW (FreemiumRedistributable Flatpak).
     #
-    # Snapshot / Showtime / Papers / Loupe / SoundRecorder:
-    #   GNOME's modern "default apps" (camera/webcam, video player,
-    #   PDF reader, image viewer, audio recorder). Fedora
-    #   Workstation/Silverblue ship them by default; Bluefin DX
-    #   intentionally strips them to keep its image lean. We
-    #   re-add the modern (-not-deprecated) versions: Snapshot
-    #   replaces Cheese, Showtime replaces Totem, Papers replaces
-    #   Evince, Loupe replaces Eye of GNOME.
+    # g4music: GNOME music player.
+    # Blanket: ambient sound mixer (rain, fireplace, etc.).
+    # Fragments: GNOME BitTorrent client — Margine ISOs are
+    #   distributed as torrents on archive.org, so it makes sense
+    #   to ship a working client.
     #
-    # Calculator / Calendar / clocks / Contacts / Weather / Maps /
-    # TextEditor / baobab / Characters / Logs / font-viewer:
-    #   The GNOME core productivity + utility set that Fedora
-    #   Silverblue/Workstation ship as RPM in /usr but Bluefin DX
-    #   strips. We restore them as Flatpaks (atomic-friendly,
-    #   no /usr layer cost, ~120 MB cumulative thanks to shared
-    #   org.gnome.Platform runtime). This closes the visible gap
-    #   "the standard GNOME calculator / calendar / text editor
-    #   aren't here" against a vanilla Silverblue install.
-    #
-    # Pinta: lightweight image editor (Paint.NET-style). Bluefin's
-    #   own Bazaar preinstall list includes it; we lost it via the
-    #   "we manage our own preinstall.d" override.
-    #
-    # Blanket: ambient sound mixer (rain, fireplace, etc.) — a
-    #   common "wellness" app that's tiny and beloved.
-    #
-    # Fragments: GNOME BitTorrent client. Margine publishes its
-    #   own ISOs as torrents (see docs/19-iso-distribution.md), so
-    #   a working torrent client out of the box is consistent.
+    # Apps NOT in this list because they moved to the BAKE bucket
+    # (kickstart, instant at first boot — see
+    # /usr/share/margine/installer-flatpaks-base above):
+    #   Zen, Thunderbird, Bitwarden, LibreOffice, Extension Manager,
+    #   Snapshot/Showtime/Papers/Loupe/SoundRecorder, Calculator,
+    #   Calendar, clocks, Contacts, Weather, Maps, TextEditor,
+    #   baobab, Characters, Logs, font-viewer, Apostrophe.
     echo "[Flatpak Preinstall $app]"
     echo "Branch=stable"
     echo "IsRuntime=false"

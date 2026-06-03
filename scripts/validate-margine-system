@@ -62,6 +62,20 @@ EXPECTED_FLATPAKS=(
   com.bitwarden.desktop
   org.libreoffice.LibreOffice
   com.mattjakeman.ExtensionManager
+  #   GNOME core utility set (Silverblue ships these as RPM; Bluefin DX
+  #   strips them; we restore them as Flatpaks for the "complete GNOME
+  #   desktop" experience without /usr layer cost)
+  org.gnome.Calculator
+  org.gnome.Calendar
+  org.gnome.clocks
+  org.gnome.Contacts
+  org.gnome.Weather
+  org.gnome.Maps
+  org.gnome.TextEditor
+  org.gnome.baobab
+  org.gnome.Characters
+  org.gnome.Logs
+  org.gnome.font-viewer
   #   GNOME core "default apps" (Bluefin DX strips these; we add them back)
   org.gnome.Snapshot
   org.gnome.Showtime

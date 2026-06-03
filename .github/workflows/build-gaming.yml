@@ -106,7 +106,7 @@ jobs:
 
       - name: Build image (no MOK — kernel pre-signed in base)
         id: build_image
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@061ffd31bb5c3f8733a6f9bbdf00a9fb02eb708c  # main 2026-04-09 (post v2.13, Node 24; no v3 tag yet — see upstream #155)
         with:
           containerfiles: |
             ./Containerfile.gaming

@@ -326,6 +326,14 @@ switch-applications-backward=@as []
 switch-windows=@as []
 switch-windows-backward=@as []
 
+# Dash-to-Dock by default binds Super+1..9 to launch the matching dash
+# slot. That collides with Margine's Super+1..0 workspace navigation
+# (the same keys the user expects from Hyprland). Disable Dash-to-Dock's
+# own hot-key handler so configure-gnome-keybindings' workspace binds
+# win cleanly. NOT cosmetic — this is a keybinding collision fix.
+[org.gnome.shell.extensions.dash-to-dock]
+hot-keys=false
+
 # Terminal default: leave Bluefin's choice (Ptyxis) — do NOT override
 # org.gnome.desktop.default-applications.terminal. Users who want a
 # different terminal can install one and flip the setting per session.
@@ -365,6 +373,87 @@ outer-gaps=4
 [org.gnome.desktop.wm.preferences]
 focus-mode='sloppy'
 auto-raise=false
+
+# ---------------------------------------------------------------------------
+# Blur My Shell + Search Light — cosmetic-only defaults
+# ---------------------------------------------------------------------------
+# Captured 2026-06-02 from daniel's running VM via `dconf dump
+# /org/gnome/shell/extensions/<ext>/`, narrowed 2026-06-03 to the
+# COSMETIC surface only (blur radius / brightness, background
+# transparency, pipeline assignment per surface). All other captured
+# keys were dropped intentionally to avoid freezing dynamic /
+# accessibility behaviour we want to keep responsive:
+#
+#   * blur-my-shell.hidetopbar.compatibility — toggle for another
+#     extension's behaviour, not cosmetic.
+#   * blur-my-shell internal state (`pipelines` dict, rounded-blur-found,
+#     settings-version) — managed by the extension itself.
+#   * search-light scale-width / scale-height / popup-at-cursor-monitor /
+#     preferred-monitor / monitor-count / entry-font-size /
+#     animation-speed / border-radius / show-panel-icon — popup sizing
+#     and monitor selection that should adapt to the user's hardware
+#     and accessibility settings.
+#   * search-light shortcut-search — belongs in keybindings, not here.
+#   * dash-to-dock hot-keys=false — anti-collision with Margine's
+#     Super+1..0 workspace binds, lives in the keybindings section
+#     above (not a cosmetic default).
+#
+# Anything we don't override falls back to the extension's own
+# defaults, which is the desired behaviour.
+
+# Blur My Shell — per-surface blur tuning
+[org.gnome.shell.extensions.blur-my-shell.appfolder]
+brightness=0.4
+sigma=70
+
+[org.gnome.shell.extensions.blur-my-shell.applications]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.coverflow-alt-tab]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.dash-to-dock]
+blur=true
+brightness=0.6
+pipeline='pipeline_default_rounded'
+sigma=30
+static-blur=true
+style-dash-to-dock=0
+unblur-in-overview=true
+
+[org.gnome.shell.extensions.blur-my-shell.dash-to-panel]
+blur-original-panel=true
+
+[org.gnome.shell.extensions.blur-my-shell.lockscreen]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.overview]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.panel]
+brightness=0.4
+corner-radius=0
+override-background=true
+pipeline='pipeline_default'
+sigma=70
+static-blur=false
+unblur-in-overview=true
+
+[org.gnome.shell.extensions.blur-my-shell.screenshot]
+pipeline='pipeline_default'
+
+[org.gnome.shell.extensions.blur-my-shell.window-list]
+brightness=0.4
+sigma=70
+
+# Search Light — only the dark background scrim. Popup sizing, monitor
+# routing, keybind, and font-size left at upstream defaults to keep
+# responsive / accessibility behaviour.
+[org.gnome.shell.extensions.search-light]
+background-color=(0.0, 0.0, 0.0, 0.74)
+blur-background=false
+blur-brightness=0.6
+blur-sigma=30.0
 OVERRIDE
 
 log "Compiling glib schemas"

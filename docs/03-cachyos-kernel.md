@@ -10,6 +10,27 @@
 > CachyOS kernel](07-secure-boot-tpm2.md#mok-signing-for-the-cachyos-kernel)
 > and [`margine-image/build_files/custom-kernel/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/custom-kernel/install.sh).
 >
+> **Userspace BPF schedulers (since 2026-06-03).** The sibling COPR
+> `bieszczaders/kernel-cachyos-addons` ships `scx-scheds`, the
+> sched_ext userspace schedulers (`scx_lavd`, `scx_bpfland`,
+> `scx_rusty`, `scx_central`, `scx_simple`). These are installed in
+> the **base** image, not gaming-only — pro-audio creators on the
+> regular Margine flavour can use `scx_central` (single-CPU
+> scheduling, lowest jitter) without rebasing to the gaming variant.
+> Runtime switch via `ujust margine-scheduler <name>`. The COPR is
+> enabled transiently during `custom-kernel/install.sh`, the package
+> is installed, then the repo is disabled and the `.repo` file
+> removed so the runtime system has no exposure to the COPR
+> (consistent with how the `kernel-cachyos` COPR itself is handled).
+> The kernel-side `CONFIG_SCHED_CLASS_EXT=y` requirement is satisfied
+> by the CachyOS kernel out of the box.
+>
+> **Kernel binary is identical between Margine and Margine Gaming.**
+> The gaming variant is `FROM margine:stable` plus a userspace-only
+> RPM layer (gamescope, MangoHud, vkBasalt, goverlay, steam-devices);
+> no `kmod-*`, no `kernel-*` packages, no `/lib/modules` changes.
+> See [`build_files/gaming/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/gaming/install.sh).
+>
 > The lab procedure below is preserved as the **historical** Silverblue
 > path (runtime `rpm-ostree override remove ... --install kernel-cachyos`).
 > It runs unsigned, and only works with Secure Boot disabled. It is

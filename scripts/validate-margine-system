@@ -54,12 +54,29 @@ EXPECTED_GDM_LOGO=""   # empty: no logo in greeter, by design (see lessons-learn
 EXPECTED_GHCR_IMAGE="ghcr.io/daniel-g-carrasco/margine"
 
 EXPECTED_FLATPAKS=(
+  # Keep in sync with margine-image/build_files/build.sh preinstall list.
+  # Ordered the same way as the build.sh loop, grouped by intent:
+  #   Productivity
   app.zen_browser.zen
+  org.mozilla.thunderbird_esr
   com.bitwarden.desktop
   org.libreoffice.LibreOffice
+  com.mattjakeman.ExtensionManager
+  #   GNOME core "default apps" (Bluefin DX strips these; we add them back)
+  org.gnome.Snapshot
+  org.gnome.Showtime
+  org.gnome.Papers
+  org.gnome.Loupe
+  org.gnome.SoundRecorder
+  #   Audio + ambient
   com.github.neithern.g4music
+  com.rafaelmardojai.Blanket
+  #   Network / utility
+  de.haeckerfelix.Fragments
+  #   Creative
   org.gimp.GIMP
   org.inkscape.Inkscape
+  com.github.PintaProject.Pinta
   org.darktable.Darktable
   org.audacityteam.Audacity
   com.obsproject.Studio

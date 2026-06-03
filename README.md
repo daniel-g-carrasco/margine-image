@@ -54,7 +54,7 @@ operations.
 | | |
 | --- | --- |
 | 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
-| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; the public key is enrolled into shim's MOK store on first boot via a one-shot service. Secure Boot remains enabled and the kernel chain of trust is verified at every boot. |
+| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; the public key is enrolled into shim's MOK store on first boot via a one-shot service. Secure Boot remains enabled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers (`scx_lavd`, `scx_bpfland`, `scx_rusty`, `scx_central`, `scx_simple`) from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in **every** Margine flavour (base + gaming) and can be switched at runtime with `ujust margine-scheduler` — useful for pro-audio (`scx_central` pins all scheduling decisions to a single CPU, removing a class of multi-core jitter). The kernel itself is bit-identical between flavours; gaming only adds userspace libraries. |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
 | 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set** | Installed automatically on first boot via the systemd `/usr/share/flatpak/preinstall.d/` API: Zen Browser, Bitwarden, LibreOffice, Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio, EasyEffects, Reaper, Apostrophe, Extension Manager. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
@@ -201,7 +201,30 @@ Margine.
 [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/).
 vmlinuz signed with `sbsign`; every `.ko*` module signed with
 `sign-file`. MOK enrollment via `mok-enroll.service` on first boot
-after install/rebase.
+after install/rebase. Userspace sched_ext BPF schedulers (the
+`scx-scheds` package from
+[`bieszczaders/kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/))
+are installed in the base image (not gaming-only): the `ujust
+margine-scheduler` recipe switches between `scx_lavd`/`scx_bpfland`/
+`scx_rusty`/`scx_central`/`scx_simple` at runtime. The kernel binary
+is shared with the gaming variant — the variant differs only in
+userspace (gamescope, MangoHud, vkBasalt, GameMode, etc.).
+
+**Build pipeline**: GitHub-hosted `ubuntu-24.04` runner (the
+self-hosted PVE builder was decommissioned 2026-06-01 after a ZFS
+spacemap corruption took the host down). The image is built with a
+direct `sudo -E buildah build` shell call — the same pattern Bazzite
+uses, not the `redhat-actions/buildah-build` action — then run
+through [`hhd-dev/rechunk`](https://github.com/hhd-dev/rechunk) so
+the OCI layers stay reproducible across upstream base rebases. All
+GitHub Actions are SHA-pinned (e.g. `actions/upload-artifact@<sha> #
+v7.0.1`) rather than tag-pinned, to avoid the `tj-actions/changed-
+files`-style supply-chain attack vector. Cosign signs the pushed
+manifest **by digest** (not by tag) in a separate short job, so a
+sign-step failure costs ~1 min to re-run instead of redoing the
+full ~25-min image build. See the inline history comment at the
+top of [`.github/workflows/build.yml`](.github/workflows/build.yml)
+for the full rationale.
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
 Blur My Shell, Dash to Dock, Gradia Integration, GSConnect (all from

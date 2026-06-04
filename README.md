@@ -65,7 +65,29 @@ margine-collect-diagnostics             # snapshot for troubleshooting
 
 Plus there's `scripts/validate-margine-system` (end-to-end acceptance
 test with a single PASS/FAIL verdict line) used both in CI and after a
-manual `bootc upgrade`.
+manual `bootc upgrade`. It currently runs **11 sections** of checks
+including (post-2026-06-05):
+
+- **system users + groups** (Bug 6 post-rebase guardrail) + per-wheel-
+  user check that they're in `docker` / `incus-admin` / `libvirt`
+  (catches `bluefin-dx-groups.service` failures at boot)
+- **gnome extension schemas registered** in `/usr/share/glib-2.0/
+  schemas/gschemas.compiled` for each Margine-shipped extension
+  (search-light, blur-my-shell, dash-to-dock, caffeine, o-tiling) —
+  catches the case where the extension loads but its preferences /
+  keybindings are inert because the schema XML was only compiled in
+  the per-extension dir
+- **BAKE Flatpak presence** — cross-checks every app listed in
+  `/usr/share/margine/installer-flatpaks-base` (and `-gaming`)
+  against `flatpak list`. Catches the case where the kickstart
+  install-time BAKE silently fails AND the
+  `flatpak-preinstall.service` belt+suspenders fallback hasn't yet
+  caught up
+
+Run it via:
+```sh
+curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-margine-system | bash
+```
 
 ## Documentation
 

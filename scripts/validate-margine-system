@@ -589,15 +589,18 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     && ok "color-scheme = prefer-dark" \
     || bad "color-scheme is '$CUR_SCHEME' (expected 'prefer-dark') — configure-gnome-appearance didn't run"
 
-  # o-tiling extension installed in user-extensions dir.
-  # (Tiling Shell was Margine default until 2026-06-02; removed because
-  # user only wanted o-tiling. Presence of tilingshell@* is now a sign
-  # of stale install — warn so the user knows they can prune it.)
-  if compgen -G "$HOME/.local/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
-    ok "o-tiling installed under ~/.local"
+  # o-tiling extension — system-wide since 2026-06-03 PR A (was
+  # ~/.local/share/gnome-shell/extensions/ before, but per-user
+  # install caused shadow/race bugs documented in margine-image
+  # PR #20). Check system-wide first, then fall back to user-dir.
+  if compgen -G "/usr/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
+    ok "o-tiling installed system-wide (PR A pattern)"
+  elif compgen -G "$HOME/.local/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
+    warn "o-tiling installed under ~/.local (pre-PR-A legacy location)"
   else
-    bad "o-tiling NOT installed — install-user-extensions didn't run"
+    bad "o-tiling NOT installed — system-wide install at OCI build time failed"
   fi
+  # Stale Tiling Shell warning (was Margine default until 2026-06-02).
   if compgen -G "$HOME/.local/share/gnome-shell/extensions/tilingshell@*" >/dev/null; then
     warn "Tiling Shell present under ~/.local — stale (removed from Margine defaults 2026-06-02). Remove with: rm -rf ~/.local/share/gnome-shell/extensions/tilingshell@ferrarodomenico.com"
   fi
@@ -627,11 +630,15 @@ fi
 # ---------------------------------------------------------------------------
 hdr "9c. Gaming layer (opt-in — checks only run if the layer was installed)"
 # ---------------------------------------------------------------------------
-# Margine gaming layer = `ujust margine-gaming`. Installs 7 Flatpaks
-# + 10 layered RPMs (see margine-image/build_files/60-custom.just).
-# Detection heuristic: if any of the layered RPMs are present, treat
-# the layer as installed and validate the full set. Otherwise skip
-# silently with an INFO so a fresh-install check isn't penalised.
+# Margine gaming layer = `ujust margine-gaming` OR a fresh install of
+# the margine-gaming variant (bootc switch / fresh ISO install of
+# margine-gaming). Installs ~10 layered RPMs + 7 Flatpaks. Detection:
+# previously we used "any of the layered RPMs present" — but most of
+# those (gamemode, input-remapper, tuned, tuned-ppd) are ALREADY in
+# Bluefin DX base, so the heuristic fires false-positive on every
+# base Margine install. 2026-06-05 fix: detect via VARIANT_ID in
+# /etc/os-release (set to 'gaming' by build_files/gaming/
+# stamp-os-release.sh on the gaming variant only).
 GAMING_RPMS=(gamescope mangohud vkBasalt gamemode goverlay steam-devices input-remapper tuned tuned-ppd rom-properties-gtk)
 GAMING_FLATPAKS=(
   com.valvesoftware.Steam
@@ -643,7 +650,15 @@ GAMING_FLATPAKS=(
   org.libretro.RetroArch
 )
 GAMING_PRESENT=0
-for rpm in "${GAMING_RPMS[@]}"; do
+# Primary signal: VARIANT_ID=gaming in /etc/os-release (variants are
+# explicit — set at OCI build time, not runtime-derived).
+VARIANT_ID_VAL=$(. /etc/os-release 2>/dev/null; echo "${VARIANT_ID:-}")
+if [[ "$VARIANT_ID_VAL" == "gaming" ]]; then
+  GAMING_PRESENT=1
+fi
+# Secondary signal: gaming-specific RPMs (not the Bluefin-DX-also set).
+# Catches the `ujust margine-gaming` opt-in on the base variant.
+for rpm in gamescope mangohud vkBasalt goverlay steam-devices; do
   if rpm -q "$rpm" >/dev/null 2>&1; then GAMING_PRESENT=1; break; fi
 done
 

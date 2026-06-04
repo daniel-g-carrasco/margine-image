@@ -177,6 +177,34 @@ for g in audio disk kvm tty utmp tss dbus polkitd; do
     || bad "group '$g' MISSING"
 done
 
+# Wheel-user group membership. Margine inherits bluefin-dx-groups.service
+# from Bluefin DX, which at boot should add every wheel-group member to
+# docker, incus-admin, and libvirt (one-shot). On the 2026-06-04 fresh
+# install daniel saw "[FAILED] Failed to start bluefin-dx-groups.service"
+# at boot — the service has Restart=on-failure RestartSec=30 so it usually
+# succeeds on retry, but this check verifies the END STATE (the user IS
+# in those groups) rather than trusting "service eventually succeeded".
+# A failure here means the user has to manually `sudo usermod -aG ...`
+# or stay sudo-bound for docker/incus/libvirt commands.
+WHEEL_USERS=$(getent group wheel 2>/dev/null | cut -d: -f4 | tr ',' ' ')
+if [[ -z "${WHEEL_USERS// /}" ]]; then
+  warn "wheel group is empty — no admin users to check group membership for"
+else
+  info "wheel-group admin users: ${WHEEL_USERS// /, }"
+  for u in $WHEEL_USERS; do
+    # id -nG is robust (uses NSS, sees both /etc/group and /etc/passwd
+    # secondary groups, plus any LDAP/SSSD source on enterprise installs).
+    USER_GROUPS=" $(id -nG "$u" 2>/dev/null) "
+    for required in docker incus-admin libvirt; do
+      if [[ "$USER_GROUPS" == *" $required "* ]]; then
+        ok "user '$u' is in group '$required' (bluefin-dx-groups effect OK)"
+      else
+        bad "user '$u' is NOT in group '$required' — bluefin-dx-groups.service may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
+      fi
+    done
+  done
+fi
+
 # ---------------------------------------------------------------------------
 hdr "4. Boot security (Secure Boot, MOK)"
 # ---------------------------------------------------------------------------

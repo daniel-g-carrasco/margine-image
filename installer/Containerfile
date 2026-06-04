@@ -1,0 +1,30 @@
+# Margine installer image (Bazzite pattern).
+#
+# Layers Flatpaks INTO /var/lib/flatpak of a temporary OCI image
+# whose only purpose is to be the input for bootc-image-builder
+# anaconda-iso. The resulting ISO's installer rootfs has all
+# Margine BAKE Flatpaks pre-baked; the Anaconda %post --nochroot
+# kickstart in disk_config/iso-gnome.toml just rsyncs
+# /var/lib/flatpak from installer rootfs to target's /var/lib/
+# flatpak. Result: user gets all apps at first login, no
+# install-time Flatpak download (so no /tmp OOM in installer env),
+# no first-boot wait.
+#
+# This image is NEVER published as a bootc :stable tag — users who
+# `bootc switch` should switch to margine:stable, not
+# margine-installer:*. Built transiently in build-disk.yml workflow
+# with a one-off tag (typically the run_id).
+ARG BASE_IMAGE=ghcr.io/daniel-g-carrasco/margine:stable
+ARG FLATPAK_LIST_FILE=flatpaks-base
+
+FROM ${BASE_IMAGE}
+ARG FLATPAK_LIST_FILE
+
+# Copy the flatpaks list file into the image, then run the bake.
+# Both inputs (list file + script) are bind-mounted from build
+# context at /src so they don't leak into the final image layers.
+RUN --mount=type=bind,source=.,target=/src,rw \
+    FLATPAK_LIST_FILE="${FLATPAK_LIST_FILE}" /src/build.sh
+
+# Lint the resulting image (still a bootc image).
+RUN bootc container lint

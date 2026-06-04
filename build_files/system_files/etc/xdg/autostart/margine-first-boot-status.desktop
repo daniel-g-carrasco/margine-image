@@ -8,5 +8,12 @@ Icon=org.gnome.Software
 OnlyShowIn=GNOME;
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Phase=Applications
 X-GNOME-Autostart-Notify=false
+# IMPORTANT: do NOT add X-GNOME-Autostart-Phase=Applications.
+# GNOME 50+ dropped session-phase management; gnome-session-service
+# warns "App ... sets X-GNOME-Autostart-Phase, but gnome-session no
+# longer manages session services" and SKIPS the entire entry —
+# the notifier never runs at login. Verified 2026-06-04 fresh
+# install: daniel reported "non ho visto nessun messaggio". Removed
+# the Phase key here, same fix already applied in build.sh's
+# margine-first-boot.desktop bootstrap autostart entry.

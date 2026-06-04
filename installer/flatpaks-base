@@ -1,0 +1,33 @@
+# Margine base installer BAKE list — Flatpaks pre-installed in
+# /var/lib/flatpak of the installer rootfs, rsynced to target by
+# kickstart. Mirror of /usr/share/margine/installer-flatpaks-base
+# written by build_files/build.sh. Kept in sync manually for now.
+app.zen_browser.zen
+org.mozilla.thunderbird_esr
+com.bitwarden.desktop
+org.libreoffice.LibreOffice
+com.mattjakeman.ExtensionManager
+org.gnome.Snapshot
+org.gnome.Showtime
+org.gnome.Papers
+org.gnome.Loupe
+org.gnome.SoundRecorder
+org.gnome.Calculator
+org.gnome.Calendar
+org.gnome.clocks
+org.gnome.Contacts
+org.gnome.Weather
+org.gnome.Maps
+org.gnome.TextEditor
+org.gnome.baobab
+org.gnome.Characters
+org.gnome.Logs
+org.gnome.font-viewer
+org.gnome.gitlab.somas.Apostrophe
+com.github.PintaProject.Pinta
+org.audacityteam.Audacity
+com.github.wwmm.easyeffects
+fm.reaper.Reaper
+com.github.neithern.g4music
+com.rafaelmardojai.Blanket
+de.haeckerfelix.Fragments

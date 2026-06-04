@@ -549,6 +549,36 @@ use-animations=true
 window-effect=0
 OVERRIDE
 
+# Copy every GNOME extension's schema XML from its extension dir to
+# the global /usr/share/glib-2.0/schemas/ before compiling. Bluefin's
+# build-gnome-extensions.sh installs extensions but only compiles
+# their schemas IN the per-extension dir (sufficient for GNOME Shell
+# to load), NOT in the global dir. Result: `gsettings`, `dconf` and
+# our own zz1-margine.gschema.override CAN'T see the extension's
+# schema, so extension keybindings/preferences silently fall back to
+# extension defaults. Verified 2026-06-04 on fresh install:
+# search-light loaded but `gsettings get
+# org.gnome.shell.extensions.search-light shortcut-search` returned
+# "Schema inesistente" → our zz1 override of shortcut-search=<Super>space
+# never applied → Super+Space did nothing → daniel said "non funziona".
+#
+# Copy each extension's *.gschema.xml into the global dir so the
+# subsequent glib-compile-schemas call below picks them all up,
+# making gsettings/dconf/override able to reach them.
+log "Copying GNOME extension gschema files to /usr/share/glib-2.0/schemas/"
+for ext_dir in /usr/share/gnome-shell/extensions/*/; do
+  ext_schemas="${ext_dir}schemas"
+  [[ -d "$ext_schemas" ]] || continue
+  for xml in "$ext_schemas"/*.gschema.xml; do
+    [[ -f "$xml" ]] || continue
+    base=$(basename "$xml")
+    if [[ ! -f "/usr/share/glib-2.0/schemas/$base" ]]; then
+      cp "$xml" "/usr/share/glib-2.0/schemas/$base"
+      echo "  copied $base from $(basename "$(dirname "$ext_schemas")")"
+    fi
+  done
+done
+
 log "Compiling glib schemas"
 glib-compile-schemas /usr/share/glib-2.0/schemas
 

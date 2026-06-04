@@ -133,13 +133,58 @@ jobs:
           echo "::error::Unable to pull ${{ env.BIB_IMAGE }} after 8 attempts; quay.io may be down"
           exit 1
 
+      # === installer-image pattern (Bazzite) for anaconda-iso only ===
+      # Build a transient `<flavor>-installer` image that's the base
+      # bootc image + Flatpaks pre-baked into /var/lib/flatpak. BIB
+      # anaconda-iso uses THIS image instead of the base — the
+      # installer rootfs ships with all Flatpaks already in
+      # /var/lib/flatpak, and the kickstart in iso-gnome.toml just
+      # rsyncs them to the target's /var/lib/flatpak. No flatpak
+      # install at install time → no /tmp OOM in installer env →
+      # no silent failure → user actually gets the apps at first
+      # login. qcow2 path keeps using the base image (qcow2 is for
+      # QEMU smoke test, no need to inflate it with Flatpaks).
+      - name: Login to GHCR for installer push
+        if: matrix.disk-type == 'anaconda-iso'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull base image (for installer FROM)
+        if: matrix.disk-type == 'anaconda-iso'
+        run: |
+          sudo podman pull "${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+
+      - name: Build installer image (BAKE Flatpaks)
+        if: matrix.disk-type == 'anaconda-iso'
+        id: installer
+        run: |
+          set -euo pipefail
+          # Select flatpaks list by flavor.
+          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
+            FLATPAK_LIST_FILE=flatpaks-gaming
+          else
+            FLATPAK_LIST_FILE=flatpaks-base
+          fi
+          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          INSTALLER_TAG="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}-installer:run-${{ github.run_id }}"
+          echo "Building $INSTALLER_TAG from $BASE_IMAGE with $FLATPAK_LIST_FILE"
+          sudo podman build \
+            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+            --build-arg "FLATPAK_LIST_FILE=$FLATPAK_LIST_FILE" \
+            -t "$INSTALLER_TAG" \
+            -f installer/Containerfile \
+            installer/
+          sudo podman push "$INSTALLER_TAG"
+          echo "installer_tag=$INSTALLER_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Build disk image
         id: build
         uses: osbuild/bootc-image-builder-action@main
         with:
           builder-image: ${{ env.BIB_IMAGE }}
           config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || './disk_config/disk.toml' }}
-          image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          image: ${{ matrix.disk-type == 'anaconda-iso' && steps.installer.outputs.installer_tag || format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
           # Margine's :stable inherits from Bluefin DX, which doesn't

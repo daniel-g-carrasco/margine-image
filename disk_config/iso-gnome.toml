@@ -119,14 +119,25 @@ echo "Final /etc/fstab:"
 cat /etc/fstab
 %end
 
-%post --nochroot --log=/tmp/anaconda-post-flatpak-bake.log
-# (Deliberately NOT --erroronfail. If Flathub is unreachable or the
+%post --nochroot --log=/mnt/sysimage/var/log/anaconda-post-flatpak-bake.log
+# Log goes to TARGET's /var/log/ (not /tmp/ in installer env which is
+# lost after reboot). Verified after the 2026-06-04 fresh install
+# where the BAKE silently failed and the log was unrecoverable.
+#
+# Deliberately NOT --erroronfail. If Flathub is unreachable or the
 # rsync target path doesn't exist for an unexpected layout reason,
 # we want the install to STILL COMPLETE — the user can recover from
 # "GIMP missing" via Bazaar after first boot, but they cannot
 # recover from "Anaconda aborted because flatpak failed". The
 # %post above with `bootc switch` keeps --erroronfail because that
-# IS install-critical.)
+# IS install-critical.
+#
+# Belt + suspenders: every app in the BAKE list is ALSO in
+# /usr/share/flatpak/preinstall.d/margine-defaults.preinstall (see
+# build_files/build.sh "DEFER list"). If this BAKE silently fails
+# (network blip, /var tmpfs OOM in installer env, etc.), the user
+# gets the apps via flatpak-preinstall.service at first boot —
+# 5-15 min wait instead of instant, but never "apps missing".
 #
 # === Margine Flatpak BAKE (PR D / 2026-06-04) ===
 #

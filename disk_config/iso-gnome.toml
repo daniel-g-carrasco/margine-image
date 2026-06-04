@@ -81,20 +81,39 @@ else
 fi
 
 # Idempotently add compress=zstd:1 to /etc/fstab for the / btrfs line.
-# NB: backslashes doubled here because TOML basic-string (triple-quoted)
-# treats bare \s as an unrecognized escape; doubling becomes single
-# in shell after TOML parses. Only \\ \" \n \r \t \b \f \uXXXX are
-# valid escape sequences in TOML basic strings.
-if grep -E '^[^#]\\S+\\s+/\\s+btrfs' /etc/fstab > /dev/null 2>&1; then
-  if grep -E '^[^#]\\S+\\s+/\\s+btrfs\\s+\\S*compress=' /etc/fstab > /dev/null 2>&1; then
-    echo "/etc/fstab already has compress= on / btrfs line — no change"
-  else
-    echo "Patching /etc/fstab: adding compress=zstd:1 to / btrfs mount options"
-    sed -i -E 's|^([^#]\\S+\\s+/\\s+btrfs\\s+)([^[:space:]]+)|\\1\\2,compress=zstd:1|' /etc/fstab
-  fi
-else
-  echo "No btrfs / line in /etc/fstab — skipping fstab patch"
-fi
+# We patch via python3 (always installed) to avoid TOML escape pain
+# with sed/grep regex backslashes inside the triple-quoted contents.
+python3 <<'PYEOF'
+import sys
+try:
+    with open('/etc/fstab') as f:
+        lines = f.read().splitlines()
+except FileNotFoundError:
+    print('WARN: /etc/fstab not found, skipping zstd patch')
+    sys.exit(0)
+out = []
+patched = False
+for line in lines:
+    if line.startswith('#') or not line.strip():
+        out.append(line)
+        continue
+    fields = line.split()
+    if len(fields) >= 4 and fields[1] == '/' and fields[2] == 'btrfs':
+        if 'compress=' in fields[3]:
+            print('compress= already present on / btrfs line, no change')
+            out.append(line)
+        else:
+            fields[3] = fields[3] + ',compress=zstd:1'
+            out.append(' '.join(fields))
+            patched = True
+            print('patched / btrfs line: ' + ' '.join(fields))
+    else:
+        out.append(line)
+with open('/etc/fstab', 'w') as f:
+    f.write('\n'.join(out) + '\n')
+if not patched:
+    print('No btrfs / line to patch in /etc/fstab')
+PYEOF
 
 echo "Final /etc/fstab:"
 cat /etc/fstab

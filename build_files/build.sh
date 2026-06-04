@@ -377,13 +377,6 @@ favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop',
 
 [org.gnome.desktop.interface]
 accent-color='yellow'
-# MoreWaita icon theme — higher-quality SVG icons that replace the
-# low-res AdwaitaLegacy PNGs (margine-system-update.desktop's
-# `Icon=system-software-update` rendered sgranata on the 2026-06-04
-# install because only the legacy 48x48 PNG was available). MoreWaita
-# is installed by build.sh's "MoreWaita icon theme" section below
-# into /usr/share/icons/MoreWaita/; inheriting from Adwaita.
-icon-theme='MoreWaita'
 # Bluefin's zz0 hard-sets Adwaita Sans (their pick). We leave fonts as
 # GNOME default here — daniel hasn't picked a Margine type system yet;
 # revisit when there's a documented choice. Removing the keys lets
@@ -402,16 +395,18 @@ dynamic-workspaces=true
 num-workspaces=10
 
 [org.gnome.desktop.wm.keybindings]
-# Bluefin remaps Super+d → show-desktop and Super+Tab → switch-apps,
-# both of which collide with Margine's Hyprland-style Super+number
-# workspace + Super+arrow focus binds applied by configure-gnome-
-# keybindings. Reset to the GNOME defaults here so the user-state
-# bootstrap can overlay the Hyprland binds cleanly.
+# Bluefin remaps Super+d → show-desktop, which collides with
+# Margine's Hyprland-style binds. Reset only that single key.
+#
+# IMPORTANT — do NOT clear switch-applications / switch-
+# applications-backward / switch-windows / switch-windows-backward
+# here. Earlier versions of zz1 cleared them all to @as [] thinking
+# configure-gnome-keybindings would restore them with Hyprland
+# semantics. It DOESN'T — the script has an explicit
+# "INTENTIONALLY LEFT AT THEIR GNOME DEFAULT" comment. So clearing
+# here means Alt+Tab and Super+Tab end up unbound and daniel
+# reported (2026-06-05) they don't work. Keep GNOME defaults.
 show-desktop=@as []
-switch-applications=@as []
-switch-applications-backward=@as []
-switch-windows=@as []
-switch-windows-backward=@as []
 
 # Dash-to-Dock by default binds Super+1..9 to launch the matching dash
 # slot. That collides with Margine's Super+1..0 workspace navigation
@@ -557,34 +552,34 @@ window-effect=0
 OVERRIDE
 
 # ---------------------------------------------------------------------------
-# MoreWaita icon theme — higher-quality SVG companion to Adwaita
+# Surgical icon fix: replace ONE low-res Adwaita Legacy PNG
 # ---------------------------------------------------------------------------
 # Verified 2026-06-05: margine-system-update.desktop's `Icon=system-
 # software-update` rendered as a blurry low-res sprite because the
 # only system-software-update icon in Bluefin DX's image is the
-# AdwaitaLegacy 48×48 PNG. MoreWaita ships an SVG version that scales
-# cleanly. We install MoreWaita system-wide and set it as the GNOME
-# icon theme via the zz1 gschema override above (`icon-theme=
-# 'MoreWaita'`). Reference: https://github.com/somepaulo/MoreWaita
-MOREWAITA_VERSION="v49"
-log "Installing MoreWaita icon theme ${MOREWAITA_VERSION}"
-curl -fL --retry 5 --retry-delay 10 -sS \
-  -o /tmp/morewaita.tar.gz \
-  "https://github.com/somepaulo/MoreWaita/archive/refs/tags/${MOREWAITA_VERSION}.tar.gz"
-mkdir -p /usr/share/icons/MoreWaita
-tar -xzf /tmp/morewaita.tar.gz -C /tmp/
-MOREWAITA_SRC="/tmp/MoreWaita-${MOREWAITA_VERSION#v}"
-if [[ -d "$MOREWAITA_SRC" ]]; then
-  cp -r "${MOREWAITA_SRC}/scalable" "${MOREWAITA_SRC}/symbolic" \
-        "${MOREWAITA_SRC}/index.theme" \
-        /usr/share/icons/MoreWaita/
-  # Generate icon cache so gtk apps resolve icon names against MoreWaita.
-  gtk-update-icon-cache -q -t -f /usr/share/icons/MoreWaita || true
-  log "MoreWaita installed: $(ls /usr/share/icons/MoreWaita/ | wc -l) entries"
-  rm -rf /tmp/morewaita.tar.gz "$MOREWAITA_SRC"
+# AdwaitaLegacy 48×48 PNG. Earlier attempt (PR #32) installed the
+# whole MoreWaita icon theme + set it as system default — daniel
+# rejected that as overkill ("anziché scaricare svg dell'icona e
+# applicare quello, imposti MOREWAITA SU TUTTO IL SISTEMA?").
+#
+# Surgical fix: download just the ONE high-res SVG from MoreWaita
+# and place it as Adwaita's scalable override for the icon name
+# `system-software-update`. Adwaita's scalable/ entries win over
+# its legacy PNGs at any rendering size, so the launcher draws
+# crisp at any DPI without touching the user's icon theme. No
+# tar download, no theme switch, no behaviour change anywhere
+# else in the desktop.
+MOREWAITA_RAW="https://raw.githubusercontent.com/somepaulo/MoreWaita/main/scalable/legacy/system-software-update.svg"
+SYSUPDATE_TARGET="/usr/share/icons/Adwaita/scalable/apps/system-software-update.svg"
+log "Downloading high-res system-software-update.svg from MoreWaita → $SYSUPDATE_TARGET"
+mkdir -p "$(dirname "$SYSUPDATE_TARGET")"
+if curl -fL --retry 5 --retry-delay 10 -sS -o "$SYSUPDATE_TARGET" "$MOREWAITA_RAW"; then
+  chmod 0644 "$SYSUPDATE_TARGET"
+  # Refresh Adwaita icon cache so gtk apps see the new SVG.
+  gtk-update-icon-cache -q -t -f /usr/share/icons/Adwaita || true
+  log "system-software-update.svg installed ($(stat -c %s "$SYSUPDATE_TARGET") bytes)"
 else
-  log "WARN: MoreWaita extracted dir not found at $MOREWAITA_SRC"
-  ls -la /tmp/
+  log "WARN: failed to download system-software-update.svg — launcher icon stays blurry"
 fi
 
 # Copy every GNOME extension's schema XML from its extension dir to

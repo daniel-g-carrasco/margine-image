@@ -81,12 +81,16 @@ else
 fi
 
 # Idempotently add compress=zstd:1 to /etc/fstab for the / btrfs line.
-if grep -E '^[^#]\S+\s+/\s+btrfs' /etc/fstab > /dev/null 2>&1; then
-  if grep -E '^[^#]\S+\s+/\s+btrfs\s+\S*compress=' /etc/fstab > /dev/null 2>&1; then
+# NB: backslashes doubled here because TOML basic-string (triple-quoted)
+# treats bare \s as an unrecognized escape; doubling becomes single
+# in shell after TOML parses. Only \\ \" \n \r \t \b \f \uXXXX are
+# valid escape sequences in TOML basic strings.
+if grep -E '^[^#]\\S+\\s+/\\s+btrfs' /etc/fstab > /dev/null 2>&1; then
+  if grep -E '^[^#]\\S+\\s+/\\s+btrfs\\s+\\S*compress=' /etc/fstab > /dev/null 2>&1; then
     echo "/etc/fstab already has compress= on / btrfs line — no change"
   else
     echo "Patching /etc/fstab: adding compress=zstd:1 to / btrfs mount options"
-    sed -i -E 's|^([^#]\S+\s+/\s+btrfs\s+)([^[:space:]]+)|\1\2,compress=zstd:1|' /etc/fstab
+    sed -i -E 's|^([^#]\\S+\\s+/\\s+btrfs\\s+)([^[:space:]]+)|\\1\\2,compress=zstd:1|' /etc/fstab
   fi
 else
   echo "No btrfs / line in /etc/fstab — skipping fstab patch"

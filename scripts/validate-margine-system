@@ -427,6 +427,32 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     [[ -n "$EXTRA"   ]] && warn "extensions EXTRA (user-added?): $(echo $EXTRA)"
   fi
 
+  # Per-extension schema visibility check. On the 2026-06-04 fresh
+  # install search-light was enabled in dconf but its gschema XML
+  # never made it into the compiled /usr/share/glib-2.0/schemas/
+  # gschemas.compiled — so `gsettings get
+  # org.gnome.shell.extensions.search-light shortcut-search`
+  # returned "Schema inesistente". Extension loads but keybindings
+  # have no effect. Check each Margine-enabled extension's gsettings
+  # schema is registered, when it's reasonable to expect one.
+  EXT_SCHEMA_MAP=(
+    "search-light@icedman.github.com=org.gnome.shell.extensions.search-light"
+    "blur-my-shell@aunetx=org.gnome.shell.extensions.blur-my-shell"
+    "dash-to-dock@micxgx.gmail.com=org.gnome.shell.extensions.dash-to-dock"
+    "caffeine@patapon.info=org.gnome.shell.extensions.caffeine"
+    "o-tiling@oliwebd.github.com=org.gnome.shell.extensions.o-tiling"
+  )
+  REGISTERED_SCHEMAS=$(gsettings list-schemas 2>/dev/null)
+  for entry in "${EXT_SCHEMA_MAP[@]}"; do
+    uuid=${entry%%=*}
+    schema=${entry#*=}
+    if echo "$REGISTERED_SCHEMAS" | grep -qxF "$schema"; then
+      ok "schema $schema registered (extension $uuid configurable via gsettings)"
+    else
+      bad "schema $schema NOT registered — extension $uuid loads but its settings (keybindings, prefs) cannot be read/applied. Build-time glib-compile-schemas didn't pick it up."
+    fi
+  done
+
   CUR_ACCENT=$(gsettings get org.gnome.desktop.interface accent-color 2>/dev/null | tr -d "'")
   [[ "$CUR_ACCENT" == "yellow" ]] && ok "GNOME accent-color = yellow" \
     || warn "accent-color is '$CUR_ACCENT' (expected 'yellow') — user may have customized"
@@ -492,6 +518,30 @@ for app in "${EXPECTED_FLATPAKS[@]}"; do
   else
     bad "$app NOT installed"
     MISSING_FP="$MISSING_FP $app"
+  fi
+done
+
+# Kickstart-BAKE list cross-check. Apps in
+# /usr/share/margine/installer-flatpaks-base (and -gaming) are
+# supposed to be installed at Anaconda %post time. On the
+# 2026-06-04 fresh install all 22 BAKE apps were silently missing
+# (kickstart %post --nochroot ran but flatpak install probably
+# OOM'd in installer-env tmpfs). PR #N+1 added belt+suspenders
+# by duplicating BAKE entries in margine-defaults.preinstall so
+# flatpak-preinstall.service catches them at first boot. This
+# check independently verifies each BAKE app is in fact installed.
+for bake_file in /usr/share/margine/installer-flatpaks-base /usr/share/margine/installer-flatpaks-gaming; do
+  if [[ -f "$bake_file" ]]; then
+    info "BAKE list: $bake_file"
+    while IFS= read -r line; do
+      app=$(echo "$line" | sed -E 's/#.*$//' | xargs)
+      [[ -z "$app" ]] && continue
+      if echo "$INSTALLED" | grep -qxF "$app"; then
+        ok "BAKE app installed: $app"
+      else
+        bad "BAKE app NOT installed: $app — kickstart %post bake silently failed AND preinstall fallback hasn't caught it yet"
+      fi
+    done < "$bake_file"
   fi
 done
 

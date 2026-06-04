@@ -17,20 +17,23 @@ log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 # whether we want a third repo just for ROM metadata. Dropped for now.
 GAMING_RPMS=(
   gamescope
-  mangohud
   vkBasalt
-  goverlay
-  steam-devices
-  # NOTE: scx-scheds (the sched_ext BPF schedulers + the
-  # `ujust margine-scheduler` recipe) used to be in this list, but
-  # was promoted to the base image (custom-kernel/install.sh) on
-  # 2026-06-03 so pro-audio creators on the regular Margine flavour
-  # can use scx_central without installing the gaming variant.
-  # Gaming inherits it automatically — no need to re-install here.
+  # NOTE: scx-scheds, mangohud, goverlay, steam-devices used to be
+  # in this list. All promoted to the BASE image:
+  #   - scx-scheds (2026-06-03) — pro-audio creators use scx_central
+  #   - mangohud + goverlay (2026-06-05) — useful for monitoring
+  #     CPU/GPU during render-heavy work (DaVinci export, Blender
+  #     cycles, BricsCAD modelling, OBS recording, ffmpeg encode).
+  #     LD_PRELOAD opt-in, zero footprint when not used.
+  #   - steam-devices (2026-06-05) — pure udev rules for USB
+  #     controllers. Useful for creators using controllers as
+  #     jog wheels / foot pedals / generic input devices.
+  # Gaming variant inherits all of the above from base.
 )
 
-log "Installing ${#GAMING_RPMS[@]} gaming RPMs into the base image"
-log "(gamemode, input-remapper, tuned, tuned-ppd, scx-scheds inherited from base)"
+log "Installing ${#GAMING_RPMS[@]} gaming-only RPMs (gamescope + vkBasalt)"
+log "Inherited from base: mangohud, goverlay, steam-devices, gamemode,"
+log "                     input-remapper, tuned, tuned-ppd, scx-scheds."
 
 # RPMFusion is REQUIRED for most of the gaming RPM stack (gamescope,
 # mangohud, vkBasalt, gamemode, goverlay, steam-devices) — Bluefin

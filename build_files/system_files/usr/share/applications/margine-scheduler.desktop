@@ -1,0 +1,44 @@
+[Desktop Entry]
+Type=Application
+Name=Margine CPU Scheduler
+GenericName=sched_ext (BPF) scheduler picker
+Comment=Switch the active CPU scheduler at runtime (scx_lavd, scx_central for pro-audio, etc.)
+Exec=ptyxis -- bash -c 'ujust margine-scheduler; echo; read -rp "Premi Invio per chiudere... "'
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;
+Keywords=scheduler;sched_ext;scx;cpu;performance;latency;
+StartupNotify=false
+
+# Quick-pick scheduler shortcuts in the right-click menu of the
+# launcher icon. User clicks one of these to set the scheduler
+# without needing to type the ujust subcommand.
+Actions=lavd;bpfland;rusty;central;simple;default;status;
+
+[Desktop Action lavd]
+Name=Switch to scx_lavd (low-latency, gaming-tuned)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler lavd; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action bpfland]
+Name=Switch to scx_bpfland (interactive + throughput balance)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler bpfland; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action rusty]
+Name=Switch to scx_rusty (general-purpose CFS-like)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler rusty; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action central]
+Name=Switch to scx_central (single-CPU, lowest jitter — pro-audio)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler central; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action simple]
+Name=Switch to scx_simple (didactic minimum)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler simple; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action default]
+Name=Stop scx — return to kernel default (BORE)
+Exec=ptyxis -- bash -c 'sudo ujust margine-scheduler default; read -rp "Premi Invio per chiudere... "'
+
+[Desktop Action status]
+Name=Show current scheduler status
+Exec=ptyxis -- bash -c 'ujust margine-scheduler; read -rp "Premi Invio per chiudere... "'

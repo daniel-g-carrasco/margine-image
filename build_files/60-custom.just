@@ -160,22 +160,15 @@ margine-gaming:
         org.libretro.RetroArch
 
     echo
-    echo "== Layering gaming host helpers (rpm-ostree) =="
-    # tuned + tuned-ppd (separate package since Fedora 39: ppd shim that
-    # makes GNOME's power-profiles-daemon UI control tuned profiles).
-    # rom-properties has a -gtk subpackage for the Nautilus column
-    # extension (the bare package only ships the CLI).
+    echo "== Layering gaming-only host helpers (rpm-ostree) =="
+    # gamescope + vkBasalt are the only RPMs strictly gaming-only.
+    # Everything else (mangohud, goverlay, steam-devices, gamemode,
+    # input-remapper, tuned, tuned-ppd, scx-scheds) is already in
+    # base Margine — see custom-kernel/install.sh + build_files/build.sh.
+    # rom-properties-gtk was dropped in 2026-05 (no F44 build available).
     sudo rpm-ostree install \
         gamescope \
-        mangohud \
-        vkBasalt \
-        gamemode \
-        goverlay \
-        steam-devices \
-        input-remapper \
-        tuned \
-        tuned-ppd \
-        rom-properties-gtk
+        vkBasalt
 
     echo
     cat <<'EOF'
@@ -193,26 +186,20 @@ margine-gaming-remove:
     set -euo pipefail
 
     echo "This will:"
-    echo "  - rpm-ostree uninstall the layered host helpers (gamescope, mangohud,"
-    echo "    vkBasalt, gamemode, goverlay, steam-devices, input-remapper, tuned,"
-    echo "    tuned-ppd, rom-properties-gtk)"
+    echo "  - rpm-ostree uninstall gamescope + vkBasalt (the only gaming-only RPMs)"
     echo "  - flatpak uninstall the 7 gaming Flatpaks (Steam, Lutris, Heroic,"
     echo "    Bottles, Protontricks, ProtonUp-Qt, RetroArch)"
+    echo
+    echo "  NOT touched (kept — useful for non-gaming workflows too):"
+    echo "    mangohud, goverlay, steam-devices, gamemode, input-remapper,"
+    echo "    tuned, tuned-ppd, scx-scheds. All in base Margine."
     echo
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
 
     sudo rpm-ostree uninstall \
         gamescope \
-        mangohud \
-        vkBasalt \
-        gamemode \
-        goverlay \
-        steam-devices \
-        input-remapper \
-        tuned \
-        tuned-ppd \
-        rom-properties-gtk || true
+        vkBasalt || true
 
     flatpak uninstall --system -y \
         com.valvesoftware.Steam \
@@ -239,6 +226,7 @@ margine-gaming-remove:
 #   ujust margine-scheduler central    # pin all decisions to one CPU (RT audio)
 #   ujust margine-scheduler simple     # didactic minimum
 #   ujust margine-scheduler default    # stop scx_*, return to kernel default (BORE on Margine)
+# Switch the CPU scheduler (sched_ext / BPF). Modes: status, lavd, bpfland, rusty, central, simple, default. GUI launcher: Activities → "Margine CPU Scheduler".
 [group('Performance')]
 margine-scheduler MODE="status":
     #!/usr/bin/bash

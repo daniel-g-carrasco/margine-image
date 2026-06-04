@@ -249,6 +249,13 @@ org.gnome.Characters
 org.gnome.Logs
 org.gnome.font-viewer
 org.gnome.gitlab.somas.Apostrophe
+com.github.PintaProject.Pinta
+org.audacityteam.Audacity
+com.github.wwmm.easyeffects
+fm.reaper.Reaper
+com.github.neithern.g4music
+com.rafaelmardojai.Blanket
+de.haeckerfelix.Fragments
 BAKE_LIST
 chmod 0644 /usr/share/margine/installer-flatpaks-base
 log "BAKE list — $(grep -cv '^#\|^$' /usr/share/margine/installer-flatpaks-base) apps:"
@@ -274,40 +281,23 @@ mkdir -p /usr/share/flatpak/preinstall.d
   for app in \
       org.gimp.GIMP \
       org.inkscape.Inkscape \
-      com.github.PintaProject.Pinta \
       org.darktable.Darktable \
-      org.audacityteam.Audacity \
-      com.obsproject.Studio \
-      com.github.wwmm.easyeffects \
-      fm.reaper.Reaper \
-      com.github.neithern.g4music \
-      com.rafaelmardojai.Blanket \
-      de.haeckerfelix.Fragments ; do
-    # Why each non-obvious DEFERRED entry is here:
+      com.obsproject.Studio ; do
+    # Only the "macigni" (~500-700 MB Flatpak each + heavy runtimes)
+    # are deferred to flatpak-preinstall.service first-boot. They take
+    # 5-10 min to download but the user gets a notification (PR E
+    # /usr/libexec/margine-first-boot-status). Everything lighter
+    # was moved to the BAKE bucket (kickstart-installed, available
+    # at first login) by the 2026-06-04 "more apps in BAKE" rebalance:
     #
-    # GIMP / Inkscape / Pinta / darktable: image creation/editing.
-    #   Several hundred MB each, slow to download. User typically
-    #   reaches for them not on day 1 but when they need them, so
-    #   acceptable to arrive a few minutes after first login.
+    #   moved BAKE: Pinta, Audacity, EasyEffects, Reaper, g4music,
+    #               Blanket, Fragments (sum ~420 MB additional in
+    #               kickstart download)
+    #   kept DEFER: GIMP, Inkscape, darktable, OBS Studio (the four
+    #               creative-pro macigni totaling ~2 GB).
     #
-    # OBS Studio: streaming/recording, ~500 MB chain. Heavy.
-    # Audacity: audio editor, medium.
-    # EasyEffects: PipeWire effects framework.
-    # Reaper: proprietary DAW (FreemiumRedistributable Flatpak).
-    #
-    # g4music: GNOME music player.
-    # Blanket: ambient sound mixer (rain, fireplace, etc.).
-    # Fragments: GNOME BitTorrent client — Margine ISOs are
-    #   distributed as torrents on archive.org, so it makes sense
-    #   to ship a working client.
-    #
-    # Apps NOT in this list because they moved to the BAKE bucket
-    # (kickstart, instant at first boot — see
-    # /usr/share/margine/installer-flatpaks-base above):
-    #   Zen, Thunderbird, Bitwarden, LibreOffice, Extension Manager,
-    #   Snapshot/Showtime/Papers/Loupe/SoundRecorder, Calculator,
-    #   Calendar, clocks, Contacts, Weather, Maps, TextEditor,
-    #   baobab, Characters, Logs, font-viewer, Apostrophe.
+    # See /usr/share/margine/installer-flatpaks-base for the full
+    # BAKE list (29 base apps after the rebalance).
     echo "[Flatpak Preinstall $app]"
     echo "Branch=stable"
     echo "IsRuntime=false"

@@ -377,6 +377,13 @@ favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop',
 
 [org.gnome.desktop.interface]
 accent-color='yellow'
+# MoreWaita icon theme — higher-quality SVG icons that replace the
+# low-res AdwaitaLegacy PNGs (margine-system-update.desktop's
+# `Icon=system-software-update` rendered sgranata on the 2026-06-04
+# install because only the legacy 48x48 PNG was available). MoreWaita
+# is installed by build.sh's "MoreWaita icon theme" section below
+# into /usr/share/icons/MoreWaita/; inheriting from Adwaita.
+icon-theme='MoreWaita'
 # Bluefin's zz0 hard-sets Adwaita Sans (their pick). We leave fonts as
 # GNOME default here — daniel hasn't picked a Margine type system yet;
 # revisit when there's a documented choice. Removing the keys lets
@@ -548,6 +555,37 @@ shortcut-search=['<Super>space']
 use-animations=true
 window-effect=0
 OVERRIDE
+
+# ---------------------------------------------------------------------------
+# MoreWaita icon theme — higher-quality SVG companion to Adwaita
+# ---------------------------------------------------------------------------
+# Verified 2026-06-05: margine-system-update.desktop's `Icon=system-
+# software-update` rendered as a blurry low-res sprite because the
+# only system-software-update icon in Bluefin DX's image is the
+# AdwaitaLegacy 48×48 PNG. MoreWaita ships an SVG version that scales
+# cleanly. We install MoreWaita system-wide and set it as the GNOME
+# icon theme via the zz1 gschema override above (`icon-theme=
+# 'MoreWaita'`). Reference: https://github.com/somepaulo/MoreWaita
+MOREWAITA_VERSION="v49"
+log "Installing MoreWaita icon theme ${MOREWAITA_VERSION}"
+curl -fL --retry 5 --retry-delay 10 -sS \
+  -o /tmp/morewaita.tar.gz \
+  "https://github.com/somepaulo/MoreWaita/archive/refs/tags/${MOREWAITA_VERSION}.tar.gz"
+mkdir -p /usr/share/icons/MoreWaita
+tar -xzf /tmp/morewaita.tar.gz -C /tmp/
+MOREWAITA_SRC="/tmp/MoreWaita-${MOREWAITA_VERSION#v}"
+if [[ -d "$MOREWAITA_SRC" ]]; then
+  cp -r "${MOREWAITA_SRC}/scalable" "${MOREWAITA_SRC}/symbolic" \
+        "${MOREWAITA_SRC}/index.theme" \
+        /usr/share/icons/MoreWaita/
+  # Generate icon cache so gtk apps resolve icon names against MoreWaita.
+  gtk-update-icon-cache -q -t -f /usr/share/icons/MoreWaita || true
+  log "MoreWaita installed: $(ls /usr/share/icons/MoreWaita/ | wc -l) entries"
+  rm -rf /tmp/morewaita.tar.gz "$MOREWAITA_SRC"
+else
+  log "WARN: MoreWaita extracted dir not found at $MOREWAITA_SRC"
+  ls -la /tmp/
+fi
 
 # Copy every GNOME extension's schema XML from its extension dir to
 # the global /usr/share/glib-2.0/schemas/ before compiling. Bluefin's

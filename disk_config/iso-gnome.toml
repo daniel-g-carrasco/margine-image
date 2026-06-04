@@ -38,6 +38,64 @@ contents = """
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
 
+%post --log=/tmp/anaconda-post-zstd.log
+# === btrfs zstd:1 compression for the root subvolume (PR — 2026-06-04) ===
+#
+# Anaconda's default Fedora partitioning is btrfs but WITHOUT compression.
+# We enable zstd:1 (fastest preset, ~30% space saved on typical desktop
+# data, negligible CPU). Same level Bazzite/SteamOS use.
+#
+# Two layers because they cover different time windows:
+#   1. `btrfs property set / compression zstd` — applies to NEW writes
+#      from now on. Persists across remounts. The right primitive for
+#      "from this point forward, everything new gets compressed."
+#   2. `compress=zstd:1` in /etc/fstab — ensures the mount option
+#      survives kernel/btrfs version transitions and is explicit in
+#      the canonical fstab record (debuggability).
+#
+# Files already written by the bootc-image install are NOT recompressed
+# here. They live mostly in /usr (ostree commit, already de-duped and
+# fine), and rebuilding them would add 5-15 min to the Anaconda flow.
+# The benefit kicks in for /var (logs, journals, Flatpak data) and
+# /home (creator content) — both of which see most of the long-term
+# disk growth.
+#
+# Not --erroronfail: zstd is a quality-of-life enhancement, not
+# install-critical. If something is unexpected (no btrfs, fstab in
+# a non-standard format, etc), log and continue.
+set -uo pipefail
+
+echo "=== zstd:1 setup ==="
+mount | grep -E ' on / type' || true
+echo "Initial /etc/fstab:"
+cat /etc/fstab
+
+if findmnt -no FSTYPE / | grep -q '^btrfs$'; then
+  if btrfs property set / compression zstd 2>&1; then
+    echo "OK: btrfs property compression=zstd set on /"
+  else
+    echo "WARN: btrfs property set failed (continuing)"
+  fi
+else
+  echo "/ is not btrfs (findmnt says $(findmnt -no FSTYPE /)) — skipping btrfs property set"
+fi
+
+# Idempotently add compress=zstd:1 to /etc/fstab for the / btrfs line.
+if grep -E '^[^#]\S+\s+/\s+btrfs' /etc/fstab > /dev/null 2>&1; then
+  if grep -E '^[^#]\S+\s+/\s+btrfs\s+\S*compress=' /etc/fstab > /dev/null 2>&1; then
+    echo "/etc/fstab already has compress= on / btrfs line — no change"
+  else
+    echo "Patching /etc/fstab: adding compress=zstd:1 to / btrfs mount options"
+    sed -i -E 's|^([^#]\S+\s+/\s+btrfs\s+)([^[:space:]]+)|\1\2,compress=zstd:1|' /etc/fstab
+  fi
+else
+  echo "No btrfs / line in /etc/fstab — skipping fstab patch"
+fi
+
+echo "Final /etc/fstab:"
+cat /etc/fstab
+%end
+
 %post --nochroot --log=/tmp/anaconda-post-flatpak-bake.log
 # (Deliberately NOT --erroronfail. If Flathub is unreachable or the
 # rsync target path doesn't exist for an unexpected layout reason,

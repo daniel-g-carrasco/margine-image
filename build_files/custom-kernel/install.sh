@@ -288,6 +288,68 @@ log "scx-scheds installed:"
 ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||' | sort
 
 # ---------------------------------------------------------------------------
+# Gaming-tier userland tools that ALSO benefit creators (promoted 2026-06-05)
+# ---------------------------------------------------------------------------
+# These three RPMs used to live in the gaming variant only. Moved
+# to the base image because their utility is broader than gaming:
+#
+#   * mangohud      — Vulkan/OpenGL overlay (FPS, CPU, GPU, RAM,
+#                     temp, power, frametime). Activated per-app
+#                     via `MANGOHUD=1` env var or LD_PRELOAD.
+#                     Zero overhead when not used. Creators:
+#                     monitor GPU/CPU/RAM during DaVinci/Blender
+#                     renders, OBS recording, ffmpeg encoding,
+#                     BricsCAD modelling.
+#   * goverlay      — Qt GUI to configure MangoHud + vkBasalt
+#                     without hand-editing ~/.config/MangoHud/
+#                     MangoHud.conf. Pairs with MangoHud.
+#   * steam-devices — udev rules for USB game controllers
+#                     (Steam, Xbox, PS, generic gamepads).
+#                     Zero footprint when no controller plugged
+#                     in. Useful for creators using controllers
+#                     as jog wheels / foot pedals / generic input.
+#
+# RPMFusion is REQUIRED for these (the gaming-variant install.sh
+# pulls RPMFusion separately + keeps it post-install). For the
+# base image we transiently enable RPMFusion ONLY for this install,
+# then disable and remove the .repo file so the base stays clean
+# of third-party repos (same pattern as kernel-cachyos COPR above).
+log "Enabling RPMFusion transiently for mangohud + goverlay + steam-devices"
+FEDORA_VER=$(rpm -E %fedora)
+dnf -y install \
+  "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
+  "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+
+# Retry loop — RPMFusion mirrors occasionally time out.
+attempt=1
+max_attempts=5
+while :; do
+  if dnf -y install --refresh mangohud goverlay steam-devices; then
+    log "creator-tier gaming RPMs installed OK on attempt $attempt"
+    break
+  fi
+  if (( attempt >= max_attempts )); then
+    log "creator-tier RPM install failed after $max_attempts attempts; aborting"
+    exit 1
+  fi
+  backoff=$(( attempt * 30 ))
+  log "install attempt $attempt failed; sleeping ${backoff}s before retry"
+  sleep "$backoff"
+  dnf -y clean metadata || true
+  attempt=$(( attempt + 1 ))
+done
+
+# Scrub RPMFusion from the base image — gaming variant will re-add
+# it (and keep it) for the gamescope+vkBasalt install. Base stays
+# clean of third-party repos. NB: we deliberately do NOT
+# `dnf autoremove` here (see margine-image PR #26 — autoremove
+# strips the kernel-cachyos chain whose COPR was just disabled).
+log "Removing RPMFusion .repo files from base"
+dnf -y remove rpmfusion-free-release rpmfusion-nonfree-release || true
+rm -f /etc/yum.repos.d/rpmfusion-*.repo
+log "Base now ships: mangohud + goverlay + steam-devices (creator-tier)"
+
+# ---------------------------------------------------------------------------
 # Signing
 # ---------------------------------------------------------------------------
 log "Signing kernel image with MOK"

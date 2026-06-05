@@ -17,6 +17,17 @@
 # /var/lib/flatpak — done.
 set -eux -o pipefail
 
+# Environment prep for bwrap / flatpak install in podman build context.
+# Copied straight from Bazzite's installer/build.sh — without these the
+# apply_extra step (used by Reaper, Steam, openh264 for binary blobs)
+# fails with:
+#   F: Unable to provide a temporary home directory in the sandbox:
+#      Unable to open path "/var/roothome": No such file or directory
+#   bwrap: cannot open /proc/sys/user/max_user_namespaces:
+#      Read-only file system
+mkdir -p "$(realpath /root)"
+mount -o remount,rw /proc/sys
+
 FLATPAK_LIST_FILE="${FLATPAK_LIST_FILE:-flatpaks-base}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIST_PATH="${SRC_DIR}/${FLATPAK_LIST_FILE}"

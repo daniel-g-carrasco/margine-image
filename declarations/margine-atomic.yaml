@@ -1,5 +1,9 @@
-schema_version: 0
-status: draft
+# Margine declarative spec.
+# Bump schema_version when a backwards-incompatible structural change happens
+# (key renamed, section moved, required-field added). Cosmetic / additive
+# changes do not need a bump.
+schema_version: 1
+status: stable
 profile:
   id: margine-fedora-atomic-gnome
   name: Margine Fedora Atomic GNOME
@@ -218,6 +222,28 @@ host_packages:
     uses this same list to layer the packages on stock Silverblue.
   baseline_provided_by: bluefin-dx
   baseline:
+    # ---------------------------------------------------------------------
+    # creator_tier: shared userland tools that benefit BOTH creator
+    # workflows and gaming. Promoted from the opt-in gaming layer into the
+    # base on 2026-06-03 (scx-scheds) and 2026-06-05 (mangohud + goverlay
+    # + steam-devices). margine-image installs them via the same RPMFusion
+    # transient block as the codec replacement; gaming variant inherits.
+    # See margine-image/build_files/build.sh "Gaming-tier userland tools
+    # that ALSO benefit creators" section and the 2026-06-05 audit.
+    # ---------------------------------------------------------------------
+    creator_tier:
+      install:
+        - scx-scheds         # sched_ext schedulers (CachyOS addons COPR); pro-audio + interactive
+        - mangohud           # Vulkan/OpenGL overlay (FPS/CPU/GPU/RAM/temp) — opt-in per-app
+        - goverlay           # GUI configurator for mangohud
+        - steam-devices      # udev rules for controllers/jog wheels (creator + gaming)
+      source_notes: |
+        scx-scheds comes from copr:bieszczaders/kernel-cachyos-addons
+        (same maintainer as the kernel COPR; released as a pair).
+        mangohud, goverlay, steam-devices come from RPMFusion (transient
+        enable at image-build time, scrubbed at end). See
+        margine-image/build_files/custom-kernel/install.sh +
+        build_files/build.sh.
     rpmfusion:
       enable_free: true
       enable_nonfree: true
@@ -1036,12 +1062,14 @@ gaming_runtime:
     recipe_file: /usr/share/ublue-os/just/99-margine.just
     source_in_image_repo: build_files/99-margine.just
     inspired_by: >
-      Bazzite (ublue-os/bazzite) which bakes the gaming stack into the
-      image. Margine instead exposes it as a single ujust opt-in command
-      so the default image stays lean. The package set is a Margine-
-      curated subset of what Bazzite ships — no scx-scheds (we have the
-      CachyOS kernel), no umu-launcher (complex packaging), no Bazzite
-      KDE/Deck-specific bits.
+      Bazzite (ublue-os/bazzite). Margine ships TWO variants — base
+      `margine:stable` and `margine-gaming:stable` — instead of Bazzite's
+      single-image-with-handheld-tag approach. The base creator tier
+      already carries scx-scheds + mangohud + goverlay + steam-devices
+      (see host_packages.baseline.creator_tier above, promoted on
+      2026-06-03/05); the gaming variant only adds gamescope + vkBasalt
+      on top, plus the Flatpak gaming launchers. No umu-launcher
+      (complex packaging), no Bazzite KDE/Deck-specific bits.
     rollback_command: ujust margine-gaming-remove
   layers:
     desktop_runtime:
@@ -1055,12 +1083,12 @@ gaming_runtime:
       - com.github.Matoking.protontricks
       - net.davidotek.pupgui2
     rpm_host_helpers_opt_in:
+      # ONLY packages specific to the gaming variant. Everything else
+      # (mangohud, goverlay, steam-devices, scx-scheds) has been promoted
+      # to the base image's host_packages.baseline.creator_tier section.
+      # gamemode is inherited from Bluefin DX itself, not added here.
       - gamescope
-      - mangohud
       - vkBasalt
-      - gamemode
-      - goverlay
-      - steam-devices
     gaming_mode_session:
       phase: future-image-or-bootc
       requires:

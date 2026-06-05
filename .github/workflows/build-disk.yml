@@ -281,6 +281,47 @@ jobs:
           if-no-files-found: error
           compression-level: 0  # ISOs/qcow2s are not further compressible
 
+      - name: Prune stale margine-installer GHCR tags (keep newest 3)
+        # Each anaconda-iso build creates a transient installer image
+        # tagged margine[-gaming]-installer:run-<run_id>. They're never
+        # consumed downstream — only BIB pulls them in the same job and
+        # is done. GHCR keeps everything forever by default → tag list
+        # grows monotonically. Keep the 3 newest, delete the rest.
+        # Idempotent; non-fatal if the package doesn't exist yet (first
+        # run) or the API is rate-limited (don't block the disk pipeline).
+        # Audit §8 rec #16.
+        if: matrix.disk-type == 'anaconda-iso' && always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          PKG="${{ matrix.image }}-installer"
+          OWNER="${{ github.repository_owner }}"
+          echo "Pruning $OWNER/$PKG GHCR tags, keeping newest 3"
+          # gh api supports paginating with --paginate; the response is
+          # sorted by 'updated_at' desc by default. Capture (id, name, updated_at).
+          VERSIONS_JSON="$(gh api --paginate \
+              "/users/${OWNER}/packages/container/${PKG}/versions" \
+              --jq '[.[] | {id, name: (.metadata.container.tags[0] // "<untagged>"), updated_at}]' \
+              2>/dev/null || echo '[]')"
+          COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
+          echo "Found $COUNT version(s) total"
+          if (( COUNT <= 3 )); then
+            echo "Nothing to prune."
+            exit 0
+          fi
+          # The first 3 are the newest (sorted desc). Delete from index 3+.
+          TO_DELETE=$(echo "$VERSIONS_JSON" | jq -r '.[3:] | .[].id')
+          PRUNED=0
+          for vid in $TO_DELETE; do
+            if gh api --method DELETE \
+                 "/users/${OWNER}/packages/container/${PKG}/versions/${vid}" \
+                 >/dev/null 2>&1; then
+              PRUNED=$((PRUNED+1))
+            fi
+          done
+          echo "Pruned $PRUNED stale version(s)."
+
   publish_ia:
     name: Publish ISO (${{ matrix.image }}) to Internet Archive
     needs: build_disk

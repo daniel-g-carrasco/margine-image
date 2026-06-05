@@ -4,9 +4,11 @@
 
 ### An immutable Linux desktop distribution.
 
-Built on [Bluefin DX](https://projectbluefin.io/), with a Secure Boot-signed
-[CachyOS](https://cachyos.org/) kernel, GNOME configured for tiling workflows,
-a complete media stack, and a curated set of preinstalled applications.
+Bomb-proof by design, fast on the CachyOS kernel, with a GNOME re-wired for
+tiling, every codec and driver already in place, and a curated set of creator
+tools that make it ready for work from minute one. Built on
+[Bluefin DX](https://projectbluefin.io/) with a Secure Boot-signed
+[CachyOS](https://cachyos.org/) kernel.
 
 <p>
   <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>

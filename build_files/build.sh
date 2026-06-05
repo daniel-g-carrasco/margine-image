@@ -238,49 +238,14 @@ fi
 # list (build_files/gaming/margine-gaming.preinstall).
 
 # ---- BAKE list (instant at first boot) ----
-log "Writing /usr/share/margine/installer-flatpaks-base (BAKE: kickstart-installed)"
+# Source of truth: installer/flatpaks-base, accessible from this script
+# at /ctx/installer-flatpaks-base via the ctx layer (Containerfile).
+# That same file is consumed at ISO build time by installer/build.sh,
+# so a single edit propagates to BOTH the OCI image manifest and the
+# installer-rootfs that the Anaconda kickstart rsyncs. Audit §3.5.
+log "Installing /usr/share/margine/installer-flatpaks-base from /ctx/installer-flatpaks-base"
 mkdir -p /usr/share/margine
-cat > /usr/share/margine/installer-flatpaks-base <<'BAKE_LIST'
-# Margine "fundamentals" — baked into the freshly installed system
-# by the Anaconda kickstart in disk_config/iso-gnome.toml. The
-# kickstart runs `flatpak install --system <list>` in the installer
-# environment, then rsyncs /var/lib/flatpak into the target. User
-# sees these apps already in Activities at first login.
-#
-# Rule: an app belongs here if a brand-new Margine user would notice
-# it missing in the first 5 minutes (browser, mail, password manager,
-# office, viewers, basic GNOME suite). Heavy creative apps go in
-# margine-defaults.preinstall instead (first-boot deferred).
-app.zen_browser.zen
-org.mozilla.thunderbird_esr
-com.bitwarden.desktop
-org.libreoffice.LibreOffice
-com.mattjakeman.ExtensionManager
-org.gnome.Snapshot
-org.gnome.Showtime
-org.gnome.Papers
-org.gnome.Loupe
-org.gnome.SoundRecorder
-org.gnome.Calculator
-org.gnome.Calendar
-org.gnome.clocks
-org.gnome.Contacts
-org.gnome.Weather
-org.gnome.Maps
-org.gnome.TextEditor
-org.gnome.baobab
-org.gnome.Characters
-org.gnome.Logs
-org.gnome.font-viewer
-org.gnome.gitlab.somas.Apostrophe
-com.github.PintaProject.Pinta
-org.audacityteam.Audacity
-com.github.wwmm.easyeffects
-fm.reaper.Reaper
-com.github.neithern.g4music
-com.rafaelmardojai.Blanket
-de.haeckerfelix.Fragments
-BAKE_LIST
+cp /ctx/installer-flatpaks-base /usr/share/margine/installer-flatpaks-base
 chmod 0644 /usr/share/margine/installer-flatpaks-base
 log "BAKE list — $(grep -cv '^#\|^$' /usr/share/margine/installer-flatpaks-base) apps:"
 grep -v '^#\|^$' /usr/share/margine/installer-flatpaks-base | sed 's/^/  /'

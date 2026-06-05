@@ -95,19 +95,13 @@ systemctl enable tuned.service || true
 # Protontricks + RetroArch stay in margine-gaming.preinstall (first-
 # boot deferred) — they are utilities/emu, not the launcher the
 # player opens 30 seconds after first login.
-log "Writing /usr/share/margine/installer-flatpaks-gaming (BAKE: kickstart-installed)"
+# Single source of truth: installer/flatpaks-gaming (mounted at
+# /ctx/installer-flatpaks-gaming via the gaming Containerfile's ctx
+# layer). Edit there and both the OCI image manifest and the installer
+# rootfs pick it up. Audit §3.5.
+log "Installing /usr/share/margine/installer-flatpaks-gaming from /ctx/installer-flatpaks-gaming"
 mkdir -p /usr/share/margine
-cat > /usr/share/margine/installer-flatpaks-gaming <<'BAKE_LIST'
-# Margine Gaming "fundamentals" — baked into the freshly installed
-# system by the Anaconda kickstart in disk_config/iso-gnome.toml.
-# A gamer who installs Margine Gaming and opens Activities for the
-# first time finds Steam already there.
-com.valvesoftware.Steam
-net.lutris.Lutris
-com.heroicgameslauncher.hgl
-com.usebottles.bottles
-net.davidotek.pupgui2
-BAKE_LIST
+cp /ctx/installer-flatpaks-gaming /usr/share/margine/installer-flatpaks-gaming
 chmod 0644 /usr/share/margine/installer-flatpaks-gaming
 log "Gaming BAKE list — $(grep -cv '^#\|^$' /usr/share/margine/installer-flatpaks-gaming) apps"
 

@@ -226,6 +226,41 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
+      - name: Install syft + ORAS (SBOM tooling)
+        # Same SBOM hygiene as the base image build.yml (audit §6.1 +
+        # rec #13). SHA-pinned per supply-chain policy.
+        uses: anchore/sbom-action/download-syft@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a  # v0.9.0
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
+
+      - name: Generate SBOM + attach + cosign-sign
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
+          echo "Generating SBOM for ${IMAGE_REF}"
+          syft "${IMAGE_REF}" -o spdx-json=sbom.spdx.json
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          ATTACH_DIGEST="$(oras attach \
+            --artifact-type application/vnd.spdx+json \
+            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
+            --format go-template='{{.Digest}}' \
+            "${IMAGE_REF}" \
+            sbom.spdx.json:application/spdx+json)"
+          if [[ -z "$ATTACH_DIGEST" ]]; then
+            echo "::error::oras attach did not return a digest"
+            exit 1
+          fi
+          IMG_BASE="${IMAGE_REF%@*}"
+          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
+          echo "Signing SBOM: ${SBOM_REF}"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
+
   promote_to_stable:
     name: Promote candidate → stable (no smoke-boot needed — base was validated)
     # The base image (margine:stable) was already smoke-booted before this

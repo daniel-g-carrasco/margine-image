@@ -27,7 +27,15 @@ org.gnome.gitlab.somas.Apostrophe
 com.github.PintaProject.Pinta
 org.audacityteam.Audacity
 com.github.wwmm.easyeffects
-fm.reaper.Reaper
+# fm.reaper.Reaper — INTENTIONALLY EXCLUDED from BAKE 2026-06-05:
+# Reaper's apply_extra script downloads the proprietary binary at
+# install time, which fails inside the podman build container with
+# "apply_extra script failed, exit status 256" (network/sandbox
+# combination not supported). Reaper is still in
+# /usr/share/flatpak/preinstall.d/margine-defaults.preinstall, so
+# users get it via flatpak-preinstall.service at first boot (5-10
+# min instead of instant — acceptable for a DAW that's not in the
+# first-5-minute critical path).
 com.github.neithern.g4music
 com.rafaelmardojai.Blanket
 de.haeckerfelix.Fragments

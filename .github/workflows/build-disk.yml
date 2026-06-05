@@ -74,7 +74,12 @@ jobs:
         disk-type: ["qcow2", "anaconda-iso"]
     permissions:
       contents: read
-      packages: read
+      # packages: write (NOT just read) — required for installer-image
+      # push step. The GHCR `margine-installer` + `margine-gaming-
+      # installer` packages have been bootstrap-pushed once manually
+      # (2026-06-05 by daniel) so CI doesn't need create-package
+      # scope, but it does need write to push new run-* tags on top.
+      packages: write
       id-token: write
     outputs:
       # These are matrix outputs — to consume them from a non-matrix
@@ -133,35 +138,60 @@ jobs:
           echo "::error::Unable to pull ${{ env.BIB_IMAGE }} after 8 attempts; quay.io may be down"
           exit 1
 
-      # === installer-image pattern temporarily disabled 2026-06-05 ===
-      # PR #31 added a Bazzite-style installer-image (FROM margine +
-      # bake Flatpaks at OCI build time). Three follow-up fixes got
-      # the build itself working (PR #35 --cap-add sys_admin, PR #37
-      # mkdir/realpath /root + remount proc, exclude Reaper). The
-      # podman push to GHCR then failed with:
-      #   denied: installation not allowed to Create organization
-      #   package
-      # The GitHub Actions GITHUB_TOKEN can push to packages that
-      # ALREADY EXIST but cannot CREATE a new <flavor>-installer
-      # package on first push. Bootstrapping requires either:
-      #   1. A user with admin scope pushes once manually, then
-      #      subsequent CI pushes work.
-      #   2. A PAT with package:write + admin scope in CI secrets.
-      # Daniel hasn't approved either path yet (auto-mode classifier
-      # blocked the local podman push attempt 2026-06-05).
-      #
-      # Fallback (in effect right now): BIB anaconda-iso uses the
-      # base bootc image directly. Flatpaks come from the DEFER set
-      # in /usr/share/flatpak/preinstall.d/margine-defaults.preinstall
-      # via flatpak-preinstall.service at first boot (5-15 min wait
-      # instead of instant). PR #31's first-boot notification
-      # explains the wait visibly. PR #30's belt-and-suspenders
-      # makes sure every BAKE app is also in DEFER so nothing is
-      # lost vs the original PR #23 plan.
-      #
-      # When the installer-image push is unblocked, restore the
-      # installer build + push + tag-substitution from git history
-      # (commits 8b1561d, 53d8b1c).
+      # === installer-image pattern (Bazzite) for anaconda-iso only ===
+      # Build a transient `<flavor>-installer` image that's the base
+      # bootc image + Flatpaks pre-baked into /var/lib/flatpak. BIB
+      # anaconda-iso uses THIS image instead of the base — the
+      # installer rootfs ships with all Flatpaks already in
+      # /var/lib/flatpak, and the kickstart in iso-gnome.toml just
+      # rsyncs them to the target's /var/lib/flatpak. No flatpak
+      # install at install time → no /tmp OOM in installer env →
+      # no silent failure → user actually gets the apps at first
+      # login. qcow2 path keeps using the base image (qcow2 is for
+      # QEMU smoke test, no need to inflate it with Flatpaks).
+      - name: Login to GHCR for installer push
+        if: matrix.disk-type == 'anaconda-iso'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull base image (for installer FROM)
+        if: matrix.disk-type == 'anaconda-iso'
+        run: |
+          sudo podman pull "${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+
+      - name: Build installer image (BAKE Flatpaks)
+        if: matrix.disk-type == 'anaconda-iso'
+        id: installer
+        run: |
+          set -euo pipefail
+          # Select flatpaks list by flavor.
+          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
+            FLATPAK_LIST_FILE=flatpaks-gaming
+          else
+            FLATPAK_LIST_FILE=flatpaks-base
+          fi
+          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
+          INSTALLER_TAG="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}-installer:run-${{ github.run_id }}"
+          echo "Building $INSTALLER_TAG from $BASE_IMAGE with $FLATPAK_LIST_FILE"
+          # --cap-add sys_admin --security-opt label=disable: flatpak
+          # install in the installer Containerfile uses bwrap which
+          # needs user namespaces. Without these flags bwrap fails
+          # with "Creating new namespace failed: Operation not
+          # permitted" and Reaper/Steam/openh264 apply_extra dies.
+          # Bazzite's installer/Containerfile documents the same
+          # requirement: "# run with --cap-add sys_admin
+          # --security-opt label=disable".
+          sudo podman build \
+            --cap-add sys_admin \
+            --security-opt label=disable \
+            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+            --build-arg "FLATPAK_LIST_FILE=$FLATPAK_LIST_FILE" \
+            -t "$INSTALLER_TAG" \
+            -f installer/Containerfile \
+            installer/
+          sudo podman push "$INSTALLER_TAG"
+          echo "installer_tag=$INSTALLER_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build disk image
         id: build
@@ -169,7 +199,7 @@ jobs:
         with:
           builder-image: ${{ env.BIB_IMAGE }}
           config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || './disk_config/disk.toml' }}
-          image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          image: ${{ matrix.disk-type == 'anaconda-iso' && steps.installer.outputs.installer_tag || format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
           # Margine's :stable inherits from Bluefin DX, which doesn't

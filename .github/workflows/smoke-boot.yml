@@ -7,9 +7,11 @@
 # we hit during the 2026-05-28/29 smoke test was a RUNTIME bug that
 # Layer A could not see. Layer B closes that gap.
 #
-# Current trigger: workflow_dispatch only. Once it's been validated
-# end-to-end a few times, change to workflow_run after Build Margine
-# image so every push to main gets smoke-booted before being trusted.
+# Triggers: workflow_dispatch (manual rebuild any time) +
+# workflow_run on every "Build Margine image" success on main (auto-
+# gate before :stable promotion). Promotion to :stable happens only
+# if QEMU reaches multi-user.target — see "Promote candidate →
+# stable (only if boot passed)" at the bottom of this file.
 #
 # What it does:
 #   1. Install bootc-image-builder + qemu + ovmf

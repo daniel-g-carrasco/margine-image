@@ -281,7 +281,28 @@ fi
 # systems don't pull random updates from it outside our pipeline.
 log "Enabling kernel-cachyos-addons COPR for scx-scheds"
 dnf -y copr enable bieszczaders/kernel-cachyos-addons
-dnf -y install scx-scheds
+# Wrap scx-scheds install in the same retry loop as the kernel COPR
+# above. Same COPR host (copr.fedorainfracloud.org), same 5xx /
+# Curl timeout brownouts can hit here too — observed in retro the
+# main kernel install pattern. Cheap insurance against a transient
+# COPR blip sinking a 28-min image build. See audit §6 + ADR 0006.
+attempt=1
+max_attempts=5
+while :; do
+  if dnf -y install --refresh scx-scheds; then
+    log "scx-scheds install OK on attempt $attempt"
+    break
+  fi
+  if (( attempt >= max_attempts )); then
+    log "scx-scheds install FAILED after $max_attempts attempts (kernel-cachyos-addons COPR likely down)"
+    exit 1
+  fi
+  backoff=$(( attempt * 30 ))
+  log "attempt $attempt failed; sleeping ${backoff}s, cleaning metadata, retry"
+  sleep $backoff
+  dnf -y clean metadata || true
+  attempt=$(( attempt + 1 ))
+done
 dnf -y copr disable bieszczaders/kernel-cachyos-addons || true
 rm -f /etc/yum.repos.d/_copr*kernel-cachyos-addons*.repo
 log "scx-scheds installed:"

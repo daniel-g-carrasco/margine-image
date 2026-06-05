@@ -22,6 +22,30 @@ set -euo pipefail
 
 log() { printf '[margine-build] %s\n' "$*"; }
 
+# retry_curl <url> <output_path> — fetch with the same brownout-tolerance
+# the kernel-cachyos COPR install uses. Branding asset pulls from
+# raw.githubusercontent.com can fail transiently (5xx, DNS blip, GitHub
+# Pages cold-start); without retry a single hiccup costs us a 25-min
+# rebuild near the end. 5 attempts, 30-150s exponential backoff.
+# Audit §3.3 IMPORTANT + audit recommendation #8.
+retry_curl() {
+  local url="$1" out="$2"
+  local attempt=1 max=5
+  while :; do
+    if curl --fail --silent --show-error -L "$url" -o "$out"; then
+      return 0
+    fi
+    if (( attempt >= max )); then
+      log "retry_curl FAILED after $max attempts: $url"
+      return 1
+    fi
+    local backoff=$(( attempt * 30 ))
+    log "retry_curl attempt $attempt failed for $url; sleeping ${backoff}s"
+    sleep $backoff
+    attempt=$(( attempt + 1 ))
+  done
+}
+
 # ---------------------------------------------------------------------------
 # 0. OS identity — make the system identify as Margine
 # ---------------------------------------------------------------------------
@@ -659,18 +683,15 @@ for s in \
     validate-gaming-runtime \
     validate-margine-system \
     collect-diagnostics ; do
-  curl --fail --silent --show-error -L \
-       "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
-       -o "/usr/bin/margine-${s}"
+  retry_curl "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
+             "/usr/bin/margine-${s}"
   chmod 0755 "/usr/bin/margine-${s}"
   log "Installed: /usr/bin/margine-${s}"
 done
 
 # Also pull the declarations YAML the scripts read.
 mkdir -p /usr/share/margine
-curl --fail --silent --show-error -L \
-     "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" \
-     -o /usr/share/margine/declarations.yaml
+retry_curl "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" /usr/share/margine/declarations.yaml
 log "Installed: /usr/share/margine/declarations.yaml"
 
 # Compat symlink: 6 of the 7 configure-* scripts compute
@@ -703,18 +724,14 @@ log "Installing Margine visual branding"
 # (a) Logo PNG → /usr/share/pixmaps/ so /etc/os-release's LOGO=margine-logo
 #     resolves and GNOME About panel shows it.
 mkdir -p /usr/share/pixmaps
-curl --fail --silent --show-error -L \
-    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo.png" \
-    -o /usr/share/pixmaps/margine-logo.png
+retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo.png" /usr/share/pixmaps/margine-logo.png
 chmod 0644 /usr/share/pixmaps/margine-logo.png
 log "Installed: /usr/share/pixmaps/margine-logo.png"
 
 # (b) Wallpaper → /usr/share/backgrounds/margine/ + dconf override so it's
 #     the default desktop background (light + dark).
 mkdir -p /usr/share/backgrounds/margine
-curl --fail --silent --show-error -L \
-    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-margine.png" \
-    -o /usr/share/backgrounds/margine/margine.png
+retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-margine.png" /usr/share/backgrounds/margine/margine.png
 chmod 0644 /usr/share/backgrounds/margine/margine.png
 # Backwards-compat shim: pre-2026-05-30 images shipped this file as
 # `autumn-leaves.png` and users' dconf may still point there. Keep a
@@ -753,9 +770,7 @@ dnf -y install plymouth-plugin-script
 
 mkdir -p /usr/share/plymouth/themes/margine
 for f in margine.plymouth margine.script watermark.png ; do
-  curl --fail --silent --show-error -L \
-      "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/plymouth/${f}" \
-      -o "/usr/share/plymouth/themes/margine/${f}"
+  retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/plymouth/${f}" "/usr/share/plymouth/themes/margine/${f}"
 done
 chmod 0644 /usr/share/plymouth/themes/margine/*
 log "Installed: /usr/share/plymouth/themes/margine/"
@@ -853,9 +868,7 @@ log "Installed: /etc/issue"
 # (f) Fastfetch config + margine-fetch wrapper.
 # Fetch the ASCII logo and use it as fastfetch's --logo source.
 mkdir -p /usr/share/fastfetch /usr/share/margine
-curl --fail --silent --show-error -L \
-    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/ascii-logo.txt" \
-    -o /usr/share/margine/ascii-logo.txt
+retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/ascii-logo.txt" /usr/share/margine/ascii-logo.txt
 chmod 0644 /usr/share/margine/ascii-logo.txt
 
 cat > /usr/share/fastfetch/margine.jsonc <<'EOF'
@@ -986,9 +999,7 @@ rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
 # Replace it with the Margine wordmark 'm' glyph (pixel art SVG,
 # same source as the favicon). Tracked in
 # margine-fedora-atomic assets/branding/start-here-symbolic.svg.
-curl --fail --silent --show-error -L \
-    "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" \
-    -o /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 chmod 0644 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 log "Replaced start-here-symbolic.svg with Margine 'm' glyph"
 

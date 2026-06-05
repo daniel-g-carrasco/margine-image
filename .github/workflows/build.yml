@@ -287,7 +287,11 @@ jobs:
       id-token: write
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        # SHA-pinned for supply-chain safety. v3.10.1 pulls cosign v3.0.6
+        # which patches CVE-2026-39395 (GHSA-w6c6-c85g-mmv6, verify-blob-
+        # attestation false-positive on malformed payloads). Floating
+        # @v3 doesn't guarantee >= v3.0.6. See audit §6.2.
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
 
       - name: Cosign login to GHCR
         # cosign sign reads ~/.docker/config.json; nothing in this fresh

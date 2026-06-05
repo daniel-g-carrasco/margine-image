@@ -193,10 +193,13 @@ jobs:
           echo "Pushed manifest: ${IMG_FULL}@${DIGEST}"
 
   sign:
-    name: Cosign sign (by digest)
+    name: Cosign sign (by digest) + SBOM attach + sign
     needs: build_push
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Bumped from 10 → 30 min to accommodate the SBOM sub-pipeline
+    # (syft + oras attach + cosign sign SBOM). See sibling rationale
+    # in build.yml.
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write

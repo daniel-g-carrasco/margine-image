@@ -4,7 +4,10 @@
 
 ### The *what* of Margine.
 
-Declarative spec, configuration helpers, and system-state validators for
+Bomb-proof by design, fast on the CachyOS kernel, with a GNOME re-wired for
+tiling, every codec and driver already in place, and a curated set of creator
+tools that make it ready for work from minute one. This repository holds the
+**declarative spec, configuration helpers, and system-state validators** for
 the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
 <p>

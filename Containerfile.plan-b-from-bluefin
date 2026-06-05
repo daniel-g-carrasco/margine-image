@@ -1,0 +1,103 @@
+# =============================================================================
+# Margine — PLAN-B Containerfile: FROM bluefin:stable (no -dx)
+# =============================================================================
+#
+# This file is NOT built by CI today. It exists as a contingency plan for
+# the eventual deprecation of `ghcr.io/ublue-os/bluefin-dx:stable`. As of
+# 2026-06-06 the Bluefin team has publicly mused about removing the -dx
+# variant in favour of opt-in dev tooling via Brew (Discussion #4607,
+# Spring 2026 blog). No timeline announced; the maintainer comment was
+# "we haven't even thought about migration yet, no changes any time
+# soon" — but the direction is set.
+#
+# If/when `bluefin-dx:stable` goes away, swap the FROM line in
+# `Containerfile` to point at this file (or update build.yml's
+# `--file ./Containerfile` to `--file ./Containerfile.plan-b-from-bluefin`).
+# The base Margine image stays composable; the dev stack moves
+# inside the Margine layer.
+#
+# Why a separate file instead of an env-var-switched single Containerfile:
+#   - The CI pipeline gates :stable on smoke-boot. Carrying TWO
+#     candidate FROM bases through the same pipeline (with two
+#     different package sets) doubles the test surface for what is
+#     today a "fire drill, not a continuous concern".
+#   - Having a separate file lets us cheaply test the migration in a
+#     workflow_dispatch PR without disrupting the main pipeline.
+#
+# See:
+#   - docs/plan-b-bluefin-dx-deprecation.md — the rationale + migration
+#     procedure.
+#   - audit §6.13 + §8 rec #20.
+# =============================================================================
+
+# ----- Build context: scripts that should NOT end up in the final image -----
+FROM scratch AS ctx
+COPY build_files /
+COPY installer/flatpaks-base    /installer-flatpaks-base
+COPY installer/flatpaks-gaming  /installer-flatpaks-gaming
+
+# ----- Base: Bluefin (NOT bluefin-dx) -----
+# What we lose vs bluefin-dx:stable, and where we re-add it below:
+#   - libvirt, virt-manager, qemu-kvm, swtpm, edk2-ovmf  → margine-dev-stack RUN
+#   - distrobox, podman-compose                          → margine-dev-stack RUN
+#   - VS Code (Microsoft repo)                           → opt-in via brew, NOT baked
+#     (per Bluefin team direction; users who want it run `brew install vscode`
+#      themselves — same UX they'll be migrating to upstream)
+FROM ghcr.io/ublue-os/bluefin:stable
+
+# ----- Re-add the dev stack that bluefin-dx used to ship -----
+# RPMs only (Flatpak-equivalents are NOT preferred here — these tools
+# need /dev/kvm passthrough, /var/lib/libvirt write, kernel module load).
+# Pinned to whatever Fedora ships at build time (no explicit version
+# pins — matches Bluefin DX behavior). The list is intentionally
+# minimal; user-specific dev tooling (golang, rustup, node, sdkman)
+# stays out of the base image and goes via brew/distrobox.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    set -euo pipefail && \
+    dnf -y install \
+        libvirt \
+        libvirt-daemon-kvm \
+        libvirt-client \
+        virt-manager \
+        virt-viewer \
+        qemu-kvm \
+        qemu-system-x86 \
+        edk2-ovmf \
+        swtpm \
+        swtpm-tools \
+        distrobox \
+        podman-compose && \
+    systemctl enable libvirtd.service && \
+    dnf -y clean all
+
+# ----- Custom kernel: CachyOS via COPR + MOK signing (UNCHANGED) -----
+# Same as Containerfile. The kernel-swap machinery doesn't care which
+# base image we started from.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
+    --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
+    --mount=type=secret,id=mok-password,target=/tmp/certs/mok-password \
+    /ctx/custom-kernel/install.sh
+
+# ----- Margine modifications (UNCHANGED) -----
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    /ctx/build.sh
+
+# ----- Margine GNOME extensions (UNCHANGED) -----
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    /ctx/build-margine-extensions.sh
+
+# ----- Lint -----
+RUN bootc container lint

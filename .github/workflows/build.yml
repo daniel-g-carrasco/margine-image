@@ -302,10 +302,16 @@ jobs:
         run: rm -rf /tmp/margine-secrets
 
   sign:
-    name: Cosign sign (by digest)
+    name: Cosign sign (by digest) + SBOM attach + sign
     needs: build_push
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # 30 min: cosign sign is ~10s, but syft on the 14 GB Margine image
+    # is 5-8 min (RPM database scan + Flatpak inventory + OCI layer
+    # walk), and `oras attach` re-uploads the SBOM blob (~5 MB) +
+    # cosign-signs it. The original 10 min budget was set before the
+    # SBOM sub-pipeline landed (PR #49) — that hit the cap and the
+    # job got cancelled twice tonight. 30 min keeps healthy slack.
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write

@@ -104,7 +104,7 @@ margine-gaming:
         - com.heroicgameslauncher.hgl
         - com.usebottles.bottles
         - com.github.Matoking.protontricks
-        - net.davidotek.pupgui2
+        - com.vysp3r.ProtonPlus
         - org.libretro.RetroArch   (multi-emulator: PS1/N64/GBA/SNES/…)
 
       Host RPMs (layered via rpm-ostree — requires reboot to take effect):
@@ -141,7 +141,7 @@ margine-gaming:
     ostree-canonical deployment with zero overlay. That path is on the
     Margine TODO list but not built yet; for now this ujust recipe
     is the supported way to get the gaming layer. The Flatpak clients
-    above (Steam/Lutris/Heroic/Bottles/Protontricks/ProtonUp-Qt/
+    above (Steam/Lutris/Heroic/Bottles/Protontricks/ProtonPlus/
     RetroArch) DO NOT layer — they're proper Flatpaks.
 
     EOF
@@ -156,7 +156,7 @@ margine-gaming:
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
-        net.davidotek.pupgui2 \
+        com.vysp3r.ProtonPlus \
         org.libretro.RetroArch
 
     echo
@@ -188,7 +188,7 @@ margine-gaming-remove:
     echo "This will:"
     echo "  - rpm-ostree uninstall gamescope + vkBasalt (the only gaming-only RPMs)"
     echo "  - flatpak uninstall the 7 gaming Flatpaks (Steam, Lutris, Heroic,"
-    echo "    Bottles, Protontricks, ProtonUp-Qt, RetroArch)"
+    echo "    Bottles, Protontricks, ProtonPlus, RetroArch)"
     echo
     echo "  NOT touched (kept — useful for non-gaming workflows too):"
     echo "    mangohud, goverlay, steam-devices, gamemode, input-remapper,"
@@ -207,7 +207,7 @@ margine-gaming-remove:
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
-        net.davidotek.pupgui2 \
+        com.vysp3r.ProtonPlus \
         org.libretro.RetroArch || true
 
     echo

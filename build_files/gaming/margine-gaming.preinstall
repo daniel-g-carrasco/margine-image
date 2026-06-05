@@ -5,7 +5,7 @@
 #      Always 5-15 min first-boot wait.
 #
 #   2. BAKE-fallback (gaming launchers): Steam, Lutris, Heroic,
-#      Bottles, ProtonUp-Qt. These are ALSO listed in
+#      Bottles, ProtonPlus. These are ALSO listed in
 #      /usr/share/margine/installer-flatpaks-gaming and SHOULD be
 #      installed by the Anaconda %post BAKE at install time. They
 #      are duplicated here as belt+suspenders so a silent BAKE
@@ -41,6 +41,6 @@ IsRuntime=false
 Branch=stable
 IsRuntime=false
 
-[Flatpak Preinstall net.davidotek.pupgui2]
+[Flatpak Preinstall com.vysp3r.ProtonPlus]
 Branch=stable
 IsRuntime=false

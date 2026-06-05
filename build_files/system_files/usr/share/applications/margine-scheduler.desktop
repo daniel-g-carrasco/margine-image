@@ -2,7 +2,7 @@
 Type=Application
 Name=Margine CPU Scheduler
 GenericName=sched_ext (BPF) scheduler picker
-Comment=Switch the active CPU scheduler at runtime (scx_lavd, scx_central for pro-audio, etc.)
+Comment=Opt in to scx_loader and switch the active CPU scheduler at runtime (scx_lavd, scx_central for pro-audio, etc.). Margine ships with scx_loader OFF — kernel BORE is the default — until you turn it on here.
 Exec=ptyxis -- bash -c 'ujust margine-scheduler; echo; read -rp "Premi Invio per chiudere... "'
 Icon=preferences-system
 Terminal=false

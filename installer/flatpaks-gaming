@@ -28,7 +28,7 @@ org.gnome.gitlab.somas.Apostrophe
 com.github.PintaProject.Pinta
 org.audacityteam.Audacity
 com.github.wwmm.easyeffects
-fm.reaper.Reaper
+# fm.reaper.Reaper — INTENTIONALLY EXCLUDED (see flatpaks-base for why)
 com.github.neithern.g4music
 com.rafaelmardojai.Blanket
 de.haeckerfelix.Fragments

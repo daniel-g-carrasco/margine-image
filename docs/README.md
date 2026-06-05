@@ -33,6 +33,8 @@ install guide is self-contained.
 | Document | What it covers |
 | --- | --- |
 | [04-validation.md](04-validation.md) | Validation commands and pass criteria for each phase |
+| `scripts/validate-margine-system` | Runtime acceptance test: photographs the booted system and compares against canonical Margine state (kernel, GNOME settings, Flatpaks, users/groups, extension schemas, BAKE presence). 11 sections. Single PASS/FAIL verdict. |
+| `scripts/validate-declared-state` | Spec-drift detector: reads `declarations/margine-atomic.yaml` and diffs against the running system (RPMs, Flatpaks, GNOME extensions). Makes the spec load-bearing — an item added/removed from the spec without a corresponding system change is surfaced. Audit §4.1 + rec #18. |
 
 ## Personal and hardware layers
 

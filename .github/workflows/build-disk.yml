@@ -195,7 +195,11 @@ jobs:
 
       - name: Build disk image
         id: build
-        uses: osbuild/bootc-image-builder-action@main
+        # SHA-pinned for supply-chain safety (audit §6.3). v0.0.2 is the
+        # latest release tag at time of pin; main has had only Dependabot
+        # bumps since (last verified 2026-06-06). Bump deliberately when
+        # the action ships a new release; review changelog first.
+        uses: osbuild/bootc-image-builder-action@019bb59c5100ecec4e78c9e94e18a840110f7a0b  # v0.0.2
         with:
           builder-image: ${{ env.BIB_IMAGE }}
           config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || './disk_config/disk.toml' }}

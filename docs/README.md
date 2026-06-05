@@ -66,6 +66,7 @@ Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base 
 | [adr/0003-fedora-native-boot-security.md](adr/0003-fedora-native-boot-security.md) | Why Fedora shim/systemd-cryptenroll and not Arch/Limine/sbctl patterns |
 | [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why the base-OS update step owns pre/post validation, reboot judgment, and rollback (superseded — implementation moved to Bluefin `uupd`) |
 | [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deploys as Bluefin DX rebase + 5 diffs, not as stock Silverblue + layer |
+| [adr/0006-kernel-cachyos-decision.md](adr/0006-kernel-cachyos-decision.md) | Why Margine stays on `kernel-cachyos` (bieszczaders COPR), not OGC, not ublue-akmods — BORE + ThinLTO + HZ=1000 + creator-first identity |
 
 ## Reference
 

@@ -28,6 +28,15 @@ declare -A repos=(
   [image-template]="ublue-os/image-template"
   [rechunk]="hhd-dev/rechunk"
   [bazzite]="ublue-os/bazzite"
+  # OGC kernel — not used by Margine (see ADR 0006), but we watch it so we
+  # know when re-review trigger #3 (OGC adopts BORE + ThinLTO + HZ=1000)
+  # fires. If OGC closes the perf gap, staying on kernel-cachyos becomes
+  # harder to defend.
+  [ogc-kernel]="OpenGamingCollective/kernel-packages"
+  # bieszczaders kernel-cachyos COPR — single-maintainer Fedora packaging of
+  # CachyOS upstream. ADR 0006 re-review trigger #1 is "no new build for 30
+  # days" — this watchlist entry lets the monthly cron catch the silence.
+  [kernel-cachyos]="bieszczaders/kernel-cachyos"
 )
 
 LAST_REVIEWED=$(grep -oE '202[0-9]-[0-9]{2}-[0-9]{2}' "$DOC" | sort -u | tail -1)

@@ -31,6 +31,12 @@ ARG BASE_IMAGE=ghcr.io/danielgrasso/margine:stable
 # ----- Build context: scripts that should NOT end up in the final image -----
 FROM scratch AS ctx
 COPY build_files /
+# Same single-source-of-truth setup as the base Containerfile:
+# expose installer/flatpaks-{base,gaming} as plain files in /ctx/
+# so build_files/gaming/install.sh can `cp` them into
+# /usr/share/margine/. Audit §3.5.
+COPY installer/flatpaks-base    /installer-flatpaks-base
+COPY installer/flatpaks-gaming  /installer-flatpaks-gaming
 
 # ----- Base: Margine (which already has CachyOS kernel + branding + ujust)
 # Kernel is already MOK-signed in the base; we do NOT touch it here, so this

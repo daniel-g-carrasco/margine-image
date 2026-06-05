@@ -647,6 +647,7 @@ for s in \
     validate-hardware-media-stack \
     validate-gaming-runtime \
     validate-margine-system \
+    validate-declared-state \
     collect-diagnostics ; do
   retry_curl "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
              "/usr/bin/margine-${s}"

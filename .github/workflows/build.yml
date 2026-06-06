@@ -361,60 +361,9 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
-      # -----------------------------------------------------------------
-      # SBOM sub-pipeline — RE-ENABLED with --scope squashed (2026-06-06)
-      # -----------------------------------------------------------------
-      # PR #49 added syft+oras+cosign-sign. PR #52/#53 raised timeout
-      # and freed disk but syft still OOM'd on the full rechunked image
-      # (RAM, not disk). PR #54 disabled the block entirely. This PR
-      # (#58) re-enables it with `syft scan --scope squashed`, which
-      # restricts the scan to the topmost layer of the image instead of
-      # expanding all 30+ rechunk layers in memory. Trade-off: the SBOM
-      # only describes content in the final layer (= the file delta
-      # the rechunk emit for "everything new"). For an ostree-style
-      # rechunked image the topmost layer is in practice the union view,
-      # so the SBOM is still meaningful for consumer-facing
-      # `oras discover` + `cosign verify SBOM`.
-      #
-      # When we have time, move to syft inside build_push on local
-      # podman storage (no registry pull, full layer coverage) — that's
-      # the proper fix. For now squashed gives us back the
-      # audit-§6.1 SBOM pipeline at fractional cost.
-      - name: Install syft (SBOM, --scope squashed)
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-
-      - name: Install ORAS
-        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
-
-      - name: Generate SBOM (squashed) + attach + cosign-sign
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ""
-        run: |
-          set -euo pipefail
-          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
-          echo "Generating SBOM (scope=squashed) for ${IMAGE_REF}"
-          # syft default for OCI multi-layer images is all-layers; force
-          # squashed to keep memory bounded. ~14× smaller SBOM, ~5× less
-          # RAM during scan.
-          syft --scope squashed "${IMAGE_REF}" -o spdx-json=sbom.spdx.json
-          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-          ATTACH_DIGEST="$(oras attach \
-            --artifact-type application/vnd.spdx+json \
-            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --annotation org.opencontainers.artifact.description="SPDX SBOM (squashed scope) for ${IMAGE_REF}" \
-            --format go-template='{{.Digest}}' \
-            "${IMAGE_REF}" \
-            sbom.spdx.json:application/spdx+json)"
-          if [[ -z "$ATTACH_DIGEST" ]]; then
-            echo "::error::oras attach did not return a digest"
-            exit 1
-          fi
-          IMG_BASE="${IMAGE_REF%@*}"
-          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
-          echo "Signing SBOM: ${SBOM_REF}"
-          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
+      # SBOM block REMOVED 2026-06-06 — pending refactor to move syft
+      # inside build_push (where the image is in local podman storage).
+      # See docs/sbom-revisit-plan.md and PR #58/#60/#62 history.
 
   notify:
     name: ntfy notification

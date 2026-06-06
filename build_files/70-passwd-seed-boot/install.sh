@@ -260,6 +260,35 @@ EOF
 chmod 0644 /etc/xdg/autostart/margine-first-boot.desktop
 
 # ---------------------------------------------------------------------------
+# margine-first-boot-status.desktop — XDG autostart that triggers the
+# /usr/libexec/margine-first-boot-status script (which posts the
+# "Margine sta installando alcune app aggiuntive in background"
+# notification, then waits for flatpak-preinstall.service to finish
+# and posts the "Margine pronto" follow-up).
+#
+# Until 2026-06-06 the libexec script was shipped but never wired into
+# any autostart, so the toast never fired and the user saw a silent
+# 5-15 minute window where extra Flatpaks were downloading without any
+# feedback. Adding this .desktop closes that gap.
+#
+# Same X-GNOME-Autostart-Phase caveat as above: do NOT add it (GNOME
+# 50+ skips entries that set the phase). The libexec script's own
+# sleep 10 + flatpak-preinstall is-active check handles ordering.
+# ---------------------------------------------------------------------------
+log "Installing /etc/xdg/autostart/margine-first-boot-status.desktop"
+cat > /etc/xdg/autostart/margine-first-boot-status.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Margine first-boot status notifier
+Comment=Notify user when background Flatpak installation starts and finishes
+Exec=/usr/libexec/margine-first-boot-status
+NoDisplay=true
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+EOF
+chmod 0644 /etc/xdg/autostart/margine-first-boot-status.desktop
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 log "Margine build modifications complete."

@@ -21,6 +21,17 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info']
 favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'code.desktop']
 
+# Icon-size coherence across overview app-grid, folder view inside a
+# folder, and search results. GNOME's upstream defaults are 96 / 64
+# (app-grid / folder), which makes folders look noticeably smaller
+# than the surrounding app grid — daniel reported the inconsistency
+# 2026-06-06. Pin both to 96 so what you see in the overview matches
+# what you see when you open a folder, with search results inheriting
+# from the same scale via gnome-shell's CSS.
+[org.gnome.shell.app-grid]
+app-grid-icon-size=96
+folder-icon-size=96
+
 [org.gnome.desktop.interface]
 accent-color='yellow'
 # Bluefin's zz0 hard-sets Adwaita Sans (their pick). We leave fonts as

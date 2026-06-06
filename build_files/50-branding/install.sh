@@ -292,9 +292,9 @@ rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
 # Replace it with the Margine wordmark 'm' glyph (pixel art SVG,
 # same source as the favicon). Tracked in
 # margine-fedora-atomic assets/branding/start-here-symbolic.svg.
-retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 chmod 0644 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
-log "Replaced start-here-symbolic.svg with Margine 'm' glyph"
+log "Replaced start-here-symbolic.svg with Margine 'm' glyph ($(stat -c %s /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg) bytes)"
 
 # (c) Bluefin wallpaper collection (Settings → Background spam).
 rm -rf /usr/share/backgrounds/bluefin

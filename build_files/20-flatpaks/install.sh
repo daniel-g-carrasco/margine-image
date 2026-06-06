@@ -124,7 +124,16 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.github.neithern.g4music \
       com.rafaelmardojai.Blanket \
       de.haeckerfelix.Fragments \
-      com.ranfdev.DistroShelf ; do
+      com.ranfdev.DistroShelf \
+      com.github.tchx84.Flatseal \
+      io.github.flattool.Warehouse \
+      io.github.flattool.Ignition \
+      io.gitlab.adhami3310.Impression \
+      io.missioncenter.MissionCenter \
+      org.gnome.DejaDup \
+      org.gnome.Firmware \
+      page.tesk.Refine \
+      it.mijorus.smile ; do
     # Only the "macigni" (~500-700 MB Flatpak each + heavy runtimes)
     # are deferred to flatpak-preinstall.service first-boot. They take
     # 5-10 min to download but the user gets a notification (PR E

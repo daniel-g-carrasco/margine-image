@@ -244,6 +244,39 @@ jobs:
       # left the image in ~/.local/share/containers/. Going direct
       # removes that bounce.
 
+      # ----- SBOM generation, pre-rechunk, from local podman storage -----
+      # syft reads the image directly out of /var/lib/containers/storage
+      # via the `containers-storage:` source URI — no registry pull, no
+      # full-layer expansion to RAM. Generates a SPDX JSON SBOM in
+      # ~5-15s with peak memory <500 MB (vs >16 GB OOM when scanning the
+      # rechunked image from the registry — see PR #62 + docs/
+      # sbom-revisit-plan.md for the rationale of moving it here).
+      #
+      # Pre-rechunk is fine: rechunk doesn't add or remove packages,
+      # it only repacks the layer boundaries for delta efficiency. The
+      # SBOM describes the same package inventory either way.
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM from local container storage
+        run: |
+          set -euo pipefail
+          # Image is in root storage thanks to `sudo buildah build` above.
+          # Use sudo so syft can read /var/lib/containers/storage.
+          sudo syft "containers-storage:localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
+            -o spdx-json=sbom.spdx.json
+          sudo chown "$(id -u):$(id -g)" sbom.spdx.json
+          ls -la sbom.spdx.json
+          echo "SBOM package count: $(jq '.packages | length' sbom.spdx.json)"
+
+      - name: Upload SBOM as workflow artifact (handoff to sign job)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.run_id }}
+          path: sbom.spdx.json
+          retention-days: 1
+          if-no-files-found: error
+
       - name: ReChunk image
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
@@ -361,9 +394,48 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
-      # SBOM block REMOVED 2026-06-06 — pending refactor to move syft
-      # inside build_push (where the image is in local podman storage).
-      # See docs/sbom-revisit-plan.md and PR #58/#60/#62 history.
+      # ----- SBOM attach + sign (artifact handoff from build_push) -----
+      # SBOM was generated inside build_push from local container storage
+      # (~5-15s, <500 MB peak RAM) and uploaded as workflow artifact.
+      # Here we just download it, attach it to the pushed manifest as
+      # an OCI 1.1 referrer, and cosign-sign the SBOM artifact's digest
+      # so consumers can `oras discover` → `oras pull` → `cosign verify`
+      # against the same public key as the image. See docs/
+      # sbom-revisit-plan.md for why this lives split across two jobs.
+      - name: Download SBOM artifact (from build_push)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.run_id }}
+          path: .
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
+
+      - name: Attach + cosign-sign SBOM
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
+          ls -la sbom.spdx.json
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          ATTACH_DIGEST="$(oras attach \
+            --artifact-type application/vnd.spdx+json \
+            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
+            --format go-template='{{.Digest}}' \
+            "${IMAGE_REF}" \
+            sbom.spdx.json:application/spdx+json)"
+          if [[ -z "$ATTACH_DIGEST" ]]; then
+            echo "::error::oras attach did not return a digest"
+            exit 1
+          fi
+          IMG_BASE="${IMAGE_REF%@*}"
+          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
+          echo "Signing SBOM: ${SBOM_REF}"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
 
   notify:
     name: ntfy notification

@@ -82,8 +82,16 @@ apply-custom-theme=true
 background-color='rgb(40,40,40)'
 background-opacity=0.8
 custom-background-color=true
-custom-theme-shrink=true
+# Daniel 2026-06-07: "shrink the dash" off — the curated favourites
+# already fit; shrinking added empty side-margins that looked off.
+custom-theme-shrink=false
 customize-alphas=true
+# Daniel 2026-06-07: cap icon size at 36px so the dock stays compact.
+# dash-max-icon-size is honoured only when icon-size-fixed=true;
+# without that flag Dash-to-Dock auto-scales icons to fill the panel
+# height and ignores the cap.
+dash-max-icon-size=36
+icon-size-fixed=true
 disable-overview-on-startup=true
 dock-fixed=true
 force-straight-corner=false
@@ -241,6 +249,12 @@ window-effect=0
 # by the extension at apply time; values below produce sharper edges
 # than what daniel ran with on his daily VM.
 border-radius=30.0
+# Popup dimensions — daniel 2026-06-07: the 2026-06-06 default of
+# scale-width/height=0.10 felt "un po' troppo grande" on his display.
+# Reduce to 0.07 (≈30% smaller). User can override per-monitor via
+# Extension Manager → Search Light → Preferences.
+scale-width=0.07
+scale-height=0.07
 OVERRIDE
 
 # ---------------------------------------------------------------------------

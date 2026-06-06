@@ -135,14 +135,11 @@ margine-gaming:
         base, which is slower (~30-60s extra per upgrade) and can
         occasionally fail on file conflicts when upstream relocates a
         file in a layered RPM.
-      - You cannot ship this state as an OCI image.
-    The pure-Fedora-Atomic alternative is a separate image variant
-    (`bootc switch ghcr.io/.../margine-gaming:stable`), which gives an
-    ostree-canonical deployment with zero overlay. That path is on the
-    Margine TODO list but not built yet; for now this ujust recipe
-    is the supported way to get the gaming layer. The Flatpak clients
-    above (Steam/Lutris/Heroic/Bottles/Protontricks/ProtonPlus/
-    RetroArch) DO NOT layer — they're proper Flatpaks.
+    This recipe is THE supported way to get the gaming layer on
+    Margine — the separate Margine Gaming image + ISO were retired
+    2026-06-06 to cut maintenance. The Flatpak clients above
+    (Steam/Lutris/Heroic/Bottles/Protontricks/ProtonPlus/RetroArch)
+    DO NOT layer — they're proper Flatpaks.
 
     EOF
     read -rp "Continue? [y/N] " ans

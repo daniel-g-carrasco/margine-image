@@ -43,14 +43,8 @@ name: Build Margine image
 on:
   push:
     branches: [main]
-    # Don't rebuild the base image when only the gaming-variant
-    # files change — they're built by build-gaming.yml on top of
-    # the existing :stable, no base rebuild needed. Also skip
-    # disk/IA workflow changes and pure-docs commits.
+    # Skip disk/IA workflow changes and pure-docs commits.
     paths-ignore:
-      - 'Containerfile.gaming'
-      - 'build_files/gaming/**'
-      - '.github/workflows/build-gaming.yml'
       - '.github/workflows/build-disk.yml'
       - 'README.md'
       - 'CHANGELOG.md'
@@ -60,13 +54,10 @@ on:
     # the image and publish a `:pr-N` tag, so daniel can rebase the
     # lab VM (5-min smoke) instead of merging blind. Every other PR
     # stays cheap. Label, push fix, the next push to the labeled PR
-    # rebuilds. Documented in docs/iso-titanoboa-migration-plan.md.
+    # rebuilds.
     types: [labeled, synchronize]
     branches: [main]
     paths-ignore:
-      - 'Containerfile.gaming'
-      - 'build_files/gaming/**'
-      - '.github/workflows/build-gaming.yml'
       - '.github/workflows/build-disk.yml'
       - 'README.md'
       - 'CHANGELOG.md'

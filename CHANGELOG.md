@@ -7,6 +7,28 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Removed (2026-06-06) — Margine Gaming ISO + OCI variant retired
+- **`ghcr.io/.../margine-gaming:stable` OCI image** — no longer built
+  or published. The dedicated `build-gaming.yml` workflow, the
+  `Containerfile.gaming`, the `build_files/gaming/` directory, and
+  `installer/flatpaks-gaming` are all deleted.
+- **Gaming Anaconda ISO** — `build-disk.yml` no longer matrixes over
+  `margine` + `margine-gaming`; only the single `margine` ISO is
+  built and uploaded to Internet Archive. No more
+  `margine-gaming-anaconda-iso-YYYYMMDD` items.
+- **`Option C — Switch between Margine and Margine Gaming`** install
+  section in README — replaced with `Option C — Add the gaming
+  layer` (one `ujust margine-gaming` step on top of base Margine).
+- Rationale: same gaming stack reachable from base Margine via the
+  already-existing `ujust margine-gaming` recipe (rpm-ostree layer +
+  Flatpaks). Two parallel paths to the same gaming setup was extra
+  surface area to maintain — separate ISO build (60 min CI), separate
+  IA upload (~6 GB / build), separate Containerfile, separate
+  preinstall list, separate ISO download UI on the site. Keeping
+  only the ujust path cuts that whole pipeline. Trade-off: the
+  result is a layered (not ostree-canonical) deployment, which is
+  the same trade-off the recipe already had before this change.
+
 ### Added (2026-06-03)
 - **11 GNOME core Flatpaks added to the preinstall set** (Calculator,
   Calendar, clocks, Contacts, Weather, Maps, TextEditor, baobab,

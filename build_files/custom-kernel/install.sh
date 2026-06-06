@@ -427,6 +427,24 @@ CONF
 #
 # We pass the output path as a positional argument so dracut writes
 # exactly where ostree expects.
+# Suppress the dracut-install ERROR: installing '/root' / FAILED warnings
+# that have been showing up in every build for months. Source: dracut's
+# 95ssh-client module-setup.sh probes for /root/.ssh/known_hosts +
+# /root/.ssh/config; even though the `[[ -f ... ]]` guards skip them when
+# absent, dracut-install still tries to mkdir the parent dir /root/.ssh/
+# inside the staging tree, and barfs if /root doesn't exist as an actual
+# directory in the build sysroot. Creating /root as a vacant chmod-700
+# dir satisfies the dracut-install parent-mkdir path; the `-f` guard in
+# the ssh-client module still skips the keyfiles themselves (they're not
+# there in a bootc image-build environment).
+#
+# Pure cosmetic fix — image semantics unchanged. The alternative
+# (`omit_dracutmodules+=" ssh-client "`) would silence the warnings but
+# also lose the dracut-side hook used for remote LUKS unlock via dropbear,
+# which is unrelated baggage.
+mkdir -p /root
+chmod 700 /root
+
 log "Regenerating initramfs for all installed kernels (generic, bootc-path, ostree)"
 # --add ostree: ESSENTIAL for bootc/ostree systems. Without it the
 # initramfs doesn't include ostree-prepare-root, which is what pivots

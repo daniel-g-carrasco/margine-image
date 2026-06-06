@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Diagnose Margine first-boot regressions on a live system.
+#
+# Captures the exact state of branding assets, dconf compiled DB,
+# extension installation, autostart wiring, and icon-size keys, so the
+# next round of fixes can target real paths instead of guessed ones.
+#
+# Run on a Margine VM (or bare metal) immediately after first login,
+# preferably *before* any user-level bootstrap / extension toggling.
+# Outputs a single tarball under /tmp ready to scp back.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/diagnose-margine-firstboot | bash
+#   # or:
+#   bash diagnose-margine-firstboot
+#
+# Idempotent. Read-only — never modifies the running system.
+set -uo pipefail
+
+OUT=/tmp/margine-firstboot-diag-$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p "$OUT"
+exec > >(tee -a "$OUT/run.log") 2>&1
+
+section() { printf '\n===== %s =====\n' "$*"; }
+have()    { command -v "$1" >/dev/null 2>&1; }
+dump()    { "$@" 2>&1 | head -200 || true; }
+
+section "system identity"
+dump uname -a
+dump cat /etc/os-release
+dump cat /usr/lib/os-release
+dump rpm-ostree status
+dump bootc status 2>/dev/null || echo "bootc not installed or no status"
+
+# -------- A.1 About-panel logo --------
+section "A.1 — About panel logo resolution"
+dump grep -i logo /etc/os-release /usr/lib/os-release 2>/dev/null
+dump ls -la /usr/share/pixmaps/ | grep -iE "logo|fedora|bluefin|margine|ublue"
+dump file /usr/share/pixmaps/*logo* 2>/dev/null
+echo "--- /usr/share/icons/hicolor/scalable/places/ logos ---"
+dump ls -la /usr/share/icons/hicolor/scalable/places/ | grep -iE "logo|distributor"
+echo "--- distributor-logo symbolic ---"
+dump find /usr/share/icons -name "distributor-logo*" -o -name "fedora-logo*" -o -name "bluefin-logo*" -o -name "margine-logo*" 2>/dev/null
+echo "--- gnome-control-center about dconf keys (system + user) ---"
+dump gsettings get org.gnome.system.distro logo 2>/dev/null || echo "schema org.gnome.system.distro absent"
+dump gsettings list-recursively 2>/dev/null | grep -i logo
+echo "--- fedora-logo-sprite size check (we sub'd this to empty SVG) ---"
+dump ls -la /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg 2>/dev/null
+
+# -------- A.2 Welcome screen logo --------
+section "A.2 — gnome-initial-setup welcome page assets"
+dump ls -la /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg 2>/dev/null
+echo "--- start-here-symbolic size + first bytes ---"
+[[ -f /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg ]] && {
+  stat /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+  head -3 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+  sha256sum /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+}
+echo "--- gnome-initial-setup ui files referencing icons ---"
+dump grep -rln "icon" /usr/share/gnome-initial-setup/ 2>/dev/null | head -10
+echo "--- ublue / Bluefin welcome / first-boot pages ---"
+dump find /usr/share -path '*first-boot*' -o -path '*welcome*' -o -path '*ublue-welcome*' 2>/dev/null | head -20
+
+# -------- A.3 Extensions install + enable + settings --------
+section "A.3 — GNOME extensions install state"
+echo "--- /usr/share/gnome-shell/extensions/ contents ---"
+dump ls -la /usr/share/gnome-shell/extensions/ 2>/dev/null
+echo "--- 10 enabled UUIDs expected (zz1) — checking each ---"
+for uuid in \
+  appindicatorsupport@rgcjonas.gmail.com \
+  bazaar-integration@kolunmi.github.io \
+  blur-my-shell@aunetx \
+  dash-to-dock@micxgx.gmail.com \
+  gradia-integration@alexandervanhee.github.io \
+  gsconnect@andyholmes.github.io \
+  search-light@icedman.github.com \
+  o-tiling@oliwebd.github.com \
+  hide-cursor@elcste.com \
+  caffeine@patapon.info; do
+  if [[ -d /usr/share/gnome-shell/extensions/$uuid ]]; then
+    echo "  OK  $uuid"
+  else
+    echo "  MISSING  $uuid"
+  fi
+done
+
+section "A.3.bis — dconf compiled DB content"
+echo "--- /usr/share/glib-2.0/schemas/zz1-margine.gschema.override ---"
+dump cat /usr/share/glib-2.0/schemas/zz1-margine.gschema.override 2>/dev/null
+echo "--- glib-compile-schemas timestamp ---"
+dump ls -la /usr/share/glib-2.0/schemas/gschemas.compiled 2>/dev/null
+echo "--- effective enabled-extensions (user-level reading) ---"
+dump gsettings get org.gnome.shell enabled-extensions 2>/dev/null
+echo "--- dconf dump of /org/gnome/shell/extensions/ ---"
+dump dconf dump /org/gnome/shell/extensions/ 2>/dev/null | head -100
+echo "--- dconf db locks for shell ---"
+dump find /etc/dconf/db -type d 2>/dev/null
+dump find /etc/dconf/db -type f 2>/dev/null
+echo "--- /etc/dconf/profile/user ---"
+dump cat /etc/dconf/profile/user 2>/dev/null
+
+# -------- A.4 First-boot notify autostart --------
+section "A.4 — first-boot notification wiring"
+echo "--- /etc/xdg/autostart entries with 'margine' ---"
+dump ls -la /etc/xdg/autostart/ | grep -i margine
+dump cat /etc/xdg/autostart/margine-first-boot.desktop 2>/dev/null
+dump cat /etc/xdg/autostart/margine-first-boot-status.desktop 2>/dev/null && echo "(present)" || echo "MISSING margine-first-boot-status.desktop"
+echo "--- /usr/libexec/margine-first-boot-status exists? ---"
+dump ls -la /usr/libexec/margine-first-boot-status 2>/dev/null
+echo "--- flatpak-preinstall.service ---"
+dump systemctl status flatpak-preinstall.service --no-pager -l 2>/dev/null | head -30
+dump systemctl is-enabled flatpak-preinstall.service 2>/dev/null
+echo "--- existing notification user cache ---"
+dump ls -la "$HOME/.cache/margine/" 2>/dev/null
+dump cat "$HOME/.cache/margine/first-boot-notify.log" 2>/dev/null
+
+# -------- A.5 Icon-size keys across views --------
+section "A.5 — icon-size keys"
+for k in \
+  org.gnome.shell.app-grid.app-grid-icon-size \
+  org.gnome.shell.app-grid.folder-icon-size \
+  org.gnome.desktop.interface.toolbar-icons-size \
+  org.gnome.nautilus.icon-view.default-zoom-level \
+  org.gnome.shell.extensions.search-light.font-size; do
+  schema=$(echo "$k" | rev | cut -d. -f2- | rev)
+  key=$(echo "$k" | rev | cut -d. -f1 | rev)
+  v=$(gsettings get "$schema" "$key" 2>/dev/null || echo "schema-absent")
+  echo "  $schema  $key = $v"
+done
+
+# -------- session log triage --------
+section "session / shell journal"
+dump journalctl --user --no-pager -b 0 --since "30 minutes ago" -u "gnome-shell*" 2>/dev/null | head -100
+echo "--- shell errors mentioning extension ---"
+dump journalctl --user --no-pager -b 0 2>/dev/null | grep -i -E "extension|warning|error" | tail -50
+echo "--- system journal for margine|flatpak-preinstall|first-boot ---"
+dump journalctl --no-pager -b 0 2>/dev/null | grep -iE "margine|flatpak-preinstall|first-boot|mok-enroll" | tail -50
+
+# -------- packaging dust --------
+section "wrap up"
+dump rpm -qa | grep -iE "gnome-shell-extension" | sort
+echo
+echo "All output captured to: $OUT"
+echo "Run: tar -czf $OUT.tar.gz -C /tmp $(basename "$OUT") && echo Tarball: $OUT.tar.gz"
+tar -czf "$OUT.tar.gz" -C /tmp "$(basename "$OUT")" && echo "Tarball: $OUT.tar.gz"

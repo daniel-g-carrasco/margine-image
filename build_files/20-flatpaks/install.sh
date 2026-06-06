@@ -38,10 +38,8 @@ set -euo pipefail
 # preinstalls VS Code from the Microsoft repo with dev container
 # tooling already wired up.
 #
-# The gaming variant adds its own bake list
-# (build_files/gaming/install.sh writes
-# /usr/share/margine/installer-flatpaks-gaming) and its own defer
-# list (build_files/gaming/margine-gaming.preinstall).
+# The gaming variant was retired 2026-06-06. Users who want gaming run
+# `ujust margine-gaming` after first boot — see build_files/60-custom.just.
 
 # ---- BAKE list (instant at first boot) ----
 # Source of truth: installer/flatpaks-base, accessible from this script

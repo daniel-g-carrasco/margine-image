@@ -258,7 +258,7 @@ jobs:
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
 
-      - name: Generate SBOM via podman export + tar -x + syft dir: (Bluefin pattern)
+      - name: Generate SBOM (Bluefin pattern — podman export + tar + syft dir)
         # syft's `podman:` / `containers-storage:` providers still pull all
         # layers and expand the in-memory layer tree past the runner's 16 GB
         # RAM — verified in PRs #58/#60/#65.

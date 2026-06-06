@@ -258,7 +258,7 @@ jobs:
           # Sanity: assert the image is in root buildah storage where
           # the rechunk step will find it. The action used to do this
           # implicitly; doing it explicitly keeps the contract obvious.
-          sudo buildah images "${IMG}:${{ env.CANDIDATE_TAG }}"
+          sudo buildah images "${IMG}:${{ steps.metadata.outputs.version }}"
 
       # NOTE: no "Move to root storage" step here — `sudo buildah build`
       # above already writes to /var/lib/containers (root storage),
@@ -295,7 +295,7 @@ jobs:
           set -euo pipefail
           sudo podman container create --replace --name validate-fs \
             --entrypoint /bin/true \
-            "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+            "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
           ROOTFS=$(mktemp -d)
           sudo podman export validate-fs | sudo tar -C "$ROOTFS" -xf -
 
@@ -390,13 +390,13 @@ jobs:
           # name via --replace.
           sudo podman container create --replace --name sbom-export \
             --entrypoint /bin/true \
-            "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+            "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
           sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
           sudo podman container rm sbom-export
           # syft as user against the on-disk dir. --source-name puts the
           # original image ref in the SBOM metadata so the consumer can
           # tell which image it describes.
-          sudo "$(which syft)" --source-name "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
+          sudo "$(which syft)" --source-name "${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}" \
             "$ROOTFS" -o spdx-json=sbom.spdx.json
           sudo chown "$(id -u):$(id -g)" sbom.spdx.json
           ls -la sbom.spdx.json
@@ -417,7 +417,7 @@ jobs:
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
         with:
-          ref: ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+          ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
           labels: |
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}

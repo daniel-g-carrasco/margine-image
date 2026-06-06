@@ -70,6 +70,8 @@ operations.
 
 <div align="center">
 
+<img src="docs/screenshots/tiling-windows.png" alt="Margine desktop with windows auto-tiled by o-tiling" width="98%">
+&nbsp;
 <img src="docs/screenshots/activities-search.png" alt="GNOME Activities with search open showing Margine extensions and dock" width="48%">
 &nbsp;
 <img src="docs/screenshots/lock-screen.png" alt="Lock screen with autumn-leaves wallpaper" width="48%">

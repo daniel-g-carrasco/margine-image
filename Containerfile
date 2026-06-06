@@ -20,13 +20,13 @@
 # ----- Build context: scripts that should NOT end up in the final image -----
 FROM scratch AS ctx
 COPY build_files /
-# Make installer/flatpaks-base + flatpaks-gaming reachable from build.sh
-# at /ctx/installer-flatpaks-{base,gaming}. Single source of truth for
-# the BAKE Flatpak list (audit §3.5: drop the duplicate here-doc in
-# build.sh). The same files are still consumed by installer/build.sh
-# at ISO build time via the installer/ working dir.
+# Make installer/flatpaks-base reachable from build.sh at
+# /ctx/installer-flatpaks-base. Single source of truth for the BAKE
+# Flatpak list (audit §3.5: drop the duplicate here-doc in build.sh).
+# The same file is still consumed by installer/build.sh at ISO build
+# time via the installer/ working dir. The gaming variant was retired
+# 2026-06-06 so there is no installer/flatpaks-gaming any more.
 COPY installer/flatpaks-base    /installer-flatpaks-base
-COPY installer/flatpaks-gaming  /installer-flatpaks-gaming
 
 # ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----
 FROM ghcr.io/ublue-os/bluefin-dx:stable

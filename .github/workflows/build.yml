@@ -336,16 +336,26 @@ jobs:
           check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
           check_exec "usr/libexec/margine-first-boot-status" "A.4"
 
-          # A.5 — Icon-size keys present in zz1 override
-          if ! grep -q "^\[org.gnome.shell.app-grid\]" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 [org.gnome.shell.app-grid] section missing from zz1-margine.gschema.override"; fail=1
-          fi
-          if ! grep -q "^app-grid-icon-size=" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 app-grid-icon-size key missing from zz1-margine.gschema.override"; fail=1
-          fi
-          if ! grep -q "^folder-icon-size=" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 folder-icon-size key missing from zz1-margine.gschema.override"; fail=1
-          fi
+          # A.5 — REMOVED (org.gnome.shell.app-grid schema does not exist
+          # in GNOME 47/48; the keys we tried to set are ignored. Icon-
+          # size drift between app-grid/folder is a CSS theme issue, not
+          # a gschema one). See build_files/30-gnome-defaults/install.sh
+          # comment near where the block used to be.
+
+          # A.3.bis — settings blocks for the 4 extensions whose dconf
+          # values were captured 2026-06-06 are present in zz1.
+          ZZ1="$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"
+          for needle in \
+            "\[org.gnome.shell.extensions.dash-to-dock\]" \
+            "\[org.gnome.shell.extensions.caffeine\]" \
+            "\[org.gnome.shell.extensions.o-tiling\]" \
+            "\[org.gnome.shell.extensions.search-light\]"; do
+            grep -qE "^${needle}" "$ZZ1" || { echo "::error::A.3.bis section ${needle//\\/} missing from zz1 override"; fail=1; }
+          done
+          # search-light rounded-corners daniel default: border-radius=30
+          grep -qE "^border-radius=30" "$ZZ1" || { echo "::error::A.3.bis search-light border-radius!=30 — daniel default lost"; fail=1; }
+          # dash-to-dock background customisation present (cosmetic regression sentinel)
+          grep -qE "^running-indicator-style='DOTS'" "$ZZ1" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
 
           # Cleanup
           sudo rm -rf "$ROOTFS"

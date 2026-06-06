@@ -50,8 +50,21 @@ if ! command -v notify-send >/dev/null 2>&1; then
 fi
 
 # Service-status check via DBus (no sudo needed for is-active).
+# IMPORTANT: `systemctl is-active` for an `activating` unit exits non-zero
+# (specifically 3) AND prints "activating" on stdout. The naive form
+#   systemctl is-active ... || echo "unknown"
+# therefore returns TWO lines: "activating\nunknown". The downstream
+# `case "$initial" in active|activating|reloading) ...` then falls
+# through to the `*)` arm and posts NO notification, exactly what
+# daniel saw on the 2026-06-06 fresh install
+# ("[14:11:36] unexpected initial state: activating / unknown").
+# Capture stdout, ignore the exit, fall back to "unknown" only when
+# stdout is empty (e.g. unit not loaded at all).
 svc_state() {
-  systemctl is-active flatpak-preinstall.service 2>/dev/null || echo "unknown"
+  local s
+  s=$(systemctl is-active flatpak-preinstall.service 2>/dev/null) || true
+  [[ -z "$s" ]] && s=unknown
+  printf '%s' "$s"
 }
 
 # Give GDM/GNOME shell ~10s to settle before we pop notifications —

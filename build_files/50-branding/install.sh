@@ -127,6 +127,43 @@ SVG
   log "Replaced Bluefin's fedora-logo-sprite.svg with transparent placeholder"
 fi
 
+# (d.bis-pre) Nuke every Fedora/Bluefin logo asset GNOME might fall
+# back to. /etc/os-release declares LOGO=margine-logo, but if the
+# resolver doesn't find the SVG it walks the icon-theme search path
+# and lands on one of these — Bluefin DX ships the full Fedora pixmaps
+# set so the About panel + several GNOME widgets keep rendering the
+# Fedora ribbon glyph instead of the Margine wordmark.
+#
+# Confirmed on 2026-06-06 diagnose dump (daniel margine VM):
+#   /usr/share/pixmaps/fedora-gdm-logo.png        (5.6 KB,  150×61)
+#   /usr/share/pixmaps/fedora-logo-icon.png       (336 KB,  733×501)
+#   /usr/share/pixmaps/fedora_logo_med.png        (10 KB,   250×102)
+#   /usr/share/pixmaps/fedora-logo.png            (41 KB,   256×256)
+#   /usr/share/pixmaps/fedora-logo-small.png      (3.3 KB,  48×48)
+#   /usr/share/pixmaps/fedora-logo-sprite.png     (32 KB,   400×400)
+#   /usr/share/pixmaps/fedora-logo-sprite.svg     (243 KB,  scalable)
+#   /usr/share/pixmaps/fedora_whitelogo_med.png   (11 KB,   250×102)
+#   /usr/share/pixmaps/system-logo-white.png      (41 KB,   256×256)
+#   /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg
+#   /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
+# Plus /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg
+# which we already blank at (d.ter) below — leave that alone.
+#
+# Wholesale removal so the LOGO=margine-logo lookup resolves only to
+# the Margine asset and nothing else.
+rm -f /usr/share/pixmaps/fedora-gdm-logo.png \
+      /usr/share/pixmaps/fedora-logo-icon.png \
+      /usr/share/pixmaps/fedora_logo_med.png \
+      /usr/share/pixmaps/fedora-logo.png \
+      /usr/share/pixmaps/fedora-logo-small.png \
+      /usr/share/pixmaps/fedora-logo-sprite.png \
+      /usr/share/pixmaps/fedora-logo-sprite.svg \
+      /usr/share/pixmaps/fedora_whitelogo_med.png \
+      /usr/share/pixmaps/system-logo-white.png \
+      /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg \
+      /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
+log "Removed Fedora pixmap fallbacks (About-panel will now resolve LOGO=margine-logo cleanly)"
+
 # (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at
 # /usr/share/pixmaps/fedora-gdm-logo.png which on Bluefin DX is

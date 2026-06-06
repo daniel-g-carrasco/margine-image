@@ -123,7 +123,8 @@ mkdir -p /usr/share/flatpak/preinstall.d
       fm.reaper.Reaper \
       com.github.neithern.g4music \
       com.rafaelmardojai.Blanket \
-      de.haeckerfelix.Fragments ; do
+      de.haeckerfelix.Fragments \
+      com.ranfdev.DistroShelf ; do
     # Only the "macigni" (~500-700 MB Flatpak each + heavy runtimes)
     # are deferred to flatpak-preinstall.service first-boot. They take
     # 5-10 min to download but the user gets a notification (PR E

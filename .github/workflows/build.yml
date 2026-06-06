@@ -55,6 +55,22 @@ on:
       - 'README.md'
       - 'CHANGELOG.md'
       - 'docs/**'
+  pull_request:
+    # Opt-in per-PR build: only PRs explicitly labeled `vm-test` build
+    # the image and publish a `:pr-N` tag, so daniel can rebase the
+    # lab VM (5-min smoke) instead of merging blind. Every other PR
+    # stays cheap. Label, push fix, the next push to the labeled PR
+    # rebuilds. Documented in docs/iso-titanoboa-migration-plan.md.
+    types: [labeled, synchronize]
+    branches: [main]
+    paths-ignore:
+      - 'Containerfile.gaming'
+      - 'build_files/gaming/**'
+      - '.github/workflows/build-gaming.yml'
+      - '.github/workflows/build-disk.yml'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'docs/**'
   schedule:
     # Weekly nightly: Sunday 04:00 UTC = 06:00 CEST. Picks up upstream
     # Bluefin DX changes even if there are no commits to this repo.
@@ -75,6 +91,9 @@ concurrency:
 jobs:
   build_push:
     name: Build + rechunk + push
+    # On pull_request, only build for PRs explicitly labeled `vm-test`.
+    # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -158,9 +177,14 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: metadata
         with:
+          # On push/schedule/dispatch → :candidate + :candidate.YYYYMMDD.
+          # On pull_request (only when labeled `vm-test`) → :pr-N
+          # (transient, expected to be GC'd by the stale-tag cleanup
+          # job; users rebase the lab VM to it for smoke testing).
           tags: |
-            type=raw,value=${{ env.CANDIDATE_TAG }}
-            type=raw,value=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.CANDIDATE_TAG }},enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=${{ env.CANDIDATE_TAG }}.{{date 'YYYYMMDD'}},enable=${{ github.event_name != 'pull_request' }}
+            type=ref,event=pr,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
           labels: |
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}

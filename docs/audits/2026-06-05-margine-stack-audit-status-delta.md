@@ -16,7 +16,7 @@ the QEMU runner that's out of scope for an autonomous overnight run.
 
 The two **architectural refactors** in the original §8 list
 (decomposing `build.sh` into numbered scripts; porting the ISO build
-from anaconda kickstart to Bazzite's titanoboa-hooks pattern) are
+from anaconda kickstart to Bazzite's titanoboa-hooks pattern) were
 deferred to dedicated working sessions. Each is a multi-hour invasive
 refactor whose smoke-boot recovery cost (if it breaks the image) is
 incompatible with "do it overnight without supervision".
@@ -42,7 +42,7 @@ incompatible with "do it overnight without supervision".
 | §4.1 + §8 rec #18 | `validate-declared-state` drift detector | ✅ **Done** | margine-fedora-atomic #18 + margine-image #51 (wiring) |
 | §6.13 + §8 rec #20 | plan-B Containerfile (`FROM bluefin:stable`) | ✅ **Done** | margine-image #50 |
 | §8 rec #22 (architectural) | split `build.sh` into NN-`<area>`/install.sh | ⏸ **Deferred** | (see below) |
-| §6.9 + §3.5 (architectural) | anaconda → titanoboa ISO modernization | ⏸ **Deferred** | (see below) |
+| §6.9 + §3.5 (architectural) | anaconda → titanoboa ISO modernization | ❌ **Evaluated → SKIP** | margine-image PR #61 (rationale doc) |
 | ADR 0006 (CachyOS-vs-OGC kernel decision) | written and merged | ✅ **Done** | margine-fedora-atomic ADR 0006 (already merged before tonight) |
 | Verify `/etc/pki/containers/<key>.pub` + policy.json (§6.5) | requires booting an image and SSH-ing in | ⏸ **Deferred** | needs a running install |
 | Verify `bootc-fetch-apply-updates.timer` masked (§6.11) | same | ⏸ **Deferred** | needs a running install |
@@ -117,25 +117,36 @@ That's a 2-3h supervised session, not an overnight autonomy session.
 **Action:** punt. The audit recommendation stands; the work is
 scheduled for the next dedicated refactor block.
 
-### §6.9 + §3.5 — anaconda → titanoboa ISO modernization (DEFERRED)
+### §6.9 + §3.5 — anaconda → titanoboa ISO modernization (EVALUATED → SKIP, 2026-06-06)
 
-Bazzite has rewritten their installer flow on `bootc-image-builder`
-+ `titanoboa` hooks + a read-only bind-mount of `/var/lib/flatpak`.
-Porting Margine requires:
+Originally categorized as DEFERRED. After a concrete benefit-vs-cost
+evaluation on 2026-06-06 the conclusion is to **skip the migration**.
 
-- New `installer/iso.yaml` replacing `disk_config/iso-gnome.toml`
-- New `installer/titanoboa_hook_preinitramfs.sh` +
-  `titanoboa_hook_postrootfs.sh`
-- Reworking `build-disk.yml` `Build disk image` step around the
-  new BIB inputs
-- End-to-end ISO test (full `qemu-system-x86_64 -drive
-  file=output/bootiso/install.iso` reaching Anaconda welcome
-  → GNOME first login) before merge
+**Per-feature analysis (full text in
+[`margine-image/docs/iso-titanoboa-migration-plan.md`](https://github.com/daniel-g-carrasco/margine-image/blob/main/docs/iso-titanoboa-migration-plan.md)):**
 
-Same supervised-session shape as the build.sh split. Higher risk
-because the ISO is the on-ramp for real installs.
+| Bazzite feature on titanoboa | Margine concrete value |
+|---|---|
+| Bitlocker partition GUI prompt | none — Framework 13 AMD target, no Windows dual-boot ICP |
+| Secure Boot key fetch + QR docs | none — `mok-enroll.service` already handles this on first boot |
+| Kernel swap to vanilla pre-initramfs | none — Margine kernel is already MOK-signed in `:stable` |
+| Anaconda profile customization | cosmetic, doable inline today |
+| `flatpak-restore-selinux-labels.ks` | none — Margine uses BAKE+DEFER, not Bazzite's flatpak-add-fedora-repos flow |
 
-**Action:** punt. Track for a dedicated working session.
+Important to note: titanoboa **does not eliminate Anaconda**. The
+Bazzite hook embeds `cat >> /usr/share/anaconda/interactive-
+defaults.ks`. The user-visible installer is still the Anaconda
+graphical flow.
+
+Net Margine benefit: zero. Cost: ~80 lines + iso.yaml + build-disk.yml
+refactor + new manual ISO smoke test + risk that upstream titanoboa
+has no canonical doc and Bazzite is a moving target.
+
+**Action:** keep `disk_config/iso-gnome.toml` Anaconda kickstart.
+Re-open if `bootc-image-builder` deprecates `--type anaconda-iso`,
+or Bazzite publishes a canonical migration guide, or a specific
+Margine user need surfaces. `scripts/check-upstreams.sh` already
+watches Bazzite for activity — sufficient channel.
 
 ## Cumulative build verification
 
@@ -195,4 +206,4 @@ to be bumped to 2026-06-06 by this PR's sibling edit.
 3. **§6.11** — confirm `bootc-fetch-apply-updates.timer` is `masked`
    on a deployed Margine system (`uupd` should be the only updater).
 4. **§8 rec #22** — split `build.sh` (dedicated session).
-5. **§6.9 + §3.5** — anaconda → titanoboa ISO (dedicated session).
+~~5. **§6.9 + §3.5** — anaconda → titanoboa ISO (dedicated session).~~ **CLOSED 2026-06-06** — evaluated and decided to skip; rationale doc in margine-image PR #61.

@@ -294,7 +294,7 @@ This section documents the procedure as it actually ships. Source code:
 | `MOK.key` (RSA 2048 private) | GitHub Actions secret `MOK_KEY`; local backup at `~/data/technology/00-admin/security/encryption/margine-image-keys/MOK.key` (chmod 600) | **private — never committed** |
 | `MOK.pem` (X.509 certificate, PEM) | `margine-image/secrets/MOK.pem` (committed) and GH Actions secret `MOK_CERT` | public |
 | `MOK.der` (X.509 certificate, DER) | `margine-image/secrets/MOK.der` (committed) | public |
-| `MOK_PASSWORD` | GH Actions secret `MOK_PASSWORD`; Bitwarden entry | private |
+| `MOK_PASSWORD` | GH Actions secret `MOK_PASSWORD`. Current value: `margine-os` (rotated 2026-06-06 from the original 24-char base64 to a short human-typable string — same pattern as Bazzite's `ublue-os`, so users can type it at the MOK Manager screen without copy-paste). Public on purpose: this string only gates the one-shot Secure-Boot trust handoff on first boot, not anything secret. | low-sensitivity |
 
 The cert fingerprint at the time of this writing is
 `DF:C0:A7:0A:8B:90:EC:8F:01:04:1C:F7:7C:05:F0:79:76:B8:CC:72:BC:8C:38:F4:6D:26:5D:DA:6C:1E:55:B1`.
@@ -312,7 +312,7 @@ The cert fingerprint at the time of this writing is
 
 1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
 2. The user reboots again. The firmware presents the **MOK Manager** screen.
-3. The user selects "Enroll MOK", confirms, types the MOK password, and reboots one final time.
+3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.the-empty.place/docs/first-boot>.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
 ### Recovery if MOK enrollment is missed

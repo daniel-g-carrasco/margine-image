@@ -21,16 +21,16 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info']
 favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'code.desktop']
 
-# Icon-size coherence across overview app-grid, folder view inside a
-# folder, and search results. GNOME's upstream defaults are 96 / 64
-# (app-grid / folder), which makes folders look noticeably smaller
-# than the surrounding app grid — daniel reported the inconsistency
-# 2026-06-06. Pin both to 96 so what you see in the overview matches
-# what you see when you open a folder, with search results inheriting
-# from the same scale via gnome-shell's CSS.
-[org.gnome.shell.app-grid]
-app-grid-icon-size=96
-folder-icon-size=96
+# NOTE — icon-size coherence (overview app-grid / folder / search):
+# Tried 2026-06-06 to pin `[org.gnome.shell.app-grid]` keys
+# app-grid-icon-size + folder-icon-size to 96 here. Diagnose script on
+# the live VM reported "schema-absent" for org.gnome.shell.app-grid:
+# the schema does NOT exist in GNOME 47/48 (it was a 3.x-era key set).
+# The visible icon-size drift between app-grid (~96px) and folder
+# view (~64px) is enforced by gnome-shell's CSS theme, not by dconf.
+# Fix is a CSS overlay or a shell-extension monkeypatch — not a
+# gschema override. Tracked as a separate cosmetic issue; do not
+# re-add a [org.gnome.shell.app-grid] block here.
 
 [org.gnome.desktop.interface]
 accent-color='yellow'
@@ -71,7 +71,32 @@ show-desktop=@as []
 # own hot-key handler so configure-gnome-keybindings' workspace binds
 # win cleanly. NOT cosmetic — this is a keybinding collision fix.
 [org.gnome.shell.extensions.dash-to-dock]
+# Anti-collision with Margine's Super+1..0 workspace binds.
 hot-keys=false
+# Cosmetic defaults captured 2026-06-06 from daniel's running VM
+# (diagnose-margine-firstboot dconf dump). Promoted to system defaults
+# so first-boot users get the same dock the project's lead is using
+# without manual tweaking. Mirrors blur-my-shell pattern below.
+animation-time=0.15
+apply-custom-theme=true
+background-color='rgb(40,40,40)'
+background-opacity=0.8
+custom-background-color=true
+custom-theme-shrink=true
+customize-alphas=true
+disable-overview-on-startup=true
+dock-fixed=true
+force-straight-corner=false
+max-alpha=0.8
+min-alpha=0.5
+running-indicator-style='DOTS'
+transparency-mode='DYNAMIC'
+
+# Caffeine — keep-awake helper for video playback / long renders.
+# Indicator stays near system tray (max position), CLI toggle off.
+[org.gnome.shell.extensions.caffeine]
+cli-toggle=false
+indicator-position-max=2
 
 # Terminal default: leave Bluefin's choice (Ptyxis) — do NOT override
 # org.gnome.desktop.default-applications.terminal. Users who want a
@@ -93,6 +118,9 @@ gap-inner=4
 gap-outer=4
 mouse-cursor-follows-active-window=true
 skip-overview=false
+# Auto-tile new windows by default — the whole point of running
+# o-tiling on Margine. Captured 2026-06-06 from daniel's VM.
+tile-by-default=true
 
 [org.gnome.shell.extensions.tilingshell]
 # Tiling Shell is installed but disabled by default — flip back via
@@ -206,6 +234,13 @@ blur-background=false
 shortcut-search=['<Super>space']
 use-animations=true
 window-effect=0
+# Rounded corners at the schema maximum — daniel asked 2026-06-06 to
+# ship "rounded corners di searchlight al massimo come default". The
+# search-light gschema declares border-radius as a double in [0, 30],
+# so 30.0 is the documented ceiling. Anything above 30 gets clamped
+# by the extension at apply time; values below produce sharper edges
+# than what daniel ran with on his daily VM.
+border-radius=30.0
 OVERRIDE
 
 # ---------------------------------------------------------------------------

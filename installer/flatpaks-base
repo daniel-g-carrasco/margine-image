@@ -39,3 +39,23 @@ com.github.wwmm.easyeffects
 com.github.neithern.g4music
 com.rafaelmardojai.Blanket
 de.haeckerfelix.Fragments
+# DistroShelf — pet-container manager (distrobox GUI). Bluefin DX
+# installs it via /usr/share/ublue-os/homebrew/system-flatpaks.Brewfile
+# at first boot. Margine does not go through brew for system Flatpaks
+# (would put brew between us and flatpak), so we BAKE it directly.
+# Daniel asked 2026-06-06.
+com.ranfdev.DistroShelf
+# --- Bluefin DX 2026-06-06 baked-in inspection (via QGA on the
+#     bluefin-DX-clean VM, contents of /var/lib/flatpak/app/) ---
+# Bluefin DX ships these in its OCI image rootfs out-of-box. Margine
+# was missing them. Daniel asked 2026-06-06 to include the same set so
+# Margine isn't a regression in app coverage vs upstream.
+com.github.tchx84.Flatseal         # Flatpak permissions GUI
+io.github.flattool.Warehouse       # Flatpak management GUI
+io.github.flattool.Ignition        # Flatpak app autostart manager
+io.gitlab.adhami3310.Impression    # USB / image writer
+io.missioncenter.MissionCenter     # task manager (System Monitor alt)
+org.gnome.DejaDup                  # backup tool
+org.gnome.Firmware                 # firmware updater (fwupd GUI)
+page.tesk.Refine                   # GNOME tweaks-style settings
+it.mijorus.smile                   # emoji picker

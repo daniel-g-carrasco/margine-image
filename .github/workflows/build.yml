@@ -249,7 +249,7 @@ jobs:
           # Sanity: assert the image is in root buildah storage where
           # the rechunk step will find it. The action used to do this
           # implicitly; doing it explicitly keeps the contract obvious.
-          sudo buildah images "${IMG}:${{ env.CANDIDATE_TAG }}"
+          sudo buildah images "${IMG}:${{ steps.metadata.outputs.version }}"
 
       # NOTE: no "Move to root storage" step here — `sudo buildah build`
       # above already writes to /var/lib/containers (root storage),
@@ -286,7 +286,7 @@ jobs:
           set -euo pipefail
           sudo podman container create --replace --name validate-fs \
             --entrypoint /bin/true \
-            "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+            "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
           ROOTFS=$(mktemp -d)
           sudo podman export validate-fs | sudo tar -C "$ROOTFS" -xf -
 
@@ -327,16 +327,26 @@ jobs:
           check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
           check_exec "usr/libexec/margine-first-boot-status" "A.4"
 
-          # A.5 — Icon-size keys present in zz1 override
-          if ! grep -q "^\[org.gnome.shell.app-grid\]" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 [org.gnome.shell.app-grid] section missing from zz1-margine.gschema.override"; fail=1
-          fi
-          if ! grep -q "^app-grid-icon-size=" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 app-grid-icon-size key missing from zz1-margine.gschema.override"; fail=1
-          fi
-          if ! grep -q "^folder-icon-size=" "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
-            echo "::error::A.5 folder-icon-size key missing from zz1-margine.gschema.override"; fail=1
-          fi
+          # A.5 — REMOVED (org.gnome.shell.app-grid schema does not exist
+          # in GNOME 47/48; the keys we tried to set are ignored. Icon-
+          # size drift between app-grid/folder is a CSS theme issue, not
+          # a gschema one). See build_files/30-gnome-defaults/install.sh
+          # comment near where the block used to be.
+
+          # A.3.bis — settings blocks for the 4 extensions whose dconf
+          # values were captured 2026-06-06 are present in zz1.
+          ZZ1="$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"
+          for needle in \
+            "\[org.gnome.shell.extensions.dash-to-dock\]" \
+            "\[org.gnome.shell.extensions.caffeine\]" \
+            "\[org.gnome.shell.extensions.o-tiling\]" \
+            "\[org.gnome.shell.extensions.search-light\]"; do
+            grep -qE "^${needle}" "$ZZ1" || { echo "::error::A.3.bis section ${needle//\\/} missing from zz1 override"; fail=1; }
+          done
+          # search-light rounded-corners daniel default: border-radius=30
+          grep -qE "^border-radius=30" "$ZZ1" || { echo "::error::A.3.bis search-light border-radius!=30 — daniel default lost"; fail=1; }
+          # dash-to-dock background customisation present (cosmetic regression sentinel)
+          grep -qE "^running-indicator-style='DOTS'" "$ZZ1" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
 
           # Cleanup
           sudo rm -rf "$ROOTFS"
@@ -371,13 +381,13 @@ jobs:
           # name via --replace.
           sudo podman container create --replace --name sbom-export \
             --entrypoint /bin/true \
-            "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+            "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
           sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
           sudo podman container rm sbom-export
           # syft as user against the on-disk dir. --source-name puts the
           # original image ref in the SBOM metadata so the consumer can
           # tell which image it describes.
-          sudo "$(which syft)" --source-name "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
+          sudo "$(which syft)" --source-name "${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}" \
             "$ROOTFS" -o spdx-json=sbom.spdx.json
           sudo chown "$(id -u):$(id -g)" sbom.spdx.json
           ls -la sbom.spdx.json
@@ -398,7 +408,7 @@ jobs:
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
         with:
-          ref: ${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}
+          ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
           labels: |
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
@@ -538,15 +548,24 @@ jobs:
           ls -la sbom.spdx.json
           echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
-          ATTACH_DIGEST="$(oras attach \
+          # oras 2.x: --format go-template='{{.Digest}}' returns
+          # "<no value>" (the JSON key is "digest" lowercase but the
+          # go-template path the docs suggest does not resolve). Use
+          # --format json + jq to get the manifest digest of the new
+          # subject-attached SBOM artifact, reliably.
+          # PR #73 follow-up after 2026-06-06 build #27065187939 fail:
+          # "Signing SBOM: ghcr.io/.../margine@<no value>".
+          ATTACH_JSON="$(oras attach \
             --artifact-type application/vnd.spdx+json \
             --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
-            --format go-template='{{.Digest}}' \
+            --format json \
             "${IMAGE_REF}" \
             sbom.spdx.json:application/spdx+json)"
+          echo "oras attach output: ${ATTACH_JSON}"
+          ATTACH_DIGEST="$(jq -r '.reference | split("@")[1] // .digest // empty' <<<"$ATTACH_JSON")"
           if [[ -z "$ATTACH_DIGEST" ]]; then
-            echo "::error::oras attach did not return a digest"
+            echo "::error::oras attach did not return a digest (raw: $ATTACH_JSON)"
             exit 1
           fi
           IMG_BASE="${IMAGE_REF%@*}"

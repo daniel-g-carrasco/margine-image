@@ -361,66 +361,29 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
-      - name: Install syft (for SBOM generation)
-        # SHA-pinned. download-syft is the lightweight subset of
-        # anchore/sbom-action — just installs the syft binary.
-        # Audit §8 rec #13 (SBOM hygiene; Bluefin reference pipeline).
-        uses: anchore/sbom-action/download-syft@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a  # v0.9.0
-
-      - name: Install ORAS
-        # SHA-pinned. ORAS attaches the SBOM as an OCI 1.1 referrer
-        # artifact alongside the image manifest.
-        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
-
-      - name: Generate SBOM + attach as OCI referrer + cosign-sign it
-        # Three-step SBOM pipeline matching Bluefin's reusable-build.yml
-        # (audit §6.1 steps 7-8 + 16-18):
-        #
-        #   1. syft <image> -o spdx-json=sbom.spdx.json  (3-5 sec)
-        #   2. oras attach --artifact-type application/vnd.spdx+json
-        #      <image>@<digest> sbom.spdx.json           (~5 sec)
-        #   3. cosign sign the SBOM artifact's digest
-        #
-        # Consumers can `cosign verify` the image, then
-        # `oras discover <image>` to find the SBOM, then `oras pull`
-        # the SBOM, then `cosign verify` *that* digest against the
-        # same public key. Same trust root for both, no extra config.
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ""
-        run: |
-          set -euo pipefail
-          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
-          echo "Generating SBOM for ${IMAGE_REF}"
-          syft "${IMAGE_REF}" -o spdx-json=sbom.spdx.json
-          ls -la sbom.spdx.json
-
-          echo "Attaching SBOM as OCI 1.1 referrer to ${IMAGE_REF}"
-          # `oras attach` records the SBOM as a manifest whose 'subject'
-          # field is the original image digest. Consumers find it via
-          # `oras discover --artifact-type ... <image>`.
-          # GHCR auth uses the same GITHUB_TOKEN we already used to push.
-          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-          ATTACH_DIGEST="$(oras attach \
-            --artifact-type application/vnd.spdx+json \
-            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
-            --format go-template='{{.Digest}}' \
-            "${IMAGE_REF}" \
-            sbom.spdx.json:application/spdx+json)"
-          if [[ -z "$ATTACH_DIGEST" ]]; then
-            echo "::error::oras attach did not return a digest"
-            exit 1
-          fi
-          echo "SBOM attached at ${ATTACH_DIGEST}"
-
-          # Cosign-sign the SBOM by digest so the consumer trusts
-          # the SBOM bytes the same way they trust the image.
-          IMG_BASE="${IMAGE_REF%@*}"
-          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
-          echo "Signing SBOM: ${SBOM_REF}"
-          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
+      # -----------------------------------------------------------------
+      # SBOM sub-pipeline — TEMPORARILY DISABLED (2026-06-06)
+      # -----------------------------------------------------------------
+      # The original 3-step block (syft → oras attach → cosign sign SBOM)
+      # was added by PR #49 to mirror Bluefin's reference build pipeline
+      # (audit §6.1 + rec #13). On GHA's stock ubuntu-24.04 runner it
+      # OOMs: syft on the 14 GB rechunked Margine OCI image expands
+      # past the ~16 GB runner RAM, runner sends shutdown signal at
+      # ~14 min into syft. PRs #52 (timeout 10 → 30 min) and #53 (free
+      # 30 GB disk via remove-unwanted-software) did not help — it's
+      # truly memory, not disk or time.
+      #
+      # The image is still cosign-signed by digest above (that's the
+      # gate that actually matters for `bootc switch --enforce-
+      # container-sigpolicy`). SBOM is an audit-§8-LATER recommendation,
+      # not a Now/Soon — punting until we move the SBOM step to either:
+      #   (a) syft running INSIDE build_push on the locally-built image
+      #       (less RAM than scanning a registry-pulled tree), or
+      #   (b) `syft scan --scope squashed` (top layer only), or
+      #   (c) a larger runner (4xlarge / self-hosted).
+      #
+      # Tracked in the audit status doc as deferred follow-up.
+      # -----------------------------------------------------------------
 
   notify:
     name: ntfy notification

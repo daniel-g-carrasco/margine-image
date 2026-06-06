@@ -277,6 +277,7 @@ jobs:
           # only needs the filesystem, not a running process. Idempotent
           # name via --replace.
           sudo podman container create --replace --name sbom-export \
+            --entrypoint /bin/true \
             "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
           sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
           sudo podman container rm sbom-export

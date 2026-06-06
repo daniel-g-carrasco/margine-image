@@ -583,6 +583,77 @@ if command -v ujust >/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+hdr "9a. GNOME extensions: filesystem presence (A.3 guardrail)"
+# ---------------------------------------------------------------------------
+# Section 7 verified gsettings sees enabled-extensions matching the
+# expected set, and that 5 extensions' schemas are registered. That
+# is necessary but not sufficient: the extension code itself has to
+# live on disk under /usr/share/gnome-shell/extensions/<uuid>/ for
+# GNOME Shell to actually load it. If the UUID is in
+# enabled-extensions but the dir is missing, the extension silently
+# does nothing (GNOME 47/48 logs a warning but never surfaces it).
+# This check runs without gsettings (system-wide), so it works under
+# root and under curl|bash.
+EXT_DIR_BASE=/usr/share/gnome-shell/extensions
+if [[ -d "$EXT_DIR_BASE" ]]; then
+  for uuid in "${EXPECTED_EXTENSIONS[@]}"; do
+    if [[ -d "$EXT_DIR_BASE/$uuid" ]]; then
+      ok "extension $uuid installed at $EXT_DIR_BASE/$uuid"
+    else
+      bad "extension $uuid LISTED IN enabled-extensions BUT NOT INSTALLED at $EXT_DIR_BASE/$uuid — GNOME Shell will silently skip it"
+    fi
+  done
+else
+  bad "$EXT_DIR_BASE does not exist — no system-wide GNOME extensions on this image"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9b1. First-boot autostart wiring (A.4 guardrail)"
+# ---------------------------------------------------------------------------
+# Two .desktop files in /etc/xdg/autostart/ drive the Margine first-boot
+# user experience:
+#   - margine-first-boot.desktop          → ujust margine-bootstrap unattended
+#   - margine-first-boot-status.desktop   → /usr/libexec/margine-first-boot-status
+#                                            (posts the "background Flatpak
+#                                            installation in progress" toast)
+# Until 2026-06-06 the second one was missing, so the libexec script
+# was shipped but never invoked — daniel saw no notification on first
+# login while flatpak-preinstall.service was downloading GIMP/Inkscape/
+# darktable/OBS/Reaper in the background. Add a guardrail for both.
+for entry in margine-first-boot.desktop margine-first-boot-status.desktop; do
+  if [[ -f /etc/xdg/autostart/$entry ]]; then
+    ok "/etc/xdg/autostart/$entry present"
+  else
+    bad "/etc/xdg/autostart/$entry MISSING — autostart chain broken"
+  fi
+done
+if [[ -x /usr/libexec/margine-first-boot-status ]]; then
+  ok "/usr/libexec/margine-first-boot-status executable"
+else
+  bad "/usr/libexec/margine-first-boot-status missing or not executable — status notifier cannot run"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9b2. Icon-size coherence across overview / folder views (A.5 guardrail)"
+# ---------------------------------------------------------------------------
+# GNOME defaults are app-grid-icon-size=96 and folder-icon-size=64, so
+# opening a folder inside the overview gives noticeably smaller icons
+# than the surrounding app grid. Margine pins both to 96 via the zz1
+# gschema override (2026-06-06). Verify they match — gschema read,
+# works as root via the GLib schemas DB without needing dconf user.
+if command -v gsettings >/dev/null 2>&1; then
+  AG_ICON=$(gsettings get org.gnome.shell.app-grid app-grid-icon-size 2>/dev/null || echo "schema-absent")
+  FD_ICON=$(gsettings get org.gnome.shell.app-grid folder-icon-size 2>/dev/null || echo "schema-absent")
+  if [[ "$AG_ICON" == "schema-absent" || "$FD_ICON" == "schema-absent" ]]; then
+    warn "org.gnome.shell.app-grid schema not registered — cannot verify icon-size coherence"
+  elif [[ "$AG_ICON" == "$FD_ICON" ]]; then
+    ok "icon sizes coherent: app-grid=$AG_ICON, folder=$FD_ICON"
+  else
+    bad "icon sizes drift: app-grid=$AG_ICON ≠ folder=$FD_ICON — overview and folder views will look inconsistent"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 hdr "9b. Bootstrap effects on user state (the configure-* chain ran)"
 # ---------------------------------------------------------------------------
 # Bootstrap orchestration (Bug 11): without these, the distro ships

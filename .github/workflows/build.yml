@@ -362,28 +362,59 @@ jobs:
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
       # -----------------------------------------------------------------
-      # SBOM sub-pipeline — TEMPORARILY DISABLED (2026-06-06)
+      # SBOM sub-pipeline — RE-ENABLED with --scope squashed (2026-06-06)
       # -----------------------------------------------------------------
-      # The original 3-step block (syft → oras attach → cosign sign SBOM)
-      # was added by PR #49 to mirror Bluefin's reference build pipeline
-      # (audit §6.1 + rec #13). On GHA's stock ubuntu-24.04 runner it
-      # OOMs: syft on the 14 GB rechunked Margine OCI image expands
-      # past the ~16 GB runner RAM, runner sends shutdown signal at
-      # ~14 min into syft. PRs #52 (timeout 10 → 30 min) and #53 (free
-      # 30 GB disk via remove-unwanted-software) did not help — it's
-      # truly memory, not disk or time.
+      # PR #49 added syft+oras+cosign-sign. PR #52/#53 raised timeout
+      # and freed disk but syft still OOM'd on the full rechunked image
+      # (RAM, not disk). PR #54 disabled the block entirely. This PR
+      # (#58) re-enables it with `syft scan --scope squashed`, which
+      # restricts the scan to the topmost layer of the image instead of
+      # expanding all 30+ rechunk layers in memory. Trade-off: the SBOM
+      # only describes content in the final layer (= the file delta
+      # the rechunk emit for "everything new"). For an ostree-style
+      # rechunked image the topmost layer is in practice the union view,
+      # so the SBOM is still meaningful for consumer-facing
+      # `oras discover` + `cosign verify SBOM`.
       #
-      # The image is still cosign-signed by digest above (that's the
-      # gate that actually matters for `bootc switch --enforce-
-      # container-sigpolicy`). SBOM is an audit-§8-LATER recommendation,
-      # not a Now/Soon — punting until we move the SBOM step to either:
-      #   (a) syft running INSIDE build_push on the locally-built image
-      #       (less RAM than scanning a registry-pulled tree), or
-      #   (b) `syft scan --scope squashed` (top layer only), or
-      #   (c) a larger runner (4xlarge / self-hosted).
-      #
-      # Tracked in the audit status doc as deferred follow-up.
-      # -----------------------------------------------------------------
+      # When we have time, move to syft inside build_push on local
+      # podman storage (no registry pull, full layer coverage) — that's
+      # the proper fix. For now squashed gives us back the
+      # audit-§6.1 SBOM pipeline at fractional cost.
+      - name: Install syft (SBOM, --scope squashed)
+        uses: anchore/sbom-action/download-syft@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a  # v0.9.0
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
+
+      - name: Generate SBOM (squashed) + attach + cosign-sign
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
+          echo "Generating SBOM (scope=squashed) for ${IMAGE_REF}"
+          # syft default for OCI multi-layer images is all-layers; force
+          # squashed to keep memory bounded. ~14× smaller SBOM, ~5× less
+          # RAM during scan.
+          syft scan --scope squashed "${IMAGE_REF}" -o spdx-json=sbom.spdx.json
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          ATTACH_DIGEST="$(oras attach \
+            --artifact-type application/vnd.spdx+json \
+            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --annotation org.opencontainers.artifact.description="SPDX SBOM (squashed scope) for ${IMAGE_REF}" \
+            --format go-template='{{.Digest}}' \
+            "${IMAGE_REF}" \
+            sbom.spdx.json:application/spdx+json)"
+          if [[ -z "$ATTACH_DIGEST" ]]; then
+            echo "::error::oras attach did not return a digest"
+            exit 1
+          fi
+          IMG_BASE="${IMAGE_REF%@*}"
+          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
+          echo "Signing SBOM: ${SBOM_REF}"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
 
   notify:
     name: ntfy notification

@@ -19,7 +19,14 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # keep the packages installed so the user can flip them back on per
 # session, but they don't auto-load on first boot.
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info']
-favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'org.gnome.Ptyxis.desktop', 'code.desktop']
+# Daniel 2026-06-07: drop VS Code from the dock favourites and pin
+# Bazaar there instead. Reasoning: VS Code is a creator's tool but its
+# daily presence in the dock is project-specific (users jump in and
+# out by .desktop launch / cli); Bazaar is the entry point for "I want
+# a new app" — a verb every user does, so it earns a dock slot. Order
+# corresponds to the muscle-memory grid: 1=browser, 2=mail, 3=files,
+# 4=apps, 5=terminal.
+favorite-apps=['app.zen_browser.zen.desktop', 'org.mozilla.Thunderbird.desktop', 'org.gnome.Nautilus.desktop', 'io.github.kolunmi.Bazaar.desktop', 'org.gnome.Ptyxis.desktop']
 
 # NOTE — icon-size coherence (overview app-grid / folder / search):
 # Tried 2026-06-06 to pin `[org.gnome.shell.app-grid]` keys
@@ -255,6 +262,26 @@ border-radius=30.0
 # Extension Manager → Search Light → Preferences.
 scale-width=0.07
 scale-height=0.07
+
+# ---------------------------------------------------------------------------
+# Custom keybinding: Super+. → Smile emoji picker (Daniel 2026-06-07)
+# ---------------------------------------------------------------------------
+# GNOME doesn't have a built-in emoji-picker shortcut, and Smile is the
+# Flatpak GUI Margine ships in BAKE. Bind Super+. (parallel to macOS
+# Ctrl+Cmd+Space / Windows Win+. mental model) to launch it.
+#
+# Smile is a small Gtk4 popup that GNOME's Mutter already lays out as a
+# floating client by default (no special MWM hints needed) — the window
+# is small enough and transient enough that o-tiling/tilingshell skip
+# it via their own heuristics. If a future user runs into an explicit
+# tile, we can add it to o-tiling's exclude list at that point.
+[org.gnome.settings-daemon.plugins.media-keys]
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile/']
+
+[org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile/]
+name='Smile emoji picker'
+binding='<Super>period'
+command='flatpak run it.mijorus.smile'
 OVERRIDE
 
 # ---------------------------------------------------------------------------

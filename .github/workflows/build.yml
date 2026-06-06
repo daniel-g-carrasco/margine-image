@@ -317,6 +317,17 @@ jobs:
       packages: write
       id-token: write
     steps:
+      - name: Maximize build space
+        # syft on a 14 GB rechunked Margine OCI image needs to pull all
+        # layers (~14 GB compressed, more expanded for the SBOM scan)
+        # AND keep the in-memory SBOM tree. Default ubuntu-24.04 disk
+        # ~14 GB free → not enough. Previously this job hit a runner
+        # shutdown signal at ~11 min into syft (OOM / no space) before
+        # we added this step. Audit §6.1 + PR #52/#53 follow-up.
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
       - name: Install Cosign
         # SHA-pinned for supply-chain safety. v3.10.1 pulls cosign v3.0.6
         # which patches CVE-2026-39395 (GHSA-w6c6-c85g-mmv6, verify-blob-

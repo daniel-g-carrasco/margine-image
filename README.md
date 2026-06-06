@@ -135,8 +135,11 @@ After the reboot, two more one-time steps:
 1. **Enroll the Margine signing key into Secure Boot.** On the next
    reboot a blue/grey screen called **MOK Manager** appears
    automatically. Choose `Enroll MOK` → `Continue` → `Yes`, type the
-   MOK password, and reboot. From this point on the kernel boots
-   normally under Secure Boot.
+   passphrase **`margine-os`** when prompted, and reboot. From this
+   point on the kernel boots normally under Secure Boot and you will
+   not see this screen again. Full walkthrough with the exact screen-
+   by-screen flow is at
+   <https://margine.the-empty.place/docs/first-boot>.
 2. Run **`ujust margine-bootstrap`**, as in Option A.
 
 ### Option C — Switch between Margine and Margine Gaming

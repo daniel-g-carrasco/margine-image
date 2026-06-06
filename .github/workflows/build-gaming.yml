@@ -147,7 +147,7 @@ jobs:
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
 
-      - name: Generate SBOM via podman export + tar -x + syft dir: (Bluefin pattern)
+      - name: Generate SBOM (Bluefin pattern — podman export + tar + syft dir)
         # See same comment in build.yml. Bluefin's documented workaround
         # for syft OOM on multi-layer images: export filesystem to disk
         # via `podman export`, then point syft at the dir.

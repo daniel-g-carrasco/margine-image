@@ -955,26 +955,50 @@ gnome:
         categories:
           - Video
           - AudioVideo
-      - id: System
-        name: System & Utilities
+      # The previous single "System & Utilities" folder held 11 apps of
+      # three semantically distinct kinds (Daniel 2026-06-07). Split
+      # along the user's cognitive intent rather than software type:
+      #
+      #   Apps   — "I want to install / configure another app"
+      #   Dev    — "I want to write or build code"
+      #   System — "I want to inspect or tweak the OS"
+      #   Utilities — "I have a one-off task and then I close this"
+      #
+      # Each folder maps to a distinct mental situation. The user opens
+      # only one of them at a time. Bazaar stays the only app store on
+      # the image — org.gnome.Software was retired 2026-06-07.
+      - id: Apps
+        name: Apps
         apps:
-          # Low-frequency system + utility apps that don't need to
-          # clutter the top-level grid. Grouped together because the
-          # user rarely opens any of them — when needed, the folder
-          # name says where they are.
-          - io.missioncenter.MissionCenter.desktop
+          - io.github.kolunmi.Bazaar.desktop
+          - com.mattjakeman.ExtensionManager.desktop
           - com.github.tchx84.Flatseal.desktop
           - io.github.flattool.Warehouse.desktop
           - io.github.flattool.Ignition.desktop
-          - io.github.kolunmi.Bazaar.desktop
-          - org.gnome.Software.desktop
-          - com.mattjakeman.ExtensionManager.desktop
-          - com.ranfdev.DistroShelf.desktop
+      - id: Dev
+        name: Dev
+        apps:
+          - code.desktop                       # VS Code (Bluefin DX, Microsoft repo)
+          - com.ranfdev.DistroShelf.desktop    # distrobox GUI
+      - id: System
+        name: System
+        apps:
+          - io.missioncenter.MissionCenter.desktop
+          - org.gnome.Firmware.desktop
+          - page.tesk.Refine.desktop
+          - org.gnome.DejaDup.desktop
+          - org.gnome.Logs.desktop
+          - org.gnome.baobab.desktop
+      - id: Utilities
+        name: Utilities
+        apps:
           - it.mijorus.smile.desktop
           - io.gitlab.adhami3310.Impression.desktop
           - org.gnome.FileRoller.desktop
+          - org.gnome.Characters.desktop
+          - de.haeckerfelix.Fragments.desktop
+          - org.gnome.font-viewer.desktop
         categories:
-          - System
           - Utility
           - Accessibility
 

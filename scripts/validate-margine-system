@@ -695,13 +695,14 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   fi
 
   # App folders configured (Margine canonical set vs empty/Bluefin default).
-  # Margine ships English-named folders: Office, Graphics, Photography,
-  # Audio, Video, System. We also accept the older Italian names
-  # (Grafica/Foto/Sistema) until all in-the-wild deployments have been
-  # re-bootstrapped past the rename.
+  # 2026-06-07: split the previous "System & Utilities" folder into
+  # four semantically distinct folders — Apps / Dev / System / Utilities.
+  # Still accept the older Italian names (Grafica / Foto / Sistema) and
+  # the older single-System name until all in-the-wild deployments have
+  # been re-bootstrapped past the rename.
   CUR_FOLDERS=$(gsettings get org.gnome.desktop.app-folders folder-children 2>/dev/null)
-  if echo "$CUR_FOLDERS" | grep -qE "'(Office|Graphics|Photography|Audio|Video|System|Grafica|Foto|Sistema)'"; then
-    ok "app folders configured by Margine (Office/Graphics/Photography/Audio/Video/System)"
+  if echo "$CUR_FOLDERS" | grep -qE "'(Office|Graphics|Photography|Audio|Video|Apps|Dev|System|Utilities|Grafica|Foto|Sistema)'"; then
+    ok "app folders configured by Margine (Office/Graphics/Photography/Audio/Video/Apps/Dev/System/Utilities)"
   else
     warn "app folders not Margine-configured: $CUR_FOLDERS (configure-gnome-app-folders may have failed)"
   fi

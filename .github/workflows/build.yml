@@ -258,16 +258,39 @@ jobs:
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
 
-      - name: Generate SBOM from local container storage
+      - name: Generate SBOM via podman export + tar -x + syft dir: (Bluefin pattern)
+        # syft's `podman:` / `containers-storage:` providers still pull all
+        # layers and expand the in-memory layer tree past the runner's 16 GB
+        # RAM — verified in PRs #58/#60/#65.
+        # Bluefin's documented workaround (https://github.com/anchore/syft/
+        # issues/3800, ublue-os/bluefin Justfile gen-sbom recipe) is to
+        # `podman export` the container's filesystem to a flat tar, expand
+        # it on disk, then point syft at the directory. syft `dir:` provider
+        # walks files instead of reconstructing the layer model — peak RAM
+        # ~1 GB instead of OOM.
         run: |
           set -euo pipefail
-          # Image is in root storage thanks to `sudo buildah build` above.
-          # Use sudo so syft can read /var/lib/containers/storage.
-          sudo "$(which syft)" "podman:localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
-            -o spdx-json=sbom.spdx.json
+          ROOTFS=/tmp/margine-sbom-rootfs
+          sudo rm -rf "$ROOTFS"
+          sudo mkdir -p "$ROOTFS"
+          # Create (don't start) a container off the image — `podman export`
+          # only needs the filesystem, not a running process. Idempotent
+          # name via --replace.
+          sudo podman container create --replace --name sbom-export \
+            "localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}"
+          sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
+          sudo podman container rm sbom-export
+          # syft as user against the on-disk dir. --source-name puts the
+          # original image ref in the SBOM metadata so the consumer can
+          # tell which image it describes.
+          sudo "$(which syft)" --source-name "${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
+            "$ROOTFS" -o spdx-json=sbom.spdx.json
           sudo chown "$(id -u):$(id -g)" sbom.spdx.json
           ls -la sbom.spdx.json
           echo "SBOM package count: $(jq '.packages | length' sbom.spdx.json)"
+          # Reclaim the ~14 GB used by the expanded rootfs before rechunk
+          # runs — rechunk needs disk for its own staging.
+          sudo rm -rf "$ROOTFS"
 
       - name: Upload SBOM as workflow artifact (handoff to sign job)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

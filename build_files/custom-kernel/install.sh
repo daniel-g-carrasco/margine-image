@@ -442,8 +442,9 @@ CONF
 # (`omit_dracutmodules+=" ssh-client "`) would silence the warnings but
 # also lose the dracut-side hook used for remote LUKS unlock via dropbear,
 # which is unrelated baggage.
-mkdir -p /root
-chmod 700 /root
+ROOT_HOME="$(realpath -m /root)"
+mkdir -p "$ROOT_HOME"
+chmod 700 "$ROOT_HOME"
 
 log "Regenerating initramfs for all installed kernels (generic, bootc-path, ostree)"
 # --add ostree: ESSENTIAL for bootc/ostree systems. Without it the

@@ -14,25 +14,29 @@ set -euo pipefail
 # show Margine identity instead of inheriting Bluefin's.
 log "Installing Margine visual branding"
 
-# (a) Logo PNG → /usr/share/pixmaps/ so /etc/os-release's LOGO=margine-logo
-#     resolves and GNOME About panel shows it.
-mkdir -p /usr/share/pixmaps
-retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo-square.png" /usr/share/pixmaps/margine-logo.png
+# (a) Logo → /etc/os-release's LOGO=margine-logo. GNOME 47/48 About
+# panel uses GTK4 gtk_icon_theme_lookup_icon("margine-logo") with the
+# GTK_ICON_LOOKUP_FORCE_REGULAR flag, which means the lookup is
+# RESTRICTED to icon themes (hicolor/Adwaita) and does NOT fall back
+# to /usr/share/pixmaps/. Until 2026-06-07 we shipped the asset only
+# in pixmaps, so the About panel rendered nothing (verified live on
+# daniel's VM via QGA).
+#
+# Install in both places:
+#   /usr/share/icons/hicolor/scalable/apps/margine-logo.svg    (primary
+#       — what GNOME About actually consumes)
+#   /usr/share/pixmaps/margine-logo.png                        (fallback
+#       — other consumers like systemd-logo, /etc/issue tooling)
+# Both use the square margine-m source asset.
+mkdir -p /usr/share/icons/hicolor/scalable/apps /usr/share/pixmaps
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo-square.svg" /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
+chmod 0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo-square.png" /usr/share/pixmaps/margine-logo.png
 chmod 0644 /usr/share/pixmaps/margine-logo.png
-log "Installed: /usr/share/pixmaps/margine-logo.png (square version — the 2400x598 banner rendered as an invisible sliver in GNOME's About panel, which expects a roughly-square icon)"
-
-# A wide-aspect margine-logo.svg also exists at
-# /usr/share/icons/hicolor/scalable/apps/margine-logo.svg with
-# viewBox 0 0 384 96 (4:1). GNOME's icon theme lookup prefers SVG
-# over PNG, so even with the correct square PNG above the About
-# panel would still hit the wide SVG and render an invisible
-# sliver. Drop it so the icon-theme cache falls through to the
-# square PNG in pixmaps.
-rm -f /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
 fi
-log "Removed wide-aspect hicolor/apps/margine-logo.svg so About falls through to the square PNG"
+log "Installed margine-logo: hicolor/scalable/apps SVG + pixmaps PNG (About panel can now resolve it via GTK4 icon-theme lookup)"
 
 # (b) Wallpaper → /usr/share/backgrounds/margine/ + dconf override so it's
 #     the default desktop background (light + dark).

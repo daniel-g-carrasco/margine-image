@@ -14,9 +14,8 @@
 > `bieszczaders/kernel-cachyos-addons` ships `scx-scheds`, the
 > sched_ext userspace schedulers (`scx_lavd`, `scx_bpfland`,
 > `scx_rusty`, `scx_central`, `scx_simple`). These are installed in
-> the **base** image, not gaming-only — pro-audio creators on the
-> regular Margine flavour can use `scx_central` (single-CPU
-> scheduling, lowest jitter) without rebasing to the gaming variant.
+> the **base** image, not gaming-only — pro-audio creators can use
+> `scx_central` (single-CPU scheduling, lowest jitter) at any time.
 > Runtime switch via `ujust margine-scheduler <name>`. The COPR is
 > enabled transiently during `custom-kernel/install.sh`, the package
 > is installed, then the repo is disabled and the `.repo` file
@@ -25,11 +24,11 @@
 > The kernel-side `CONFIG_SCHED_CLASS_EXT=y` requirement is satisfied
 > by the CachyOS kernel out of the box.
 >
-> **Kernel binary is identical between Margine and Margine Gaming.**
-> The gaming variant is `FROM margine:stable` plus a userspace-only
-> RPM layer (gamescope, MangoHud, vkBasalt, goverlay, steam-devices);
-> no `kmod-*`, no `kernel-*` packages, no `/lib/modules` changes.
-> See [`build_files/gaming/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/gaming/install.sh).
+> **Same kernel binary whether or not the gaming layer is on.** The
+> opt-in gaming layer (`ujust margine-gaming`, retired separate
+> Margine Gaming OCI image 2026-06-06) only adds userspace RPMs
+> (gamescope, vkBasalt) and Flatpaks — no `kmod-*`, no `kernel-*`
+> packages, no `/lib/modules` changes.
 >
 > The lab procedure below is preserved as the **historical** Silverblue
 > path (runtime `rpm-ostree override remove ... --install kernel-cachyos`).

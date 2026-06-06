@@ -545,7 +545,8 @@ case "${MARGINE_VALIDATE_CONTEXT:-install}" in
     info "  qcow2 builds have no Anaconda %post; BAKE app presence is not validatable here."
     ;;
   *)
-    for bake_file in /usr/share/margine/installer-flatpaks-base /usr/share/margine/installer-flatpaks-gaming; do
+    # Gaming variant was retired 2026-06-06 — only -base list now.
+    for bake_file in /usr/share/margine/installer-flatpaks-base; do
       if [[ -f "$bake_file" ]]; then
         info "BAKE list: $bake_file"
         while IFS= read -r line; do
@@ -718,35 +719,25 @@ fi
 # ---------------------------------------------------------------------------
 hdr "9c. Gaming layer (opt-in — checks only run if the layer was installed)"
 # ---------------------------------------------------------------------------
-# Margine gaming layer = `ujust margine-gaming` OR a fresh install of
-# the margine-gaming variant (bootc switch / fresh ISO install of
-# margine-gaming). Installs ~10 layered RPMs + 7 Flatpaks. Detection:
-# previously we used "any of the layered RPMs present" — but most of
-# those (gamemode, input-remapper, tuned, tuned-ppd) are ALREADY in
-# Bluefin DX base, so the heuristic fires false-positive on every
-# base Margine install. 2026-06-05 fix: detect via VARIANT_ID in
-# /etc/os-release (set to 'gaming' by build_files/gaming/
-# stamp-os-release.sh on the gaming variant only).
-GAMING_RPMS=(gamescope mangohud vkBasalt gamemode goverlay steam-devices input-remapper tuned tuned-ppd rom-properties-gtk)
+# Margine gaming layer = `ujust margine-gaming` (Margine Gaming OCI
+# variant + ISO retired 2026-06-06 in favour of this single opt-in
+# path). Installs ~2 layered RPMs (gamescope + vkBasalt, the only
+# strictly gaming-only ones — everything else like mangohud/goverlay/
+# steam-devices/gamemode is already in base) + 7 Flatpaks. Detection
+# via "any gaming-specific RPM layered on top of base" — the heuristic
+# is reliable now that none of those RPMs ship in base.
+GAMING_RPMS=(gamescope vkBasalt)
 GAMING_FLATPAKS=(
   com.valvesoftware.Steam
   net.lutris.Lutris
   com.heroicgameslauncher.hgl
   com.usebottles.bottles
   com.github.Matoking.protontricks
-  net.davidotek.pupgui2
+  com.vysp3r.ProtonPlus
   org.libretro.RetroArch
 )
 GAMING_PRESENT=0
-# Primary signal: VARIANT_ID=gaming in /etc/os-release (variants are
-# explicit — set at OCI build time, not runtime-derived).
-VARIANT_ID_VAL=$(. /etc/os-release 2>/dev/null; echo "${VARIANT_ID:-}")
-if [[ "$VARIANT_ID_VAL" == "gaming" ]]; then
-  GAMING_PRESENT=1
-fi
-# Secondary signal: gaming-specific RPMs (not the Bluefin-DX-also set).
-# Catches the `ujust margine-gaming` opt-in on the base variant.
-for rpm in gamescope mangohud vkBasalt goverlay steam-devices; do
+for rpm in "${GAMING_RPMS[@]}"; do
   if rpm -q "$rpm" >/dev/null 2>&1; then GAMING_PRESENT=1; break; fi
 done
 

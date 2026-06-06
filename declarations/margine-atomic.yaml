@@ -1062,12 +1062,13 @@ gaming_runtime:
     recipe_file: /usr/share/ublue-os/just/99-margine.just
     source_in_image_repo: build_files/99-margine.just
     inspired_by: >
-      Bazzite (ublue-os/bazzite). Margine ships TWO variants — base
-      `margine:stable` and `margine-gaming:stable` — instead of Bazzite's
-      single-image-with-handheld-tag approach. The base creator tier
-      already carries scx-scheds + mangohud + goverlay + steam-devices
-      (see host_packages.baseline.creator_tier above, promoted on
-      2026-06-03/05); the gaming variant only adds gamescope + vkBasalt
+      Bazzite (ublue-os/bazzite). Margine ships a SINGLE image
+      `margine:stable` and reaches the gaming stack via the opt-in
+      `ujust margine-gaming` recipe (Margine Gaming OCI variant was
+      retired 2026-06-06). The base creator tier already carries
+      scx-scheds + mangohud + goverlay + steam-devices (see
+      host_packages.baseline.creator_tier above, promoted on
+      2026-06-03/05); the ujust layer only adds gamescope + vkBasalt
       on top, plus the Flatpak gaming launchers. No umu-launcher
       (complex packaging), no Bazzite KDE/Deck-specific bits.
     rollback_command: ujust margine-gaming-remove

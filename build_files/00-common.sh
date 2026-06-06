@@ -33,6 +33,26 @@ retry_curl() {
   done
 }
 
+# retry_curl_strict <url> <output_path> — same retry behaviour as
+# retry_curl, but ABORTS the build if the asset is missing or empty
+# after all attempts. Use only for assets without which the image is
+# broken at first boot (welcome screen logo, About-panel logo). Silent
+# failure of these has shipped to user-visible regressions twice
+# (2026-06-04 welcome page dinosaur, 2026-06-06 logo absent), so
+# fail-loud is the right default here even if it means a build retry.
+retry_curl_strict() {
+  local url="$1" out="$2"
+  if ! retry_curl "$url" "$out"; then
+    log "FATAL: required asset fetch failed: $url"
+    return 1
+  fi
+  if [[ ! -s "$out" ]]; then
+    log "FATAL: required asset is empty after fetch: $out (url=$url)"
+    return 1
+  fi
+  return 0
+}
+
 # Cached, exported globals used across sections. Defined here once so
 # every sub-script gets the same value without recomputing.
 export FEDORA_VER="${FEDORA_VER:-$(rpm -E %fedora 2>/dev/null || echo 44)}"

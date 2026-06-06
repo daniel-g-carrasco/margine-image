@@ -557,15 +557,24 @@ jobs:
           ls -la sbom.spdx.json
           echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
-          ATTACH_DIGEST="$(oras attach \
+          # oras 2.x: --format go-template='{{.Digest}}' returns
+          # "<no value>" (the JSON key is "digest" lowercase but the
+          # go-template path the docs suggest does not resolve). Use
+          # --format json + jq to get the manifest digest of the new
+          # subject-attached SBOM artifact, reliably.
+          # PR #73 follow-up after 2026-06-06 build #27065187939 fail:
+          # "Signing SBOM: ghcr.io/.../margine@<no value>".
+          ATTACH_JSON="$(oras attach \
             --artifact-type application/vnd.spdx+json \
             --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
-            --format go-template='{{.Digest}}' \
+            --format json \
             "${IMAGE_REF}" \
             sbom.spdx.json:application/spdx+json)"
+          echo "oras attach output: ${ATTACH_JSON}"
+          ATTACH_DIGEST="$(jq -r '.reference | split("@")[1] // .digest // empty' <<<"$ATTACH_JSON")"
           if [[ -z "$ATTACH_DIGEST" ]]; then
-            echo "::error::oras attach did not return a digest"
+            echo "::error::oras attach did not return a digest (raw: $ATTACH_JSON)"
             exit 1
           fi
           IMG_BASE="${IMAGE_REF%@*}"

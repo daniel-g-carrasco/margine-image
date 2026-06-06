@@ -5,10 +5,11 @@
 # /var/lib/flatpak of the installer rootfs.
 #
 # This file is bind-mounted at /src during the Containerfile RUN.
-# $FLATPAK_LIST_FILE selects which Flatpak list to install
-# (passed as build-arg by build-disk.yml workflow):
-#   flatpaks-base    — base Margine (22 apps)
-#   flatpaks-gaming  — base Margine + 5 gaming launchers (27 apps)
+# $FLATPAK_LIST_FILE selects which Flatpak list to install (passed as
+# build-arg by build-disk.yml workflow). Always `flatpaks-base` since
+# the gaming variant was retired 2026-06-06 in favour of
+# `ujust margine-gaming`; the arg is kept for forward-compat in case a
+# future variant lands.
 #
 # After this script completes, /var/lib/flatpak has all the apps
 # pre-installed. BIB anaconda-iso packs this entire image into

@@ -67,18 +67,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both flavours: base Margine and the gaming variant. Both
-        # get qcow2 (smoke testing in QEMU/virt-manager) + anaconda-iso
-        # (real-hardware install). 4 jobs total run in parallel.
-        image: ["margine", "margine-gaming"]
+        # Margine ships a single base ISO. Users who want the gaming
+        # variant install the base, then `ujust margine-gaming` from a
+        # terminal (rpm-ostree install gamescope + vkBasalt, flatpak
+        # install Steam/Lutris/Heroic/Bottles/ProtonUp-Qt/etc.). That
+        # decision (2026-06-06) replaces the previous two-flavour ISO
+        # matrix — fewer 60-min ISO builds, fewer IA uploads, one less
+        # surface area for branding/asset drift. Gaming OCI variant
+        # also retired (build-gaming.yml deleted same PR).
+        image: ["margine"]
         disk-type: ["qcow2", "anaconda-iso"]
     permissions:
       contents: read
       # packages: write (NOT just read) — required for installer-image
-      # push step. The GHCR `margine-installer` + `margine-gaming-
-      # installer` packages have been bootstrap-pushed once manually
-      # (2026-06-05 by daniel) so CI doesn't need create-package
-      # scope, but it does need write to push new run-* tags on top.
+      # push step. The GHCR `margine-installer` package has been
+      # bootstrap-pushed once manually (2026-06-05 by daniel) so CI
+      # doesn't need create-package scope, but it does need write to
+      # push new run-* tags on top.
       packages: write
       id-token: write
     outputs:
@@ -101,7 +106,7 @@ jobs:
           USER_UID=$(id -u)
           USER_GID=$(id -g)
           DISK_TYPE=$(echo "${{ matrix.disk-type }}" | tr ' ' '-')
-          # IMAGE_NAME comes from the matrix (margine or margine-gaming).
+          # IMAGE_NAME comes from the matrix (single-entry: margine).
           IMAGE_NAME="${{ matrix.image }}"
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
@@ -165,12 +170,7 @@ jobs:
         id: installer
         run: |
           set -euo pipefail
-          # Select flatpaks list by flavor.
-          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
-            FLATPAK_LIST_FILE=flatpaks-gaming
-          else
-            FLATPAK_LIST_FILE=flatpaks-base
-          fi
+          FLATPAK_LIST_FILE=flatpaks-base
           BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
           INSTALLER_TAG="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}-installer:run-${{ github.run_id }}"
           echo "Building $INSTALLER_TAG from $BASE_IMAGE with $FLATPAK_LIST_FILE"
@@ -283,13 +283,13 @@ jobs:
 
       - name: Prune stale margine-installer GHCR tags (keep newest 3)
         # Each anaconda-iso build creates a transient installer image
-        # tagged margine[-gaming]-installer:run-<run_id>. They're never
-        # consumed downstream — only BIB pulls them in the same job and
-        # is done. GHCR keeps everything forever by default → tag list
-        # grows monotonically. Keep the 3 newest, delete the rest.
-        # Idempotent; non-fatal if the package doesn't exist yet (first
-        # run) or the API is rate-limited (don't block the disk pipeline).
-        # Audit §8 rec #16.
+        # tagged margine-installer:run-<run_id>. They're never consumed
+        # downstream — only BIB pulls them in the same job and is done.
+        # GHCR keeps everything forever by default → tag list grows
+        # monotonically. Keep the 3 newest, delete the rest. Idempotent;
+        # non-fatal if the package doesn't exist yet (first run) or the
+        # API is rate-limited (don't block the disk pipeline). Audit §8
+        # rec #16.
         if: matrix.disk-type == 'anaconda-iso' && always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -332,11 +332,11 @@ jobs:
     # job on flakiness is the whole point of the split.
     timeout-minutes: 180
     strategy:
-      # Run base + gaming uploads in parallel — they're independent,
-      # and a failure of one doesn't invalidate the other.
       fail-fast: false
       matrix:
-        image: ["margine", "margine-gaming"]
+        # Only the base Margine ISO is published — gaming variant was
+        # retired 2026-06-06 in favour of `ujust margine-gaming`.
+        image: ["margine"]
     permissions:
       contents: read
     outputs:
@@ -428,19 +428,10 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
           DATE_TAG="$(date -u +%Y%m%d)"
-          # Per-variant IA identifier + human-readable title. The base
-          # keeps the historical "margine-anaconda-iso-YYYYMMDD"
-          # identifier; the gaming variant gets its own item.
           IDENTIFIER="${{ matrix.image }}-anaconda-iso-${DATE_TAG}"
-          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
-            TITLE="Margine Gaming Linux ISO ${DATE_TAG}"
-            DESCRIPTION="Margine Gaming — Margine base + gamescope/mangohud/vkBasalt/gamemode/etc. + Steam/Lutris/Heroic/Bottles/Protontricks/ProtonUp-Qt/RetroArch preinstalled. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
-            SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine;gaming;steam"
-          else
-            TITLE="Margine Linux ISO ${DATE_TAG}"
-            DESCRIPTION="Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
-            SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
-          fi
+          TITLE="Margine Linux ISO ${DATE_TAG}"
+          DESCRIPTION="Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+          SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
           [s3]
@@ -490,13 +481,8 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           DATE_TAG="$(date -u +%Y%m%d)"
           ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
-          if [[ "${{ matrix.image }}" == "margine-gaming" ]]; then
-            HEADER="Margine Gaming ${DATE_TAG}"
-            SUBHEAD="Margine Gaming — Margine + Steam/Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/gamemode preinstalled."
-          else
-            HEADER="Margine ${DATE_TAG}"
-            SUBHEAD="Margine — Bluefin DX + CachyOS signed kernel."
-          fi
+          HEADER="Margine ${DATE_TAG}"
+          SUBHEAD="Margine — Bluefin DX + CachyOS signed kernel."
           TORRENT_URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
           MIRROR_HTTP="https://archive.org/download/${IDENTIFIER}/${ISO_NAME}"
           cat > "$OUTDIR/index.html" <<HTML
@@ -553,13 +539,13 @@ jobs:
           retention-days: 30
 
   bump_site:
-    # After publish_ia succeeds for BOTH flavours (margine + margine-gaming),
-    # auto-open a PR on margine-os-1084ca72 that bumps the LATEST_ISO_DATE
-    # constant in src/routes/index.tsx. That single constant drives 8
-    # hardcoded direct-link URLs on the site (4 per flavour:
-    # IA details / .torrent / direct HTTP / SHA256SUMS). Without this,
-    # the site's Hero CTAs and Install Option A direct links would have
-    # to be bumped by hand after every release.
+    # After publish_ia succeeds for the (single, post-gaming-kill)
+    # Margine ISO, auto-open a PR on margine-os-1084ca72 that bumps
+    # the LATEST_ISO_DATE constant in src/routes/index.tsx. That
+    # single constant drives 4 hardcoded direct-link URLs on the
+    # site (IA details / .torrent / direct HTTP / SHA256SUMS).
+    # Without this, the site's Hero CTAs and Install Option A direct
+    # links would have to be bumped by hand after every release.
     #
     # SETUP REQUIREMENT — repo secret `SITE_BUMP_TOKEN`:
     #   A fine-grained GitHub PAT scoped to repo
@@ -571,9 +557,7 @@ jobs:
     #   instead of failing the workflow.
     name: Auto-bump LATEST_ISO_DATE on margine.the-empty.place repo
     needs: publish_ia
-    # Only runs when both publish_ia matrix children succeeded
-    # (matrix needs uses the strictest of the children — success means
-    # both base + gaming uploaded). PR events skip this step entirely.
+    # PR events skip this step entirely.
     if: success() && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -662,11 +646,11 @@ jobs:
           PR_BODY=$(cat <<EOF
           Auto-opened by [margine-image build-disk #${{ github.run_id }}](${RUN_URL}).
 
-          The site's hardcoded direct-link URLs (4 base + 4 gaming) point at
-          \`archive.org/details/margine{,-gaming}-anaconda-iso-\$LATEST_ISO_DATE\`.
+          The site's hardcoded direct-link URLs point at
+          \`archive.org/details/margine-anaconda-iso-\$LATEST_ISO_DATE\`.
           This PR bumps the date constant after a successful Internet Archive
           publish so the Hero CTAs and Install Option A reference the just-
-          released ISOs.
+          released ISO.
 
           Previous: \`${OLD_DATE}\`
           New:      \`${NEW_DATE}\`

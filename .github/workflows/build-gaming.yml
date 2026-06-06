@@ -142,6 +142,28 @@ jobs:
       # into /var/lib/containers; rechunk picks it up directly. See
       # build.yml for the long-form explanation.
 
+      # SBOM generation pre-rechunk from local container storage. Same
+      # rationale as build.yml (see docs/sbom-revisit-plan.md).
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+
+      - name: Generate SBOM from local container storage
+        run: |
+          set -euo pipefail
+          sudo syft "containers-storage:localhost/${{ env.IMAGE_NAME }}:${{ env.CANDIDATE_TAG }}" \
+            -o spdx-json=sbom.spdx.json
+          sudo chown "$(id -u):$(id -g)" sbom.spdx.json
+          ls -la sbom.spdx.json
+          echo "SBOM package count: $(jq '.packages | length' sbom.spdx.json)"
+
+      - name: Upload SBOM as workflow artifact (handoff to sign job)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.run_id }}
+          path: sbom.spdx.json
+          retention-days: 1
+          if-no-files-found: error
+
       - name: ReChunk image
         id: rechunk
         uses: hhd-dev/rechunk@v1.2.4
@@ -236,7 +258,42 @@ jobs:
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
 
-      # SBOM block REMOVED 2026-06-06 — see same comment in build.yml.
+      # SBOM attach + sign — artifact handoff from build_push. Same
+      # rationale as build.yml.
+      - name: Download SBOM artifact (from build_push)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}-${{ github.run_id }}
+          path: .
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
+
+      - name: Attach + cosign-sign SBOM
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ needs.build_push.outputs.image_ref }}"
+          ls -la sbom.spdx.json
+          echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          ATTACH_DIGEST="$(oras attach \
+            --artifact-type application/vnd.spdx+json \
+            --annotation org.opencontainers.artifact.created="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --annotation org.opencontainers.artifact.description="SPDX SBOM for ${IMAGE_REF}" \
+            --format go-template='{{.Digest}}' \
+            "${IMAGE_REF}" \
+            sbom.spdx.json:application/spdx+json)"
+          if [[ -z "$ATTACH_DIGEST" ]]; then
+            echo "::error::oras attach did not return a digest"
+            exit 1
+          fi
+          IMG_BASE="${IMAGE_REF%@*}"
+          SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
+          echo "Signing SBOM: ${SBOM_REF}"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
 
   promote_to_stable:
     name: Promote candidate → stable (no smoke-boot needed — base was validated)

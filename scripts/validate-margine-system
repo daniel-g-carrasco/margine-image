@@ -530,20 +530,37 @@ done
 # by duplicating BAKE entries in margine-defaults.preinstall so
 # flatpak-preinstall.service catches them at first boot. This
 # check independently verifies each BAKE app is in fact installed.
-for bake_file in /usr/share/margine/installer-flatpaks-base /usr/share/margine/installer-flatpaks-gaming; do
-  if [[ -f "$bake_file" ]]; then
-    info "BAKE list: $bake_file"
-    while IFS= read -r line; do
-      app=$(echo "$line" | sed -E 's/#.*$//' | xargs)
-      [[ -z "$app" ]] && continue
-      if echo "$INSTALLED" | grep -qxF "$app"; then
-        ok "BAKE app installed: $app"
-      else
-        bad "BAKE app NOT installed: $app — kickstart %post bake silently failed AND preinstall fallback hasn't caught it yet"
+# MARGINE_VALIDATE_CONTEXT switches the BAKE check between two modes:
+#   default ("install"): real install from ISO. BAKE apps must be present
+#                        at first boot; missing app = FAIL.
+#   "smoke-boot":        running on a qcow2 produced by bootc-image-builder
+#                        (no Anaconda %post bake, no kickstart rsync of
+#                        /var/lib/flatpak). BAKE apps physically cannot
+#                        be present; report INFO, do not FAIL.
+# Audit §8 rec #19 prep — validate-margine-system can now be invoked
+# from inside smoke-boot.yml without false-positives.
+case "${MARGINE_VALIDATE_CONTEXT:-install}" in
+  smoke-boot|qcow2|non-iso)
+    info "BAKE check skipped (MARGINE_VALIDATE_CONTEXT=${MARGINE_VALIDATE_CONTEXT})"
+    info "  qcow2 builds have no Anaconda %post; BAKE app presence is not validatable here."
+    ;;
+  *)
+    for bake_file in /usr/share/margine/installer-flatpaks-base /usr/share/margine/installer-flatpaks-gaming; do
+      if [[ -f "$bake_file" ]]; then
+        info "BAKE list: $bake_file"
+        while IFS= read -r line; do
+          app=$(echo "$line" | sed -E 's/#.*$//' | xargs)
+          [[ -z "$app" ]] && continue
+          if echo "$INSTALLED" | grep -qxF "$app"; then
+            ok "BAKE app installed: $app"
+          else
+            bad "BAKE app NOT installed: $app — kickstart %post bake silently failed AND preinstall fallback hasn't caught it yet"
+          fi
+        done < "$bake_file"
       fi
-    done < "$bake_file"
-  fi
-done
+    done
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 hdr "9. Margine helpers and ujust recipes"

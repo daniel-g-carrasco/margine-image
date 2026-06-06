@@ -33,7 +33,9 @@ systemctl reboot
 
 # 4. First boot after reboot: mok-enroll.service runs once.
 # 5. Reboot a second time: confirm enrollment in the MOK Manager screen
-#    (firmware UI). The CachyOS kernel then boots under Secure Boot.
+#    (firmware UI) — passphrase is `margine-os`. The CachyOS kernel
+#    then boots under Secure Boot. Full walkthrough:
+#    https://margine.the-empty.place/docs/first-boot
 
 # 6. After login, run the one-shot user-state bootstrap:
 ujust margine-bootstrap

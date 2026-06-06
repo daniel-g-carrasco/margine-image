@@ -194,8 +194,13 @@ Second reboot:
 systemctl reboot
 ```
 
-→ MOK Manager screen → Enroll MOK → password (the `MOK_PASSWORD` GH
-Actions secret; archived in Bitwarden under "Margine MOK"). Reboot.
+→ MOK Manager screen → Enroll MOK → Continue → Yes → passphrase
+**`margine-os`** (current value of the `MOK_PASSWORD` GH Actions secret,
+rotated 2026-06-06 from the original 24-char base64 to a short
+human-typable string — same pattern as Bazzite's `ublue-os`). Reboot.
+
+User-facing walkthrough with screenshots: see
+<https://margine.the-empty.place/docs/first-boot>.
 
 Third boot → Margine is now booted under Secure Boot with the
 CachyOS kernel.

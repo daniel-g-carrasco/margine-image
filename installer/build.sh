@@ -44,8 +44,17 @@ fi
 flatpak remote-add --if-not-exists --system flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
 
-echo "=== Installing $(grep -cv '^#\|^$' "$LIST_PATH") Flatpaks from $FLATPAK_LIST_FILE ==="
-grep -v '^#\|^$' "$LIST_PATH"
+# Strip whole-line AND inline trailing comments — without the sed,
+# entries like "com.github.tchx84.Flatseal  # Flatpak permissions GUI"
+# pass "#" + words as literal Flatpak IDs, and flatpak install fails
+# with "Invalid id #: Name can't start with #" (build #27075455521,
+# 2026-06-06). Trim leading/trailing whitespace too.
+APPS=$(grep -v '^[[:space:]]*#\|^[[:space:]]*$' "$LIST_PATH" \
+       | sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+       | grep -v '^$')
+
+echo "=== Installing $(echo "$APPS" | wc -l) Flatpaks from $FLATPAK_LIST_FILE ==="
+echo "$APPS"
 
 # Install all apps in the list. --or-update tolerates already-installed
 # entries (Bluefin DX's bazaar.preinstall may have pre-baked Bazaar at
@@ -54,8 +63,7 @@ grep -v '^#\|^$' "$LIST_PATH"
 # returns 0 even on partial failure; flatpak install logs the failures
 # to stderr so the build log captures them, and the resulting
 # /var/lib/flatpak has whatever did install.
-flatpak install --system --noninteractive --or-update flathub \
-  $(grep -v '^#\|^$' "$LIST_PATH")
+flatpak install --system --noninteractive --or-update flathub $APPS
 
 echo "=== Installed app refs ==="
 flatpak list --system --app --columns=application | sort

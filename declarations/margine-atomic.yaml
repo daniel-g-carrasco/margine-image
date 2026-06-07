@@ -1082,7 +1082,19 @@ gaming_runtime:
     nvidia_gaming_default: false
     default_image_includes_gaming: false  # opt-in via `ujust margine-gaming`
   opt_in:
-    command: ujust margine-gaming
+    # Two variants, both opt-in, both reversible. Pick by use case.
+    default:
+      command: ujust margine-gaming
+      rollback_command: ujust margine-gaming-remove
+      delivery: flatpak_for_launchers_plus_rpm_for_gamescope_vkbasalt
+      good_for: occasional gaming, no rpm-ostree upgrade overhead
+    native:
+      command: ujust margine-gaming-native
+      rollback_command: ujust margine-gaming-native-remove
+      delivery: rpm_for_steam_lutris_retroarch_plus_flatpak_for_the_rest
+      good_for: anti-cheat (EAC/BattlEye), VR, Steam Link, NVIDIA + Mesa-git side-by-side
+      cost: +30-60s per bootc upgrade to re-apply the layer
+      added_on: 2026-06-07
     recipe_file: /usr/share/ublue-os/just/99-margine.just
     source_in_image_repo: build_files/99-margine.just
     inspired_by: >
@@ -1095,7 +1107,12 @@ gaming_runtime:
       2026-06-03/05); the ujust layer only adds gamescope + vkBasalt
       on top, plus the Flatpak gaming launchers. No umu-launcher
       (complex packaging), no Bazzite KDE/Deck-specific bits.
-    rollback_command: ujust margine-gaming-remove
+      A second variant `ujust margine-gaming-native` (added 2026-06-07)
+      layers Steam + Lutris + RetroArch as native RPMs for users
+      needing maximum Proton/Wine compatibility — same trade-off
+      RakuOS chose with its "Native Gaming. Not Flatpak." stance,
+      but kept here as an opt-in second path so the default Margine
+      experience stays upgrade-friendly.
   layers:
     desktop_runtime:
       apps_channel: flatpak
@@ -1128,6 +1145,50 @@ gaming_runtime:
     inspect_flatpak_permissions: true
     validate_split_lock_not_disabled_by_default: true
     validate_rpm_ostree_status: true
+
+ai_workflow:
+  # Optional local-LLM workflow. Added 2026-06-07 in response to the
+  # Red Hat / Fedora "make AI boring" push (RamaLama containerised
+  # local-LLM serving) and the broader 2026 trend of locally-hosted,
+  # privacy-friendly LLMs replacing some SaaS-only workflows for
+  # writers / coders / creators (Margine's ICP).
+  default_image_includes_ai: false  # opt-in via `ujust margine-ai`
+  opt_in:
+    command: ujust margine-ai
+    rollback_command: ujust margine-ai-remove
+    recipe_file: /usr/share/ublue-os/just/99-margine.just
+    source_in_image_repo: build_files/60-custom.just
+    gui:
+      flatpak_id: com.jeffser.Alpaca
+      backend: ollama_bundled_in_flatpak_runtime
+      what_it_does: >
+        GUI chat with local LLMs. Alpaca ships its own Ollama backend
+        inside the Flatpak runtime, so no host install and no daemon
+        to run. Pick a model from inside the app on first launch —
+        Alpaca handles the download.
+    cli_pointer:
+      tool: ramalama
+      not_installed_by_recipe: true
+      why: >
+        RamaLama is Red Hat's CLI runner for local LLMs in rootless
+        containers (Podman + --network=none default). Installing it
+        host-side would add another layered RPM; instead the recipe
+        prints distrobox setup commands so power users keep their
+        host minimal.
+      pointer: >
+        distrobox create --image fedora:42 --name ai &&
+        distrobox enter ai && sudo dnf install -y ramalama
+    recommended_starter_models:
+      - llama3.1:8b      # general purpose, ~5 GB, fits 8 GB GPU
+      - qwen2.5-coder:7b # coding-focused, ~4 GB
+      - mistral:7b       # fast general, ~4 GB
+      - phi3.5:3.8b      # small footprint, ~2 GB, CPU-friendly
+    hardware_floor:
+      vram_comfortable_gb: 8
+      ram_minimum_gb_for_cpu_only: 16
+  validation:
+    inspect_flatpak_permissions: true
+    network_isolated_for_ramalama: true  # --network=none default
 
 services:
   baseline_enabled: []

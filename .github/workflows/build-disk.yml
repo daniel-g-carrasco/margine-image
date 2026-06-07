@@ -2,7 +2,7 @@
 # Margine ISO + qcow2 builder.
 #
 # Pipeline shape (2026-06-02 split, see
-# ~/.claude/.../memory/feedback_ci_split_long_jobs.md for the rule):
+# the project's CI split rule):
 #
 #   build_disk (matrix: anaconda-iso, qcow2)  ──┐
 #                                               │  uploads each artifact

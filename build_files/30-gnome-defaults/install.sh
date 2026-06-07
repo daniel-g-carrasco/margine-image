@@ -19,7 +19,7 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # keep the packages installed so the user can flip them back on per
 # session, but they don't auto-load on first boot.
 enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'search-light@icedman.github.com', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info']
-# Daniel 2026-06-07: drop VS Code from the dock favourites and pin
+# Decision (2026-06-07): drop VS Code from the dock favourites and pin
 # Bazaar there instead. Reasoning: VS Code is a creator's tool but its
 # daily presence in the dock is project-specific (users jump in and
 # out by .desktop launch / cli); Bazaar is the entry point for "I want
@@ -80,20 +80,20 @@ show-desktop=@as []
 [org.gnome.shell.extensions.dash-to-dock]
 # Anti-collision with Margine's Super+1..0 workspace binds.
 hot-keys=false
-# Cosmetic defaults captured 2026-06-06 from daniel's running VM
+# Cosmetic defaults Captured from a reference Margine deployment
 # (diagnose-margine-firstboot dconf dump). Promoted to system defaults
-# so first-boot users get the same dock the project's lead is using
+# so first-boot users get the same dock the project's reference deployment uses
 # without manual tweaking. Mirrors blur-my-shell pattern below.
 animation-time=0.15
 apply-custom-theme=true
 background-color='rgb(40,40,40)'
 background-opacity=0.8
 custom-background-color=true
-# Daniel 2026-06-07: "shrink the dash" off — the curated favourites
+# Decision (2026-06-07): "shrink the dash" off — the curated favourites
 # already fit; shrinking added empty side-margins that looked off.
 custom-theme-shrink=false
 customize-alphas=true
-# Daniel 2026-06-07: cap icon size at 36px so the dock stays compact.
+# Decision (2026-06-07): cap icon size at 36px so the dock stays compact.
 # dash-max-icon-size is honoured only when icon-size-fixed=true;
 # without that flag Dash-to-Dock auto-scales icons to fill the panel
 # height and ignores the cap.
@@ -159,7 +159,7 @@ auto-raise=false
 # ---------------------------------------------------------------------------
 # Blur My Shell + Search Light — cosmetic-only defaults
 # ---------------------------------------------------------------------------
-# Captured 2026-06-02 from daniel's running VM via `dconf dump
+# Captured from a reference Margine deployment via `dconf dump
 # /org/gnome/shell/extensions/<ext>/`, narrowed 2026-06-03 to the
 # COSMETIC surface only (blur radius / brightness, background
 # transparency, pipeline assignment per surface). All other captured
@@ -249,14 +249,14 @@ blur-background=false
 shortcut-search=['<Super>space']
 use-animations=true
 window-effect=0
-# Rounded corners at the schema maximum — daniel asked 2026-06-06 to
+# Rounded corners at the schema maximum — the project lead asked to
 # ship "rounded corners di searchlight al massimo come default". The
 # search-light gschema declares border-radius as a double in [0, 30],
 # so 30.0 is the documented ceiling. Anything above 30 gets clamped
 # by the extension at apply time; values below produce sharper edges
 # than what daniel ran with on his daily VM.
 border-radius=30.0
-# Popup dimensions — daniel 2026-06-07: the 2026-06-06 default of
+# Popup dimensions — decision: the 2026-06-06 default of
 # scale-width/height=0.10 felt "un po' troppo grande" on his display.
 # Reduce to 0.07 (≈30% smaller). User can override per-monitor via
 # Extension Manager → Search Light → Preferences.

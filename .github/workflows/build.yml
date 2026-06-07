@@ -10,7 +10,7 @@
 # shuts down after" model we wanted.
 #
 # Pipeline shape (2026-06-01 split, see
-# ~/.claude/.../memory/feedback_ci_split_long_jobs.md for the rule):
+# the project's CI split rule):
 #
 #   build_push  ──┐
 #                 │  (digest output, fanout)

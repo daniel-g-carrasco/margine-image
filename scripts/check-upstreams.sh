@@ -40,6 +40,12 @@ declare -A repos=(
   # checked against copr.fedorainfracloud.org/coprs/bieszczaders/
   # kernel-cachyos manually — out of scope for this script.
   [kernel-cachyos]="CachyOS/linux-cachyos"
+  # Sealed bootable container images — Fedora upstream test repo for
+  # systemd-boot + UKI + composefs + fs-verity. ADR 0007 tracks the
+  # migration timeline; when this repo drops its "test only" warning
+  # and starts pushing production-signed images, Margine has to plan
+  # the custom-kernel rewrite.
+  [sealed-images]="travier/fedora-atomic-desktops-sealed"
 )
 
 LAST_REVIEWED=$(grep -oE '202[0-9]-[0-9]{2}-[0-9]{2}' "$DOC" | sort -u | tail -1)

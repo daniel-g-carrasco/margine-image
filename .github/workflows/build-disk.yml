@@ -612,30 +612,13 @@ jobs:
 
           sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
             src/routes/index.tsx
-
-          # Also bump LATEST_ISO_BTIH (used by the Hero Magnet button to
-          # compose magnet:?xt=urn:btih:… URLs that open directly in the
-          # user's torrent client). The btih is published by IA in the
-          # item metadata under files[<id>_archive.torrent].btih. Fetch
-          # it now and substitute. Up to 10 min poll because IA may
-          # still be generating the .torrent (derive job).
-          OLD_BTIH="$(grep -oE 'LATEST_ISO_BTIH = "[a-f0-9]+"' src/routes/index.tsx \
-            | head -1 | grep -oE '[a-f0-9]{40}' || true)"
-          NEW_BTIH=""
-          for i in $(seq 1 10); do
-            NEW_BTIH="$(curl -fsSL "https://archive.org/metadata/margine-anaconda-iso-${NEW_DATE}" --max-time 30 \
-              | python3 -c "import json,sys; d=json.load(sys.stdin); print(next((f.get('btih','') for f in d.get('files',[]) if f.get('name','').endswith('_archive.torrent')), ''))" || true)"
-            [[ -n "$NEW_BTIH" && "$NEW_BTIH" =~ ^[a-f0-9]{40}$ ]] && break
-            echo "  ($i) btih not yet in IA metadata, sleeping 60s"
-            sleep 60
-          done
-          if [[ -n "$NEW_BTIH" && "$OLD_BTIH" != "$NEW_BTIH" ]]; then
-            echo "Bumping LATEST_ISO_BTIH: $OLD_BTIH → $NEW_BTIH"
-            sed -i "s|LATEST_ISO_BTIH = \"$OLD_BTIH\"|LATEST_ISO_BTIH = \"$NEW_BTIH\"|" \
-              src/routes/index.tsx
-          else
-            echo "::warning::Could not fetch a fresh btih — LATEST_ISO_BTIH left at $OLD_BTIH (Hero magnet button will point at the previous release until next bump)."
-          fi
+          # Note: LATEST_ISO_BTIH used to be bumped here too, when the
+          # Hero had a magnet:? button composed from the btih. That
+          # button was retired 2026-06-07 — Fragments rejects valid
+          # magnets parsed from arbitrary trackers — and replaced with
+          # a direct link to the .torrent file (which the LATEST_ISO_TORRENT
+          # constant already computes from LATEST_ISO_DATE). So a single
+          # date bump now suffices.
 
           # If a PR for the same target date already exists on the head
           # branch (re-dispatch on same UTC day), skip — don't churn.

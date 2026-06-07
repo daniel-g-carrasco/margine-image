@@ -61,7 +61,7 @@ operations.
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
 | 🛠 **Creator-tier system tools** | The base image also ships **mangohud** (Vulkan/OpenGL overlay for monitoring CPU/GPU/RAM during DaVinci/Blender renders, OBS recording, ffmpeg encoding), **goverlay** (Qt GUI to configure MangoHud), and **steam-devices** (udev rules for USB game controllers — useful for any creator using a controller as jog wheel / foot pedal). Plus the upstream Bluefin DX set: GameMode, input-remapper, tuned, tuned-ppd. |
 | ⚙️ **CPU scheduler picker** | Activities → **"Margine CPU Scheduler"** launcher. Right-click shows 7 quick-pick actions to switch between `scx_lavd` (low-latency, gaming-tuned), `scx_bpfland` (interactive + throughput), `scx_rusty` (general-purpose CFS-like), `scx_central` (single-CPU, lowest jitter — pro-audio), `scx_simple` (didactic), or back to the kernel default (BORE). CLI equivalent: `ujust margine-scheduler <name>`. |
-| 🎮 **Optional gaming layer** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonUp-Qt**, **RetroArch** as Flatpaks. One command from a terminal, a reboot, gaming is on. `ujust margine-gaming-remove` rolls it back. mangohud / goverlay / steam-devices / GameMode are in base Margine, no layer needed. |
+| 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonUp-Qt**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per `bootc upgrade`. `ujust margine-gaming{,-native}-remove` rolls either variant back. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
 | 🗂 **Organized application folders** | GNOME's activities grid is organized into six folders: Office, Graphics, Photography, Audio, Video, System. High-frequency apps (browser, mail, files, terminal, code editor) stay at the top level for one-click access. Editable in the declarative spec. |
@@ -139,29 +139,53 @@ After the reboot, two more one-time steps:
 
 ### Option C — Add the gaming layer
 
-Run from a terminal after first boot:
+Margine ships two recipes for the gaming stack; pick one based on
+how seriously you game.
+
+**Default (Flatpak — for occasional gamers):**
 
 ```sh
-ujust margine-gaming            # installs gamescope, vkBasalt as
-                                # layered RPMs + Steam, Lutris, Heroic,
+ujust margine-gaming            # gamescope + vkBasalt as RPMs + every
+                                # launcher (Steam, Lutris, Heroic,
                                 # Bottles, Protontricks, ProtonUp-Qt,
-                                # RetroArch as Flatpaks. Asks before
+                                # RetroArch) as Flatpak. Asks before
                                 # touching anything.
 systemctl reboot                # required to activate the rpm-ostree
                                 # layer.
 ```
 
-To remove:
+Trade-off: Flatpak Steam is sandboxed (good for upgrades, bad for
+some anti-cheat / VR / Mesa-version-matching scenarios).
+
+**Native (RPM-layered — for daily / serious gamers):**
 
 ```sh
-ujust margine-gaming-remove
+ujust margine-gaming-native     # Steam + Lutris + RetroArch as native
+                                # RPMs (RPM Fusion). Heroic, Bottles,
+                                # Protontricks, ProtonUp-Qt stay
+                                # Flatpak (no official RPM).
 systemctl reboot
 ```
 
-The result is a layered (not ostree-canonical) deployment —
-`rpm-ostree status` will show `LayeredPackages: gamescope vkBasalt`,
-and every `bootc upgrade` re-applies the layer on top of the new
-base (~30-60s extra). The recipe prints the same warning before the
+Trade-off: maximum Proton/Wine compatibility (anti-cheat works,
+VR/Steam Link/USB controllers integrate cleanly, Mesa always
+matches the system), at the cost of +30-60s per `bootc upgrade` to
+re-apply the layer. Recommended if you run EAC/BattlEye titles,
+VR headsets, or NVIDIA proprietary + Mesa-git side-by-side.
+
+To remove either:
+
+```sh
+ujust margine-gaming-remove        # for the Flatpak variant
+ujust margine-gaming-native-remove # for the native variant
+systemctl reboot
+```
+
+The result of either is a layered (not ostree-canonical) deployment —
+`rpm-ostree status` will show `LayeredPackages: gamescope vkBasalt`
+(or the larger list for the native variant), and every `bootc
+upgrade` re-applies the layer on top of the new base (~30-60s extra
+for Flatpak variant, ~60-90s for native). The recipe prints the same warning before the
 install prompt.
 
 ### Post-install verification

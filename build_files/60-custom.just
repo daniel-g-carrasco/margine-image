@@ -207,6 +207,117 @@ margine-gaming-remove:
         com.vysp3r.ProtonPlus \
         org.libretro.RetroArch || true
 
+# Install the NATIVE Margine gaming layer (Steam + Lutris + RetroArch
+# as rpm-ostree layered RPMs, the launchers without an RPM stay Flatpak).
+# Native gives maximum Proton/Wine compatibility (no Flatpak sandbox
+# restrictions on controllers, kernel namespaces, Mesa version, etc.)
+# at the cost of +30-60s per `bootc upgrade` and occasional file-
+# conflict risk. Use it if you game daily, run anti-cheat titles
+# (EAC/BattlEye), use VR/Steam Link, or mix NVIDIA proprietary with
+# Mesa-git. For occasional gaming the Flatpak default (margine-gaming)
+# is enough.
+[group('Gaming')]
+margine-gaming-native:
+    #!/usr/bin/bash
+    set -euo pipefail
+
+    cat <<'EOF'
+    == Margine gaming layer (NATIVE variant) ==
+
+    This installs:
+
+      Native RPMs (layered via rpm-ostree — requires reboot):
+        - steam              (Valve Steam client, RPM Fusion non-free)
+        - lutris             (open-source game manager)
+        - retroarch          (multi-emulator front-end)
+        - gamescope          (HDR / per-game compositor / scaling)
+        - vkBasalt           (post-processing Vulkan layer)
+
+      Flatpaks (for launchers without an official RPM):
+        - com.heroicgameslauncher.hgl   (Epic + GOG)
+        - com.usebottles.bottles        (Wine prefix manager)
+        - com.github.Matoking.protontricks
+        - com.vysp3r.ProtonPlus         (Proton-GE manager)
+
+    Native vs Flatpak — when to pick which:
+      - margine-gaming         (DEFAULT, Flatpak): sandboxed, zero
+                                upgrade overhead. Fine for the
+                                occasional gamer.
+      - margine-gaming-native  (THIS, RPM-layered): maximum Proton/
+                                Wine compatibility — anti-cheat (EAC/
+                                BattlEye) works, VR/Steam Link/USB
+                                controllers integrate without sandbox
+                                quirks, Mesa version always matches
+                                the system. The cost is +30-60s per
+                                `bootc upgrade` to re-apply the layer.
+
+    Pick this variant if: anti-cheat titles, VR, daily play, or NVIDIA
+    proprietary + Mesa-git side-by-side.
+
+    To roll this back: ujust margine-gaming-native-remove
+    To switch from the Flatpak variant first: ujust margine-gaming-remove
+
+    EOF
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+
+    echo
+    echo "== Layering native gaming RPMs (rpm-ostree) =="
+    sudo rpm-ostree install \
+        steam \
+        lutris \
+        retroarch \
+        gamescope \
+        vkBasalt
+
+    echo
+    echo "== Installing the rest as Flatpaks =="
+    flatpak install --system -y --or-update flathub \
+        com.heroicgameslauncher.hgl \
+        com.usebottles.bottles \
+        com.github.Matoking.protontricks \
+        com.vysp3r.ProtonPlus
+
+    echo
+    cat <<'EOF'
+    == Done ==
+    Reboot to activate the native RPM layer:
+        systemctl reboot
+    The Flatpak apps are already in Activities (no reboot needed for them).
+    EOF
+
+# Roll back the NATIVE Margine gaming layer (undo margine-gaming-native)
+[group('Gaming')]
+margine-gaming-native-remove:
+    #!/usr/bin/bash
+    set -euo pipefail
+
+    echo "This will:"
+    echo "  - rpm-ostree uninstall steam, lutris, retroarch, gamescope, vkBasalt"
+    echo "  - flatpak uninstall Heroic, Bottles, Protontricks, ProtonPlus"
+    echo
+    echo "  NOT touched (kept — useful for non-gaming workflows too):"
+    echo "    mangohud, goverlay, steam-devices, gamemode, input-remapper,"
+    echo "    tuned, tuned-ppd, scx-scheds. All in base Margine."
+    echo
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+
+    sudo rpm-ostree uninstall \
+        steam \
+        lutris \
+        retroarch \
+        gamescope \
+        vkBasalt || true
+
+    flatpak uninstall --system -y \
+        com.heroicgameslauncher.hgl \
+        com.usebottles.bottles \
+        com.github.Matoking.protontricks \
+        com.vysp3r.ProtonPlus || true
+
+    echo "Reboot to deactivate the layer: systemctl reboot"
+
     echo
     echo "Done. Reboot to release the rpm-ostree layer."
 

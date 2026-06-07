@@ -1,0 +1,91 @@
+---
+# One-shot Internet Archive cleanup.
+#
+# Deletes a list of old Margine ISO items from archive.org. Manual-
+# dispatch only (no schedule, no auto-trigger). Reuses the existing
+# IA_ACCESS_KEY / IA_SECRET_KEY repo secrets that build-disk.yml's
+# publish_ia step already uses for upload.
+#
+# Safety: requires `confirm=DELETE` input to run the actual delete;
+# any other value (the default `dry-run`) just lists what would
+# happen.
+
+name: Cleanup IA old ISOs
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DELETE to actually delete. Anything else = dry-run list.'
+        required: true
+        default: 'dry-run'
+
+jobs:
+  delete:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Install ia CLI
+        run: pip install --quiet internetarchive
+
+      - name: Stage IA creds
+        env:
+          IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
+          IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
+        run: |
+          mkdir -p "$HOME/.config/internetarchive"
+          umask 077
+          cat > "$HOME/.config/internetarchive/ia.ini" <<EOF
+          [s3]
+          access = ${IA_S3_ACCESS}
+          secret = ${IA_S3_SECRET}
+          EOF
+
+      - name: Confirm the keep-item is present on IA (safety check)
+        run: |
+          KEEP=margine-anaconda-iso-20260607
+          echo "Waiting for $KEEP to exist on IA (max 60 min)…"
+          for i in $(seq 1 60); do
+            if curl -fsSL "https://archive.org/metadata/$KEEP" --max-time 30 \
+                | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('files') else 1)" 2>/dev/null; then
+              echo "✓ $KEEP found on IA (with files). Safe to proceed."
+              exit 0
+            fi
+            echo "  ($i) not yet, sleeping 60s"
+            sleep 60
+          done
+          echo "::error::$KEEP not on IA after 60 min — aborting to avoid leaving zero ISOs."
+          exit 1
+
+      - name: List + delete old items
+        run: |
+          set -euo pipefail
+          DELETE_LIST=(
+            margine-anaconda-iso-20260602
+            margine-anaconda-iso-20260603
+            margine-anaconda-iso-20260604
+            margine-anaconda-iso-20260605
+            margine-anaconda-iso-20260606
+            margine-gaming-anaconda-iso-20260602
+            margine-gaming-anaconda-iso-20260603
+            margine-gaming-anaconda-iso-20260604
+            margine-gaming-anaconda-iso-20260605
+            margine-gaming-anaconda-iso-20260606
+          )
+          MODE='${{ inputs.confirm }}'
+          if [[ "$MODE" != "DELETE" ]]; then
+            echo "Dry-run mode (confirm=$MODE). Would delete:"
+            printf '  %s\n' "${DELETE_LIST[@]}"
+            echo
+            echo "Re-run with confirm=DELETE to actually delete."
+            exit 0
+          fi
+          for item in "${DELETE_LIST[@]}"; do
+            echo "::group::deleting $item"
+            ia delete "$item" --all --quiet || echo "::warning::$item delete failed (already gone? rate-limited?)"
+            echo "::endgroup::"
+          done
+          echo
+          echo "Done."

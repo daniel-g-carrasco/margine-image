@@ -74,7 +74,7 @@ cycle.
 
 ### Memory entry
 
-[feedback-systemd-after-local-fs](../../../../../home/daniel/.claude/projects/-home-daniel-dev/memory/feedback_systemd_after_local_fs.md)
+feedback-systemd-after-local-fs (internal note)
 (local AI memory). Rule of thumb: **never combine `After=local-fs.target`
 with `Before=systemd-sysusers/tmpfiles` on a unit that runs in early
 boot.** Use `After=local-fs-pre.target` or no `After=` at all.

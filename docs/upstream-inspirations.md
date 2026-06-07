@@ -243,7 +243,7 @@ Place this at `scripts/check-upstreams.sh` and run it manually every
 quarter, or wire it into a monthly GH Actions cron that opens an
 issue when activity is non-trivial. See
 `project_todo_check-upstreams-cron.md` in
-`~/.claude/projects/-home-daniel-dev/memory/` for the reminder to
+the project's internal notes for the reminder to
 implement the cron job.
 
 ---

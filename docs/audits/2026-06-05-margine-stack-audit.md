@@ -1,6 +1,6 @@
 # Margine stack — end-to-end audit, 2026-06-05
 
-**Author:** Claude (Anthropic Sonnet 4) on a deep code+web review.
+**Author:** Margine project review
 **Scope:** every Margine codebase, build pipeline, runtime behaviour, supply
 chain, and external dependency, audited against the late-2025 / early-2026
 state of the art in the Universal Blue / bootc / Fedora Atomic ecosystem.

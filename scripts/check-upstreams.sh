@@ -33,10 +33,13 @@ declare -A repos=(
   # fires. If OGC closes the perf gap, staying on kernel-cachyos becomes
   # harder to defend.
   [ogc-kernel]="OpenGamingCollective/kernel-packages"
-  # bieszczaders kernel-cachyos COPR — single-maintainer Fedora packaging of
-  # CachyOS upstream. ADR 0006 re-review trigger #1 is "no new build for 30
-  # days" — this watchlist entry lets the monthly cron catch the silence.
-  [kernel-cachyos]="bieszczaders/kernel-cachyos"
+  # CachyOS kernel — bieszczaders/kernel-cachyos is a COPR slug, not a
+  # github repo (it lives on copr.fedoraproject.org), so we monitor the
+  # upstream CachyOS/linux-cachyos kernel fork instead. ADR 0006
+  # re-review trigger #1 ("no new build for 30 days") still has to be
+  # checked against copr.fedorainfracloud.org/coprs/bieszczaders/
+  # kernel-cachyos manually — out of scope for this script.
+  [kernel-cachyos]="CachyOS/linux-cachyos"
 )
 
 LAST_REVIEWED=$(grep -oE '202[0-9]-[0-9]{2}-[0-9]{2}' "$DOC" | sort -u | tail -1)

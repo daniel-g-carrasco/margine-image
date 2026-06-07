@@ -690,6 +690,18 @@ jobs:
             --title "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}" \
             --body "$PR_BODY"
 
+          # Auto-merge the bump PR so the Hero buttons + Install Option A
+          # block start pointing at the just-published ISO without manual
+          # intervention. Margine-os-1084ca72 has no required reviews on
+          # main, so --auto + --squash merges immediately. If the merge
+          # fails (network/permission), the PR stays open for manual
+          # squash-merge — exactly the previous behaviour.
+          gh pr merge \
+            --repo daniel-g-carrasco/margine-os-1084ca72 \
+            "$BRANCH" \
+            --squash --auto --delete-branch \
+            || echo "::warning::bump PR auto-merge failed — falls back to manual squash-merge"
+
   notify:
     name: ntfy notification (aggregated)
     needs: [build_disk, publish_ia]

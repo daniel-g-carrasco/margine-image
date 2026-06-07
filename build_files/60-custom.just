@@ -389,3 +389,75 @@ margine-scheduler MODE="status":
         exit 2
         ;;
     esac
+
+
+# Install Alpaca (Flatpak GUI for local LLMs; bundles Ollama backend
+# in the Flatpak runtime). No host install needed, no GPU passthrough
+# to configure — first launch downloads the chosen model.
+# RamaLama (Red Hat's CLI runner) is NOT installed by this recipe;
+# instructions printed below for power users who want it in distrobox.
+[group('Margine')]
+margine-ai:
+    #!/usr/bin/bash
+    set -euo pipefail
+    cat <<'EOF'
+    == Margine AI workflow ==
+
+    This installs:
+      - com.jeffser.Alpaca (Flatpak) — GUI chat with local LLMs.
+        Alpaca bundles its own Ollama backend in the Flatpak, so no
+        host install or daemon-running is needed. First launch
+        downloads the chosen model (a few GB depending on choice —
+        llama3.1:8b is ~5 GB).
+
+    NOT installed by this recipe (do separately if you want):
+      - RamaLama (CLI, Red Hat's local-LLM container runner).
+        For that: open Ptyxis, then:
+          distrobox create --image fedora:42 --name ai
+          distrobox enter ai
+          sudo dnf install -y ramalama
+        Now `ramalama run llama3.1:8b` from inside `ai` works as
+        a CLI ChatGPT-like.
+      - Continue.dev / aichat / sgpt for VS Code or terminal-level
+        completion. Install in your dev distrobox.
+
+    Recommended starter models (downloadable from Alpaca's UI):
+      - llama3.1:8b      — general purpose, ~5 GB, fits 8 GB GPU
+      - qwen2.5-coder:7b — coding-focused, ~4 GB
+      - mistral:7b       — fast general, ~4 GB
+      - phi3.5:3.8b      — small footprint, ~2 GB (CPU-friendly)
+
+    Hardware note:
+      - 8 GB VRAM is the comfort floor for ~7B-parameter models.
+      - CPU-only inference works but is markedly slower; consider
+        phi3.5:3.8b on a 16 GB-RAM laptop.
+
+    To uninstall: ujust margine-ai-remove
+
+    EOF
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    flatpak install --system -y --or-update flathub com.jeffser.Alpaca
+    cat <<'EOF'
+
+    == Done ==
+    Launch Alpaca from Activities → "Alpaca". The first run will ask
+    you to pick a model to download.
+    EOF
+
+# Roll back the Margine AI workflow (undo margine-ai)
+[group('Margine')]
+margine-ai-remove:
+    #!/usr/bin/bash
+    set -euo pipefail
+    echo "This will:"
+    echo "  - flatpak uninstall com.jeffser.Alpaca"
+    echo
+    echo "  NOT touched: model files cached under"
+    echo "    ~/.var/app/com.jeffser.Alpaca/data/  — delete by hand"
+    echo "    if you want to free that disk space."
+    echo
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    flatpak uninstall --system -y com.jeffser.Alpaca || true
+    echo "Done."

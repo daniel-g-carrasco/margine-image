@@ -7,6 +7,50 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-07) — `ujust margine-ai` (optional local-AI workflow)
+- New `ujust margine-ai` recipe in `build_files/60-custom.just` installs
+  [Alpaca](https://flathub.org/apps/com.jeffser.Alpaca) (`com.jeffser.Alpaca`)
+  — a Flatpak GUI for local LLMs that bundles its own Ollama backend.
+  No host install, no daemon-running, models downloaded on demand.
+  Recipe also prints distrobox setup pointer for [RamaLama](https://github.com/containers/ramalama)
+  CLI power users. `ujust margine-ai-remove` reverses it.
+- README "What you get" gets a `🤖 Optional AI workflow` row.
+- Spec yaml (`margine-fedora-atomic/declarations/margine-atomic.yaml`)
+  gets a new top-level `ai_workflow:` section documenting the opt-in
+  model, recommended starter models (llama3.1:8b / qwen2.5-coder:7b /
+  mistral:7b / phi3.5:3.8b), and hardware floor (8 GB VRAM comfort,
+  16 GB RAM minimum for CPU-only).
+
+### Added (2026-06-07) — `ujust margine-gaming-native` (RPM-layered gaming)
+- New `ujust margine-gaming-native` recipe layers Steam + Lutris +
+  RetroArch as native RPMs from RPM Fusion (Heroic / Bottles /
+  Protontricks / ProtonPlus stay Flatpak — no official RPM upstream).
+  For users needing maximum Proton/Wine compatibility — anti-cheat
+  (EAC / BattlEye), VR, Steam Link, NVIDIA proprietary + Mesa-git
+  side-by-side. Cost: +30-60s per `bootc upgrade` to re-apply the
+  larger layer.
+- Default Flatpak `ujust margine-gaming` stays unchanged for
+  occasional gamers.
+- README Option C section rewritten to document both paths with the
+  explicit trade-off. Spec yaml `gaming_runtime.opt_in` now has
+  `default:` and `native:` sub-keys.
+- Inspired by RakuOS's "Native Gaming. Not Flatpak." stance — same
+  trade-off, kept as opt-in second path so the default Margine
+  experience stays upgrade-friendly.
+
+### Documentation (2026-06-07) — ADR 0007: Sealed Bootable Container Images tracker
+- `margine-fedora-atomic/docs/adr/0007-sealed-bootable-images-tracker.md`:
+  long-form ADR tracking Fedora's sealed bootable container images
+  direction (systemd-boot + UKI + composefs/fs-verity, Secure-Boot-
+  signed end-to-end). Covers 5 action triggers + 9-step migration
+  plan for when production stable arrives (~6-12 months).
+- `margine-fedora-atomic/scripts/check-upstreams.sh` watchlist gets
+  `travier/fedora-atomic-desktops-sealed` so the monthly cron
+  flags activity in the test-image repo.
+- Tracker issue
+  [#32](https://github.com/daniel-g-carrasco/margine-fedora-atomic/issues/32)
+  on margine-fedora-atomic with checkbox list of triggers + steps.
+
 ### Removed (2026-06-06) — Margine Gaming ISO + OCI variant retired
 - **`ghcr.io/.../margine-gaming:stable` OCI image** — no longer built
   or published. The dedicated `build-gaming.yml` workflow, the

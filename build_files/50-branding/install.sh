@@ -302,20 +302,34 @@ log "Stripping Bluefin/ublue branding leftover from /usr/share + /usr/share/appl
 # `discourse.desktop` opens github.com/ublue-os/bluefin/discussions →
 # not a Margine resource at all → delete.
 # `documentation.desktop` opens docs.projectbluefin.io → repoint at
-# Margine's spec repo + rename.
+# Margine's docs launcher + rename.
 # `system-update.desktop` says "Update Bluefin, Flatpaks, …" → keep
 # the underlying uupd flow (Margine uses it too) but rebrand.
 rm -f /usr/share/applications/discourse.desktop
+
+MOREWAITA_SYSTEM_RAW="https://raw.githubusercontent.com/somepaulo/MoreWaita/main/scalable/legacy/applications-system.svg"
+SCHEDULER_ICON="/usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg"
+DOCS_ICON="/usr/share/icons/hicolor/scalable/apps/margine-documentation.svg"
+OFFLINE_DOCS="/usr/share/margine/offline-docs/index.html"
+
+# GitHub contents API verified preferences-system.svg exists in MoreWaita,
+# but raw.githubusercontent serves that path as a symlink stub. Fetch the
+# resolved target so hicolor receives an actual SVG.
+retry_curl_strict "$MOREWAITA_SYSTEM_RAW" "$SCHEDULER_ICON"
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/icons/margine-documentation.svg" "$DOCS_ICON"
+mkdir -p "$(dirname "$OFFLINE_DOCS")"
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/offline-docs/index.html" "$OFFLINE_DOCS"
+chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON" "$OFFLINE_DOCS"
 
 cat > /usr/share/applications/margine-documentation.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
 NoDisplay=false
 Terminal=false
-Exec=xdg-open https://github.com/daniel-g-carrasco/margine-fedora-atomic
-Icon=help-browser
+Exec=margine-docs-open
+Icon=margine-documentation
 Name=Margine documentation
-Comment=Spec + architecture for Margine OS (margine-fedora-atomic on GitHub)
+Comment=Open Margine documentation online, with an offline fallback
 Categories=System;Documentation;
 EOF
 rm -f /usr/share/applications/documentation.desktop

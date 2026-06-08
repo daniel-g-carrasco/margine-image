@@ -155,7 +155,10 @@ if [[ -d /ctx/system_files ]]; then
   cp -a /ctx/system_files/. /
   # Set executable bit on libexec scripts (cp -a preserves mode but
   # git may have flagged them differently across platforms).
-  find /usr/libexec -path '*/margine-*' -type f -exec chmod 0755 {} \;
+  find /usr/libexec /usr/bin -type f \( \
+      -path '*/margine-*' -o \
+      -path '/usr/libexec/margine/*' \
+    \) -exec chmod 0755 {} \;
 fi
 
 # ---------------------------------------------------------------------------

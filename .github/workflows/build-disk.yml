@@ -326,6 +326,149 @@ jobs:
           done
           echo "Pruned $PRUNED stale version(s)."
 
+  # === Titanoboa Live ISO (ADR-0008) — NOT yet the published ISO ===
+  # Builds a margine-live OCI layer (margine:stable + dracut-live +
+  # livesys + Anaconda + BAKE Flatpaks + iso.yaml) and feeds it to
+  # Titanoboa, producing a Live ISO. Runs in PARALLEL with the BIB
+  # anaconda-iso path above. `continue-on-error: true` until the Phase 5
+  # cutover (ADR-0008 §6) so a Titanoboa regression never blocks the BIB
+  # pipeline or publish_ia. The ISO is uploaded as a build artifact for
+  # project-lead QEMU/hardware validation; it is NOT published to IA yet.
+  build_iso_titanoboa:
+    name: Build Live ISO (Titanoboa) [ADR-0008, not yet default]
+    runs-on: ubuntu-24.04
+    # squashfs at zstd-19 over a ~14 GB rootfs dominates wall-clock.
+    timeout-minutes: 90
+    continue-on-error: true
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Prepare environment
+        run: |
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "${GITHUB_ENV}"
+          echo "LIVE_TAG=${IMAGE_REGISTRY,,}/margine-live:ci-run-${{ github.run_id }}" >> "${GITHUB_ENV}"
+
+      - name: Mount container storage on a BTRFS loopback
+        # Titanoboa's squashfs (zstd-19) of a ~14 GB rootfs + the ~14 GB
+        # base image in storage + the output ISO blow past ubuntu-24.04's
+        # ~14 GB free on /. The ephemeral /mnt SSD has ~70 GB; back
+        # rootful podman storage with a compressed BTRFS loopback there.
+        # Mirrors Bazzite's Titanoboa workflow.
+        run: |
+          set -euo pipefail
+          sudo truncate -s 80G /mnt/podman-storage.img
+          sudo mkfs.btrfs -f /mnt/podman-storage.img
+          sudo podman system reset --force || true
+          sudo systemctl stop podman.service podman.socket 2>/dev/null || true
+          sudo mount -o compress-force=zstd:2 /mnt/podman-storage.img /var/lib/containers/storage
+          sudo systemctl start podman.socket 2>/dev/null || true
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull base image (margine:stable)
+        run: |
+          sudo podman pull "${{ env.IMAGE_REGISTRY }}/margine:${{ env.DEFAULT_TAG }}"
+
+      - name: Build margine-live image
+        id: live
+        run: |
+          set -euo pipefail
+          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/margine:${{ env.DEFAULT_TAG }}"
+          echo "Building ${LIVE_TAG} from ${BASE_IMAGE}"
+          # --cap-add sys_admin + label=disable: build.sh regenerates the
+          # initramfs (dracut) and, from Phase 2 on, installs Flatpaks via
+          # bwrap which needs user namespaces. Same flags BIB's installer
+          # image build uses (see build_disk job above).
+          sudo podman build \
+            --cap-add sys_admin \
+            --security-opt label=disable \
+            --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+            -t "${LIVE_TAG}" \
+            -f live-env/Containerfile \
+            live-env/
+          # Push the run-scoped tag so Titanoboa can pull it. Titanoboa
+          # issue #141 hardcodes `podman pull` of image-ref, so a local
+          # tag isn't enough — the image must be on a registry.
+          sudo podman push "${LIVE_TAG}"
+          echo "live_tag=${LIVE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Live ISO (Titanoboa)
+        id: titanoboa
+        # Pinned per ADR-0008 §3.1 (post-#138 upstream HEAD). env.TITANOBOA_REF
+        # is "ublue-os/titanoboa@<sha>". Renovate is configured to leave it alone.
+        uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4
+        with:
+          image-ref: ${{ steps.live.outputs.live_tag }}
+          iso-dest: ${{ github.workspace }}/margine-live.iso
+
+      - name: ISO info + sha256
+        id: iso
+        run: |
+          set -euo pipefail
+          ISO="${{ steps.titanoboa.outputs.iso-dest }}"
+          if [[ -z "$ISO" || ! -f "$ISO" ]]; then
+            echo "::error::Titanoboa did not produce an ISO ($ISO)"
+            exit 1
+          fi
+          OUTDIR="${{ github.workspace }}/titanoboa-out"
+          mkdir -p "$OUTDIR"
+          mv "$ISO" "$OUTDIR/"
+          ( cd "$OUTDIR" && sha256sum ./*.iso | tee SHA256SUMS )
+          SIZE_BYTES="$(stat -c %s "$OUTDIR"/*.iso)"
+          echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
+          echo "size_mb=$((SIZE_BYTES / 1024 / 1024))" >> "$GITHUB_OUTPUT"
+          echo "Live ISO: $((SIZE_BYTES / 1024 / 1024)) MB"
+
+      - name: Upload Live ISO artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: margine-live-iso
+          path: ${{ steps.iso.outputs.outdir }}
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Prune stale margine-live GHCR tags (keep newest 3)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          PKG="margine-live"
+          OWNER="${{ github.repository_owner }}"
+          echo "Pruning $OWNER/$PKG GHCR tags, keeping newest 3"
+          VERSIONS_JSON="$(gh api --paginate \
+              "/users/${OWNER}/packages/container/${PKG}/versions" \
+              --jq '[.[] | {id, name: (.metadata.container.tags[0] // "<untagged>"), updated_at}]' \
+              2>/dev/null || echo '[]')"
+          COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
+          echo "Found $COUNT version(s) total"
+          if (( COUNT <= 3 )); then echo "Nothing to prune."; exit 0; fi
+          TO_DELETE=$(echo "$VERSIONS_JSON" | jq -r '.[3:] | .[].id')
+          PRUNED=0
+          for vid in $TO_DELETE; do
+            if gh api --method DELETE \
+                 "/users/${OWNER}/packages/container/${PKG}/versions/${vid}" \
+                 >/dev/null 2>&1; then
+              PRUNED=$((PRUNED+1))
+            fi
+          done
+          echo "Pruned $PRUNED stale version(s)."
+
   publish_ia:
     name: Publish ISO (${{ matrix.image }}) to Internet Archive
     needs: build_disk

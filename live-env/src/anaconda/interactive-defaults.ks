@@ -61,7 +61,9 @@ bootloader --timeout=1
 #   --transport=containers-storage
 ostreecontainer --url=ghcr.io/daniel-g-carrasco/margine:stable --transport=registry --no-signature-verification
 
-# --- Post-install (order matters: switch origin, tune fs, bake apps) ---
+# --- Post-install (order matters: switch origin, tune fs, stage MOK,
+#     bake apps) ---
 %include /usr/share/anaconda/post-scripts/bootc-switch.ks
 %include /usr/share/anaconda/post-scripts/zstd-compress.ks
+%include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks

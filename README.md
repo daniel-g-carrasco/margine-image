@@ -26,11 +26,11 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
 > **Looking for the distro itself?** Go to
 > [margine-image](https://github.com/daniel-g-carrasco/margine-image)
-> — that repo's README has *what Margine is*, screenshots, the two
-> flavours (base **Margine** and **Margine Gaming** variant), and
-> the download/install instructions (ISO, `rpm-ostree rebase`,
-> `bootc switch` between flavours). This repo is the *source code*
-> of everything the distro applies to the system.
+> — that repo's README has *what Margine is*, screenshots, the current
+> install recommendation (Bluefin DX rebase first; ISO test media while
+> the fresh-install path is being hardened), and the one-command gaming
+> layer. This repo is the *source code* of everything the distro applies
+> to the system.
 
 ## What this repo is for
 

@@ -10,7 +10,7 @@ install guide is self-contained.
 | --- | --- |
 | [00-goals.md](00-goals.md) | Primary goal, technical goals, non-goals, working hypotheses, decision gates |
 | [01-architecture.md](01-architecture.md) | Fedora Atomic model: ostree, rpm-ostree, Btrfs, Flatpak, toolbox, channels |
-| [02-install-lab.md](02-install-lab.md) | VM lab procedure from ISO download through first update and baseline capture |
+| [02-install-lab.md](02-install-lab.md) | Current Bluefin DX rebase install note plus the legacy Silverblue VM lab procedure |
 | [02a-custom-partitioning.md](02a-custom-partitioning.md) | Custom Anaconda partitioning with LUKS2 and a dedicated `@data` Btrfs subvolume |
 | [02b-lab-vm-setup.md](02b-lab-vm-setup.md) | Operational guide: libvirt + virt-install + virt-viewer for spinning up a Margine smoke-test VM with UEFI + Secure Boot + vTPM 2.0 (Arch-host friendly prereqs) |
 | [upstream-inspirations.md](upstream-inspirations.md) | Attribution and provenance: which upstream projects Margine derives from (Origami's custom-kernel script, MorrOS's image-template pattern, Bluefin DX as `FROM`, rechunk action, …), with file-level pointers and a quarterly review mechanism via `scripts/check-upstreams.sh` |

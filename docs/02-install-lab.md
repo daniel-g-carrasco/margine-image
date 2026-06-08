@@ -4,6 +4,9 @@
 > a Bluefin DX install to the published bootc image — see
 > [ADR 0005](adr/0005-base-on-bluefin-dx.md) and the
 > [margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
+> As of 2026-06-08, fresh Margine ISOs are tester media while the
+> installer path is being hardened; the live status page is
+> <https://margine.the-empty.place/docs/install-status>.
 > The procedure below is the **phase-0 Silverblue lab path** that produced
 > this spec; it is preserved for completeness and for users who explicitly
 > want to start from stock Silverblue + `apply-host-layer` rather than the
@@ -44,7 +47,8 @@ ujust margine-bootstrap
 That's the entire install on the production path. Full step-by-step + a
 post-install verification checklist live in the
 [margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
-Everything below is the legacy Silverblue lab procedure.
+Everything below is the legacy Silverblue lab procedure, not the current
+recommended install path.
 
 ---
 

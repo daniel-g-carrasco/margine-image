@@ -270,14 +270,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# scx-scheds — sched_ext BPF schedulers (scx_lavd, scx_bpfland,
-# scx_rusty, scx_central, scx_simple). Ships in the same CachyOS
-# addons COPR as the kernel itself, lives in the base image so the
+# scx-scheds — sched_ext BPF schedulers managed by scx_loader/scxctl
+# (current shipped names come from `scxctl list`). Ships in the same
+# CachyOS addons COPR as the kernel itself, lives in the base image so the
 # `ujust margine-scheduler` recipe is available on every Margine
-# install — gaming variant inherits it without re-adding. Especially
-# useful on the base for pro-audio sessions (scx_central removes
-# multi-core scheduling jitter, see docs/workflows). Enable the COPR
-# just for the install, then disable + scrub the repo file so user
+# install — gaming variant inherits it without re-adding. Enable the
+# COPR just for the install, then disable + scrub the repo file so user
 # systems don't pull random updates from it outside our pipeline.
 log "Enabling kernel-cachyos-addons COPR for scx-scheds"
 dnf -y copr enable bieszczaders/kernel-cachyos-addons
@@ -313,7 +311,7 @@ ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||' | sort
 # call is a no-op. Users opt in via `ujust margine-scheduler` or the
 # margine-scheduler.desktop GUI; tuned profiles ({balanced,powersave,
 # throughput-performance}-margine) flip mode via scxctl when the
-# service is enabled. Default-on burned battery without an obvious
+# service is active. Default-on burned battery without an obvious
 # win on a creator workstation.
 log "Disabling scx_loader.service by default (opt-in via margine-scheduler)"
 systemctl disable scx_loader.service 2>/dev/null || true

@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Zenity front-end for the Margine sched_ext opt-in flow.
+set -euo pipefail
+
+APP_NAME="Margine CPU Scheduler"
+SERVICE="scx_loader.service"
+
+show_error() {
+  local message="$1"
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="$APP_NAME" --text="$message" || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send --app-name="$APP_NAME" --icon=dialog-error "$APP_NAME" "$message" || true
+  else
+    printf '%s\n' "$message" >&2
+  fi
+}
+
+if ! command -v zenity >/dev/null 2>&1; then
+  show_error "zenity is not installed, so the scheduler picker cannot open."
+  exit 1
+fi
+
+if ! command -v scxctl >/dev/null 2>&1; then
+  show_error "scxctl is not installed. The scx-scheds package is required."
+  exit 1
+fi
+
+mapfile -t supported < <(scxctl list 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' || true)
+if ((${#supported[@]} == 0)); then
+  show_error "scxctl did not report any supported schedulers."
+  exit 1
+fi
+
+is_supported() {
+  local scheduler="$1"
+  local item
+  for item in "${supported[@]}"; do
+    [[ "$item" == "$scheduler" ]] && return 0
+  done
+  return 1
+}
+
+current_scheduler() {
+  local state item
+  state="$(scxctl get 2>/dev/null || true)"
+  if grep -qi 'no scx scheduler running' <<<"$state"; then
+    printf 'off'
+    return
+  fi
+  for item in "${supported[@]}"; do
+    if grep -Eq "(^|[^[:alnum:]_])(scx_)?${item}([^[:alnum:]_]|$)" <<<"$state"; then
+      printf '%s' "$item"
+      return
+    fi
+  done
+  printf 'unknown'
+}
+
+description_for() {
+  case "$1" in
+    lavd) printf 'Latency-focused desktop and gaming scheduler' ;;
+    bpfland) printf 'Interactive and throughput balance' ;;
+    rusty) printf 'General-purpose scheduler from the Rust scx set' ;;
+    flash) printf 'Low-latency interactive scheduler' ;;
+    cosmos) printf 'General-purpose scheduler with broad workload coverage' ;;
+    rustland) printf 'Rust userspace scheduler from the scx set' ;;
+    *) printf 'Available through scx_loader' ;;
+  esac
+}
+
+selected="$(current_scheduler)"
+preferred=(lavd bpfland rusty flash cosmos rustland)
+ordered=()
+
+for item in "${preferred[@]}"; do
+  if is_supported "$item"; then
+    ordered+=("$item")
+  fi
+done
+
+for item in "${supported[@]}"; do
+  present=0
+  for existing in "${ordered[@]}"; do
+    [[ "$existing" == "$item" ]] && present=1 && break
+  done
+  ((present == 0)) && ordered+=("$item")
+done
+
+rows=()
+if [[ "$selected" == "off" ]]; then
+  rows+=(TRUE off "Stop $SERVICE and use the kernel default scheduler")
+else
+  rows+=(FALSE off "Stop $SERVICE and use the kernel default scheduler")
+fi
+
+for item in "${ordered[@]}"; do
+  if [[ "$selected" == "$item" ]]; then
+    rows+=(TRUE "$item" "$(description_for "$item")")
+  else
+    rows+=(FALSE "$item" "$(description_for "$item")")
+  fi
+done
+
+choice="$(
+  zenity --list --radiolist \
+    --title="$APP_NAME" \
+    --text="Choose the active sched_ext scheduler." \
+    --width=760 --height=500 \
+    --column="" --column="Scheduler" --column="Notes" \
+    --print-column=2 \
+    "${rows[@]}"
+)" || exit 0
+
+[[ -n "$choice" ]] || exit 0
+
+if command -v ptyxis >/dev/null 2>&1; then
+  printf -v quoted_choice '%q' "$choice"
+  ptyxis -- bash -lc "ujust margine-scheduler $quoted_choice; echo; read -rp 'Premi Invio per chiudere... '"
+else
+  ujust margine-scheduler "$choice"
+fi

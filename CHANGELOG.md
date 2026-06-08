@@ -7,6 +7,31 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-06-08) — Round-1 blocker audit
+- **GNOME extension defaults** now live in the system dconf database
+  (`/etc/dconf/db/distro.d/`) instead of a gschema override, so
+  extension settings are applied through the backend GNOME Shell
+  actually reads at first login.
+- **Installer partitioning** is declared in the Anaconda kickstart:
+  `zerombr`, `clearpart`, a 4 GiB ESP, a growing btrfs root, and the
+  single-disk `ignoredisk` shim for safer fresh installs.
+- **bootc-image-builder** in `build-disk.yml` is pinned to an
+  `@sha256` digest instead of a moving tag.
+- **GNOME branding assets** overwrite Fedora's hard-coded logo pixmaps
+  instead of deleting them, so GNOME About renders the Margine logo
+  again.
+- **sched_ext controls** were rewritten as an opt-in Zenity picker:
+  `scx_loader` stays off by default, scheduler changes go through
+  `scxctl`/D-Bus/polkit, and tuned profile hooks now gate on active
+  service state instead of enabled state.
+- **README install guidance** now recommends rebasing from Bluefin DX
+  while the fresh-install ISO path is being hardened.
+- **Launcher icons** now use a MoreWaita system icon for the scheduler
+  app and a custom Margine documentation icon.
+- **Documentation launcher** now uses `/usr/bin/margine-docs-open`:
+  it opens the live docs when `/healthz` responds and falls back to
+  `/usr/share/margine/offline-docs/index.html` offline.
+
 ### Added (2026-06-07) — `ujust margine-ai` (optional local-AI workflow)
 - New `ujust margine-ai` recipe in `build_files/60-custom.just` installs
   [Alpaca](https://flathub.org/apps/com.jeffser.Alpaca) (`com.jeffser.Alpaca`)

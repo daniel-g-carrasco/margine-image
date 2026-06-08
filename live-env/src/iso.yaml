@@ -1,0 +1,29 @@
+# Titanoboa ISO config for the Margine Live ISO (ADR-0008).
+# Consumed by ublue-os/titanoboa build_iso.sh, which reads `label` for
+# the ISO 9660 volume id + filename and `grub2.entries` to generate
+# grub.cfg. Reference: live-env/references/bazzite/iso.yaml.
+#
+# CRITICAL: the kernel command line MUST carry `rd.live.image` and
+# `root=live:CDLABEL=<label>` — without them dmsquash-live cannot locate
+# /LiveOS/squashfs.img and the live boot panics. CDLABEL must match the
+# `label` field below exactly (Margine-Live).
+#
+# initrd path is `/images/pxeboot/initrd.img` (NOT initramfs.img):
+# Titanoboa's build_iso.sh copies /usr/lib/modules/*/initramfs.img TO
+# /images/pxeboot/initrd.img (it renames). Verified against
+# build_iso.sh @5c457c3. vmlinuz keeps its name.
+#
+# enforcing=0 runs the LIVE session SELinux-permissive (installer
+# convenience only — the INSTALLED system is fully enforcing; the
+# install kickstart relabels the target).
+label: "Margine-Live"
+grub2:
+  default: 0
+  timeout: 5
+  entries:
+    - name: "Install Margine"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "Install Margine (Basic Graphics Mode)"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image nomodeset"
+      initrd: "/images/pxeboot/initrd.img"

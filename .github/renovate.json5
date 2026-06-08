@@ -8,6 +8,10 @@
 
   "packageRules": [
     {
+      "matchDepNames": ["ublue-os/titanoboa"],
+      "enabled": false,
+    },
+    {
       "automerge": true,
       "matchUpdateTypes": ["pin", "pinDigest"]
     },

@@ -250,6 +250,10 @@ full ~25-min image build. See the inline history comment at the
 top of [`.github/workflows/build.yml`](.github/workflows/build.yml)
 for the full rationale.
 
+**Titanoboa migration:** Phase 0 scaffolding is in progress; see
+[`margine-fedora-atomic` ADR-0008](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/adr/0008-titanoboa-migration-plan.md).
+Pin: `ublue-os/titanoboa@5c457c3d`.
+
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
 Blur My Shell, Dash to Dock, Gradia Integration, GSConnect (all from
 Bluefin); Search Light, o-tiling, Hide Cursor, Caffeine (added by

@@ -55,7 +55,7 @@ operations.
 | | |
 | --- | --- |
 | 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
-| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; the public key is enrolled into shim's MOK store on first boot via a one-shot service. Secure Boot remains enabled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. |
+| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; ISO installs stage the public key in Anaconda before the first post-install reboot, while rebases use a one-shot service fallback. Secure Boot remains enabled once the MOK is enrolled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
 | 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
@@ -111,13 +111,14 @@ systemctl reboot
 
 After the reboot, two more one-time steps:
 
-1. **Enroll the Margine signing key into Secure Boot.** On the next
-   reboot a blue/grey screen called **MOK Manager** appears
-   automatically. Choose `Enroll MOK` -> `Continue` -> `Yes`, type the
-   passphrase **`margine-os`** when prompted, and reboot. From this
-   point on the kernel boots normally under Secure Boot and you will
-   not see this screen again. Full walkthrough with the exact screen-
-   by-screen flow is at
+1. **Enroll the Margine signing key into Secure Boot.** After rebasing,
+   `mok-enroll.service` submits the request during the first Margine
+   boot. Reboot once more; a blue/grey screen called **MOK Manager**
+   appears automatically. Choose `Enroll MOK` -> `Continue` -> `Yes`,
+   type the passphrase **`margine-os`** when prompted, and reboot. From
+   this point on the kernel boots normally under Secure Boot and you
+   will not see this screen again. Full walkthrough with the exact
+   screen-by-screen flow is at
    <https://margine.the-empty.place/docs/first-boot>.
 2. Run **`ujust margine-bootstrap`**.
 
@@ -135,7 +136,9 @@ install-status page marks the ISO as recommended again.
 2. Boot the ISO. Anaconda's standard installation flow applies:
    recommended UEFI with Secure Boot enabled, LUKS2 on the root disk,
    Btrfs filesystem (the default).
-3. Reboot when the installation completes.
+3. Reboot when the installation completes. MOK Manager should appear
+   before the installed system starts; enroll the key with passphrase
+   **`margine-os`**, then reboot into Margine.
 4. Apply the user-state once:
    ```sh
    ujust margine-bootstrap
@@ -220,8 +223,9 @@ Margine.
 **Kernel**: CachyOS mainline from
 [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/).
 vmlinuz signed with `sbsign`; every `.ko*` module signed with
-`sign-file`. MOK enrollment via `mok-enroll.service` on first boot
-after install/rebase. Userspace sched_ext BPF schedulers (the
+`sign-file`. ISO installs submit the MOK import request from Anaconda
+before the first post-install reboot; `mok-enroll.service` remains for
+rebases and missed-prompt recovery. Userspace sched_ext BPF schedulers (the
 `scx-scheds` package from
 [`bieszczaders/kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/))
 are installed in the base image: the `ujust margine-scheduler` recipe

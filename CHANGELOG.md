@@ -7,6 +7,15 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-06-08) — ISO MOK enrollment timing
+- **Fresh ISO installs** now submit the Margine MOK import request from
+  Anaconda before the first post-install reboot, mirroring Bluefin's ISO
+  Secure Boot flow so shim can open MOK Manager before the installed
+  system boots.
+- **Rebase recovery path** remains unchanged: `mok-enroll.service` still
+  runs on first Margine boot when the Anaconda path was not available or
+  the user missed the firmware MOK prompt.
+
 ### Fixed (2026-06-08) — Round-1 blocker audit
 - **GNOME extension defaults** now live in the system dconf database
   (`/etc/dconf/db/distro.d/`) instead of a gschema override, so

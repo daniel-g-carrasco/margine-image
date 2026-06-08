@@ -7,7 +7,10 @@
 #      a. Points the freshly installed system at our public registry
 #         (`bootc switch`) so subsequent `bootc upgrade` calls follow
 #         margine:stable.
-#      b. (Bazzite pattern) Installs the Margine "fundamentals"
+#      b. Stages the Margine MOK import request before the first
+#         post-install reboot, so shim can launch MokManager before the
+#         installed system boots.
+#      c. (Bazzite pattern) Installs the Margine "fundamentals"
 #         Flatpak set INTO the installer environment's
 #         /var/lib/flatpak, then rsyncs that dir into the target's
 #         /var/lib/flatpak — so when the user first boots into the
@@ -72,6 +75,65 @@ bootloader --timeout=1
 # this the ostree origin remains the embedded snapshot URI from
 # bootc-image-builder, and the system never sees new releases.
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
+%end
+
+%post --nochroot --log=/mnt/sysimage/var/log/anaconda-post-mok-enroll.log
+# === Margine Secure Boot MOK import — before first installed boot ===
+#
+# mokutil writes a pending MOK request into EFI variables. Running it here
+# mirrors Bluefin's ISO path: shim sees the request on the first post-install
+# reboot and opens MokManager before the installed system reaches systemd.
+#
+# Do not create /var/.mok-enrolled here. If the user misses MokManager, the
+# existing mok-enroll.service can still recreate the request on first boot.
+set -uo pipefail
+
+log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+
+log "Attempting pre-first-reboot Margine MOK enrollment request"
+
+if [[ ! -d /sys/firmware/efi ]]; then
+  log "EFI mode not detected — skipping MOK import"
+  exit 0
+fi
+
+if ! command -v mokutil >/dev/null 2>&1; then
+  log "mokutil unavailable in installer environment — first-boot service remains fallback"
+  exit 0
+fi
+
+MOK_CERT=""
+for candidate in \
+  /mnt/sysimage/usr/share/cert/MOK.der \
+  /mnt/sysimage/ostree/deploy/default/deploy/*.0/usr/share/cert/MOK.der
+do
+  if [[ -f "$candidate" ]]; then
+    MOK_CERT="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$MOK_CERT" ]]; then
+  log "Margine MOK certificate not found in target deployment — first-boot service remains fallback"
+  exit 0
+fi
+
+log "Using MOK certificate: $MOK_CERT"
+
+if mokutil --test-key "$MOK_CERT" >/dev/null 2>&1; then
+  log "Margine MOK is already enrolled — nothing to import"
+  exit 0
+fi
+
+log "Setting MokManager timeout to direct entry"
+mokutil --timeout -1 || log "WARN: failed to set MokTimeout; continuing"
+
+log "Importing Margine MOK request"
+if printf '%s\n%s\n' 'margine-os' 'margine-os' | mokutil --import "$MOK_CERT"; then
+  log "MOK import request submitted — shim should launch MokManager on the next boot"
+else
+  log "WARN: mokutil import failed — first-boot mok-enroll.service remains fallback"
+fi
 %end
 
 %post --log=/tmp/anaconda-post-zstd.log

@@ -1,0 +1,11 @@
+[org/gnome/shell/extensions/search-light]
+animation-speed=100.0
+background-color=(0.0, 0.0, 0.0, 0.75)
+blur-background=false
+shortcut-search=['<Super>space']
+use-animations=true
+window-effect=0
+# Search Light declares border-radius as a double in [0, 30].
+border-radius=30.0
+scale-width=0.07
+scale-height=0.07

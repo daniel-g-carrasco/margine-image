@@ -1,0 +1,7 @@
+[org/gnome/shell/extensions/tilingshell]
+enable-autotiling=true
+enable-snap-assist=true
+# Tiling Shell v18 ghost-border bug.
+enable-window-border=false
+inner-gaps=4
+outer-gaps=4

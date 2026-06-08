@@ -1,0 +1,20 @@
+[org/gnome/shell/extensions/dash-to-dock]
+# Anti-collision with Margine's Super+1..0 workspace binds.
+hot-keys=false
+# Cosmetic defaults captured from a reference Margine deployment.
+animation-time=0.15
+apply-custom-theme=true
+background-color='rgb(40,40,40)'
+background-opacity=0.8
+custom-background-color=true
+custom-theme-shrink=false
+customize-alphas=true
+dash-max-icon-size=36
+icon-size-fixed=true
+disable-overview-on-startup=true
+dock-fixed=true
+force-straight-corner=false
+max-alpha=0.8
+min-alpha=0.5
+running-indicator-style='DOTS'
+transparency-mode='DYNAMIC'

@@ -1,0 +1,9 @@
+[org/gnome/shell/extensions/o-tiling]
+active-hint=true
+active-hint-border-radius=14
+active-hint-border-width=4
+gap-inner=4
+gap-outer=4
+mouse-cursor-follows-active-window=true
+skip-overview=false
+tile-by-default=true

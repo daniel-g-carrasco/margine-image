@@ -72,81 +72,9 @@ num-workspaces=10
 # reported (2026-06-05) they don't work. Keep GNOME defaults.
 show-desktop=@as []
 
-# Dash-to-Dock by default binds Super+1..9 to launch the matching dash
-# slot. That collides with Margine's Super+1..0 workspace navigation
-# (the same keys the user expects from Hyprland). Disable Dash-to-Dock's
-# own hot-key handler so configure-gnome-keybindings' workspace binds
-# win cleanly. NOT cosmetic — this is a keybinding collision fix.
-[org.gnome.shell.extensions.dash-to-dock]
-# Anti-collision with Margine's Super+1..0 workspace binds.
-hot-keys=false
-# Cosmetic defaults Captured from a reference Margine deployment
-# (diagnose-margine-firstboot dconf dump). Promoted to system defaults
-# so first-boot users get the same dock the project's reference deployment uses
-# without manual tweaking. Mirrors blur-my-shell pattern below.
-animation-time=0.15
-apply-custom-theme=true
-background-color='rgb(40,40,40)'
-background-opacity=0.8
-custom-background-color=true
-# Decision (2026-06-07): "shrink the dash" off — the curated favourites
-# already fit; shrinking added empty side-margins that looked off.
-custom-theme-shrink=false
-customize-alphas=true
-# Decision (2026-06-07): cap icon size at 36px so the dock stays compact.
-# dash-max-icon-size is honoured only when icon-size-fixed=true;
-# without that flag Dash-to-Dock auto-scales icons to fill the panel
-# height and ignores the cap.
-dash-max-icon-size=36
-icon-size-fixed=true
-disable-overview-on-startup=true
-dock-fixed=true
-force-straight-corner=false
-max-alpha=0.8
-min-alpha=0.5
-running-indicator-style='DOTS'
-transparency-mode='DYNAMIC'
-
-# Caffeine — keep-awake helper for video playback / long renders.
-# Indicator stays near system tray (max position), CLI toggle off.
-[org.gnome.shell.extensions.caffeine]
-cli-toggle=false
-indicator-position-max=2
-
 # Terminal default: leave Bluefin's choice (Ptyxis) — do NOT override
 # org.gnome.desktop.default-applications.terminal. Users who want a
 # different terminal can install one and flip the setting per session.
-
-# Default tiling engine for Margine — o-tiling@oliwebd.github.com
-# (binary-tree auto-split, Hyprland/pop-shell-style). Was tilingshell
-# until 2026-05-31. The UUID was wrong in zz1 historically
-# (the relocatable schema path was right but the enabled-extensions
-# list had 'tilingshell' instead of o-tiling); margine-bootstrap
-# applied the correct UUID at user-level, so daniel's session worked,
-# but a freshly-rebased VM that doesn't run the bootstrap would see
-# tilingshell as default. Fixed in enabled-extensions above.
-[org.gnome.shell.extensions.o-tiling]
-active-hint=true
-active-hint-border-radius=14
-active-hint-border-width=4
-gap-inner=4
-gap-outer=4
-mouse-cursor-follows-active-window=true
-skip-overview=false
-# Auto-tile new windows by default — the whole point of running
-# o-tiling on Margine. Captured 2026-06-06 from daniel's VM.
-tile-by-default=true
-
-[org.gnome.shell.extensions.tilingshell]
-# Tiling Shell is installed but disabled by default — flip back via
-# Extension Manager if o-tiling doesn't suit a particular workflow.
-# Keep these prefs sensible so the experience is consistent if the
-# user re-enables it:
-enable-autotiling=true
-enable-snap-assist=true
-enable-window-border=false   # ghost-border bug at v18, see lessons
-inner-gaps=4
-outer-gaps=4
 
 # Focus follows mouse (sloppy mode) — Hyprland muscle memory.
 # `sloppy` keeps focus when the pointer leaves a window (vs `mouse`
@@ -155,134 +83,32 @@ outer-gaps=4
 [org.gnome.desktop.wm.preferences]
 focus-mode='sloppy'
 auto-raise=false
-
-# ---------------------------------------------------------------------------
-# Blur My Shell + Search Light — cosmetic-only defaults
-# ---------------------------------------------------------------------------
-# Captured from a reference Margine deployment via `dconf dump
-# /org/gnome/shell/extensions/<ext>/`, narrowed 2026-06-03 to the
-# COSMETIC surface only (blur radius / brightness, background
-# transparency, pipeline assignment per surface). All other captured
-# keys were dropped intentionally to avoid freezing dynamic /
-# accessibility behaviour we want to keep responsive:
-#
-#   * blur-my-shell.hidetopbar.compatibility — toggle for another
-#     extension's behaviour, not cosmetic.
-#   * blur-my-shell internal state (`pipelines` dict, rounded-blur-found,
-#     settings-version) — managed by the extension itself.
-#   * search-light scale-width / scale-height / popup-at-cursor-monitor /
-#     preferred-monitor / monitor-count / entry-font-size /
-#     animation-speed / border-radius / show-panel-icon — popup sizing
-#     and monitor selection that should adapt to the user's hardware
-#     and accessibility settings.
-#   * search-light shortcut-search — belongs in keybindings, not here.
-#   * dash-to-dock hot-keys=false — anti-collision with Margine's
-#     Super+1..0 workspace binds, lives in the keybindings section
-#     above (not a cosmetic default).
-#
-# Anything we don't override falls back to the extension's own
-# defaults, which is the desired behaviour.
-
-# Blur My Shell — per-surface blur tuning
-[org.gnome.shell.extensions.blur-my-shell.appfolder]
-brightness=0.4
-sigma=70
-
-[org.gnome.shell.extensions.blur-my-shell.applications]
-pipeline='pipeline_default'
-
-[org.gnome.shell.extensions.blur-my-shell.coverflow-alt-tab]
-pipeline='pipeline_default'
-
-[org.gnome.shell.extensions.blur-my-shell.dash-to-dock]
-blur=true
-brightness=0.4
-pipeline='pipeline_default_rounded'
-sigma=70
-static-blur=true
-style-dash-to-dock=0
-unblur-in-overview=true
-
-[org.gnome.shell.extensions.blur-my-shell.dash-to-panel]
-blur-original-panel=true
-
-[org.gnome.shell.extensions.blur-my-shell.lockscreen]
-pipeline='pipeline_default'
-
-[org.gnome.shell.extensions.blur-my-shell.overview]
-pipeline='pipeline_default'
-
-[org.gnome.shell.extensions.blur-my-shell.panel]
-brightness=0.4
-corner-radius=0
-override-background=true
-pipeline='pipeline_default'
-sigma=70
-static-blur=false
-unblur-in-overview=true
-
-[org.gnome.shell.extensions.blur-my-shell.screenshot]
-pipeline='pipeline_default'
-
-[org.gnome.shell.extensions.blur-my-shell.window-list]
-brightness=0.4
-sigma=70
-
-# Search Light — Margine baseline captured 2026-06-03 from daniel's VM
-# after his tuning pass:
-#   * Slightly darker background scrim (alpha 0.75 vs 0.74)
-#   * Fast animation (100ms) with animations on by default
-#   * Super+Space toggle (kept here rather than in a separate keybind
-#     block — search-light handles its own shortcut binding internally
-#     and reading/writing it via this key is the supported surface)
-#   * Default GNOME corner-radius (border-radius is deliberately NOT
-#     declared so the popup adopts the system default and adapts to
-#     theme changes)
-# Blur keys are NOT declared — blur-background stays off because
-# search-light's blur implementation has rendering glitches we want
-# to avoid; the related blur-sigma / blur-brightness are operational
-# no-ops while blur-background=false.
-[org.gnome.shell.extensions.search-light]
-animation-speed=100.0
-background-color=(0.0, 0.0, 0.0, 0.75)
-blur-background=false
-shortcut-search=['<Super>space']
-use-animations=true
-window-effect=0
-# Rounded corners at the schema maximum — the project lead asked to
-# ship "rounded corners di searchlight al massimo come default". The
-# search-light gschema declares border-radius as a double in [0, 30],
-# so 30.0 is the documented ceiling. Anything above 30 gets clamped
-# by the extension at apply time; values below produce sharper edges
-# than what daniel ran with on his daily VM.
-border-radius=30.0
-# Popup dimensions — decision: the 2026-06-06 default of
-# scale-width/height=0.10 felt "un po' troppo grande" on his display.
-# Reduce to 0.07 (≈30% smaller). User can override per-monitor via
-# Extension Manager → Search Light → Preferences.
-scale-width=0.07
-scale-height=0.07
-
-# ---------------------------------------------------------------------------
-# Custom keybinding: Super+. → Smile emoji picker (Daniel 2026-06-07)
-# ---------------------------------------------------------------------------
-# GNOME doesn't have a built-in emoji-picker shortcut, and Smile is the
-# Flatpak GUI Margine ships in BAKE. Bind Super+. (parallel to macOS
-# Ctrl+Cmd+Space / Windows Win+. mental model) to launch it.
-#
-# Smile is a small Gtk4 popup that GNOME's Mutter already lays out as a
-# floating client by default (no special MWM hints needed) — the window
-# is small enough and transient enough that o-tiling/tilingshell skip
-# it via their own heuristics. If a future user runs into an explicit
-# tile, we can add it to o-tiling's exclude list at that point.
-[org.gnome.settings-daemon.plugins.media-keys]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile/']
-
-[org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile/]
-name='Smile emoji picker'
-binding='<Super>period'
-command='flatpak run it.mijorus.smile'
 OVERRIDE
+
+# Extension preferences use dconf keyfiles rather than gschema
+# overrides. GNOME Shell Extension.getSettings() loads an extension's
+# local schemas/ directory ahead of the global schema source, so global
+# gschema override defaults for org.gnome.shell.extensions.* can be
+# shadowed at runtime. dconf defaults are keyed by path and apply to
+# the actual settings backend the extension reads.
+log "Installing Margine dconf defaults into /etc/dconf/db/distro.d/"
+mkdir -p /etc/dconf/db/distro.d/locks /etc/dconf/profile
+install -m 0644 /ctx/30-gnome-defaults/dconf/* /etc/dconf/db/distro.d/
+
+if [[ ! -f /etc/dconf/profile/user ]]; then
+  cat > /etc/dconf/profile/user <<'PROFILE'
+user-db:user
+system-db:local
+system-db:site
+system-db:distro
+PROFILE
+elif ! grep -qxF 'system-db:distro' /etc/dconf/profile/user; then
+  printf '\nsystem-db:distro\n' >> /etc/dconf/profile/user
+fi
+
+if command -v dconf >/dev/null 2>&1; then
+  dconf update
+fi
 
 # ---------------------------------------------------------------------------
 # Surgical icon fix: replace ONE low-res Adwaita Legacy PNG
@@ -315,22 +141,11 @@ else
   log "WARN: failed to download system-software-update.svg — launcher icon stays blurry"
 fi
 
-# Copy every GNOME extension's schema XML from its extension dir to
-# the global /usr/share/glib-2.0/schemas/ before compiling. Bluefin's
-# build-gnome-extensions.sh installs extensions but only compiles
-# their schemas IN the per-extension dir (sufficient for GNOME Shell
-# to load), NOT in the global dir. Result: `gsettings`, `dconf` and
-# our own zz1-margine.gschema.override CAN'T see the extension's
-# schema, so extension keybindings/preferences silently fall back to
-# extension defaults. Verified 2026-06-04 on fresh install:
-# search-light loaded but `gsettings get
-# org.gnome.shell.extensions.search-light shortcut-search` returned
-# "Schema inesistente" → our zz1 override of shortcut-search=<Super>space
-# never applied → Super+Space did nothing → daniel said "non funziona".
-#
-# Copy each extension's *.gschema.xml into the global dir so the
-# subsequent glib-compile-schemas call below picks them all up,
-# making gsettings/dconf/override able to reach them.
+# Copy every GNOME extension's schema XML from its extension dir to the
+# global /usr/share/glib-2.0/schemas/ before compiling. Runtime
+# extension defaults live in dconf keyfiles above; this copy remains so
+# `gsettings get org.gnome.shell.extensions.* ...` works for diagnostics
+# and schema validation tools that only inspect the global schema source.
 log "Copying GNOME extension gschema files to /usr/share/glib-2.0/schemas/"
 for ext_dir in /usr/share/gnome-shell/extensions/*/; do
   ext_schemas="${ext_dir}schemas"

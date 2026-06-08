@@ -333,20 +333,32 @@ jobs:
           # a gschema one). See build_files/30-gnome-defaults/install.sh
           # comment near where the block used to be.
 
-          # A.3.bis — settings blocks for the 4 extensions whose dconf
-          # values were captured 2026-06-06 are present in zz1.
-          ZZ1="$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"
-          for needle in \
-            "\[org.gnome.shell.extensions.dash-to-dock\]" \
-            "\[org.gnome.shell.extensions.caffeine\]" \
-            "\[org.gnome.shell.extensions.o-tiling\]" \
-            "\[org.gnome.shell.extensions.search-light\]"; do
-            grep -qE "^${needle}" "$ZZ1" || { echo "::error::A.3.bis section ${needle//\\/} missing from zz1 override"; fail=1; }
+          # A.3.bis — extension settings defaults are shipped through the
+          # distro dconf database. They intentionally do not live in zz1:
+          # GNOME Shell extensions may load their local schema source ahead
+          # of the global one, while dconf defaults apply at the backend path.
+          DCONF_DIR="$ROOTFS/etc/dconf/db/distro.d"
+          for keyfile in \
+            01-margine-dash-to-dock \
+            02-margine-search-light \
+            03-margine-o-tiling \
+            04-margine-tilingshell \
+            05-margine-blur-my-shell \
+            06-margine-caffeine \
+            07-margine-custom-keybindings; do
+            check_file "etc/dconf/db/distro.d/$keyfile" "A.3.bis"
           done
+          if grep -qE '^\[org\.gnome\.shell\.extensions\.' "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
+            echo "::error::A.3.bis extension defaults are still present in zz1 override"; fail=1
+          fi
+          grep -qxF 'system-db:distro' "$ROOTFS/etc/dconf/profile/user" || { echo "::error::A.3.bis /etc/dconf/profile/user lacks system-db:distro"; fail=1; }
+          grep -qxF '[org/gnome/shell/extensions/dash-to-dock]' "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock dconf section missing"; fail=1; }
+          grep -qxF '[org/gnome/shell/extensions/search-light]' "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light dconf section missing"; fail=1; }
+          grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tiling" || { echo "::error::A.3.bis o-tiling dconf section missing"; fail=1; }
           # search-light rounded-corners daniel default: border-radius=30
-          grep -qE "^border-radius=30" "$ZZ1" || { echo "::error::A.3.bis search-light border-radius!=30 — daniel default lost"; fail=1; }
+          grep -qE "^border-radius=30" "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light border-radius!=30 — daniel default lost"; fail=1; }
           # dash-to-dock background customisation present (cosmetic regression sentinel)
-          grep -qE "^running-indicator-style='DOTS'" "$ZZ1" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
+          grep -qE "^running-indicator-style='DOTS'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
 
           # Cleanup
           sudo rm -rf "$ROOTFS"

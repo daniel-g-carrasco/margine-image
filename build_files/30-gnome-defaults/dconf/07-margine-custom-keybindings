@@ -1,0 +1,7 @@
+[org/gnome/settings-daemon/plugins/media-keys]
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile/']
+
+[org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/margine-smile]
+name='Smile emoji picker'
+binding='<Super>period'
+command='flatpak run it.mijorus.smile'

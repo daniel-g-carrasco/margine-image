@@ -159,5 +159,61 @@ mkdir -p /usr/share/anaconda/post-scripts
 cp "$SRC_DIR/anaconda/post-scripts/install-flatpaks.ks" \
    /usr/share/anaconda/post-scripts/install-flatpaks.ks
 
+# === Phase 3 — Anaconda WebUI installer ===
+# WebUI engine (ADR-0008 §3.3), matching Bluefin/Bazzite production.
+dnf install -qy --enable-repo=fedora-cisco-openh264 --allowerasing \
+  firefox anaconda-live anaconda-webui \
+  libblockdev-btrfs libblockdev-lvm libblockdev-dm
+mkdir -p /var/lib/rpm-state  # Anaconda WebUI requires it
+
+# Margine Anaconda profile (WebUI + BTRFS/zstd defaults, variant_id
+# detection). See live-env/src/anaconda/profile.d/margine.conf.
+install -Dm0644 "$SRC_DIR/anaconda/profile.d/margine.conf" \
+  /etc/anaconda/profile.d/margine.conf
+
+# Install-time kickstart fragments. Re-copies install-flatpaks.ks
+# (same content as the Phase 2 line above) plus bootc-switch + zstd.
+cp "$SRC_DIR"/anaconda/post-scripts/*.ks /usr/share/anaconda/post-scripts/
+
+# Append Margine partitioning + ostreecontainer + %includes to the base
+# interactive-defaults.ks anaconda-live ships (preserve the base).
+cat "$SRC_DIR/anaconda/interactive-defaults.ks" \
+  >> /usr/share/anaconda/interactive-defaults.ks
+
+# Recompile schemas in case the profile/installer added overrides.
+glib-compile-schemas /usr/share/glib-2.0/schemas || true
+
+# Disable services that must not run inside the LIVE session. Margine is
+# Bluefin-DX-based, so it carries the ublue/brew/flatpak-preinstall units
+# plus rpm-ostree timers — all of which are meaningless (or harmful) in a
+# throwaway live env. Defensive: only disable units that exist (Bazzite
+# pattern), so this never fails the build on a renamed/absent unit.
+(
+  set +e
+  for unit in \
+    rpm-ostree-countme.service \
+    rpm-ostreed-automatic.timer \
+    bootloader-update.service \
+    flatpak-preinstall.service \
+    brew-setup.service \
+    brew-upgrade.timer \
+    brew-update.timer \
+    uupd.timer \
+    ublue-system-setup.service \
+    tailscaled.service; do
+    if systemctl list-unit-files "$unit" >/dev/null 2>&1; then
+      systemctl disable "$unit"
+    fi
+  done
+  for gunit in \
+    podman-auto-update.timer \
+    ublue-user-setup.service \
+    bazaar.service; do
+    if systemctl --global list-unit-files "$gunit" >/dev/null 2>&1; then
+      systemctl --global disable "$gunit"
+    fi
+  done
+)
+
 # Reclaim build-layer space.
 dnf clean all

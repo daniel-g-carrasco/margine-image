@@ -279,10 +279,11 @@ boot security model is unresolved.
 
 The Margine bootc image solves the "CachyOS under Secure Boot" problem by
 **signing the kernel and modules at image build time** with a Margine MOK
-(Machine Owner Key), and shipping a `mok-enroll.service` that imports the
-matching certificate on first boot. The user confirms the import from the
-bootloader's MOK Manager UI once; thereafter the CachyOS kernel boots under
-Secure Boot without intervention.
+(Machine Owner Key). Fresh ISO installs submit the matching certificate from
+Anaconda before the first post-install reboot, while `mok-enroll.service`
+remains the rebase and missed-prompt fallback. The user confirms the import
+from the bootloader's MOK Manager UI once; thereafter the CachyOS kernel boots
+under Secure Boot without intervention.
 
 This section documents the procedure as it actually ships. Source code:
 [`margine-image/build_files/custom-kernel/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/custom-kernel/install.sh).
@@ -305,10 +306,17 @@ The cert fingerprint at the time of this writing is
 2. Remove Bluefin's stock kernel packages, then `dnf -y install kernel-cachyos kernel-cachyos-core kernel-cachyos-modules kernel-cachyos-devel-matched` from the `bieszczaders/kernel-cachyos` COPR.
 3. **Sign vmlinuz**: `sbsign --key MOK.key --cert MOK.pem --output … /usr/lib/modules/${KERNEL_VERSION}/vmlinuz`, then `sbverify --cert MOK.pem` to confirm.
 4. **Sign every kernel module**: for each `*.ko`/`*.ko.xz`/`*.ko.zst`/`*.ko.gz` under `/usr/lib/modules/${KERNEL_VERSION}`, decompress, run `scripts/sign-file sha256 MOK.key MOK.pem <module>`, recompress.
-5. **Write the cert + first-boot enrollment unit**: convert `MOK.pem` to DER at `/usr/share/cert/MOK.der`, write `/usr/lib/systemd/system/mok-enroll.service` (oneshot, gated by `ConditionPathExists=!/var/.mok-enrolled`), `systemctl enable mok-enroll.service`.
+5. **Write the cert + fallback enrollment unit**: convert `MOK.pem` to DER at `/usr/share/cert/MOK.der`, write `/usr/lib/systemd/system/mok-enroll.service` (oneshot, gated by `ConditionPathExists=!/var/.mok-enrolled`), `systemctl enable mok-enroll.service`.
 6. Regenerate the initramfs against the new kernel (`dracut --force --kver "$KERNEL_VERSION" --regenerate-all`).
 
-### First-boot user experience
+### ISO install user experience
+
+1. During Anaconda `%post --nochroot`, the installer locates `/usr/share/cert/MOK.der` in the target deployment and runs `mokutil --timeout -1` plus `mokutil --import` with the `margine-os` passphrase.
+2. On the first post-install reboot, shim notices the pending request and presents the **MOK Manager** screen before the installed system starts.
+3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots into Margine.
+4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
+
+### Rebase user experience
 
 1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
 2. The user reboots again. The firmware presents the **MOK Manager** screen.
@@ -317,10 +325,11 @@ The cert fingerprint at the time of this writing is
 
 ### Recovery if MOK enrollment is missed
 
-If the user reboots past the MOK Manager screen without confirming, the
-service has already created `/var/.mok-enrolled`, so it won't run again
-automatically. To retry, log in (using the original LUKS passphrase if
-TPM2 sealed against PCR 7), then:
+If the user reboots past the MOK Manager screen without confirming on the
+ISO path, the booted-system service can recreate the request because Anaconda
+does not write `/var/.mok-enrolled`. If the service fallback has already run
+and created the marker, retry by logging in (using the original LUKS passphrase
+if TPM2 sealed against PCR 7), then:
 
 ```sh
 sudo rm /var/.mok-enrolled

@@ -25,7 +25,8 @@ it actually behaves before building anything on top of it.
 - ✅ Baseline diagnostic bundle automated as
   `scripts/collect-diagnostics` (idem `/usr/bin/margine-collect-diagnostics`)
 - ✅ Secure Boot + MOK signing for the CachyOS kernel (sbsign vmlinuz,
-  sign-file modules), first-boot enrollment via `mok-enroll.service`
+  sign-file modules), Anaconda-time enrollment for ISO installs and
+  first-boot `mok-enroll.service` fallback for rebases
 - ⏸ TPM2 auto-unlock via systemd-cryptenroll: documented in
   [`07-secure-boot-tpm2.md`](07-secure-boot-tpm2.md), runtime
   enrollment intentionally manual (one-time `systemd-cryptenroll`

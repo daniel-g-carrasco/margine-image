@@ -166,10 +166,12 @@ security:
       signs:
         - vmlinuz       # via sbsign
         - kernel-modules  # via scripts/sign-file per .ko/.ko.xz/.ko.zst/.ko.gz
-      first_boot_enrollment:
-        unit: mok-enroll.service
+      enrollment:
+        iso_install: anaconda-post-nochroot-mokutil-import
+        rebase_fallback_unit: mok-enroll.service
         certificate_path: /usr/share/cert/MOK.der
         marker_path: /var/.mok-enrolled
+        marker_owner: rebase_fallback_unit
       keys:
         public_in_repo:
           - margine-image/secrets/MOK.pem

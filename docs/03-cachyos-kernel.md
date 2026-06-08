@@ -3,10 +3,11 @@
 > **Production path (since 2026-05-26).** The Margine bootc image
 > (`ghcr.io/daniel-g-carrasco/margine:stable`) bakes `kernel-cachyos`
 > into the OCI image at build time and MOK-signs both the vmlinuz and
-> every kernel module. First-boot `mok-enroll.service` imports the
-> Margine MOK certificate via `mokutil`; after the user confirms the
-> import from the bootloader, the CachyOS kernel boots cleanly under
-> Secure Boot. See [docs/07-secure-boot-tpm2.md § MOK signing for the
+> every kernel module. Fresh ISO installs submit the MOK request from
+> Anaconda before the first post-install reboot; first-boot
+> `mok-enroll.service` remains the rebase fallback. After the user
+> confirms the import from the bootloader, the CachyOS kernel boots
+> cleanly under Secure Boot. See [docs/07-secure-boot-tpm2.md § MOK signing for the
 > CachyOS kernel](07-secure-boot-tpm2.md#mok-signing-for-the-cachyos-kernel)
 > and [`margine-image/build_files/custom-kernel/install.sh`](https://github.com/daniel-g-carrasco/margine-image/blob/main/build_files/custom-kernel/install.sh).
 >

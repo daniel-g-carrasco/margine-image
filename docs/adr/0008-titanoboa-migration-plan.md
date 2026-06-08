@@ -121,7 +121,7 @@ Migrate Margine's ISO pipeline to Titanoboa using a **dedicated `margine-live` O
 - **MOK enrollment via `mokutil --import` MUST continue to be staged from the installer post-script (preserving PR #88 semantics).** The `mok-enroll.service` first-boot fallback unit in `margine:stable` MUST be preserved unchanged.
   *Rationale:* Two-tier MOK enrollment is the documented Margine UX. Anaconda %post stages the request, MokManager prompts on next reboot. The first-boot fallback exists specifically because users sometimes miss MokManager and is non-negotiable.
 
-- **BAKE Flatpaks (33-app set in `installer/flatpaks-base`, ~5 GB) MUST be pre-installed into `/var/lib/flatpak` of the `margine-live` OCI image at build time, AND MUST land in the installed system's `/var/lib/flatpak` via the install-time rsync from a kickstart post-script.** The `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall` belt-and-suspenders fallback in `margine:stable` MUST be preserved.
+- **BAKE Flatpaks (38-app set in `installer/flatpaks-base`, ~5 GB) MUST be pre-installed into `/var/lib/flatpak` of the `margine-live` OCI image at build time, AND MUST land in the installed system's `/var/lib/flatpak` via the install-time rsync from a kickstart post-script.** The `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall` belt-and-suspenders fallback in `margine:stable` MUST be preserved.
   *Rationale:* ostree+bootc reset `/var` per-deployment on install, so the only way Flatpaks survive the first boot is the rsync. Bazzite and Bluefin both validate this pattern. The preinstall fallback covers silent rsync failures (disk full, xattr loss).
 
 - **SELinux xattrs and labels on `/var/lib/flatpak` MUST be preserved through the rsync** using `rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak $target/var/lib/` (Bluefin pattern: preserves POSIX xattrs but strips SELinux labels which ostree-finalize restores).
@@ -130,7 +130,7 @@ Migrate Margine's ISO pipeline to Titanoboa using a **dedicated `margine-live` O
 - **Anaconda profile MUST set BTRFS as default filesystem with `btrfs_compression=zstd:1`; default partitioning MUST preserve PR #80 semantics** (ESP 4 GiB + btrfs root + ignoredisk single-disk shim via `%pre`).
   *Rationale:* PR #80 was a hard-won fix; the partition shape is part of Margine's installed-system identity. The `%pre` disk-autodetect must port verbatim from `disk_config/iso-gnome.toml:34-63` into `/usr/share/anaconda/interactive-defaults.ks`.
 
-- **fstab btrfs `compress=zstd:1` patching (PR #88's `%post` python3 inline) MUST run during install** and produce `/etc/fstab` with `compress=zstd:1` on all btrfs mounts. The post-script MUST also patch the bootc deployment's `/etc/fstab` (under `/ostree/deploy/.../usr/etc/fstab`).
+- **fstab btrfs `compress=zstd:1` patching (PR #88's `%post` python3 inline) MUST run during install** and produce `/etc/fstab` with `compress=zstd:1` on all btrfs mounts. The implementation ports the current BIB kickstart verbatim — a chroot `%post` patching the target's `/etc/fstab` (under ostree this is the deployment's `usr/etc/fstab`). Verify with `mount | grep compress=zstd` on the installed system in Phase 6 hardware testing.
   *Rationale:* Margine ships zstd:1 compression as a documented default for SSD lifespan + install footprint.
 
 - **Live ISO MUST be UEFI-bootable on amd64.** BIOS support is provided by Titanoboa's `xorriso` invocation at zero cost; verify presence of `/usr/lib/grub/i386-pc` in `margine:stable` but do not gate the migration on legacy BIOS.
@@ -172,8 +172,8 @@ Phase boundaries are independently completable so the migration can pause betwee
 **Acceptance:** QEMU UEFI boot of produced ISO reaches GNOME desktop in live mode. ISO size < 6 GB (no Flatpaks, no install payload). Pipeline green on amd64. Single-kernel assertion passes (`test $(ls /usr/lib/modules | wc -l) -eq 1`). ISO label is `Margine-Live`.
 
 ### Phase 2 — Port BAKE Flatpaks into `margine-live` (2 days)
-**Description:** Move `installer/flatpaks-base` (33 apps) into `live-env/src/flatpaks`. In `build.sh` add `curl -Lo /etc/flatpak/remotes.d/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo` + `xargs -r flatpak install -y --noninteractive < /src/flatpaks` (Bazzite pattern with `apply_extra` prep via bwrap if needed). Write `install-flatpaks.ks` to `/usr/share/anaconda/post-scripts/` that does `rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak $target/var/lib/`.
-**Acceptance:** ISO size grows to ~8-9 GB (matches current BIB). `flatpak list --system` in live env shows all 33 BAKE apps. Build time < 25 min cached, < 40 min uncached.
+**Description:** Move `installer/flatpaks-base` (38 apps) into `live-env/src/flatpaks`. In `build.sh` add `curl -Lo /etc/flatpak/remotes.d/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo` + `xargs -r flatpak install -y --noninteractive < /src/flatpaks` (Bazzite pattern with `apply_extra` prep via bwrap if needed). Write `install-flatpaks.ks` to `/usr/share/anaconda/post-scripts/` that does `rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak $target/var/lib/`.
+**Acceptance:** ISO size grows to ~8-9 GB (matches current BIB). `flatpak list --system` in live env shows all 38 BAKE apps. Build time < 25 min cached, < 40 min uncached.
 
 ### Phase 3 — Embed Anaconda + Margine profile + kickstart (2.5 days)
 **Description:** `dnf install -qy --enable-repo=fedora-cisco-openh264 --allowerasing firefox anaconda-live libblockdev-{btrfs,lvm,dm}`. Write `/etc/anaconda/profile.d/margine.conf` (sections: `[Profile]` profile_id=margine; `[Profile Detection]`; `[Storage]` default_scheme=BTRFS, default_partitioning, btrfs_compression=zstd:1; `[UserInterface]` webui_web_engine=slitherer, hidden_webui_pages, hidden_spokes). Write `/usr/share/anaconda/interactive-defaults.ks` containing the PR #80 `%pre` disk-autodetect verbatim. Write `post-scripts/{bootc-switch,zstd-compress,install-flatpaks}.ks`.
@@ -189,7 +189,7 @@ Phase boundaries are independently completable so the migration can pause betwee
 
 ### Phase 6 — Hardware install on Framework 13 + at least one SB box (1.5 days)
 **Description:** Burn produced ISO to USB. Install on (a) Framework 13 (Margine reference, AMD Ryzen) with SB disabled — verify full install flow, post-install reboot, BAKE Flatpaks present, GNOME defaults applied, ujust recipes work. (b) Repeat on a second SB-capable box — disable SB, install, re-enable SB, verify MokManager flow.
-**Acceptance:** Two clean installs (Framework 13 + one other). Post-install validation: `bootc status` shows `margine:stable`, `flatpak list --system` shows all 33 BAKE apps, `mount` shows btrfs with `compress=zstd:1` on /, MokManager prompts on second reboot, CachyOS kernel boots after MOK enrollment.
+**Acceptance:** Two clean installs (Framework 13 + one other). Post-install validation: `bootc status` shows `margine:stable`, `flatpak list --system` shows all 38 BAKE apps, `mount` shows btrfs with `compress=zstd:1` on /, MokManager prompts on second reboot, CachyOS kernel boots after MOK enrollment.
 
 ### Phase 7 — Delete BIB anaconda-iso; document; cut release (0.5 days)
 **Description:** Delete `disk_config/iso-gnome.toml` (move to `disk_config/legacy/` initially). Delete BIB anaconda-iso matrix entry. Update README + ADR-0008 to reflect final state. Commit ADR-0009 stub for "Titanoboa pin bump (revisit when Bazzite or another consumer ships green on canonical `ublue-os/titanoboa` post-#138)".
@@ -274,5 +274,5 @@ Both PRs are closed by this consolidated ADR. The project lead resolved the 4 tr
 ### Margine current state
 - `/home/daniel/dev/margine-image/disk_config/iso-gnome.toml` — 303-line BIB kickstart
 - `/home/daniel/dev/margine-image/build_files/custom-kernel/install.sh` — CachyOS + MOK signing
-- `/home/daniel/dev/margine-image/installer/flatpaks-base` — 33-app BAKE list
+- `/home/daniel/dev/margine-image/installer/flatpaks-base` — 38-app BAKE list
 - `/home/daniel/dev/margine-image/.github/workflows/build-disk.yml` — current BIB workflow

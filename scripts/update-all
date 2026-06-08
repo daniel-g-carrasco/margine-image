@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+dry_run=0
+use_system=1
+use_topgrade=1
+use_flatpak_fallback=1
+use_diagnostics=1
+use_validators=1
+soft_failures=0
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/update-all [options]
+
+Options:
+  --dry-run              Show the plan without running update commands
+  --no-system            Skip the rpm-ostree system update phase
+  --no-topgrade          Skip Topgrade accessory updates
+  --no-flatpak-fallback  Do not run direct flatpak update when Topgrade is absent
+  --no-diagnostics       Skip pre/post diagnostic collection
+  --no-validators        Skip pre/post validators
+  --help                 Show this help
+
+Policy:
+  - rpm-ostree is the hard base-system update boundary.
+  - Topgrade is an accessory updater only.
+  - bootc is future image work and is not used by this script.
+  - Firmware is intentionally not updated by this script in phase 1.
+EOF
+}
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+log() {
+  printf '%s\n' "$*"
+}
+
+warn() {
+  printf 'warning: %s\n' "$*" >&2
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+print_cmd() {
+  printf '[dry-run]'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run_cmd() {
+  if (( dry_run )); then
+    print_cmd "$@"
+  else
+    "$@"
+  fi
+}
+
+run_soft() {
+  local label=$1
+  shift
+
+  if ! run_cmd "$@"; then
+    warn "${label} failed"
+    soft_failures=1
+  fi
+}
+
+run_hard() {
+  local label=$1
+  shift
+
+  if ! run_cmd "$@"; then
+    die "${label} failed"
+  fi
+}
+
+run_sudo_hard() {
+  local label=$1
+  shift
+
+  if [[ "$(id -u)" -eq 0 ]]; then
+    run_hard "$label" "$@"
+  else
+    run_hard "$label" sudo "$@"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      --no-system)
+        use_system=0
+        shift
+        ;;
+      --no-topgrade)
+        use_topgrade=0
+        shift
+        ;;
+      --no-flatpak-fallback)
+        use_flatpak_fallback=0
+        shift
+        ;;
+      --no-diagnostics)
+        use_diagnostics=0
+        shift
+        ;;
+      --no-validators)
+        use_validators=0
+        shift
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+require_command() {
+  local cmd=$1
+  local label=$2
+
+  if have_cmd "$cmd"; then
+    return 0
+  fi
+
+  if (( dry_run )); then
+    warn "missing command for ${label}: ${cmd}"
+    return 0
+  fi
+
+  die "missing command for ${label}: ${cmd}"
+}
+
+preflight() {
+  section "Preflight"
+
+  if [[ -r /etc/os-release ]]; then
+    sed -n '1,12p' /etc/os-release
+  else
+    warn "/etc/os-release is not readable"
+  fi
+
+  if (( use_system )); then
+    require_command rpm-ostree "system update"
+  fi
+
+  if have_cmd bootc; then
+    warn "bootc is installed, but Margine Atomic phase 1 still uses rpm-ostree directly"
+  fi
+
+  if (( use_topgrade )) && ! have_cmd topgrade; then
+    warn "topgrade is not installed; direct Flatpak fallback may be used"
+  fi
+
+  if [[ -f "${repo_root}/config/topgrade.toml" ]]; then
+    log "Topgrade reference config: ${repo_root}/config/topgrade.toml"
+  fi
+}
+
+run_validators() {
+  local phase=$1
+
+  (( use_validators )) || return 0
+
+  section "${phase} validators"
+
+  if [[ -x "${repo_root}/scripts/validate-atomic-layout" ]]; then
+    run_hard "atomic layout validation" "${repo_root}/scripts/validate-atomic-layout"
+  fi
+
+  if [[ -x "${repo_root}/scripts/validate-hardware-media-stack" ]]; then
+    run_soft "hardware/media validation" "${repo_root}/scripts/validate-hardware-media-stack"
+  fi
+
+  if [[ -x "${repo_root}/scripts/validate-gaming-runtime" ]]; then
+    run_soft "gaming runtime validation" "${repo_root}/scripts/validate-gaming-runtime"
+  fi
+}
+
+collect_diagnostics() {
+  local phase=$1
+
+  (( use_diagnostics )) || return 0
+
+  section "${phase} diagnostics"
+
+  if [[ -x "${repo_root}/scripts/collect-diagnostics" ]]; then
+    run_soft "diagnostics collection" "${repo_root}/scripts/collect-diagnostics"
+  else
+    warn "diagnostics collector not executable"
+    soft_failures=1
+  fi
+}
+
+system_update() {
+  (( use_system )) || return 0
+
+  section "System update"
+  run_sudo_hard "rpm-ostree upgrade" rpm-ostree upgrade
+  run_hard "rpm-ostree status" rpm-ostree status
+}
+
+accessory_updates() {
+  section "Accessory updates"
+
+  if (( use_topgrade )) && have_cmd topgrade; then
+    log "Running Topgrade with base-system and firmware steps disabled."
+    run_soft "Topgrade accessory updates" topgrade --disable system firmware
+    return 0
+  fi
+
+  if (( use_flatpak_fallback )) && have_cmd flatpak; then
+    warn "Topgrade unavailable or disabled; running direct Flatpak fallback"
+    run_soft "Flatpak update" flatpak update
+    return 0
+  fi
+
+  warn "no accessory updater ran"
+  soft_failures=1
+}
+
+toolbox_status() {
+  section "Toolbox and distrobox status"
+
+  if have_cmd toolbox; then
+    run_soft "toolbox list" toolbox list
+  else
+    warn "toolbox command not found"
+  fi
+
+  if have_cmd distrobox; then
+    run_soft "distrobox list" distrobox list
+  else
+    warn "distrobox command not found"
+  fi
+}
+
+summary() {
+  section "Summary"
+
+  if have_cmd rpm-ostree; then
+    rpm-ostree status || true
+  fi
+
+  if (( soft_failures )); then
+    warn "update-all completed with soft failures"
+    if (( dry_run )); then
+      log "dry-run completed"
+      exit 0
+    fi
+    exit 2
+  fi
+
+  log "update-all completed"
+  log "If rpm-ostree staged a new deployment, reboot before judging the updated system."
+}
+
+main() {
+  parse_args "$@"
+
+  preflight
+  run_validators "Pre-update"
+  collect_diagnostics "Pre-update"
+  system_update
+  accessory_updates
+  toolbox_status
+  run_validators "Post-update"
+  collect_diagnostics "Post-update"
+  summary
+}
+
+main "$@"

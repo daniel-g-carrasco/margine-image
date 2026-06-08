@@ -316,6 +316,33 @@ The cert fingerprint at the time of this writing is
 3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots into Margine.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
+### Titanoboa live ISO (ADR-0008, in migration)
+
+[ADR-0008](adr/0008-titanoboa-migration-plan.md) moves the ISO build from
+bootc-image-builder to Titanoboa. The MOK staging logic is unchanged — it
+ports verbatim into `live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks`
+(same `mokutil --timeout -1` + `mokutil --import` with the `margine-os`
+passphrase, same `/usr/share/cert/MOK.der`, same "do not write
+`/var/.mok-enrolled`" so the service fallback still recovers). The
+post-install MOK Manager experience above is identical.
+
+One NEW consideration is specific to the Titanoboa live medium. The
+current BIB installer ISO boots a Fedora-signed Anaconda kernel, so the
+*installer itself* runs under Secure Boot and only the *installed* CachyOS
+kernel needs enrollment. The Titanoboa live ISO instead runs Margine's own
+CachyOS kernel as the live environment (ADR-0008 §3.2 keeps CachyOS in both
+live and installed — no vanilla-kernel swap), which is not trusted until the
+Margine MOK is enrolled. The supported flow is therefore:
+
+1. Disable Secure Boot in firmware to boot the Margine live ISO.
+2. Install Margine (Anaconda stages the MOK request, as above).
+3. Re-enable Secure Boot.
+4. MOK Manager prompts on the next reboot; enroll with `margine-os`.
+5. The installed CachyOS kernel now boots under Secure Boot.
+
+This is the documented trade-off for shipping a single distinguishing
+kernel in both environments rather than a separate signed live kernel.
+
 ### Rebase user experience
 
 1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.

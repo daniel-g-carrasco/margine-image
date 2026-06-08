@@ -310,16 +310,19 @@ rm -f /usr/share/applications/discourse.desktop
 MOREWAITA_SYSTEM_RAW="https://raw.githubusercontent.com/somepaulo/MoreWaita/main/scalable/legacy/applications-system.svg"
 SCHEDULER_ICON="/usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg"
 DOCS_ICON="/usr/share/icons/hicolor/scalable/apps/margine-documentation.svg"
-OFFLINE_DOCS="/usr/share/margine/offline-docs/index.html"
+OFFLINE_DOCS_DIR="/usr/share/margine/offline-docs"
+MARGINE_DOCS_BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
 
 # GitHub contents API verified preferences-system.svg exists in MoreWaita,
 # but raw.githubusercontent serves that path as a symlink stub. Fetch the
 # resolved target so hicolor receives an actual SVG.
 retry_curl_strict "$MOREWAITA_SYSTEM_RAW" "$SCHEDULER_ICON"
 retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/icons/margine-documentation.svg" "$DOCS_ICON"
-mkdir -p "$(dirname "$OFFLINE_DOCS")"
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/offline-docs/index.html" "$OFFLINE_DOCS"
-chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON" "$OFFLINE_DOCS"
+python3 /ctx/50-branding/build-offline-docs.py \
+  --base-url "$MARGINE_DOCS_BASE_URL" \
+  --output-dir "$OFFLINE_DOCS_DIR"
+chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON"
+chmod -R a+rX "$OFFLINE_DOCS_DIR"
 
 cat > /usr/share/applications/margine-documentation.desktop <<'EOF'
 [Desktop Entry]

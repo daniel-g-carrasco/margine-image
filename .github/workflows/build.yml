@@ -338,6 +338,17 @@ jobs:
           check_exec "usr/libexec/margine/docs-open" "A.4.bis"
           check_exec "usr/bin/margine-docs-open" "A.4.bis"
           check_nonempty "usr/share/margine/offline-docs/index.html" "A.4.bis"
+          check_nonempty "usr/share/margine/offline-docs/docs/index.html" "A.4.bis"
+          check_nonempty "usr/share/margine/offline-docs/docs/install-status/index.html" "A.4.bis"
+          docs_count="$(find "$ROOTFS/usr/share/margine/offline-docs" -path '*/index.html' -type f | wc -l)"
+          if (( docs_count < 14 )); then
+            echo "::error::A.4.bis offline docs mirror is incomplete (index.html count=$docs_count)"
+            fail=1
+          fi
+          if grep -R -n -E '<script|/assets/.*\.(js|css)|href="/docs' "$ROOTFS/usr/share/margine/offline-docs"; then
+            echo "::error::A.4.bis offline docs still reference live JS/CSS assets or root-relative docs links"
+            fail=1
+          fi
           grep -qxF 'Icon=margine-scheduler' "$ROOTFS/usr/share/applications/margine-scheduler.desktop" || { echo "::error::A.4.bis scheduler launcher does not use margine-scheduler icon"; fail=1; }
           grep -qxF 'Exec=margine-docs-open' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-docs-open"; fail=1; }
           grep -qxF 'Icon=margine-documentation' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-documentation icon"; fail=1; }

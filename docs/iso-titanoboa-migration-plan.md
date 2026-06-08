@@ -44,7 +44,7 @@ are the new surface area.
 | Bazzite feature | Margine concrete value |
 |---|---|
 | Bitlocker partition GUI prompt with QR docs (qrencode + yad) | **None.** Margine's ICP target is Framework 13 AMD; the Bazzite use case is gamers dual-booting Windows + BitLocker, which Margine isn't optimizing for. |
-| Secure Boot key fetch + QR documentation | **None.** Margine's `mok-enroll.service` (in `custom-kernel/install.sh`) handles MOK enrollment automatically on first boot. |
+| Secure Boot key fetch + QR documentation | **Partial.** Margine does not need Bazzite's QR/user-doc prompt, but ISO installs must submit the MOK import request from Anaconda before the first post-install reboot. `mok-enroll.service` remains the rebase and missed-prompt fallback. |
 | Kernel swap to vanilla pre-initramfs | **None.** The Margine kernel is already MOK-signed in `margine:stable`; Bazzite needs this because they ship an unsigned vanilla kernel and swap to vanilla for SB compliance. |
 | Anaconda profile customization (modifying `/usr/share/anaconda/interactive-defaults.ks` at runtime) | **Cosmetic.** Could let us rename "Bazzite release" → "Margine release", drop irrelevant prompts, etc. Doable inside the current kickstart too. |
 | `disable-fedora-flatpak.ks` + `flatpak-restore-selinux-labels.ks` | **None.** Margine uses the BAKE+DEFER Flatpak design (PR D + dedupe PR #45), not Bazzite's `flatpak-add-fedora-repos.service` / restore-labels chain. |

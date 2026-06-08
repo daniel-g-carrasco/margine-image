@@ -51,7 +51,7 @@ on:
 env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
-  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
+  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}

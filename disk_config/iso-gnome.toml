@@ -28,6 +28,44 @@
 
 [customizations.installer.kickstart]
 contents = """
+%pre --erroronfail --log=/tmp/margine-disk-detect.log
+#!/bin/bash
+set -euo pipefail
+
+part_include=/tmp/part-include.ks
+: > "$part_include"
+
+mapfile -t install_disks < <(
+  for sysdev in /sys/block/*; do
+    dev=$(basename "$sysdev")
+    case "$dev" in
+      loop*|ram*|zram*|sr*|fd*|md*|dm-*)
+        continue
+        ;;
+    esac
+    [[ -b "/dev/$dev" ]] || continue
+    [[ -r "$sysdev/ro" && "$(cat "$sysdev/ro")" == "1" ]] && continue
+    [[ -r "$sysdev/removable" && "$(cat "$sysdev/removable")" == "1" ]] && continue
+    printf '%s\n' "$dev"
+  done | sort
+)
+
+if [[ "${#install_disks[@]}" -eq 1 ]]; then
+  printf 'ignoredisk --only-use=%s\n' "${install_disks[0]}" > "$part_include"
+  echo "single install disk detected: ${install_disks[0]}"
+else
+  printf '# %s installable disks detected; require explicit Anaconda disk selection\n' "${#install_disks[@]}" > "$part_include"
+  printf 'installable disks: %s\n' "${install_disks[*]:-none}"
+fi
+%end
+
+%include /tmp/part-include.ks
+zerombr
+clearpart --all --initlabel --disklabel=gpt
+part /boot/efi --fstype=efi --size=4096 --label=ESP
+part / --fstype=btrfs --grow --label=margine_root
+bootloader --timeout=1
+
 %post --erroronfail
 # Point the freshly installed system at our public registry so
 # subsequent `bootc upgrade` calls follow margine:stable. Without

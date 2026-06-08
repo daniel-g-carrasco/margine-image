@@ -323,70 +323,102 @@ margine-gaming-native-remove:
 
 
 # Switch the CPU scheduler at runtime (sched_ext / BPF schedulers).
-# Available on every Margine flavour — scx-scheds ships in the base
-# image (so creators on regular Margine can use scx_central for
-# pro-audio sessions), gaming variant inherits it.
+# Available on every Margine flavour. scx-scheds ships in the base
+# image, scx_loader stays disabled by default, and users opt in here
+# or through Activities -> "Margine CPU Scheduler".
 #
-#   ujust margine-scheduler            # show what's running
-#   ujust margine-scheduler lavd       # low-latency, gaming-tuned
-#   ujust margine-scheduler bpfland    # interactive + throughput balance
-#   ujust margine-scheduler rusty      # general-purpose, Rust port of CFS
-#   ujust margine-scheduler central    # pin all decisions to one CPU (RT audio)
-#   ujust margine-scheduler simple     # didactic minimum
-#   ujust margine-scheduler default    # stop scx_*, return to kernel default (BORE on Margine)
-# Switch the CPU scheduler (sched_ext / BPF). Modes: status, lavd, bpfland, rusty, central, simple, default. GUI launcher: Activities → "Margine CPU Scheduler".
+#   ujust margine-scheduler          # show current state
+#   ujust margine-scheduler lavd     # start/switch to a shipped scheduler
+#   ujust margine-scheduler off      # stop scx_loader, return to BORE
+# Switch the CPU scheduler (sched_ext / BPF). Modes: status, off, or any scheduler reported by `scxctl list`. GUI launcher: Activities -> "Margine CPU Scheduler".
 [group('Performance')]
 margine-scheduler MODE="status":
     #!/usr/bin/bash
     set -uo pipefail
 
-    pgrep_scx() { pgrep -a 'scx_[a-z]+' 2>/dev/null; }
+    MODE="{{ MODE }}"
+    SERVICE="scx_loader.service"
 
-    case "{{ MODE }}" in
+    require_scxctl() {
+      if ! command -v scxctl >/dev/null 2>&1; then
+        echo "scxctl is not installed. The scx-scheds package is required."
+        exit 1
+      fi
+    }
+
+    list_schedulers() {
+      scxctl list 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' || true
+    }
+
+    scheduler_supported() {
+      local wanted="$1"
+      local scheduler
+      while IFS= read -r scheduler; do
+        [[ "$scheduler" == "$wanted" ]] && return 0
+      done < <(list_schedulers)
+      return 1
+    }
+
+    scheduler_running() {
+      local state
+      state="$(scxctl get 2>/dev/null || true)"
+      [[ -n "$state" ]] && ! grep -qi 'no scx scheduler running' <<<"$state"
+    }
+
+    ensure_loader() {
+      systemctl --user-or-sudo enable --now "$SERVICE"
+    }
+
+    stop_loader() {
+      if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+        scxctl stop 2>/dev/null || true
+      fi
+      systemctl --user-or-sudo disable --now "$SERVICE"
+    }
+
+    require_scxctl
+
+    case "$MODE" in
       status|"")
+        echo "=== scx_loader ==="
+        systemctl is-enabled "$SERVICE" 2>/dev/null || true
+        systemctl is-active "$SERVICE" 2>/dev/null || true
+        echo
         echo "=== Current scheduler ==="
-        if pgrep_scx > /dev/null; then
-          echo "sched_ext active:"
-          pgrep_scx
-        else
-          echo "Kernel default scheduler in use (BORE on Margine)."
-        fi
+        scxctl get || true
         echo
         echo "Available scx schedulers:"
-        ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||'
+        list_schedulers | sed 's/^/  - /'
         ;;
 
       default|stop|off)
-        echo "Stopping any running scx_* scheduler — kernel default takes over."
-        sudo systemctl stop 'scx*.service' 2>/dev/null || true
-        sudo pkill -TERM 'scx_[a-z]+' 2>/dev/null || true
-        sleep 1
-        if pgrep_scx > /dev/null; then
-          echo "warn: scx_* still running:"
-          pgrep_scx
-        else
-          echo "ok — kernel default (BORE) active."
-        fi
-        ;;
-
-      lavd|bpfland|rusty|central|simple)
-        BIN="/usr/bin/scx_{{ MODE }}"
-        if [[ ! -x "$BIN" ]]; then
-          echo "scx_{{ MODE }} not installed at $BIN — install the gaming layer first (ujust margine-gaming)."
-          exit 1
-        fi
-        # Stop any other scx_* first to avoid loader conflict
-        sudo pkill -TERM 'scx_[a-z]+' 2>/dev/null || true
-        sleep 1
-        echo "Starting $BIN (run in foreground; Ctrl-C to stop)."
-        echo "Tip: detach with disown / systemd-run --user if you want it to stick around."
-        sudo "$BIN"
+        echo "Stopping scx_loader.service; kernel default (BORE on Margine) takes over."
+        stop_loader
+        echo "ok - scx_loader.service is stopped and disabled."
         ;;
 
       *)
-        echo "Unknown scheduler: {{ MODE }}"
-        echo "Usage: ujust margine-scheduler [status|default|lavd|bpfland|rusty|central|simple]"
-        exit 2
+        if ! scheduler_supported "$MODE"; then
+          echo "Unknown or unsupported scheduler: $MODE"
+          echo
+          echo "Available scx schedulers:"
+          list_schedulers | sed 's/^/  - /'
+          echo
+          echo "Usage: ujust margine-scheduler [status|off|<scheduler>]"
+          exit 1
+        fi
+
+        echo "Enabling and starting scx_loader.service (opt-in)."
+        ensure_loader
+        if scheduler_running; then
+          echo "Switching to scx_$MODE."
+          scxctl switch --sched "$MODE"
+        else
+          echo "Starting scx_$MODE."
+          scxctl start --sched "$MODE"
+        fi
+        echo
+        scxctl get || true
         ;;
     esac
 

@@ -4,8 +4,7 @@
 set -u
 case "$1" in
   start)
-    if systemctl is-enabled --quiet scx_loader.service 2>/dev/null \
-       && systemctl is-active --quiet scx_loader.service 2>/dev/null; then
+    if systemctl is-active --quiet scx_loader.service 2>/dev/null; then
       scxctl switch -m powersave >/dev/null 2>&1 || true
     fi
     ;;

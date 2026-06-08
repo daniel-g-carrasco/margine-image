@@ -7,6 +7,19 @@ versioned tag, semantic versioning (`v0.X.Y`) will start.
 
 ## [Unreleased]
 
+### Changed (2026-06-08) — Round-1 asset and install-doc updates
+- `assets/branding/start-here-symbolic.svg` is now a path-based
+  symbolic SVG instead of a raster-embedded SVG that GTK4 rejects for
+  symbolic icon lookup.
+- Added documentation launcher assets:
+  `assets/branding/icons/margine-documentation.svg` and
+  `assets/offline-docs/index.html` for the image-side online/offline
+  docs launcher.
+- Clarified the current install recommendation in `README.md`,
+  `docs/02-install-lab.md`, and `docs/README.md`: rebase from
+  Bluefin DX is preferred while the fresh-install ISO path is being
+  hardened.
+
 ### Added (2026-06-01)
 - `scripts/validate-margine-system`: end-to-end acceptance test that
   wraps the individual `validate-*` checks plus a verdict-line summary.

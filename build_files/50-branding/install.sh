@@ -144,12 +144,17 @@ SVG
   log "Replaced Bluefin's fedora-logo-sprite.svg with transparent placeholder"
 fi
 
-# (d.bis-pre) Nuke every Fedora/Bluefin logo asset GNOME might fall
-# back to. /etc/os-release declares LOGO=margine-logo, but if the
-# resolver doesn't find the SVG it walks the icon-theme search path
-# and lands on one of these — Bluefin DX ships the full Fedora pixmaps
-# set so the About panel + several GNOME widgets keep rendering the
-# Fedora ribbon glyph instead of the Margine wordmark.
+# (d.bis-pre) Nuke Fedora/Bluefin logo fallbacks GNOME might resolve by
+# icon name, but keep the two Fedora pixmap paths that Fedora's
+# gnome-control-center build hard-codes for the About panel:
+#
+#   /usr/share/pixmaps/fedora_logo_med.png
+#   /usr/share/pixmaps/fedora_whitelogo_med.png
+#
+# Those are not lookup fallbacks; they are compile-time filenames in
+# Fedora's gnome-control-center.spec. Deleting them makes the About
+# panel show no distributor logo, so overwrite them with Margine art
+# instead.
 #
 # Confirmed on 2026-06-06 diagnose dump (daniel margine VM):
 #   /usr/share/pixmaps/fedora-gdm-logo.png        (5.6 KB,  150×61)
@@ -165,21 +170,18 @@ fi
 #   /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
 # Plus /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg
 # which we already blank at (d.ter) below — leave that alone.
-#
-# Wholesale removal so the LOGO=margine-logo lookup resolves only to
-# the Margine asset and nothing else.
 rm -f /usr/share/pixmaps/fedora-gdm-logo.png \
       /usr/share/pixmaps/fedora-logo-icon.png \
-      /usr/share/pixmaps/fedora_logo_med.png \
       /usr/share/pixmaps/fedora-logo.png \
       /usr/share/pixmaps/fedora-logo-small.png \
       /usr/share/pixmaps/fedora-logo-sprite.png \
       /usr/share/pixmaps/fedora-logo-sprite.svg \
-      /usr/share/pixmaps/fedora_whitelogo_med.png \
       /usr/share/pixmaps/system-logo-white.png \
       /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg \
       /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
-log "Removed Fedora pixmap fallbacks (About-panel will now resolve LOGO=margine-logo cleanly)"
+install -m 0644 /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora_logo_med.png
+install -m 0644 /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora_whitelogo_med.png
+log "Removed Fedora icon fallbacks; overwrote GNOME Control Center's Fedora pixmap paths with Margine art"
 
 # (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at
@@ -337,17 +339,18 @@ rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
       /usr/share/icons/hicolor/scalable/places/ublue-update.svg \
       /usr/share/icons/hicolor/scalable/actions/ublue-logo-symbolic.svg
 
-# (b.bis) gnome-initial-setup's welcome page (first screen, language
-# picker) renders <GtkImage icon_name='start-here-symbolic' pixel_size=96>
-# as a 96px header above the locale list. Bluefin DX has overridden
-# /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
-# with a velociraptor footprint (their mascot) — daniel saw that
-# 'dinosaur' on the Benvenuti page of a fresh Margine install.
-# Replace it with the Margine wordmark 'm' glyph (pixel art SVG,
-# same source as the favicon). Tracked in
-# margine-fedora-atomic assets/branding/start-here-symbolic.svg.
+# (b.bis) gnome-initial-setup's Language page renders
+# <GtkImage icon_name='start-here-symbolic' pixel_size=96> as a 96px
+# header above the locale list. Bluefin DX overrides this Adwaita icon
+# with its mascot glyph. Replace it with a real path-based symbolic
+# Margine glyph; GTK4 symbolic icons do not accept embedded raster
+# <image> nodes.
 retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 chmod 0644 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+if grep -Eiq '<image[[:space:]>]|data:image/' /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg; then
+  log "FATAL: start-here-symbolic.svg contains an embedded raster image; GTK4 symbolic icons require path/circle/rect primitives"
+  exit 1
+fi
 log "Replaced start-here-symbolic.svg with Margine 'm' glyph ($(stat -c %s /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg) bytes)"
 
 # (c) Bluefin wallpaper collection (Settings → Background spam).

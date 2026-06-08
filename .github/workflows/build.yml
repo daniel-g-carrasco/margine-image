@@ -303,9 +303,14 @@ jobs:
           if [[ ! -f "$ROOTFS/usr/share/pixmaps/margine-logo.png" && ! -f "$ROOTFS/usr/share/pixmaps/margine-logo.svg" ]]; then
             echo "::error::A.1 /usr/share/pixmaps/margine-logo.{png,svg} missing"; fail=1
           fi
+          check_nonempty "usr/share/pixmaps/fedora_logo_med.png" "A.1"
+          check_nonempty "usr/share/pixmaps/fedora_whitelogo_med.png" "A.1"
 
           # A.2 — Welcome screen icon: present + non-empty (retry_curl_strict)
           check_nonempty "usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg" "A.2"
+          if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg"; then
+            echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
+          fi
 
           # A.3 — All 10 enabled-extensions UUIDs installed system-wide
           for uuid in \

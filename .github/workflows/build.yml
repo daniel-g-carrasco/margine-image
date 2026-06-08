@@ -332,6 +332,16 @@ jobs:
           check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
           check_exec "usr/libexec/margine-first-boot-status" "A.4"
 
+          # A.4.bis — desktop launchers have high-res icons and docs fallback
+          check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
+          check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"
+          check_exec "usr/libexec/margine/docs-open" "A.4.bis"
+          check_exec "usr/bin/margine-docs-open" "A.4.bis"
+          check_nonempty "usr/share/margine/offline-docs/index.html" "A.4.bis"
+          grep -qxF 'Icon=margine-scheduler' "$ROOTFS/usr/share/applications/margine-scheduler.desktop" || { echo "::error::A.4.bis scheduler launcher does not use margine-scheduler icon"; fail=1; }
+          grep -qxF 'Exec=margine-docs-open' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-docs-open"; fail=1; }
+          grep -qxF 'Icon=margine-documentation' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-documentation icon"; fail=1; }
+
           # A.5 — REMOVED (org.gnome.shell.app-grid schema does not exist
           # in GNOME 47/48; the keys we tried to set are ignored. Icon-
           # size drift between app-grid/folder is a CSS theme issue, not
@@ -373,7 +383,7 @@ jobs:
             echo "::error::First-boot asset validation FAILED — blocking rechunk/push/sign."
             exit 1
           fi
-          echo "✓ First-boot asset validation PASSED (5/5 sections clean)"
+          echo "✓ First-boot asset validation PASSED (6/6 sections clean)"
 
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0

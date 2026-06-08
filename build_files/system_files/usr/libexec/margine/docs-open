@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HEALTH_URL="https://margine.the-empty.place/healthz"
+ONLINE_URL="https://margine.the-empty.place/docs"
+OFFLINE_URL="file:///usr/share/margine/offline-docs/index.html"
+
+if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+  exec xdg-open "$ONLINE_URL"
+fi
+
+exec xdg-open "$OFFLINE_URL"

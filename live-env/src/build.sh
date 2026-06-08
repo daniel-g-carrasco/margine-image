@@ -106,5 +106,58 @@ systemd-firstboot --timezone UTC || true
 mkdir -p /usr/lib/bootc-image-builder
 cp "$SRC_DIR/iso.yaml" /usr/lib/bootc-image-builder/iso.yaml
 
+# === Phase 2 — BAKE Flatpaks into the live env ===
+# The ~38 Margine "fundamentals" are installed into /var/lib/flatpak of
+# the live image at build time, then rsync'd into the target at install
+# time (install-flatpaks.ks). This is the Bazzite installer-image pattern
+# Margine already uses for BIB (installer/build.sh) — the user lands on a
+# fully-populated desktop with no first-boot download wait.
+
+# bwrap (used by flatpak apply_extra for binary blobs) needs a writable
+# /proc/sys and a real /root. Same prep as installer/build.sh.
+mkdir -p "$(realpath /root)"
+mount -o remount,rw /proc/sys
+
+flatpak remote-add --if-not-exists --system flathub \
+  https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Strip whole-line + inline comments and surrounding whitespace, exactly
+# like installer/build.sh (an un-stripped "id  # note" would be passed to
+# flatpak as a literal id and fail with "Name can't start with #").
+APPS="$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$SRC_DIR/flatpaks" \
+        | sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
+        | grep -v '^$')"
+echo "=== Installing $(echo "$APPS" | wc -l) Flatpaks into the live env ==="
+echo "$APPS"
+# shellcheck disable=SC2086 # word-splitting of the app list is intended
+flatpak install --system --noninteractive --or-update flathub $APPS
+flatpak list --system --app --columns=application | sort
+du -sh /var/lib/flatpak 2>/dev/null || true
+
+# Mount /var/lib/flatpak read-only in the LIVE session so the user can't
+# taint the baked set before it's rsync'd to the target. (Bazzite pattern.)
+cat >/etc/systemd/system/var-lib-flatpak.mount <<'EOF'
+[Unit]
+Description=Read-only bind of /var/lib/flatpak for the Margine live system
+
+[Mount]
+What=/var/lib/flatpak
+Where=/var/lib/flatpak
+Type=none
+Options=bind,ro
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable var-lib-flatpak.mount
+
+# Stage the install-time kickstart fragment that rsyncs the baked
+# Flatpaks into the target deployment. It is %included by
+# interactive-defaults.ks (Phase 3). Harmless to ship before Anaconda
+# is installed — it's just a file under post-scripts/.
+mkdir -p /usr/share/anaconda/post-scripts
+cp "$SRC_DIR/anaconda/post-scripts/install-flatpaks.ks" \
+   /usr/share/anaconda/post-scripts/install-flatpaks.ks
+
 # Reclaim build-layer space.
 dnf clean all

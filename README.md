@@ -81,21 +81,49 @@ operations.
 
 ## Install
 
-Margine ships a single ISO. Gaming is a one-command layer on top —
-`ujust margine-gaming` after first boot installs gamescope + vkBasalt
-and the seven gaming Flatpaks (Steam / Lutris / Heroic / Bottles /
-Protontricks / ProtonUp-Qt / RetroArch). The previous separate
-Margine Gaming ISO + OCI image were retired 2026-06-06 to cut
-maintenance — same gaming stack, fewer moving parts.
+As of 2026-06-08, the recommended public path is to install Bluefin DX
+stable first, then rebase to Margine. Margine fresh-install ISOs are
+still published for validation, but they are the tester path until the
+installer path passes fresh-machine checks again. Current status:
+<https://margine.the-empty.place/docs/install-status>.
+
+Gaming is a one-command layer on top — `ujust margine-gaming` after
+first boot installs gamescope + vkBasalt and the seven gaming Flatpaks
+(Steam / Lutris / Heroic / Bottles / Protontricks / ProtonUp-Qt /
+RetroArch). The previous separate Margine Gaming ISO + OCI image were
+retired 2026-06-06 to cut maintenance — same gaming stack, fewer moving
+parts.
 
 - OCI image: `ghcr.io/daniel-g-carrasco/margine:stable`
-- ISO (Internet Archive): `archive.org/details/margine-anaconda-iso-YYYYMMDD`
 - Identifies as: `VARIANT_ID=margine`
+- ISO test media (Internet Archive): `archive.org/details/margine-anaconda-iso-YYYYMMDD`
 
-### Option A — Install from ISO
+### Option A — Rebase from Bluefin DX
 
-The recommended path. Downloads in one step, installs Margine
-directly.
+The recommended path today. Install Bluefin DX stable, boot it once,
+then switch to the Margine image:
+
+```sh
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+systemctl reboot
+```
+
+After the reboot, two more one-time steps:
+
+1. **Enroll the Margine signing key into Secure Boot.** On the next
+   reboot a blue/grey screen called **MOK Manager** appears
+   automatically. Choose `Enroll MOK` -> `Continue` -> `Yes`, type the
+   passphrase **`margine-os`** when prompted, and reboot. From this
+   point on the kernel boots normally under Secure Boot and you will
+   not see this screen again. Full walkthrough with the exact screen-
+   by-screen flow is at
+   <https://margine.the-empty.place/docs/first-boot>.
+2. Run **`ujust margine-bootstrap`**.
+
+### Option B — Install from ISO test media
+
+Use this path if you are validating fresh installs or once the
+install-status page marks the ISO as recommended again.
 
 1. Open the [Margine site Install section](https://margine.the-empty.place/#install)
    for the latest dated identifiers, or browse the full
@@ -115,28 +143,6 @@ directly.
    sequence: home layout, GNOME extensions, keybindings, appearance,
    default applications, app folders. Log out and back in to refresh
    GNOME Shell.
-
-### Option B — Rebase from an existing Bluefin install
-
-Useful if you already have a Bluefin DX installation and don't want
-to reinstall from ISO. Picks the base Margine flavour.
-
-```sh
-rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
-systemctl reboot
-```
-
-After the reboot, two more one-time steps:
-
-1. **Enroll the Margine signing key into Secure Boot.** On the next
-   reboot a blue/grey screen called **MOK Manager** appears
-   automatically. Choose `Enroll MOK` → `Continue` → `Yes`, type the
-   passphrase **`margine-os`** when prompted, and reboot. From this
-   point on the kernel boots normally under Secure Boot and you will
-   not see this screen again. Full walkthrough with the exact screen-
-   by-screen flow is at
-   <https://margine.the-empty.place/docs/first-boot>.
-2. Run **`ujust margine-bootstrap`**, as in Option A.
 
 ### Option C — Add the gaming layer
 

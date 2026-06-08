@@ -22,8 +22,10 @@ ARG BASE_IMAGE=ghcr.io/daniel-g-carrasco/margine:stable
 
 FROM ${BASE_IMAGE}
 
-# build.sh + its data (iso.yaml, anaconda/, flatpaks) are bind-mounted
-# at /src so they don't leak into the final image layers. rw because
+# build.sh + its data (iso.yaml, anaconda/, flatpaks) live under src/ and
+# are bind-mounted at /src so they don't leak into the final image layers
+# (and so live-env/references/ + README stay out of the build). rw because
 # build.sh remounts /proc/sys and writes through /src during the bake.
-RUN --mount=type=bind,source=.,target=/src,rw \
+# Build context is live-env/, so source=src resolves to live-env/src.
+RUN --mount=type=bind,source=src,target=/src,rw \
     /src/build.sh

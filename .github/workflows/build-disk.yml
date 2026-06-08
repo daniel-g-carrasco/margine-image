@@ -44,9 +44,12 @@ on:
     branches:
       - main
     paths:
-      - './disk_config/disk.toml'
-      - './disk_config/iso-gnome.toml'
-      - './.github/workflows/build-disk.yml'
+      # NB: GitHub path filters do NOT match a leading './' — the old
+      # './disk_config/...' globs never fired. Plain repo-relative globs.
+      - 'disk_config/disk.toml'
+      - 'disk_config/iso-gnome.toml'
+      - '.github/workflows/build-disk.yml'
+      - 'live-env/**'
 
 env:
   # ADR-0008 Phase 0: Titanoboa pin for upcoming live-ISO migration.

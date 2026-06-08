@@ -15,8 +15,6 @@ set -euxo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# === Phase 1 — bootable live environment ===
-
 # ADR-0008 §4 invariant: the CachyOS kernel re-signed with the Margine
 # MOK must be the ONLY kernel under /usr/lib/modules before Titanoboa
 # runs. Titanoboa's build_iso.sh copies /usr/lib/modules/*/{vmlinuz,
@@ -26,14 +24,41 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # both live and installed environments (ADR-0008 §3.2). The Secure
 # Boot consequence (live boot needs SB disabled until the Margine MOK
 # is enrolled) is documented + accepted.
-kernel_count="$(find /usr/lib/modules -maxdepth 1 -mindepth 1 -type d | wc -l)"
-if [[ "$kernel_count" -ne 1 ]]; then
-  echo "ERROR: expected exactly 1 kernel under /usr/lib/modules, found $kernel_count:" >&2
-  find /usr/lib/modules -maxdepth 1 -mindepth 1 -type d >&2
-  exit 1
-fi
+#
+# Asserted twice: at the start AND at the very end (after the dnf installs
+# of anaconda-live etc., any of which could in principle pull a second
+# kernel) — Titanoboa consumes /usr/lib/modules/* at the END state.
+assert_single_kernel() {
+  local n
+  n="$(find /usr/lib/modules -maxdepth 1 -mindepth 1 -type d | wc -l)"
+  if [[ "$n" -ne 1 ]]; then
+    echo "ERROR: expected exactly 1 kernel under /usr/lib/modules, found $n:" >&2
+    find /usr/lib/modules -maxdepth 1 -mindepth 1 -type d >&2
+    exit 1
+  fi
+}
+
+# === Phase 1 — bootable live environment ===
+
+assert_single_kernel
 KERNEL="$(find /usr/lib/modules -maxdepth 1 -mindepth 1 -type d -printf '%P\n')"
 echo "Margine live kernel: $KERNEL"
+
+# vmlinuz is the load-bearing Titanoboa input; a missing/empty one would
+# produce a non-booting ISO with a cryptic failure deep in build_iso.sh.
+test -s "/usr/lib/modules/${KERNEL}/vmlinuz" || {
+  echo "ERROR: no vmlinuz under /usr/lib/modules/${KERNEL}" >&2
+  exit 1
+}
+
+# BIOS hybrid boot is a free bonus IF /usr/lib/grub/i386-pc exists
+# (Titanoboa copies it for the BIOS path). ADR-0008 §4 asks to verify
+# presence without gating on it — log the outcome.
+if [[ -d /usr/lib/grub/i386-pc ]]; then
+  echo "BIOS hybrid boot: /usr/lib/grub/i386-pc present"
+else
+  echo "WARNING: /usr/lib/grub/i386-pc absent — ISO will be UEFI-only (per ADR-0008 §4, non-gating)"
+fi
 
 # Live-boot dependencies. dracut-live provides the dmsquash-live dracut
 # modules (rd.live.image support); livesys-scripts auto-configures the
@@ -68,6 +93,13 @@ systemctl enable livesys.service livesys-late.service
 # provides gcdx64.efi here.
 mkdir -p /boot/efi
 cp -av /usr/lib/efi/*/*/EFI /boot/efi/
+# Guard the glob: if /usr/lib/efi/*/*/EFI didn't expand, the EFI tree is
+# absent and Titanoboa (which needs /rootfs/boot/efi/EFI) would fail with
+# a cryptic error far downstream. Fail clearly here instead.
+test -d /boot/efi/EFI/fedora || {
+  echo "ERROR: EFI tree not assembled under /boot/efi/EFI (glob /usr/lib/efi/*/*/EFI did not expand)" >&2
+  exit 1
+}
 
 # Removable-media fallback bootloader (\EFI\BOOT\fbx64.efi). The grub
 # fallback binary is what the firmware loads when there's no NVRAM boot
@@ -89,7 +121,7 @@ Description=Larger tmpfs for /var/tmp on the Margine live system
 What=tmpfs
 Where=/var/tmp
 Type=tmpfs
-Options=size=50%,nr_inodes=1m
+Options=size=50%%,nr_inodes=1m
 
 [Install]
 WantedBy=local-fs.target
@@ -161,7 +193,7 @@ cp "$SRC_DIR/anaconda/post-scripts/install-flatpaks.ks" \
 
 # === Phase 3 — Anaconda WebUI installer ===
 # WebUI engine (ADR-0008 §3.3), matching Bluefin/Bazzite production.
-dnf install -qy --enable-repo=fedora-cisco-openh264 --allowerasing \
+dnf install -y --enable-repo=fedora-cisco-openh264 --allowerasing \
   firefox anaconda-live anaconda-webui \
   libblockdev-btrfs libblockdev-lvm libblockdev-dm
 mkdir -p /var/lib/rpm-state  # Anaconda WebUI requires it
@@ -214,6 +246,11 @@ glib-compile-schemas /usr/share/glib-2.0/schemas || true
     fi
   done
 )
+
+# Re-assert the single-kernel invariant at the END state — this is what
+# Titanoboa actually consumes. Any of the dnf installs above could in
+# principle have pulled a second kernel; fail the build if so.
+assert_single_kernel
 
 # Reclaim build-layer space.
 dnf clean all

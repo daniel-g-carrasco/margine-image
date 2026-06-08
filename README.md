@@ -15,7 +15,7 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 </p>
 
 [**🌐 Website**](https://margine.the-empty.place/) ·
-[**📥 Download Margine**](https://margine.the-empty.place/#install) ·
+[**📥 Install Margine**](https://margine.the-empty.place/#install) ·
 [**📖 Documentation**](docs/README.md) ·
 [**📋 Roadmap**](docs/roadmap.md) ·
 [**🛠 Build pipeline**](https://github.com/daniel-g-carrasco/margine-image)
@@ -27,10 +27,10 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 > **Looking for the distro itself?** Go to
 > [margine-image](https://github.com/daniel-g-carrasco/margine-image)
 > — that repo's README has *what Margine is*, screenshots, the current
-> install recommendation (Bluefin DX rebase first; ISO test media while
-> the fresh-install path is being hardened), and the one-command gaming
-> layer. This repo is the *source code* of everything the distro applies
-> to the system.
+> install recommendation ([Bluefin DX rebase first while ISO media is
+> hardened](https://margine.the-empty.place/docs/install-status)), the
+> one-command gaming layer, and the optional AI workflow. This repo is
+> the *source code* of everything the distro applies to the system.
 
 ## What this repo is for
 
@@ -40,7 +40,8 @@ built by a CI pipeline**, and that pipeline (in
 needs to know:
 
 - **What** we want on the system (which extensions, apps, keybinds,
-  app folders, default applications, home layout, …)
+  app folders, default applications, home layout, opt-in gaming and AI
+  workflows, …)
 - **How** to apply it (idempotent scripts that read the spec)
 - **How to verify it** (read-only validators that report "OK" or "drift")
 
@@ -48,7 +49,7 @@ This repo is exactly that "what + how + verify".
 
 | Directory | Contents |
 | --- | --- |
-| `declarations/` | The **declarative spec** (`margine-atomic.yaml`). Single source of truth for GNOME extensions, app folders, keybinds, gsettings, preinstalled apps, home layout. |
+| `declarations/` | The **declarative spec** (`margine-atomic.yaml`). Single source of truth for GNOME extensions, app folders, keybinds, gsettings, preinstalled apps, home layout, and opt-in gaming / AI workflows. |
 | `scripts/configure-*` | Idempotent helpers that read the spec and apply. Default to dry-run; pass `--apply` to act. Become `/usr/bin/margine-configure-*` in the image. |
 | `scripts/validate-*` | Read-only validators (atomic layout, CachyOS kernel, hardware/media stack, gaming runtime, end-to-end acceptance test). Become `/usr/bin/margine-validate-*`. |
 | `scripts/install-user-extensions` | Installs the non-RPM GNOME extensions (o-tiling, Hide Cursor, Search Light) under `~/.local/share/gnome-shell/extensions/`. Also prunes anything listed under `removed_user_install` in the spec (Tiling Shell, dropped 2026-06-02 in favour of o-tiling). |

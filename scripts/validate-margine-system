@@ -266,20 +266,18 @@ if command -v identify >/dev/null 2>&1 && [[ -f /usr/share/plymouth/themes/margi
 fi
 
 # start-here-symbolic.svg — Bluefin overrides this Adwaita icon with
-# a velociraptor footprint glyph that bleeds through into the
-# gnome-initial-setup welcome page first-screen header. Margine
-# overlays its wordmark 'm' / full wordmark SVG. Fixed 2026-06-02
-# (commit 209ad7b margine-image / a759244 margine-fedora-atomic).
+# a mascot glyph that bleeds through into gnome-initial-setup's
+# Language page header. Margine overlays a path-based symbolic 'm'
+# glyph. GTK4 symbolic icons reject embedded raster <image> payloads,
+# so validate the SVG shape rather than using a file-size heuristic.
 START_HERE=/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 if [[ -f "$START_HERE" ]]; then
-  # Bluefin's footprint SVG is small (~1.2 KB single-color vector).
-  # Margine's wordmark embeds a PNG and is ~58 KB. Quick heuristic
-  # is the file size: >10 KB → Margine. Strict but cheap.
-  size=$(stat -c %s "$START_HERE")
-  if (( size > 10000 )); then
-    ok "start-here-symbolic.svg looks like Margine wordmark (${size} bytes)"
+  if grep -Eiq '<image[[:space:]>]|data:image/' "$START_HERE"; then
+    bad "start-here-symbolic.svg embeds a raster image — GTK4 symbolic renderer will show a broken icon"
+  elif grep -Eiq '<(path|circle|rect)[[:space:]>]' "$START_HERE"; then
+    ok "start-here-symbolic.svg is path-based symbolic SVG"
   else
-    bad "start-here-symbolic.svg is small (${size} bytes) — probably still Bluefin's velociraptor footprint"
+    bad "start-here-symbolic.svg has no path/circle/rect primitives"
   fi
 fi
 

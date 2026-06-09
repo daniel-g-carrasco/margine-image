@@ -3,13 +3,29 @@
 # /usr/share/anaconda/interactive-defaults.ks (Aurora/Bazzite pattern —
 # the base ships liveinst integration we must preserve).
 #
-# Partitioning is the PR #80 contract ported VERBATIM (ADR §4 invariant):
-# single-disk autodetect via %pre, then ESP 4 GiB + single btrfs / --grow.
-# Anaconda has no profile key for ESP size, so the explicit `part` here is
-# the only way to override the 600 MB default — hence kickstart-driven
-# partitioning rather than the WebUI profile's default_partitioning.
+# PARTITIONING IS PROFILE-DRIVEN (margine.conf [Storage] default_partitioning
+# + default_scheme=BTRFS), NOT explicit kickstart `part` directives.
+# Why: anaconda-webui 44-68 (Fedora 44 ships 68) has a bug — any `part`
+# command makes Anaconda select the CUSTOM partitioning method, which never
+# publishes the Storage.Partitioning.Automatic DBus interface; the WebUI
+# then queries that interface unconditionally and crashes with
+# "Reading information about the computer failed" (InvalidArgs). Fixed
+# upstream in anaconda-webui 69 (commit 135c87881, 2026-03-18), not yet in
+# F44. So we drop the explicit partitioning and let the profile drive the
+# AUTOMATIC flow, exactly like Aurora/Bazzite.
+#
+# CONSEQUENCE: the ESP stays at Anaconda's default (~600 MiB, hardcoded in
+# platform.py EFI._bootloader_partition — no profile key can enlarge it on
+# the AUTOMATIC path). The PR #80 4 GiB ESP is DEFERRED until F44 ships
+# anaconda-webui >= 69, at which point the explicit `part /boot/efi
+# --size=4096` block can be restored. ~600 MiB holds several UKIs, so it is
+# acceptable for v1 Sealed-Boot work (ADR-0007). See ADR-0008.
+#
+# The %pre single-disk autodetect below is KEPT — it only ever emits
+# `ignoredisk --only-use=<dev>`, which does NOT select CUSTOM, so it is
+# WebUI-safe and just pre-narrows disk selection for the AUTOMATIC flow.
 
-# --- PR #80 single-disk autodetect -----------------------------------
+# --- single-disk autodetect (WebUI-safe: emits only ignoredisk) ------
 %pre --erroronfail --log=/tmp/margine-disk-detect.log
 #!/bin/bash
 set -euo pipefail
@@ -41,12 +57,11 @@ else
 fi
 %end
 
+# ignoredisk (single-disk case) narrows the disk set for the WebUI's
+# AUTOMATIC partitioning. No zerombr/clearpart/part here — those would
+# select CUSTOM and crash anaconda-webui 68 (see header). The actual
+# layout comes from margine.conf [Storage] default_partitioning.
 %include /tmp/part-include.ks
-zerombr
-clearpart --all --initlabel --disklabel=gpt
-part /boot/efi --fstype=efi --size=4096 --label=ESP
-part / --fstype=btrfs --grow --label=margine_root
-bootloader --timeout=1
 
 # --- Install source ---------------------------------------------------
 # ADR-0008 §7 OPEN DECISION (v1 choice = registry transport):

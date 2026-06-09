@@ -477,10 +477,13 @@ jobs:
     needs: build_disk
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
-    # 180 = IA upload (often 60-90 min for multi-GB ISO) + derive wait
-    # (up to 25 min) + slack. The fact that we can re-run just this
-    # job on flakiness is the whole point of the split.
-    timeout-minutes: 180
+    # 350 = IA upload headroom. Bumped from 180 on 2026-06-09 after run
+    # 27166954601's publish_ia hit the 180-min cap mid-upload (IA's S3
+    # ingest for a ~9 GB ISO ran past 3 h) and the job was cancelled. GHA
+    # job hard-cap is 6 h; 350 leaves margin for the upload + the 25-min
+    # derive wait. If a run still times out, IA ingest is degraded — re-run
+    # just this job (the build_disk split exists precisely for that).
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:

@@ -179,9 +179,16 @@ rm -f /usr/share/pixmaps/fedora-gdm-logo.png \
       /usr/share/pixmaps/system-logo-white.png \
       /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg \
       /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
-install -m 0644 /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora_logo_med.png
-install -m 0644 /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora_whitelogo_med.png
-log "Removed Fedora icon fallbacks; overwrote GNOME Control Center's Fedora pixmap paths with Margine art"
+# About-panel distributor logo = the Margine WORDMARK, not the square "m".
+# fedora_logo_med.png is shown on LIGHT backgrounds (so a dark-text
+# wordmark); fedora_whitelogo_med.png on DARK backgrounds (white-text
+# wordmark). gnome-control-center scales these 1200×300 transparent PNGs
+# to the About-panel logo slot. (Earlier this overwrote both with the
+# square margine-logo.png — wrong asset for a wordmark slot.)
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-dark.png"  /usr/share/pixmaps/fedora_logo_med.png
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-light.png" /usr/share/pixmaps/fedora_whitelogo_med.png
+chmod 0644 /usr/share/pixmaps/fedora_logo_med.png /usr/share/pixmaps/fedora_whitelogo_med.png
+log "About-panel distributor logo set to the Margine wordmark (dark=light-theme, white=dark-theme)"
 
 # (d.bis) GDM greeter logo — explicitly DISABLED.
 # The default org.gnome.login-screen.logo points at

@@ -493,3 +493,24 @@ margine-ai-remove:
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
     flatpak uninstall --system -y com.jeffser.Alpaca || true
     echo "Done."
+
+# Toggle the wayland-scroll-factor gnome-shell preload (on by image default). `off` fully unloads after logout; to merely neutralize, run `wsf set 1.0`.
+[group('Margine')]
+wsf-preload STATE="status":
+    #!/usr/bin/bash
+    set -euo pipefail
+    OVERRIDE=/etc/systemd/user/org.gnome.Shell@.service.d/99-margine-wsf-off.conf
+    case "{{ STATE }}" in
+      off)
+        printf '[Service]\nUnsetEnvironment=LD_PRELOAD\n' | sudo install -Dm0644 /dev/stdin "$OVERRIDE"
+        echo "WSF preload disabled. Log out and back in to unload it."
+        ;;
+      on)
+        sudo rm -f "$OVERRIDE"
+        echo "WSF preload re-enabled. Log out and back in to load it."
+        ;;
+      *)
+        if [[ -f "$OVERRIDE" ]]; then echo "WSF preload: disabled via $OVERRIDE"; else echo "WSF preload: enabled (image default)"; fi
+        command -v wsf >/dev/null && wsf status || true
+        ;;
+    esac

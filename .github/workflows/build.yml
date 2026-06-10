@@ -381,8 +381,11 @@ jobs:
           grep -qxF '[org/gnome/shell/extensions/dash-to-dock]' "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock dconf section missing"; fail=1; }
           grep -qxF '[org/gnome/shell/extensions/search-light]' "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light dconf section missing"; fail=1; }
           grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tiling" || { echo "::error::A.3.bis o-tiling dconf section missing"; fail=1; }
-          # search-light rounded-corners daniel default: border-radius=30
-          grep -qE "^border-radius=30" "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light border-radius!=30 — daniel default lost"; fail=1; }
+          # search-light rounded-corners daniel default: border-radius=7.0
+          # (the value is an INDEX 0-7 into the extension's px table, not
+          # pixels — 7 = 32px max rounding; the old 30 was out of range and
+          # silently ignored. See #94.)
+          grep -qE "^border-radius=7" "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light border-radius!=7 — daniel default lost"; fail=1; }
           # dash-to-dock background customisation present (cosmetic regression sentinel)
           grep -qE "^running-indicator-style='DOTS'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
 

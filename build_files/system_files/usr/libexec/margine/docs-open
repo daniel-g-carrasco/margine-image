@@ -1,12 +1,40 @@
 #!/usr/bin/env bash
+# Margine docs launcher — OFFLINE-FIRST.
+#
+# Opens the LOCAL docs mirror instantly; no blocking network probe.
+# The mirror lives in /var/lib/margine/offline-docs, seeded from the
+# immutable /usr copy at boot and refreshed in the background by
+# margine-docs-refresh.timer (see docs-refresh).
+#
+# Why ALWAYS the /var copy and never the /usr seed directly: the
+# default browser is a Flatpak (Zen). For a file:// URI outside its
+# permissions the portal exports ONLY that single file — the page
+# renders but every relative link to sibling pages is dead. A global
+# system Flatpak override grants read access to the /var mirror
+# (docs-refresh writes it), and Flatpak reserves /usr so no override
+# can ever expose the seed. Non-Flatpak browsers read either path.
+#
+# Fallback order: /var mirror -> online site -> /usr seed (the seed
+# works for non-Flatpak browsers and is better than nothing).
 set -euo pipefail
 
-HEALTH_URL="https://margine.the-empty.place/healthz"
+VAR_DIR="/var/lib/margine/offline-docs"
+SEED_DIR="/usr/share/margine/offline-docs"
 ONLINE_URL="https://margine.the-empty.place/docs"
-OFFLINE_URL="file:///usr/share/margine/offline-docs/index.html"
 
-if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+if [[ -f "${VAR_DIR}/docs/index.html" ]]; then
+  exec xdg-open "file://${VAR_DIR}/docs/index.html"
+fi
+
+# /var mirror missing (first boot before the seed service ran, or the
+# state dir was wiped). Prefer the live site over the seed: the seed
+# is unreadable from Flatpak browsers.
+if curl -fsS --max-time 3 "https://margine.the-empty.place/healthz" >/dev/null 2>&1; then
   exec xdg-open "$ONLINE_URL"
 fi
 
-exec xdg-open "$OFFLINE_URL"
+if [[ -f "${SEED_DIR}/docs/index.html" ]]; then
+  exec xdg-open "file://${SEED_DIR}/docs/index.html"
+fi
+
+exec xdg-open "$ONLINE_URL"

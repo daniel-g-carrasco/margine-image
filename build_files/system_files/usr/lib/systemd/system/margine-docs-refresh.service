@@ -1,0 +1,38 @@
+[Unit]
+Description=Margine: refresh the offline documentation mirror in /var/lib/margine
+Documentation=https://margine.the-empty.place/docs
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine/docs-refresh
+StateDirectory=margine
+TimeoutStartSec=10min
+# Sandbox: the job fetches and regex-rewrites remote HTML; confine
+# writes to /var/lib/margine (StateDirectory) plus the Flatpak
+# overrides dir (step 2 of docs-refresh grants Flatpak browsers read
+# access to the mirror). DynamicUser is NOT used on purpose — it would
+# place the state dir under /var/lib/private (0700), unreadable by
+# docs-open/users' browsers.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/flatpak/overrides
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -188,6 +188,10 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
 
     write_redirect_index(output_dir)
     (output_dir / "manifest.txt").write_text("\n".join(ROUTES) + "\n", encoding="utf-8")
+    # Freshness stamp consumed by docs-refresh to decide whether the /usr
+    # seed (image build) is newer than the /var mirror (runtime refresh
+    # by margine-docs-refresh.service). Epoch seconds.
+    (output_dir / "stamp").write_text(f"{int(time.time())}\n", encoding="utf-8")
 
 
 def main() -> int:

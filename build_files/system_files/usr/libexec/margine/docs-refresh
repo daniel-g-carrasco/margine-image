@@ -18,8 +18,8 @@
 #   3. REFRESH (network): rebuild the mirror from the live site with
 #      the same fetch/rewrite tool that bakes the /usr seed at image
 #      build (/usr/libexec/margine/build-offline-docs). The bundle is
-#      <5 MB. Atomic two-rename swap; offline -> keep current copy,
-#      exit 0 (not a failure).
+#      <5 MB. Files are synced into the existing directory (see
+#      sync_in); offline -> keep current copy, exit 0 (not a failure).
 set -euo pipefail
 
 BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
@@ -27,7 +27,6 @@ STATE_DIR="${STATE_DIRECTORY:-/var/lib/margine}"
 SEED_DIR="/usr/share/margine/offline-docs"
 DOCS_DIR="${STATE_DIR}/offline-docs"
 NEW_DIR="${DOCS_DIR}.new"
-OLD_DIR="${DOCS_DIR}.old"
 
 read_stamp() {
   local stamp
@@ -36,16 +35,19 @@ read_stamp() {
   printf '%s' "$stamp"
 }
 
-swap_in() {
-  # $1 = fully-built candidate dir. Two renames on one filesystem;
-  # readers only ever see a complete tree.
+sync_in() {
+  # $1 = fully-built candidate dir. Sync INTO the existing directory
+  # instead of swapping the directory itself: Flatpak sandboxes
+  # bind-mount $DOCS_DIR when the app starts, so a directory swap
+  # (rename away + rm -rf) leaves every already-running browser
+  # staring at the emptied old inode — "File not found" on the next
+  # click until the app restarts. rsync replaces each changed file
+  # atomically (tmpfile+rename) and --checksum leaves unchanged files
+  # untouched, so live readers never see a broken or partial mirror.
   chmod -R a+rX "$1"
-  rm -rf "$OLD_DIR"
-  if [[ -d "$DOCS_DIR" ]]; then
-    mv "$DOCS_DIR" "$OLD_DIR"
-  fi
-  mv "$1" "$DOCS_DIR"
-  rm -rf "$OLD_DIR"
+  mkdir -p "$DOCS_DIR"
+  rsync -a --delete --checksum "$1"/ "$DOCS_DIR"/
+  rm -rf "$1"
 }
 
 # --- 1. seed ---------------------------------------------------------
@@ -55,7 +57,7 @@ if [[ -d "$SEED_DIR" ]]; then
     echo "seeding ${DOCS_DIR} from the /usr image copy"
     rm -rf "$NEW_DIR"
     cp -a "$SEED_DIR" "$NEW_DIR"
-    swap_in "$NEW_DIR"
+    sync_in "$NEW_DIR"
   fi
 fi
 
@@ -77,6 +79,6 @@ rm -rf "$NEW_DIR"
 python3 /usr/libexec/margine/build-offline-docs \
   --base-url "$BASE_URL" \
   --output-dir "$NEW_DIR"
-swap_in "$NEW_DIR"
+sync_in "$NEW_DIR"
 
 echo "offline docs refreshed: ${DOCS_DIR} (stamp $(read_stamp "$DOCS_DIR"))"

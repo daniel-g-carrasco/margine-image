@@ -61,5 +61,4 @@ io.gitlab.adhami3310.Impression    # USB / image writer
 io.missioncenter.MissionCenter     # task manager (System Monitor alt)
 org.gnome.DejaDup                  # backup tool
 org.gnome.Firmware                 # firmware updater (fwupd GUI)
-page.tesk.Refine                   # GNOME tweaks-style settings
 it.mijorus.smile                   # emoji picker

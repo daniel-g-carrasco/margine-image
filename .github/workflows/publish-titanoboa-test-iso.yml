@@ -1,0 +1,83 @@
+# Publish a Titanoboa Live ISO artifact to Internet Archive for fast
+# download during QEMU/hardware validation (ADR-0008 Phase 1-4 testing).
+#
+# WHY: GHA artifact egress to residential connections is throttled
+# (~1-1.5 MB/s — an 8 GB ISO takes 2-4 h). IA serves at full speed.
+# The runner downloads the artifact over GHA's internal network
+# (~50-100 MB/s) and pushes it to IA, so the project lead can grab the
+# test ISO in minutes instead of hours.
+#
+# This is TEST distribution only — items are tagged -test and use
+# test_collection (IA auto-expires those after ~30 days). The official
+# release path stays publish_ia in build-disk.yml. When ADR-0008 Phase 5
+# makes Titanoboa the default ISO, this workflow is superseded and can
+# be deleted.
+name: Publish Titanoboa test ISO to IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "build-disk.yml run id whose margine-live-iso artifact to publish"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish_test_iso:
+    name: Upload margine-live-iso to Internet Archive (test item)
+    runs-on: ubuntu-24.04
+    # Artifact download is minutes; IA ingest of ~8 GB can run long
+    # (same reason publish_ia is at 350).
+    timeout-minutes: 350
+    steps:
+      - name: Download margine-live-iso artifact from the build run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/iso
+          gh run download "${{ inputs.run_id }}" \
+            --repo "${{ github.repository }}" \
+            -n margine-live-iso -D /tmp/iso
+          ls -lh /tmp/iso
+          test -f /tmp/iso/margine-live.iso
+
+      - name: Install Internet Archive CLI (ia)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --quiet internetarchive
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          ~/.local/bin/ia --version
+
+      - name: Upload to Internet Archive (test item)
+        env:
+          IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
+          IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          DATE_TAG="$(date -u +%Y%m%d)"
+          IDENTIFIER="margine-titanoboa-live-test-${DATE_TAG}-run${{ inputs.run_id }}"
+          export IA_CONFIG_FILE=/tmp/ia.ini
+          cat > "$IA_CONFIG_FILE" <<EOF
+          [s3]
+          access = ${IA_S3_ACCESS}
+          secret = ${IA_S3_SECRET}
+          EOF
+          chmod 0600 "$IA_CONFIG_FILE"
+          # test_collection: IA auto-removes items after ~30 days —
+          # exactly right for throwaway validation ISOs (keeps the
+          # account tidy, no manual cleanup).
+          ia --config-file "$IA_CONFIG_FILE" --debug upload "$IDENTIFIER" \
+            /tmp/iso/margine-live.iso /tmp/iso/SHA256SUMS \
+            --retries 5 \
+            --sleep 60 \
+            --metadata="mediatype:software" \
+            --metadata="collection:test_collection" \
+            --metadata="title:Margine Titanoboa Live ISO (TEST ${DATE_TAG}, run ${{ inputs.run_id }})" \
+            --metadata="description:THROWAWAY validation build of the Margine Titanoboa Live ISO (ADR-0008 Phase 1-4). Not a release. Auto-expires from IA test_collection in ~30 days. Official releases: https://archive.org/search?query=creator%3A%22daniel-g-carrasco%22+AND+title%3A%22Margine+Linux+ISO%22"
+          echo "### Download" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://archive.org/download/${IDENTIFIER}/margine-live.iso" >> "$GITHUB_STEP_SUMMARY"
+          echo "identifier=${IDENTIFIER}"

@@ -33,6 +33,13 @@ echo "${WSF_SHA256}  ${workdir}/wsf.tar.gz" | sha256sum -c -
 tar -xzf "${workdir}/wsf.tar.gz" -C "$workdir"
 pushd "${workdir}/wayland-scroll-factor-${WSF_VERSION}" >/dev/null
 
+# Margine's PATH puts /usr/lib64/ccache first; in the build container
+# ccache's cache dir isn't writable and every compile dies with
+# "ccache: error: File exists" (caught by a local container test of
+# this section). Compile without it — a one-shot build gains nothing
+# from a compiler cache anyway.
+export CCACHE_DISABLE=1
+
 # --libdir=lib64 is meson's Fedora default, but pin it explicitly: the
 # path is compiled into the wsf CLI as WSF_LIBDIR and referenced by
 # the systemd drop-in below — they must agree.

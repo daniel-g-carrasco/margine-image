@@ -59,6 +59,12 @@ env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
   BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905"
+  # osbuild/bootc-image-builder-action@v0.0.2 still declares Node 20,
+  # which GitHub deprecates and force-switches to Node 24 on
+  # 2026-06-16. No newer release exists (checked 2026-06-10). Opt in
+  # to Node 24 NOW so any breakage shows up while it is still our
+  # choice — if a run fails on this, the variable is the rollback.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}

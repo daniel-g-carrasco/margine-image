@@ -51,13 +51,17 @@ test -s "/usr/lib/modules/${KERNEL}/vmlinuz" || {
   exit 1
 }
 
-# BIOS hybrid boot is a free bonus IF /usr/lib/grub/i386-pc exists
-# (Titanoboa copies it for the BIOS path). ADR-0008 §4 asks to verify
-# presence without gating on it — log the outcome.
+# BIOS boot status: the produced ISO is UEFI-ONLY today regardless of
+# this directory. Titanoboa @5c457c3 never copies the grub BIOS modules
+# (build_iso.sh:32 tests the i386-pc DIRECTORY with `[ -f ]`, always
+# false) and its xorriso call has no El Torito BIOS image (-b) anyway —
+# confirmed in the 2026-06-09 build-log scan. ADR-0008 §4 already
+# treats BIOS as non-gating (all Margine reference hardware is UEFI);
+# log the truth so nobody trusts a "hybrid" that isn't there.
 if [[ -d /usr/lib/grub/i386-pc ]]; then
-  echo "BIOS hybrid boot: /usr/lib/grub/i386-pc present"
+  echo "NOTE: /usr/lib/grub/i386-pc present, but current Titanoboa produces a UEFI-only ISO (no BIOS El Torito; upstream build_iso.sh:32 -f-vs-directory bug)"
 else
-  echo "WARNING: /usr/lib/grub/i386-pc absent — ISO will be UEFI-only (per ADR-0008 §4, non-gating)"
+  echo "NOTE: /usr/lib/grub/i386-pc absent — ISO is UEFI-only (per ADR-0008 §4, non-gating)"
 fi
 
 # Live-boot dependencies. dracut-live provides the dmsquash-live dracut

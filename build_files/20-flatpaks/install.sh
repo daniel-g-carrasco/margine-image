@@ -130,7 +130,6 @@ mkdir -p /usr/share/flatpak/preinstall.d
       io.missioncenter.MissionCenter \
       org.gnome.DejaDup \
       org.gnome.Firmware \
-      page.tesk.Refine \
       it.mijorus.smile ; do
     # Only the "macigni" (~500-700 MB Flatpak each + heavy runtimes)
     # are deferred to flatpak-preinstall.service first-boot. They take

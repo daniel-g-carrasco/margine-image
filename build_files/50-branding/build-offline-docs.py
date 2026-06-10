@@ -26,6 +26,9 @@ ROUTES = [
     "/docs/gaming",
     "/docs/updates-and-rollback",
     "/docs/settings",
+    "/docs/cpu-scheduler",
+    "/docs/scroll-and-gestures",
+    "/docs/audio",
     "/docs/troubleshooting",
     "/docs/faq",
 ]

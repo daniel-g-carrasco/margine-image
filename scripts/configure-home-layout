@@ -207,6 +207,39 @@ def apply(dirs, user_dirs_path, user_dirs_text, gtk3_path, gtk4_path,
         motd_marker.touch()
         print(f"  touch {motd_marker}  (silences Bluefin MOTD)")
 
+    # VS Code: Bluefin DX ships its defaults via /etc/skel/.config/Code
+    # (window.titleBarStyle, fontFamily, update.mode=none — updates come
+    # with the image, not from Code's own updater). skel only applies at
+    # account creation, so rebase users and pre-existing homes never get
+    # them. Merge the skel keys into the user's settings.json
+    # NON-destructively: only keys the user does not already have are
+    # added; user values always win. Idempotent.
+    import json
+    skel_settings = Path("/etc/skel/.config/Code/User/settings.json")
+    user_settings = Path.home() / ".config" / "Code" / "User" / "settings.json"
+    if skel_settings.is_file():
+        try:
+            skel = json.loads(skel_settings.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  (skip VS Code seed: unreadable skel settings: {exc})")
+            skel = {}
+        if skel:
+            try:
+                current = json.loads(user_settings.read_text()) if user_settings.is_file() else {}
+            except (json.JSONDecodeError, OSError):
+                # User file exists but isn't valid JSON (e.g. JSONC with
+                # comments): do NOT touch it — Code tolerates comments,
+                # json.loads doesn't, and rewriting would strip them.
+                print(f"  (skip VS Code seed: {user_settings} is not plain JSON; merge manually)")
+                current = None
+            if current is not None:
+                missing = {k: v for k, v in skel.items() if k not in current}
+                if missing:
+                    current.update(missing)
+                    user_settings.parent.mkdir(parents=True, exist_ok=True)
+                    user_settings.write_text(json.dumps(current, indent=4) + "\n")
+                    print(f"  merged {len(missing)} Bluefin-DX VS Code default(s) into {user_settings}: {sorted(missing)}")
+
     # Prune stock XDG user directories that no XDG key references
     # anymore (the Margine remap above points DOCUMENTS/MUSIC/PICTURES
     # /etc. at ~/data/...). xdg-user-dirs created the stock dirs on

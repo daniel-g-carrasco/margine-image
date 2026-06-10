@@ -787,11 +787,14 @@ gnome:
     terminal_emulator: org.gnome.Ptyxis.desktop
   workspaces:
     note: >
-      GNOME dynamic workspace model, with native SUPER+1..0 direct-jump
-      bindings. Native GNOME bindings only activate existing workspaces; they
-      do not create arbitrary numbered workspaces like Hyprland.
+      STATIC 10-workspace model (Hyprland-style), with native SUPER+1..0
+      direct-jump bindings. Switched from dynamic on 2026-06-10: with
+      dynamic workspaces, native move-to-workspace-N bindings silently do
+      NOTHING when workspace N does not exist yet, so SUPER+SHIFT+N felt
+      broken. Static count=10 pre-creates them all, matching the
+      workspace-names below and the Hyprland muscle memory.
       Applied by scripts/configure-gnome-keybindings.
-    dynamic: true
+    dynamic: false
     count: 10
     names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
   keybindings:
@@ -869,6 +872,15 @@ gnome:
       - name: screenshot_region
         binding: '<Shift>Print'
         command: 'gnome-screenshot -ac'
+      - name: smile
+        # Emoji picker. NB: bootstrap REPLACES the whole
+        # custom-keybindings path list, which used to shadow the
+        # distro-level margine-smile entry shipped by margine-image's
+        # 07-margine-custom-keybindings dconf file — Super+period went
+        # dead after the first `ujust margine-bootstrap`. Keeping the
+        # slot here makes the binding survive bootstrap.
+        binding: '<Super>period'
+        command: 'flatpak run it.mijorus.smile'
     o_tiling:
       # o-tiling keybindings (org.gnome.shell.extensions.o-tiling).
       # Binary-tree auto-split engine (Hyprland/i3-style). Mapping:

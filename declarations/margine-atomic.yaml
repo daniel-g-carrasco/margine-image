@@ -795,8 +795,13 @@ gnome:
       workspace-names below and the Hyprland muscle memory.
       Applied by scripts/configure-gnome-keybindings.
     dynamic: false
-    count: 10
-    names: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    # 5, not 10: static workspaces are all pre-created and always visible
+    # in the overview/pager, and a permanent wall of 10 felt like clutter
+    # (project lead, 2026-06-10). SUPER+[SHIFT+]6..0 bindings stay
+    # declared below — they are harmless no-ops until the count is
+    # raised again.
+    count: 5
+    names: ['1', '2', '3', '4', '5']
   keybindings:
     note: >
       Hyprland-style keybindings ported from

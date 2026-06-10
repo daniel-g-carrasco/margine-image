@@ -173,3 +173,56 @@ print(f'name={d.get(\"name\",\"?\")} shell-version={\",\".join(map(str, d.get(\"
 done
 
 log "Done. No dnf operations to clean up — script never installed anything."
+
+# ---------------------------------------------------------------------------
+# Downstream patch: search-light unrealize-while-mapped crash (2026-06-10).
+#
+# search-light v101 (baked by the Bluefin base, git master) crashes the
+# whole shell with SIGABRT when an app is launched from the search
+# overlay under GNOME 50:
+#   Clutter:ERROR:clutter-actor.c:1989:clutter_actor_real_unrealize:
+#     assertion failed: (!clutter_actor_is_mapped (self))
+#   JS stack: extension.js:755 (_release_ui) -> 495 (hide) -> 1012
+# _release_ui() remove_child()s the entry while the overlay is still
+# mapped; Clutter 18's stricter unrealize asserts abort. Reproduced on
+# the reference host (coredump 2026-06-10 22:31, journal-verified); on
+# Wayland this kills the session and trips GNOME's crash protection
+# (disable-user-extensions=true). Upstream has similar open reports
+# (icedman/search-light #82, #133) and no fix as of v101.
+#
+# One-line mitigation: hide() (= unmap) the entry before detaching it,
+# so the remove_child never runs on a mapped actor. Visually
+# imperceptible (one frame before the fade). Idempotent + soft-fail:
+# if Bluefin bumps search-light and the code changes, we log and move
+# on rather than failing the build — the patch is a mitigation, not a
+# load-bearing feature.
+SEARCH_LIGHT_EXT="${EXT_DIR}/search-light@icedman.github.com/extension.js"
+if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
+  if grep -q 'this._entry.hide(); // margine: unmap before detach' "$SEARCH_LIGHT_EXT"; then
+    log "search-light unrealize patch already present"
+  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+# Only the _release_ui() occurrence (the crash site), NOT the show-path one.
+old = """  _release_ui() {
+    if (this._entry) {
+      if (this._entry.get_parent()) {
+        this._entry.get_parent().remove_child(this._entry);"""
+new = """  _release_ui() {
+    if (this._entry) {
+      if (this._entry.get_parent()) {
+        this._entry.hide(); // margine: unmap before detach (Clutter 18 unrealize assert)
+        this._entry.get_parent().remove_child(this._entry);"""
+if old not in s:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "search-light: applied unrealize-while-mapped mitigation (_release_ui)"
+  else
+    log "WARN: search-light _release_ui pattern not found (upstream changed?) — patch skipped, check if still needed"
+  fi
+else
+  log "WARN: search-light extension.js not found — skipping unrealize patch"
+fi

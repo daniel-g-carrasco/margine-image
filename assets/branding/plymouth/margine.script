@@ -1,5 +1,31 @@
-// Margine Plymouth theme — minimal: solid black background + centered logo.
+// Margine Plymouth theme — solid black background + centered logo, plus a
+// text-rendered unlock dialog (LUKS passphrase, questions, boot messages).
 // Plymouth Script language (not JS/C).
+//
+// WHY THE DIALOG CODE EXISTS (issue #7): the `script` splash plugin has NO
+// built-in password rendering. plymouthd always forwards DisplayPassword to
+// the plugin (it advertises the hook unconditionally), and the plugin only
+// runs the function the theme registered via
+// Plymouth.SetDisplayPasswordFunction — the callback slot is initialised to
+// null and executing a null object is a silent no-op. Verified in plymouth
+// 24.004.60 source: src/plugins/splash/script/plugin.c:497 (display_password
+// always delegates to the script) + script-lib-plymouth.c:128 (slot starts
+// null) + :362 (null call draws nothing). A script theme without the
+// callback therefore shows NO LUKS prompt at all: boot looks stuck until the
+// user presses Esc (which switches to the details view, whose C plugin does
+// render prompts). The previous comment here claiming Plymouth provides a
+// "built-in default" prompt for script themes was wrong — that default only
+// exists for the two-step (spinner/bgrt) and details plugins.
+//
+// Text is rendered with Image.Text → label-freetype.so + the system default
+// font; plymouth-populate-initrd packs both into the initramfs
+// unconditionally, so the dialog needs no extra image assets and
+// install.sh's 3-file fetch list (margine.plymouth, margine.script,
+// watermark.png) stays unchanged.
+
+// ---------------------------------------------------------------------------
+// Background + logo (branding, unchanged)
+// ---------------------------------------------------------------------------
 
 // Background: pure black, standard splash convention. Maximum contrast
 // with the centered Margine logo, matches the GDM greeter background.
@@ -9,18 +35,148 @@ Window.SetBackgroundBottomColor (0.0, 0.0, 0.0);  // #000000
 // Logo, pre-scaled to a sane size by build.sh.
 logo.image  = Image("watermark.png");
 logo.sprite = Sprite(logo.image);
-logo.sprite.SetX(Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
-logo.sprite.SetY(Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
+logo.sprite.SetX(Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
+logo.sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
 
 // Plymouth requires a refresh function to be registered, even if no-op.
 fun refresh_callback () { }
 Plymouth.SetRefreshFunction(refresh_callback);
 
-// IMPORTANT: do NOT set a display_password_callback. If we do, Plymouth
-// suppresses its default password rendering and our callback would need
-// to actually draw something — otherwise the LUKS unlock prompt becomes
-// INVISIBLE and the boot appears stuck. Plymouth's built-in default
-// renders a clean "Please enter passphrase for ..." line at the bottom
-// of the splash, which is exactly what we want. Verified during VM
-// smoke test 2026-05-28 — the prior `return`-only callback was hiding
-// the prompt.
+// ---------------------------------------------------------------------------
+// Unlock dialog — prompt label + entry line + feedback (bullets/typed text)
+// ---------------------------------------------------------------------------
+
+// Palette. fg = near-white text (prompt + input feedback), dim = grey
+// underscore line standing in for the entry box (text-only, no PNG assets).
+fg.red  = 0.93; fg.green  = 0.93; fg.blue  = 0.93;
+dim.red = 0.45; dim.green = 0.45; dim.blue = 0.45;
+
+// Max number of feedback bullets shown on the entry line. The line itself
+// uses two underscores per column: "_" advances ~0.5em while a "* " pair
+// advances ~0.67em, so doubling keeps the line wider than a full row of
+// bullets (both are centered, so exact metrics don't matter).
+// NB: the bullet is ASCII "*", NOT U+2022 "•": the initramfs runs in the
+// C/POSIX locale (no locale data packed), label-freetype decodes glyphs
+// with mbrtowc which fails on multi-byte UTF-8 there — U+2022 would
+// render as a mangled "â" on the real encrypted boot.
+ENTRY_COLUMNS = 24;
+entry_line_text = "";
+for (i = 0; i < ENTRY_COLUMNS; i++)
+  entry_line_text += "__";
+
+// Vertical anchor for the dialog: below the centered logo.
+dialog_top = Window.GetY() + Window.GetHeight() * 0.72;
+
+// Lazily create the three dialog sprites. Mirrors the upstream example
+// theme's global.dialog pattern (plymouth themes/script/script.script).
+fun dialog_setup ()
+  {
+    global.dialog.prompt_sprite = Sprite();
+    global.dialog.line_sprite   = Sprite();
+    global.dialog.input_sprite  = Sprite();
+    global.dialog.line_y        = dialog_top;  // refined by dialog_show()
+  }
+
+// Draw the prompt label plymouthd hands us ("Please enter passphrase for
+// disk …" for LUKS) plus the entry line, centered, above everything else.
+fun dialog_show (prompt)
+  {
+    if (!global.dialog)
+      dialog_setup();
+
+    local.image;
+
+    image = Image.Text(prompt, fg.red, fg.green, fg.blue);
+    dialog.prompt_sprite.SetImage(image);
+    dialog.prompt_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.prompt_sprite.SetY(dialog_top);
+    dialog.prompt_sprite.SetZ(10000);
+    dialog.prompt_sprite.SetOpacity(1);
+
+    dialog.line_y = dialog_top + image.GetHeight() + 26;
+
+    image = Image.Text(entry_line_text, dim.red, dim.green, dim.blue);
+    dialog.line_sprite.SetImage(image);
+    dialog.line_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.line_sprite.SetY(dialog.line_y);
+    dialog.line_sprite.SetZ(10000);
+    dialog.line_sprite.SetOpacity(1);
+  }
+
+// Draw the input feedback (password bullets or echoed answer) sitting on
+// the entry line.
+fun dialog_set_input (input_text)
+  {
+    local.image = Image.Text(input_text, fg.red, fg.green, fg.blue);
+    dialog.input_sprite.SetImage(image);
+    dialog.input_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.input_sprite.SetY(dialog.line_y - image.GetHeight() + 6);
+    dialog.input_sprite.SetZ(10001);
+    dialog.input_sprite.SetOpacity(1);
+  }
+
+fun dialog_hide ()
+  {
+    if (global.dialog)
+      {
+        dialog.prompt_sprite.SetOpacity(0);
+        dialog.line_sprite.SetOpacity(0);
+        dialog.input_sprite.SetOpacity(0);
+      }
+  }
+
+// --- Plymouth callbacks ----------------------------------------------------
+
+// Password prompt (LUKS unlock). `bullets` = number of characters typed so
+// far; render one bullet per character, capped to the entry line width.
+fun display_password_callback (prompt, bullets)
+  {
+    dialog_show(prompt);
+    if (bullets > ENTRY_COLUMNS)
+      bullets = ENTRY_COLUMNS;
+    bullet_text = "";
+    for (i = 0; i < bullets; i++)
+      bullet_text += "* ";
+    dialog_set_input(bullet_text);
+  }
+
+// Non-secret question (e.g. `systemd-ask-password --echo`): echo the answer.
+fun display_question_callback (prompt, entry)
+  {
+    dialog_show(prompt);
+    dialog_set_input(entry);
+  }
+
+// Back to normal boot: clear the dialog, splash-only again.
+fun display_normal_callback ()
+  {
+    dialog_hide();
+  }
+
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetDisplayQuestionFunction(display_question_callback);
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+// ---------------------------------------------------------------------------
+// Boot messages (fsck progress, keymap hints, systemd status lines)
+// ---------------------------------------------------------------------------
+
+message_sprite = Sprite();
+
+fun display_message_callback (text)
+  {
+    local.image = Image.Text(text, fg.red, fg.green, fg.blue);
+    message_sprite.SetImage(image);
+    message_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    message_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.9);
+    message_sprite.SetZ(10000);
+    message_sprite.SetOpacity(1);
+  }
+
+fun hide_message_callback (text)
+  {
+    message_sprite.SetOpacity(0);
+  }
+
+Plymouth.SetDisplayMessageFunction(display_message_callback);
+Plymouth.SetHideMessageFunction(hide_message_callback);

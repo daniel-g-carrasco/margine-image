@@ -325,11 +325,25 @@ MARGINE_DOCS_BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}
 # resolved target so hicolor receives an actual SVG.
 retry_curl_strict "$MOREWAITA_SYSTEM_RAW" "$SCHEDULER_ICON"
 retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/icons/margine-documentation.svg" "$DOCS_ICON"
-python3 /ctx/50-branding/build-offline-docs.py \
+# Ship the offline-docs builder in the image so the runtime refresh
+# service (margine-docs-refresh.timer -> /usr/libexec/margine/docs-refresh)
+# can rebuild the mirror into /var/lib/margine/offline-docs with the
+# exact same fetch/rewrite logic that bakes this /usr seed.
+install -Dm0755 /ctx/50-branding/build-offline-docs.py /usr/libexec/margine/build-offline-docs
+python3 /usr/libexec/margine/build-offline-docs \
   --base-url "$MARGINE_DOCS_BASE_URL" \
   --output-dir "$OFFLINE_DOCS_DIR"
 chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON"
 chmod -R a+rX "$OFFLINE_DOCS_DIR"
+
+# Offline-first docs: enable the boot-time seed/refresh service + the
+# periodic timer (units ship via system_files). Wants-symlink pattern,
+# same as the other margine system units.
+mkdir -p /usr/lib/systemd/system/timers.target.wants /usr/lib/systemd/system/multi-user.target.wants
+ln -sf ../margine-docs-refresh.timer \
+   /usr/lib/systemd/system/timers.target.wants/margine-docs-refresh.timer
+ln -sf ../margine-docs-refresh.service \
+   /usr/lib/systemd/system/multi-user.target.wants/margine-docs-refresh.service
 
 cat > /usr/share/applications/margine-documentation.desktop <<'EOF'
 [Desktop Entry]
@@ -339,7 +353,7 @@ Terminal=false
 Exec=margine-docs-open
 Icon=margine-documentation
 Name=Margine documentation
-Comment=Open Margine documentation online, with an offline fallback
+Comment=Open the Margine documentation (local copy, auto-updated in the background)
 Categories=System;Documentation;
 EOF
 rm -f /usr/share/applications/documentation.desktop

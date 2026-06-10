@@ -1,0 +1,16 @@
+[Unit]
+Description=Margine: schedule the offline documentation refresh
+
+[Timer]
+# Monotonic timers re-arm at every boot, so a laptop that is rarely up
+# for 24h still refreshes ~10min after each boot. Persistent= is not
+# used: it only applies to OnCalendar= timers. The boot-time SEED of
+# the mirror does not depend on this timer — the service is also
+# wanted by multi-user.target and seeds from /usr within seconds.
+OnBootSec=10min
+OnUnitActiveSec=24h
+RandomizedDelaySec=1h
+AccuracySec=15min
+
+[Install]
+WantedBy=timers.target

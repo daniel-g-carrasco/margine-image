@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Margine offline-docs refresher — run by margine-docs-refresh.service
+# (at boot via multi-user.target.wants + periodically via the timer).
+#
+# Three jobs, in order:
+#   1. SEED (offline-capable): if the /var mirror is missing or older
+#      than the /usr seed (e.g. right after a bootc upgrade shipping a
+#      fresher seed), copy the seed into /var. Pure local cp — works
+#      with no network, so the mirror exists seconds after first boot.
+#   2. FLATPAK ACCESS (offline-capable): write a global system Flatpak
+#      override granting read access to the /var mirror. Flatpak
+#      browsers (Zen is the Margine default) cannot read file:// URIs
+#      outside their permissions — without this, every relative link
+#      in the docs would be dead. Global (not per-app) so the mirror
+#      keeps working if the user switches to a different browser.
+#      Written directly as a keyfile merge-free fragment via flatpak
+#      CLI when available; idempotent.
+#   3. REFRESH (network): rebuild the mirror from the live site with
+#      the same fetch/rewrite tool that bakes the /usr seed at image
+#      build (/usr/libexec/margine/build-offline-docs). The bundle is
+#      <5 MB. Atomic two-rename swap; offline -> keep current copy,
+#      exit 0 (not a failure).
+set -euo pipefail
+
+BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
+STATE_DIR="${STATE_DIRECTORY:-/var/lib/margine}"
+SEED_DIR="/usr/share/margine/offline-docs"
+DOCS_DIR="${STATE_DIR}/offline-docs"
+NEW_DIR="${DOCS_DIR}.new"
+OLD_DIR="${DOCS_DIR}.old"
+
+read_stamp() {
+  local stamp
+  stamp=$(cat "$1/stamp" 2>/dev/null) || stamp=0
+  [[ "$stamp" =~ ^[0-9]+$ ]] || stamp=0
+  printf '%s' "$stamp"
+}
+
+swap_in() {
+  # $1 = fully-built candidate dir. Two renames on one filesystem;
+  # readers only ever see a complete tree.
+  chmod -R a+rX "$1"
+  rm -rf "$OLD_DIR"
+  if [[ -d "$DOCS_DIR" ]]; then
+    mv "$DOCS_DIR" "$OLD_DIR"
+  fi
+  mv "$1" "$DOCS_DIR"
+  rm -rf "$OLD_DIR"
+}
+
+# --- 1. seed ---------------------------------------------------------
+if [[ -d "$SEED_DIR" ]]; then
+  if [[ ! -f "${DOCS_DIR}/docs/index.html" ]] \
+     || [[ "$(read_stamp "$SEED_DIR")" -gt "$(read_stamp "$DOCS_DIR")" ]]; then
+    echo "seeding ${DOCS_DIR} from the /usr image copy"
+    rm -rf "$NEW_DIR"
+    cp -a "$SEED_DIR" "$NEW_DIR"
+    swap_in "$NEW_DIR"
+  fi
+fi
+
+# --- 2. flatpak read access (idempotent) -----------------------------
+if command -v flatpak >/dev/null 2>&1; then
+  flatpak override --system --filesystem="${DOCS_DIR}:ro" 2>/dev/null \
+    || echo "WARN: flatpak override failed (mirror unreadable from Flatpak browsers until it succeeds)"
+fi
+
+# --- 3. network refresh ----------------------------------------------
+# Cheap connectivity gate so an offline laptop doesn't sit through the
+# builder's per-page retry/backoff loop in the background.
+if ! curl -fsS --max-time 10 "${BASE_URL}/healthz" >/dev/null 2>&1; then
+  echo "docs site unreachable; keeping current offline copy"
+  exit 0
+fi
+
+rm -rf "$NEW_DIR"
+python3 /usr/libexec/margine/build-offline-docs \
+  --base-url "$BASE_URL" \
+  --output-dir "$NEW_DIR"
+swap_in "$NEW_DIR"
+
+echo "offline docs refreshed: ${DOCS_DIR} (stamp $(read_stamp "$DOCS_DIR"))"

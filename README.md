@@ -12,7 +12,15 @@ tools that make it ready for work from minute one. Built on
 
 <p>
   <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+  <a href="https://margine.the-empty.place/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
 </p>
+
+> **Curious how all of this is put together?** The [atomic distro
+> handbook](https://margine.the-empty.place/handbook) documents the whole
+> build, from this repo's code: kernel replacement and Secure Boot signing,
+> Flatpak strategies, rechunking, CI with the QEMU smoke gate, ISOs,
+> updates — plus every production lesson we learned the hard way. It doubles
+> as a generic guide to building your own bootc-based distro.
 <p>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>

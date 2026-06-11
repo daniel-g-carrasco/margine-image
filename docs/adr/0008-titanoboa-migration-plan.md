@@ -5,10 +5,17 @@
 Margine baked in; Anaconda WebUI installation; installed system boots
 and passes first-boot). Implementation: margine-image#103 (BIB
 anaconda-iso retired from the matrix, Titanoboa job is the official
-ISO, IA identifier `margine-live-iso-YYYYMMDD`). Remaining: Phase 6
-hardware validation on metal (incl. Secure Boot MOK + TPM2 unlock,
-not yet validated in VM), Phase 7 cleanup of the dormant BIB-ISO
-configs. The site flips to ISO-as-primary with the first official IA
+ISO, IA identifier `margine-live-iso-YYYYMMDD`). Phase 6 progress
+(2026-06-11, q35+secboot OVMF VM): TPM2 auto-unlock validated
+(systemd-cryptenroll, PCR7); full Secure Boot enroll flow validated —
+shim rejects the unenrolled live kernel, MokManager chainload, key
+enrolled from a FAT volume (fingerprint E9:48:3E:89:67:28:B7:6A:E0:5E:
+72:8D:68:14:37:87:F5:0B:B0:55 verified against /usr/share/cert/MOK.der),
+live boots under SB after reboot. Shipped accordingly: EFI/MOK.der on
+the ISO ESP + 'Enroll Secure Boot key (MokManager)' menu entry
+(margine-image#108, fork pin margine-pins, upstream PR
+ublue-os/titanoboa#148). Remaining: validation on metal, Phase 7
+cleanup of the dormant BIB-ISO configs. The site flips to ISO-as-primary with the first official IA
 publish.
 **Date:** 2026-06-08
 **Supersedes:** the deferred Titanoboa investigation from the 2026-06-08 morning 8-blocker audit (ADR-style note in `margine-image`).

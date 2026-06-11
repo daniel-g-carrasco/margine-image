@@ -27,3 +27,13 @@ grub2:
     - name: "Install Margine (Basic Graphics Mode)"
       linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image nomodeset"
       initrd: "/images/pxeboot/initrd.img"
+  # Raw fragment appended after the generated entries (margine-pins /
+  # upstream PR: grub2.extra_cfg). With Secure Boot ON the live CachyOS
+  # kernel fails shim verification until the Margine MOK is enrolled;
+  # this entry chainloads MokManager so users can enroll EFI/MOK.der
+  # (shipped on this ISO by live-env/src/build.sh) without leaving the
+  # boot menu. mmx64.efi is Fedora-signed, so shim chainloads it fine.
+  extra_cfg: |
+    menuentry 'Enroll Secure Boot key (MokManager)' {
+      chainloader /EFI/fedora/mmx64.efi
+    }

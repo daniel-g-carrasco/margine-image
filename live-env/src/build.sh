@@ -111,6 +111,18 @@ test -d /boot/efi/EFI/fedora || {
 # line if it breaks the bootloader; kept because the ISO is removable.)
 cp -v /boot/efi/EFI/fedora/grubx64.efi /boot/efi/EFI/BOOT/fbx64.efi
 
+# Ship the Margine MOK certificate on the ISO's EFI System Partition
+# (ADR-0008 Phase 6). With Secure Boot enabled, the live CachyOS
+# kernel fails shim verification ("Security Violation") because the
+# firmware doesn't know the Margine key yet — but shim then offers
+# MokManager, whose "Enroll key from disk" can only browse simple-fs
+# volumes (FAT). Titanoboa packs /boot/efi/EFI verbatim into the
+# ISO's efiboot image (build_iso.sh: mcopy -s /work/EFI ::), so the
+# cert placed here is reachable as EFI/MOK.der on that volume:
+# enroll (passphrase: margine-os) -> reboot -> the live boots with
+# Secure Boot ON. Same pattern Bazzite documents for its ISOs.
+cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
+
 # / in a booted live ISO is an overlayfs whose upperdir is under /run
 # (a small tmpfs). Anaconda's ostree install needs lots of scratch in
 # /var/tmp, which would otherwise land on that small tmpfs. Mount a

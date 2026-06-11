@@ -534,7 +534,7 @@ jobs:
         # which patches CVE-2026-39395 (GHSA-w6c6-c85g-mmv6, verify-blob-
         # attestation false-positive on malformed payloads). Floating
         # @v3 doesn't guarantee >= v3.0.6. See audit §6.2.
-        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
       - name: Cosign login to GHCR
         # cosign sign reads ~/.docker/config.json; nothing in this fresh

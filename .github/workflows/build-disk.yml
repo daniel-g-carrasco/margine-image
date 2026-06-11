@@ -52,8 +52,9 @@ on:
       - 'live-env/**'
 
 env:
-  # ADR-0008 Phase 0: Titanoboa pin for upcoming live-ISO migration.
-  # NOT active yet - referenced by future ISO job. Renovate disabled.
+  # Titanoboa pin — the official ISO builder since 2026-06-11
+  # (ADR-0008 Phase 5). Renovate disabled; bump deliberately (waiting
+  # on upstream PR #147 to drop our mksquashfs workaround context).
   # Decision: ADR-0008 section 3.1 (post-#138 upstream HEAD, 2026-05-19)
   TITANOBOA_REF: "ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
@@ -89,7 +90,10 @@ jobs:
         # surface area for branding/asset drift. Gaming OCI variant
         # also retired (build-gaming.yml deleted same PR).
         image: ["margine"]
-        disk-type: ["qcow2", "anaconda-iso"]
+        # 2026-06-11 (ADR-0008 Phase 5): the BIB anaconda-iso build is
+        # retired — the Titanoboa live ISO below is the official and
+        # only ISO. qcow2 (BIB) stays for VM/disk images.
+        disk-type: ["qcow2"]
     permissions:
       contents: read
       # packages: write (NOT just read) — required for installer-image
@@ -344,11 +348,14 @@ jobs:
   # pipeline or publish_ia. The ISO is uploaded as a build artifact for
   # project-lead QEMU/hardware validation; it is NOT published to IA yet.
   build_iso_titanoboa:
-    name: Build Live ISO (Titanoboa) [ADR-0008, not yet default]
+    name: Build Live ISO (Titanoboa)
     runs-on: ubuntu-24.04
     # squashfs at zstd-19 over a ~14 GB rootfs dominates wall-clock.
     timeout-minutes: 90
-    continue-on-error: true
+    # Default ISO path since 2026-06-11 (ADR-0008 Phase 5): installation
+    # validated end-to-end in a VM (live GNOME session + Anaconda WebUI).
+    # On PRs it still only runs with the iso-test label (the build is
+    # ~40 min); on dispatch it always runs and publish_ia picks it up.
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
     permissions:
       contents: read
@@ -480,7 +487,8 @@ jobs:
 
   publish_ia:
     name: Publish ISO (${{ matrix.image }}) to Internet Archive
-    needs: build_disk
+    # 2026-06-11: publishes the Titanoboa live ISO (ADR-0008 Phase 5).
+    needs: build_iso_titanoboa
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     # 350 = IA upload headroom. Bumped from 180 on 2026-06-09 after run
@@ -504,7 +512,7 @@ jobs:
       - name: Download ISO artifact (${{ matrix.image }})
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: ${{ matrix.image }}-disk-anaconda-iso
+          name: margine-live-iso
           path: ./disk
 
       - name: Locate ISO + verify integrity
@@ -587,9 +595,9 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
           DATE_TAG="$(date -u +%Y%m%d)"
-          IDENTIFIER="${{ matrix.image }}-anaconda-iso-${DATE_TAG}"
+          IDENTIFIER="${{ matrix.image }}-live-iso-${DATE_TAG}"
           TITLE="Margine Linux ISO ${DATE_TAG}"
-          DESCRIPTION="Margine — Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+          DESCRIPTION="Margine live ISO (Titanoboa) — bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
           SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
@@ -846,7 +854,7 @@ jobs:
 
   notify:
     name: ntfy notification (aggregated)
-    needs: [build_disk, publish_ia]
+    needs: [build_disk, build_iso_titanoboa, publish_ia]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

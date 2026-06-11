@@ -80,7 +80,7 @@ case "$initial" in
     # Service is still working. Tell the user.
     notify-send \
       --app-name="Margine" \
-      --icon="org.gnome.Software" \
+      --icon="margine-logo" \
       --urgency=low \
       --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
       "Margine sta installando alcune app aggiuntive" \

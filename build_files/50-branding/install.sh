@@ -171,20 +171,34 @@ fi
 # Plus /usr/share/icons/hicolor/scalable/places/fedora-logo-sprite.svg
 # which we already blank at (d.ter) below — leave that alone.
 rm -f /usr/share/pixmaps/fedora-gdm-logo.png \
-      /usr/share/pixmaps/fedora-logo-icon.png \
       /usr/share/pixmaps/fedora-logo.png \
       /usr/share/pixmaps/fedora-logo-small.png \
       /usr/share/pixmaps/fedora-logo-sprite.png \
       /usr/share/pixmaps/fedora-logo-sprite.svg \
       /usr/share/pixmaps/system-logo-white.png \
-      /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg \
       /usr/share/icons/hicolor/scalable/apps/fedora-logo-sprite.svg
+
+# fedora-logo-icon is NOT deleted but REPLACED with the Margine mark
+# (Bluefin pattern: keep Fedora icon NAMES, swap content). The name is
+# HARDCODED in components we cannot rebuild: anaconda-live's
+# fedora-welcome dialog (Adw.StatusPage iconName) + its autostart
+# .desktop on the live ISO, and gnome-initial-setup's language page
+# (maps os-release ID=fedora -> fedora-logo-icon). Deleting it (as we
+# did before) renders the image-missing placeholder on both welcomes.
+cp /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
+   /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg
+cp /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora-logo-icon.png
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+fi
+log "fedora-logo-icon now carries the Margine mark (fedora-welcome + gnome-initial-setup hardcode this name)"
 # About-panel distributor logo = the Margine WORDMARK, not the square "m".
 # fedora_logo_med.png is shown on LIGHT backgrounds (so a dark-text
 # wordmark); fedora_whitelogo_med.png on DARK backgrounds (white-text
-# wordmark). gnome-control-center scales these 1200×300 transparent PNGs
-# to the About-panel logo slot. (Earlier this overwrote both with the
-# square margine-logo.png — wrong asset for a wordmark slot.)
+# wordmark). gnome-control-center renders these with GtkPicture
+# can-shrink=false: intrinsic pixel size == logical size, so the assets
+# are 256×64 (Fedora's originals are 250×102) — 1200×300 rendered 5×
+# oversized and blurry at 200% scale.
 retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-dark.png"  /usr/share/pixmaps/fedora_logo_med.png
 retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-light.png" /usr/share/pixmaps/fedora_whitelogo_med.png
 chmod 0644 /usr/share/pixmaps/fedora_logo_med.png /usr/share/pixmaps/fedora_whitelogo_med.png

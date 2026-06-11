@@ -25,7 +25,7 @@ tools that make it ready for work from minute one. Built on
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io margine" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
-  <a href="https://margine.the-empty.place/#install"><img alt="Install" src="https://img.shields.io/badge/install-rebase%20first-D97757"></a>
+  <a href="https://margine.the-empty.place/#install"><img alt="Install" src="https://img.shields.io/badge/install-from%20ISO-D97757"></a>
   <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-4D9F4A"></a>
 </p>
@@ -90,10 +90,12 @@ operations.
 
 ## Install
 
-As of 2026-06-08, the recommended public path is to install Bluefin DX
-stable first, then rebase to Margine. Margine fresh-install ISOs are
-still published for validation, but they are the tester path until the
-installer path passes fresh-machine checks again. Current status:
+As of 2026-06-11, the primary install path is the **Margine live ISO**:
+it boots a full GNOME live session with Margine already baked in — try
+it, then install from the desktop with the graphical installer. The
+ISO is built with [Titanoboa](https://github.com/ublue-os/titanoboa)
+(ADR-0008) and was validated end to end in a VM. Rebasing from
+Bluefin DX remains fully supported as the alternative. Current status:
 <https://margine.the-empty.place/docs/install-status>.
 
 Gaming is a one-command layer on top — `ujust margine-gaming` after
@@ -105,12 +107,43 @@ parts.
 
 - OCI image: `ghcr.io/daniel-g-carrasco/margine:stable`
 - Identifies as: `VARIANT_ID=margine`
-- ISO test media (Internet Archive): `archive.org/details/margine-anaconda-iso-YYYYMMDD`
+- ISO releases (Internet Archive): `archive.org/details/margine-live-iso-YYYYMMDD`
 
-### Option A — Rebase from Bluefin DX
+### Option A — Install from the live ISO (recommended)
 
-The recommended path today. Install Bluefin DX stable, boot it once,
-then switch to the Margine image:
+1. Open the [Margine site Install section](https://margine.the-empty.place/#install)
+   for the latest dated identifier, or browse the full
+   [Internet Archive collection](https://archive.org/search?query=creator%3A%22daniel-g-carrasco%22+AND+title%3A%22Margine%22&sort=-date)
+   directly. Each release is available as a `.torrent` (recommended)
+   and as a direct HTTP mirror; `SHA256SUMS` is published alongside.
+2. Write the ISO to a USB stick and boot it — you land in a complete
+   Margine live desktop you can try without touching the disk.
+3. Start **Install Margine** from the desktop (Anaconda Web UI):
+   UEFI recommended, LUKS2 on the root disk, Btrfs (the default).
+   Note: with Secure Boot enabled the live kernel needs the Margine
+   key enrolled first — easiest today is installing with Secure Boot
+   off and re-enabling it after the first-boot MOK enrollment
+   (smoother enroll-from-ISO flow is planned).
+4. Reboot when the installation completes. MOK Manager appears before
+   the installed system starts; enroll the key with passphrase
+   **`margine-os`**, then reboot into Margine.
+5. Apply the user-state once:
+   ```sh
+   ujust margine-bootstrap
+   ```
+   This runs the idempotent `margine-configure-*` helpers in
+   sequence: home layout, GNOME extensions, keybindings, appearance,
+   default applications, app folders. Log out and back in to refresh
+   GNOME Shell.
+
+Step-by-step walkthrough with screenshots:
+<https://margine.the-empty.place/docs/install-iso>.
+
+### Option B — Rebase from Bluefin DX
+
+Fully supported alternative, handy if you already run a Fedora Atomic
+system. Install Bluefin DX stable, boot it once, then switch to the
+Margine image:
 
 ```sh
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
@@ -130,31 +163,7 @@ After the reboot, two more one-time steps:
    <https://margine.the-empty.place/docs/first-boot>.
 2. Run **`ujust margine-bootstrap`**.
 
-### Option B — Install from ISO test media
 
-Use this path if you are validating fresh installs or once the
-install-status page marks the ISO as recommended again.
-
-1. Open the [Margine site Install section](https://margine.the-empty.place/#install)
-   for the latest dated identifiers, or browse the full
-   [Internet Archive collection](https://archive.org/search?query=creator%3A%22daniel-g-carrasco%22+AND+title%3A%22Margine%22&sort=-date)
-   directly. Each release is available as a BitTorrent magnet /
-   `.torrent` (recommended) and as a direct HTTP mirror; the same
-   bytes are served by both. `SHA256SUMS` is published alongside.
-2. Boot the ISO. Anaconda's standard installation flow applies:
-   recommended UEFI with Secure Boot enabled, LUKS2 on the root disk,
-   Btrfs filesystem (the default).
-3. Reboot when the installation completes. MOK Manager should appear
-   before the installed system starts; enroll the key with passphrase
-   **`margine-os`**, then reboot into Margine.
-4. Apply the user-state once:
-   ```sh
-   ujust margine-bootstrap
-   ```
-   This runs the idempotent `margine-configure-*` helpers in
-   sequence: home layout, GNOME extensions, keybindings, appearance,
-   default applications, app folders. Log out and back in to refresh
-   GNOME Shell.
 
 ### Option C — Add the gaming layer
 

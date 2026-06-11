@@ -35,8 +35,8 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 > **Looking for the distro itself?** Go to
 > [margine-image](https://github.com/daniel-g-carrasco/margine-image)
 > — that repo's README has *what Margine is*, screenshots, the current
-> install recommendation ([Bluefin DX rebase first while ISO media is
-> hardened](https://margine.the-empty.place/docs/install-status)), the
+> install recommendation ([fresh install from the live ISO, Titanoboa
+> since 2026-06-11](https://margine.the-empty.place/docs/install-status)), the
 > one-command gaming layer, and the optional AI workflow. This repo is
 > the *source code* of everything the distro applies to the system.
 

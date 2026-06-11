@@ -123,6 +123,22 @@ cp -v /boot/efi/EFI/fedora/grubx64.efi /boot/efi/EFI/BOOT/fbx64.efi
 # Secure Boot ON. Same pattern Bazzite documents for its ISOs.
 cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
 
+# Live-session branding (ADR-0008 Phase 6 debug findings, 2026-06-11):
+# - liveinst.desktop ("Install to Hard Drive" in the dock) declares
+#   Icon=org.fedoraproject.AnacondaInstaller, shipped only by the
+#   absent fedora-logos package -> broken dock icon. Provide it as the
+#   Margine mark.
+# - anaconda-live's fedora-welcome dialog + its autostart entry keep
+#   the untranslated Name=Welcome to Fedora (the dialog TITLE reads
+#   os-release NAME, but the alt-tab/overview entry doesn't).
+# The fedora-logo-icon the dialog hardcodes is already provided by
+# build_files/50-branding/install.sh in the base image.
+install -Dm0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
+  /usr/share/icons/hicolor/scalable/apps/org.fedoraproject.AnacondaInstaller.svg
+gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' \
+  /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop 2>/dev/null || true
+
 # / in a booted live ISO is an overlayfs whose upperdir is under /run
 # (a small tmpfs). Anaconda's ostree install needs lots of scratch in
 # /var/tmp, which would otherwise land on that small tmpfs. Mount a

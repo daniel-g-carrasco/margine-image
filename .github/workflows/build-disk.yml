@@ -53,10 +53,14 @@ on:
 
 env:
   # Titanoboa pin — the official ISO builder since 2026-06-11
-  # (ADR-0008 Phase 5). Renovate disabled; bump deliberately (waiting
-  # on upstream PR #147 to drop our mksquashfs workaround context).
-  # Decision: ADR-0008 section 3.1 (post-#138 upstream HEAD, 2026-05-19)
-  TITANOBOA_REF: "ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4"
+  # (ADR-0008 Phase 5). Pinned to OUR fork branch margine-pins =
+  # upstream post-#138 HEAD (5c457c3d) + exactly two patches:
+  #   1. mksquashfs -e ordering (upstream PR ublue-os/titanoboa#147)
+  #      — without it the squashfs silently falls back to gzip
+  #   2. grub2.extra_cfg raw fragment (upstream PR pending) — used
+  #      for the Secure Boot "Enroll key (MokManager)" menu entry
+  # Revert to the upstream pin once both PRs land. Renovate disabled.
+  TITANOBOA_REF: "daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
   BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905"
@@ -424,9 +428,9 @@ jobs:
 
       - name: Build Live ISO (Titanoboa)
         id: titanoboa
-        # Pinned per ADR-0008 §3.1 (post-#138 upstream HEAD). env.TITANOBOA_REF
-        # is "ublue-os/titanoboa@<sha>". Renovate is configured to leave it alone.
-        uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4
+        # Pinned to the margine-pins fork branch (see env.TITANOBOA_REF
+        # comment for the exact carried patches + revert condition).
+        uses: daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392
         with:
           image-ref: ${{ steps.live.outputs.live_tag }}
           iso-dest: ${{ github.workspace }}/margine-live.iso

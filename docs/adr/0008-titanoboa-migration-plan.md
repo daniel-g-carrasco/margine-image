@@ -1,6 +1,15 @@
 # ADR 0008 — Titanoboa migration plan
 
-**Status:** Proposed
+**Status:** Accepted — Phases 0-5 implemented. Phase 5 cutover executed
+2026-06-11 after end-to-end validation in a VM (live GNOME session with
+Margine baked in; Anaconda WebUI installation; installed system boots
+and passes first-boot). Implementation: margine-image#103 (BIB
+anaconda-iso retired from the matrix, Titanoboa job is the official
+ISO, IA identifier `margine-live-iso-YYYYMMDD`). Remaining: Phase 6
+hardware validation on metal (incl. Secure Boot MOK + TPM2 unlock,
+not yet validated in VM), Phase 7 cleanup of the dormant BIB-ISO
+configs. The site flips to ISO-as-primary with the first official IA
+publish.
 **Date:** 2026-06-08
 **Supersedes:** the deferred Titanoboa investigation from the 2026-06-08 morning 8-blocker audit (ADR-style note in `margine-image`).
 **Coexists with:** [ADR 0006 (kernel CachyOS via COPR)](0006-kernel-cachyos-decision.md), [ADR 0007 (Sealed Bootable Container Images: watching)](0007-sealed-bootable-images-tracker.md).

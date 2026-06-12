@@ -14,9 +14,14 @@
 # Inputs (BuildKit secrets):
 #   /tmp/certs/MOK.key        — RSA private key (PEM)
 #   /tmp/certs/MOK.pem        — X509 certificate (PEM)
-#   /tmp/certs/mok-password   — single-line password for mokutil enrollment
+# (The mokutil enrollment passphrase is public by design and lives as
+#  a constant below — see the MOK_PASSWORD comment.)
 #
 set -euo pipefail
+
+# Shared helpers (retry, retry_curl, FEDORA_VER, ...). log/err are
+# re-defined right after to keep this script's [custom-kernel] prefix.
+. /ctx/00-common.sh
 
 log() { printf '[custom-kernel] %s\n' "$*"; }
 err() { printf '[custom-kernel] ERROR: %s\n' "$*" >&2; }
@@ -54,10 +59,10 @@ rm -f "$_tmp1" "$_tmp2"
 COPR_REPO="bieszczaders/kernel-cachyos"
 KERNEL_PKG="kernel-cachyos"
 KERNEL_DEVEL_PKG="kernel-cachyos-devel-matched"
-KERNEL_PACKAGES="kernel-cachyos kernel-cachyos-core kernel-cachyos-modules kernel-cachyos-devel-matched"
+KERNEL_PACKAGES=(kernel-cachyos kernel-cachyos-core kernel-cachyos-modules "$KERNEL_DEVEL_PKG")
 # TRANSIENT packages are installed for build time only and removed at the end.
 # sbsigntools provides sbsign/sbverify; akmods is needed for v4l2loopback (best-effort).
-TRANSIENT="akmods sbsigntools $KERNEL_DEVEL_PKG"
+TRANSIENT=(akmods sbsigntools "$KERNEL_DEVEL_PKG")
 
 # Install the signing tools up-front so they're available when we sign vmlinuz.
 log "Installing sbsigntools (build-time only)"
@@ -112,6 +117,11 @@ sign_kernel() {
   cp "$_tmp" "$_vmlinuz"
   chmod 0644 "$_vmlinuz"
   rm -f "$_tmp"
+  # Stamp for the end-of-script integrity check (back-ported from the
+  # Origami reference script): if any later step — akmods, dracut,
+  # cleanup — rewrites vmlinuz after signing, the build must fail
+  # rather than ship an unsigned kernel that Secure Boot rejects.
+  sha256sum "$_vmlinuz" > /tmp/vmlinuz.sha
 }
 
 sign_kernel_modules() {
@@ -194,33 +204,16 @@ dnf -y copr enable "$COPR_REPO"
 log "Cleaning dnf packages + metadata to avoid cache poisoning on persistent runners"
 dnf -y clean packages metadata
 
-log "Installing CachyOS kernel: $KERNEL_PACKAGES"
+log "Installing CachyOS kernel: ${KERNEL_PACKAGES[*]}"
 # COPR (copr.fedorainfracloud.org) is occasionally slow or returns 5xx
 # / curl timeouts for several minutes — observed 2026-06-02 with run
 # #26838562527 dying at "Curl error (28): Timeout was reached" after
-# 5 internal librepo retries. Wrap the install in an outer retry loop
-# with backoff so transient COPR brownouts don't sink the whole 28-min
-# image build. Each attempt does `dnf clean metadata` first to dodge
-# the bad-metadata-cached failure mode (see comment above).
-attempt=1
-max_attempts=5
-while :; do
-  # KERNEL_PACKAGES is a deliberate space-separated package list.
-  # shellcheck disable=SC2086
-  if dnf -y install --refresh $KERNEL_PACKAGES akmods; then
-    log "CachyOS kernel install OK on attempt $attempt"
-    break
-  fi
-  if (( attempt >= max_attempts )); then
-    log "CachyOS kernel install FAILED after $max_attempts attempts (COPR likely down)"
-    exit 1
-  fi
-  backoff=$(( attempt * 30 ))
-  log "attempt $attempt failed; sleeping ${backoff}s, cleaning metadata, retry"
-  sleep $backoff
-  dnf -y clean metadata || true
-  attempt=$(( attempt + 1 ))
-done
+# 5 internal librepo retries. Outer retry (shared helper) with backoff
+# so transient COPR brownouts don't sink the whole 28-min image build.
+# Each attempt cleans metadata first to dodge the bad-metadata-cached
+# failure mode (see comment above).
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh "$@"' _ "${KERNEL_PACKAGES[@]}" akmods \
+  || { err "CachyOS kernel install FAILED after 5 attempts (COPR likely down)"; exit 1; }
 
 KERNEL_VERSION="$(rpm -q "$KERNEL_PKG" --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}')"
 log "Installed kernel: $KERNEL_VERSION"
@@ -267,11 +260,11 @@ fi
 
 if (( V4L2_OK )); then
   log "v4l2loopback built OK"
-  TRANSIENT="$TRANSIENT akmod-v4l2loopback"
+  TRANSIENT+=(akmod-v4l2loopback)
   _kmod_rpm="$(find /var/cache/akmods/v4l2loopback/ -name "kmod-v4l2loopback-*$KERNEL_VERSION*.rpm" -print -quit 2>/dev/null || true)"
   if [[ -n "${_kmod_rpm:-}" && -f "$_kmod_rpm" ]]; then
     dnf -y install "$_kmod_rpm"
-    TRANSIENT="$TRANSIENT kmod-v4l2loopback"
+    TRANSIENT+=(kmod-v4l2loopback)
   fi
 else
   log "v4l2loopback build skipped/failed — not blocking; image continues without virtual camera kmod"
@@ -287,28 +280,10 @@ fi
 # systems don't pull random updates from it outside our pipeline.
 log "Enabling kernel-cachyos-addons COPR for scx-scheds"
 dnf -y copr enable bieszczaders/kernel-cachyos-addons
-# Wrap scx-scheds install in the same retry loop as the kernel COPR
-# above. Same COPR host (copr.fedorainfracloud.org), same 5xx /
-# Curl timeout brownouts can hit here too — observed in retro the
-# main kernel install pattern. Cheap insurance against a transient
-# COPR blip sinking a 28-min image build. See audit §6 + ADR 0006.
-attempt=1
-max_attempts=5
-while :; do
-  if dnf -y install --refresh scx-scheds; then
-    log "scx-scheds install OK on attempt $attempt"
-    break
-  fi
-  if (( attempt >= max_attempts )); then
-    log "scx-scheds install FAILED after $max_attempts attempts (kernel-cachyos-addons COPR likely down)"
-    exit 1
-  fi
-  backoff=$(( attempt * 30 ))
-  log "attempt $attempt failed; sleeping ${backoff}s, cleaning metadata, retry"
-  sleep $backoff
-  dnf -y clean metadata || true
-  attempt=$(( attempt + 1 ))
-done
+# Same COPR host as the kernel (copr.fedorainfracloud.org), same 5xx /
+# Curl-timeout brownouts — same shared retry helper.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh scx-scheds' \
+  || { err "scx-scheds install FAILED after 5 attempts (kernel-cachyos-addons COPR likely down)"; exit 1; }
 dnf -y copr disable bieszczaders/kernel-cachyos-addons || true
 rm -f /etc/yum.repos.d/_copr*kernel-cachyos-addons*.repo
 log "scx-scheds installed:"
@@ -357,24 +332,14 @@ dnf -y install \
   "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
   "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
 
-# Retry loop — RPMFusion mirrors occasionally time out.
-attempt=1
-max_attempts=5
-while :; do
-  if dnf -y install --refresh mangohud goverlay steam-devices; then
-    log "creator-tier gaming RPMs installed OK on attempt $attempt"
-    break
-  fi
-  if (( attempt >= max_attempts )); then
-    log "creator-tier RPM install failed after $max_attempts attempts; aborting"
-    exit 1
-  fi
-  backoff=$(( attempt * 30 ))
-  log "install attempt $attempt failed; sleeping ${backoff}s before retry"
-  sleep "$backoff"
-  dnf -y clean metadata || true
-  attempt=$(( attempt + 1 ))
-done
+# gstreamer1-plugins-{bad-freeworld,ugly} complete the codec swap the
+# declarations YAML has specified all along (host_packages.baseline.
+# codec_replacement.install) — ffmpeg full already comes from the base,
+# but these two never shipped, and validate-declared-state rightly
+# FAILed on every system (caught 2026-06-12). They come from the same
+# transient RPMFusion enablement and persist after the repo is scrubbed.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly' \
+  || { err "creator-tier RPM install failed after 5 attempts; aborting"; exit 1; }
 
 # Scrub RPMFusion from the base image — gaming variant will re-add
 # it (and keep it) for the gamescope+vkBasalt install. Base stays
@@ -384,7 +349,7 @@ done
 log "Removing RPMFusion .repo files from base"
 dnf -y remove rpmfusion-free-release rpmfusion-nonfree-release || true
 rm -f /etc/yum.repos.d/rpmfusion-*.repo
-log "Base now ships: mangohud + goverlay + steam-devices (creator-tier)"
+log "Base now ships: mangohud + goverlay + steam-devices + gstreamer freeworld/ugly codecs"
 
 # ---------------------------------------------------------------------------
 # Signing
@@ -401,9 +366,8 @@ create_mok_enroll_unit
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
-log "Removing transient build-only packages: $TRANSIENT"
-# shellcheck disable=SC2086
-dnf -y remove $TRANSIENT || true
+log "Removing transient build-only packages: ${TRANSIENT[*]}"
+dnf -y remove "${TRANSIENT[@]}" || true
 
 # Drop a dracut config to disable host-only mode for every subsequent
 # dracut invocation in this image (build.sh's Plymouth regeneration too,
@@ -473,5 +437,13 @@ for kver_dir in /usr/lib/modules/*/; do
       "${kver_dir}initramfs.img"
   log "Wrote ${kver_dir}initramfs.img ($(du -h "${kver_dir}initramfs.img" | cut -f1))"
 done
+
+# Final integrity check (Origami pattern): vmlinuz must still be the
+# exact bytes sign_kernel produced — a post-signing rewrite would ship
+# a kernel Secure Boot rejects with the cryptic "bad shim signature".
+sha256sum -c /tmp/vmlinuz.sha >/dev/null \
+  || { err "vmlinuz was modified AFTER signing — refusing to ship"; exit 1; }
+rm -f /tmp/vmlinuz.sha
+log "vmlinuz signature integrity verified end-of-build"
 
 log "custom-kernel install complete: $KERNEL_VERSION"

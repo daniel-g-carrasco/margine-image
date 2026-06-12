@@ -36,7 +36,13 @@ FROM ghcr.io/ublue-os/bluefin-dx:stable
 # keys from BuildKit secrets. After this layer, /usr/lib/modules/<KVER>/vmlinuz
 # is the CachyOS kernel image signed with our MOK key — boots cleanly under
 # Secure Boot once the user enrolls MOK.der via mokutil (one-time).
-RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+# Mount ONLY what the kernel layer reads (its own scripts + the shared
+# helpers): with the whole ctx mounted, ANY build_files edit — a
+# branding tweak, a just recipe — invalidated this 25-minute layer's
+# cache (review P2.5). Narrow mounts keep the cache key tied to the
+# files that actually matter here.
+RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
+    --mount=type=bind,from=ctx,source=/00-common.sh,target=/ctx/00-common.sh \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \

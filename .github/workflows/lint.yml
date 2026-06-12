@@ -54,6 +54,19 @@ jobs:
           mapfile -t PY < <(git ls-files '*.py')
           pipx run ruff check "${PY[@]}"
 
+      - name: BAKE flatpak lists must not drift
+        # installer/flatpaks-base (OCI image manifest) and
+        # live-env/src/flatpaks (live ISO bake) are content-identical by
+        # contract but only by discipline — this asserts it (review P3.4).
+        run: |
+          set -euo pipefail
+          norm() { grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$1" | sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | grep -v '^$' | sort; }
+          if ! diff <(norm installer/flatpaks-base) <(norm live-env/src/flatpaks); then
+            echo "::error::installer/flatpaks-base and live-env/src/flatpaks have drifted — edit both together"
+            exit 1
+          fi
+          echo "BAKE lists in sync"
+
       - name: just syntax (60-custom.just + Justfile parse)
         # rust-just on PyPI ships the `just` binary; pipx is
         # preinstalled on GitHub runners — no apt dependency.

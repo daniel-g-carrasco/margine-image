@@ -14,8 +14,10 @@ enrolled from a FAT volume (fingerprint E9:48:3E:89:67:28:B7:6A:E0:5E:
 live boots under SB after reboot. Shipped accordingly: EFI/MOK.der on
 the ISO ESP + 'Enroll Secure Boot key (MokManager)' menu entry
 (margine-image#108, fork pin margine-pins, upstream PR
-ublue-os/titanoboa#148). Remaining: validation on metal, Phase 7
-cleanup of the dormant BIB-ISO configs. The site flips to ISO-as-primary with the first official IA
+ublue-os/titanoboa#148). Phase 7 cleanup executed 2026-06-12
+(margine-image#112): BIB anaconda-iso steps, installer image,
+iso-gnome.toml removed; every ISO is now boot-tested in UEFI QEMU
+before upload. Remaining: validation on metal (Phase 6 tail). The site flips to ISO-as-primary with the first official IA
 publish.
 **Date:** 2026-06-08
 **Supersedes:** the deferred Titanoboa investigation from the 2026-06-08 morning 8-blocker audit (ADR-style note in `margine-image`).

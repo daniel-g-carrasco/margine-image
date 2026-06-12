@@ -1,0 +1,13 @@
+[Unit]
+Description=Margine: periodic check for long-staged updates
+
+[Timer]
+# Late enough that uupd's daily run (and any boot-time staging) has
+# settled; then twice a working day. The script itself rate-limits
+# to one notification per day.
+OnStartupSec=20min
+OnUnitActiveSec=6h
+AccuracySec=10min
+
+[Install]
+WantedBy=timers.target

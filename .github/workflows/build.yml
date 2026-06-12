@@ -381,6 +381,26 @@ jobs:
           grep -qxF '[org/gnome/shell/extensions/dash-to-dock]' "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock dconf section missing"; fail=1; }
           grep -qxF '[org/gnome/shell/extensions/search-light]' "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light dconf section missing"; fail=1; }
           grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tiling" || { echo "::error::A.3.bis o-tiling dconf section missing"; fail=1; }
+          # A.3.ter — downstream patches + branding must land on the FINAL
+          # image (added 2026-06-12 after the search-light mitigation
+          # nearly shipped unapplied: the build script's soft-fail and a
+          # 2-day-old staged deployment hid it). These assert OUTCOMES,
+          # independent of how the build scripts behave.
+          SL_EXT="$ROOTFS/usr/share/gnome-shell/extensions/search-light@icedman.github.com/extension.js"
+          grep -q 'margine: unmap before detach' "$SL_EXT" \
+            || { echo "::error::A.3.ter search-light unrealize mitigation NOT present in the image"; fail=1; }
+          test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/margine-logo.svg" \
+            || { echo "::error::A.3.ter margine-logo.svg missing from hicolor"; fail=1; }
+          test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg" \
+            || { echo "::error::A.3.ter fedora-logo-icon.svg missing (fedora-welcome + gnome-initial-setup hardcode it)"; fail=1; }
+          test -s "$ROOTFS/usr/share/pixmaps/fedora_logo_med.png" \
+            || { echo "::error::A.3.ter About wordmark (fedora_logo_med.png) missing"; fail=1; }
+          if cmp -s "$ROOTFS/usr/share/pixmaps/fedora_logo_med.png" "$ROOTFS/usr/share/pixmaps/fedora_whitelogo_med.png"; then
+            echo "::error::A.3.ter About wordmark dark/light variants are byte-identical (theme differentiation lost)"; fail=1
+          fi
+          test -x "$ROOTFS/usr/libexec/margine/staged-update-notify" \
+            || { echo "::error::A.3.ter staged-update-notify missing"; fail=1; }
+
           # search-light rounded-corners daniel default: border-radius=7.0
           # (the value is an INDEX 0-7 into the extension's px table, not
           # pixels — 7 = 32px max rounding; the old 30 was out of range and

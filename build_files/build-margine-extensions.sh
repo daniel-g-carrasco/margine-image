@@ -221,8 +221,17 @@ PYEOF
   then
     log "search-light: applied unrealize-while-mapped mitigation (_release_ui)"
   else
-    log "WARN: search-light _release_ui pattern not found (upstream changed?) — patch skipped, check if still needed"
+    # HARD FAIL (was a soft WARN until 2026-06-12). The mitigation is
+    # load-bearing: without it, launching an app from the overlay
+    # SIGABRTs the whole shell (Wayland = session gone). A soft-fail
+    # here means shipping a crasher and finding out from a user — if
+    # upstream changes the code, the build must stop until the patch
+    # is re-evaluated. Belt+braces: build.yml Layer A also asserts the
+    # patch marker on the final image.
+    log "ERROR: search-light _release_ui pattern not found (upstream changed?) — refusing to ship unpatched"
+    exit 1
   fi
 else
-  log "WARN: search-light extension.js not found — skipping unrealize patch"
+  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
+  exit 1
 fi

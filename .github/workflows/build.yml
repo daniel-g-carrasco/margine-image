@@ -277,6 +277,26 @@ jobs:
       # Pre-rechunk is fine: rechunk doesn't add or remove packages,
       # it only repacks the layer boundaries for delta efficiency. The
       # SBOM describes the same package inventory either way.
+      # Phase-4 unification (2026-06-12): run the SHIPPED validators
+      # inside the freshly built container with the new `image` context
+      # (margine-fedora-atomic#56). Single source of truth: the same
+      # checks `ujust margine-doctor` and Layer C run on real systems.
+      # Runs ALONGSIDE the grep sentinels below per the adoption policy
+      # (two green runs, then the duplicated greps get deleted) — and it
+      # implicitly asserts the validators were fetched executable, which
+      # nothing else does.
+      - name: Run shipped validators in-container (image context)
+        run: |
+          set -euo pipefail
+          IMG="localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
+          for v in margine-validate-margine-system margine-validate-branding; do
+            echo "=== $v (MARGINE_VALIDATE_CONTEXT=image) ==="
+            sudo podman run --rm \
+              -e MARGINE_VALIDATE_CONTEXT=image \
+              --entrypoint "/usr/bin/$v" \
+              "$IMG"
+          done
+
       - name: Validate first-boot assets in built image (blocks rechunk)
         # File-level guardrail against the 5 first-boot regressions
         # surfaced on the 2026-06-06 fresh install (Bluefin logo in About,

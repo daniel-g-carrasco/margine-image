@@ -10,8 +10,11 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Override the os-release file so `cat /etc/os-release`, `hostnamectl`,
 # GNOME's About panel, and our own validate-atomic-layout all see
-# "Margine". ID_LIKE=fedora keeps distro-tooling that branches on Fedora-
-# derivative behaviour working.
+# "Margine". ID=fedora (see below) keeps distro-tooling that branches
+# on Fedora behaviour working; ID_LIKE=bluefin records the actual
+# parent for anything Bluefin-aware. (This comment used to claim
+# ID_LIKE=fedora while the code shipped ID_LIKE=bluefin — fixed
+# 2026-06-12.)
 #
 # Layout: /usr/lib/os-release is the canonical file (writable here at
 # build time), /etc/os-release is a symlink to the relative path
@@ -109,33 +112,12 @@ ln -sf ../usr/lib/os-release /etc/os-release
 # the system users.
 if [[ -f /usr/lib/passwd ]] && [[ -f /usr/lib/group ]]; then
   log "Seeding /etc/passwd + /etc/group from /usr/lib/{passwd,group} factory"
-  # Preserve any locally-modified entries (e.g. root with a custom shell)
-  # by letting our local /etc lines override factory ones for the same name.
-  python3 <<'PY'
-def load(p):
-    try:
-        with open(p) as f: return [l.rstrip("\n") for l in f if l.strip()]
-    except FileNotFoundError: return []
-def by_name(lines):
-    return {l.split(":",1)[0]: l for l in lines}
-for kind in ("passwd", "group"):
-    local   = by_name(load(f"/etc/{kind}"))
-    factory = by_name(load(f"/usr/lib/{kind}"))
-    merged  = dict(factory); merged.update(local)
-    def sort_key(line):
-        try:
-            uid = int(line.split(":")[2])
-            return (uid >= 1000, uid)
-        except Exception:
-            return (True, 999999)
-    import os
-    tmp = f"/etc/{kind}.new"
-    with open(tmp, "w") as f:
-        for l in sorted(merged.values(), key=sort_key):
-            f.write(l + "\n")
-    os.replace(tmp, f"/etc/{kind}")
-    print(f"  /etc/{kind}: was {len(local)} entries, now {len(merged)} (added {len(merged)-len(local)})")
-PY
+  # Same merge the boot-time oneshot uses — ONE implementation, two
+  # callers (build with --force, boot guarded). Until 2026-06-12 this
+  # was a hand-synced python-heredoc copy of the seeder. Called from
+  # /ctx because system_files hasn't been copied into the rootfs yet
+  # at this point in the build.
+  python3 /ctx/system_files/usr/libexec/margine-seed-etc-passwd --force
   chmod 0644 /etc/passwd /etc/group
 else
   log "WARNING: /usr/lib/passwd or /usr/lib/group missing — skipping factory seed"

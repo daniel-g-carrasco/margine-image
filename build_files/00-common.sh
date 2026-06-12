@@ -53,6 +53,32 @@ retry_curl_strict() {
   return 0
 }
 
+# retry <max-attempts> <base-backoff-seconds> <cmd...> — generic outer
+# retry with linear backoff (30, 60, 90... for base=30). Deduplicates
+# the three hand-copied dnf retry loops custom-kernel carried (review
+# P3). For dnf installs that should clean metadata between attempts,
+# wrap the command in `bash -c`.
+retry() {
+  local max=$1 base=$2 n=1
+  shift 2
+  while ! "$@"; do
+    if (( n >= max )); then
+      log "retry FAILED after ${max} attempts: $*"
+      return 1
+    fi
+    log "retry: attempt ${n} failed; sleeping $(( n * base ))s: $*"
+    sleep $(( n * base ))
+    n=$(( n + 1 ))
+  done
+  return 0
+}
+
+# NOTE on trap-based cleanup in build scripts: deliberately ABSENT.
+# A failed RUN discards the whole container layer, so half-restored
+# state (moved kernel hooks, remounted /proc/sys, tmpdirs) can never
+# ship. Documented once here so it stops being re-litigated at every
+# review.
+
 # Cached, exported globals used across sections. Defined here once so
 # every sub-script gets the same value without recomputing.
 export FEDORA_VER="${FEDORA_VER:-$(rpm -E %fedora 2>/dev/null || echo 44)}"

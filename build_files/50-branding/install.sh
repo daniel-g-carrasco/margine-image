@@ -241,49 +241,9 @@ mkdir -p /usr/share/fastfetch /usr/share/margine
 retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/ascii-logo.txt" /usr/share/margine/ascii-logo.txt
 chmod 0644 /usr/share/margine/ascii-logo.txt
 
-cat > /usr/share/fastfetch/margine.jsonc <<'EOF'
-{
-  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
-  "logo": {
-    "source": "/usr/share/margine/ascii-logo.txt",
-    "type": "file",
-    "color": { "1": "yellow" },
-    "padding": { "right": 2 }
-  },
-  "display": {
-    "separator": " · "
-  },
-  "modules": [
-    "title",
-    "separator",
-    "os",
-    "kernel",
-    "uptime",
-    "packages",
-    "shell",
-    "wm",
-    "terminal",
-    "cpu",
-    "gpu",
-    "memory",
-    "swap",
-    "disk",
-    "localip",
-    "battery",
-    "locale",
-    "break",
-    "colors"
-  ]
-}
-EOF
-chmod 0644 /usr/share/fastfetch/margine.jsonc
-
-cat > /usr/bin/margine-fetch <<'EOF'
-#!/usr/bin/sh
-# margine-fetch: fastfetch with Margine ASCII logo + module set.
-exec fastfetch --config /usr/share/fastfetch/margine.jsonc "$@"
-EOF
-chmod 0755 /usr/bin/margine-fetch
+# margine.jsonc + the margine-fetch wrapper ship as tracked files via
+# system_files (migrated out of heredocs 2026-06-12 so linters and
+# reviewers actually see them).
 
 # (f.bis) System-wide fastfetch default config.
 # Without this, vanilla `fastfetch` (no --config) walks its own search
@@ -292,12 +252,9 @@ chmod 0755 /usr/bin/margine-fetch
 # built-in default (= Fedora ASCII logo). Daniel noticed `fastfetch`
 # was showing Fedora art instead of Margine even though
 # /usr/share/margine/ascii-logo.txt was correctly installed.
-# Pointing /etc/fastfetch/config.jsonc at our margine.jsonc fixes
-# the default invocation; margine-fetch still works as before.
-mkdir -p /etc/fastfetch
-cp /usr/share/fastfetch/margine.jsonc /etc/fastfetch/config.jsonc
-chmod 0644 /etc/fastfetch/config.jsonc
-log "Installed: /etc/fastfetch/config.jsonc (default config → Margine ASCII)"
+# /etc/fastfetch/config.jsonc is a system_files symlink to
+# margine.jsonc (was a build-time copy — one less divergence point).
+log "fastfetch default config: system_files symlink /etc/fastfetch/config.jsonc → margine.jsonc"
 
 # Recompile glib schemas so the appended background override takes effect.
 glib-compile-schemas /usr/share/glib-2.0/schemas
@@ -350,39 +307,10 @@ python3 /usr/libexec/margine/build-offline-docs \
 chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON"
 chmod -R a+rX "$OFFLINE_DOCS_DIR"
 
-# Offline-first docs: enable the boot-time seed/refresh service + the
-# periodic timer (units ship via system_files). Wants-symlink pattern,
-# same as the other margine system units.
-mkdir -p /usr/lib/systemd/system/timers.target.wants /usr/lib/systemd/system/multi-user.target.wants
-ln -sf ../margine-docs-refresh.timer \
-   /usr/lib/systemd/system/timers.target.wants/margine-docs-refresh.timer
-ln -sf ../margine-docs-refresh.service \
-   /usr/lib/systemd/system/multi-user.target.wants/margine-docs-refresh.service
-
-cat > /usr/share/applications/margine-documentation.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-NoDisplay=false
-Terminal=false
-Exec=margine-docs-open
-Icon=margine-documentation
-Name=Margine documentation
-Comment=Open the Margine documentation (local copy, auto-updated in the background)
-Categories=System;Documentation;
-EOF
+# Offline-first docs enablement symlinks + the two rebranded app-menu
+# entries (margine-documentation / margine-system-update) ship as
+# tracked system_files now; only the Bluefin originals get removed here.
 rm -f /usr/share/applications/documentation.desktop
-
-cat > /usr/share/applications/margine-system-update.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-NoDisplay=false
-Terminal=true
-Exec=ujust update
-Icon=system-software-update
-Name=Margine system update
-Comment=Run Margine's full system update (bootc + flatpak + distrobox via uupd)
-Categories=ConsoleOnly;System;
-EOF
 rm -f /usr/share/applications/system-update.desktop
 
 # (b) Icons that only served the deleted/rebrand entries.

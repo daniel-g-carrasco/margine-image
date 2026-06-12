@@ -1,0 +1,23 @@
+[Unit]
+Description=Margine: seed /etc/passwd + /etc/group from /usr/lib if stripped
+Documentation=https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+DefaultDependencies=no
+# Run only AFTER local-fs-pre.target (so /etc exists as the overlay
+# upper layer is mounted) and BEFORE systemd-sysusers / systemd-tmpfiles
+# (so they see the seeded users). DO NOT add After=local-fs.target: it
+# creates an ordering cycle through systemd-tmpfiles-setup-dev.service,
+# which systemd resolves by disabling tmpfiles-setup-dev → /dev/disk
+# /by-uuid/* never gets populated → boot times out into emergency mode
+# (incident 2026-06-01). /usr is part of the immutable ostree commit
+# so it's available from the start; we don't need local-fs.target.
+After=local-fs-pre.target
+Before=systemd-sysusers.service systemd-tmpfiles-setup.service sysinit.target
+ConditionFileNotEmpty=/usr/lib/passwd
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-seed-etc-passwd
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

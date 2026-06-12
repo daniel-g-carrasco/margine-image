@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Notify user if ghcr.io/.../margine:stable hasn't been refreshed
+in >7 days. Either the build pipeline is broken, or upstream has
+genuinely paused — either way the user should know."""
+
+import json
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+WARN_AGE_DAYS = 7
+CRIT_AGE_DAYS = 14
+
+
+def run(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+
+# Get current booted image reference
+r = run(["bootc", "status", "--json"])
+if r.returncode != 0:
+    sys.exit(0)  # no bootc, no-op
+booted = json.loads(r.stdout)["status"]["booted"]
+image_ref = booted["image"]["image"]["image"]  # e.g. ghcr.io/daniel-g-carrasco/margine:stable
+
+# Inspect upstream :stable to find its creation timestamp
+r = run(["skopeo", "inspect", "--no-tags", f"docker://{image_ref}"])
+if r.returncode != 0:
+    sys.exit(0)  # network down? skip silently this round
+created = json.loads(r.stdout)["Created"]  # ISO 8601, UTC
+
+# fromisoformat handles optional fractional seconds; the old
+# strptime(created.split(".")[0]) raised on no-fraction stamps (the
+# trailing Z survived the split) and mktime read UTC as local time.
+try:
+    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+except ValueError:
+    sys.exit(0)
+age_days = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
+
+if age_days < WARN_AGE_DAYS:
+    sys.exit(0)
+
+urgency = "critical" if age_days >= CRIT_AGE_DAYS else "normal"
+title = "Margine: upstream stale"
+body = f"Latest :stable is {age_days:.0f} days old. Build pipeline may be broken."
+subprocess.run(
+    [
+        "notify-send", "-u", urgency, "-a", "Margine",
+        "-i", "margine-logo", title, body,
+    ]
+)

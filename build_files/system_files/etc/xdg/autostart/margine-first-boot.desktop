@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Margine first-login user-state bootstrap
+Comment=Apply Margine home layout, GNOME extensions, keybindings, defaults
+Exec=/usr/libexec/margine/first-boot-bootstrap
+NoDisplay=true
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+# NOTE: do NOT add X-GNOME-Autostart-Phase=Applications. GNOME 50+
+# dropped session-phase management; gnome-session-service warns and
+# SKIPS the entire entry, so the bootstrap never runs at login.

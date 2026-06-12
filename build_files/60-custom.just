@@ -316,10 +316,8 @@ margine-gaming-native-remove:
         com.github.Matoking.protontricks \
         com.vysp3r.ProtonPlus || true
 
-    echo "Reboot to deactivate the layer: systemctl reboot"
-
     echo
-    echo "Done. Reboot to release the rpm-ostree layer."
+    echo "Done. Reboot to release the rpm-ostree layer: systemctl reboot"
 
 
 # Switch the CPU scheduler at runtime (sched_ext / BPF schedulers).

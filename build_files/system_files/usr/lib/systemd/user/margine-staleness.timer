@@ -1,0 +1,12 @@
+[Unit]
+Description=Margine: schedule staleness check every 12h
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=12h
+AccuracySec=10min
+# No Persistent=true: it only applies to OnCalendar= timers; with the
+# monotonic triggers above it was a silent no-op.
+
+[Install]
+WantedBy=timers.target

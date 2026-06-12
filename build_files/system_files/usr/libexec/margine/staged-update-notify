@@ -24,19 +24,20 @@ STAGED_TS="$(rpm-ostree status --json 2>/dev/null \
 AGE_DAYS=$(( ($(date +%s) - STAGED_TS) / 86400 ))
 (( AGE_DAYS >= MIN_AGE_DAYS )) || exit 0
 
-# At most one notification per day.
+# At most one notification per day. The stamp is written AFTER a
+# successful notify-send: writing it first consumed the day's slot
+# even when no notification daemon was around to show it (e.g. the
+# timer firing in an SSH-spawned user manager).
 STAMP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/margine"
 STAMP="$STAMP_DIR/staged-notify.stamp"
 mkdir -p "$STAMP_DIR"
 TODAY="$(date +%F)"
 [[ "$(cat "$STAMP" 2>/dev/null)" == "$TODAY" ]] && exit 0
-printf '%s\n' "$TODAY" > "$STAMP"
 
-# English to match the sibling notifiers (margine-upgrade-notify,
-# margine-staleness-check); IT/EN coherence tracked as its own item.
 notify-send \
   --app-name="Margine" \
   --icon="margine-logo" \
   --urgency=normal \
   "Update staged for ${AGE_DAYS} days" \
-  "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version."
+  "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version." \
+  && printf '%s\n' "$TODAY" > "$STAMP"

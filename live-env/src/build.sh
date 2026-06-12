@@ -208,21 +208,23 @@ cp "$SRC_DIR/iso.yaml" /usr/lib/bootc-image-builder/iso.yaml
 # === Phase 2 — BAKE Flatpaks into the live env ===
 # The ~38 Margine "fundamentals" are installed into /var/lib/flatpak of
 # the live image at build time, then rsync'd into the target at install
-# time (install-flatpaks.ks). This is the Bazzite installer-image pattern
-# Margine already uses for BIB (installer/build.sh) — the user lands on a
+# time (install-flatpaks.ks). Bazzite installer-image pattern; Margine's
+# own BIB installer (installer/build.sh) used it too until its
+# retirement with ADR-0008 Phase 7 (2026-06-12) — the user lands on a
 # fully-populated desktop with no first-boot download wait.
 
 # bwrap (used by flatpak apply_extra for binary blobs) needs a writable
-# /proc/sys and a real /root. Same prep as installer/build.sh.
+# /proc/sys and a real /root (prep inherited from the retired BIB
+# installer script).
 mkdir -p "$(realpath /root)"
 mount -o remount,rw /proc/sys
 
 flatpak remote-add --if-not-exists --system flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
 
-# Strip whole-line + inline comments and surrounding whitespace, exactly
-# like installer/build.sh (an un-stripped "id  # note" would be passed to
-# flatpak as a literal id and fail with "Name can't start with #").
+# Strip whole-line + inline comments and surrounding whitespace (an
+# un-stripped "id  # note" would be passed to flatpak as a literal id
+# and fail with "Name can't start with #").
 APPS="$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$SRC_DIR/flatpaks" \
         | sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' \
         | grep -v '^$')"

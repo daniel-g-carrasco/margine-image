@@ -116,7 +116,7 @@ choice="$(
 
 if command -v ptyxis >/dev/null 2>&1; then
   printf -v quoted_choice '%q' "$choice"
-  ptyxis -- bash -lc "ujust margine-scheduler $quoted_choice; echo; read -rp 'Premi Invio per chiudere... '"
+  ptyxis -- bash -lc "ujust margine-scheduler $quoted_choice; echo; read -rp 'Press Enter to close... '"
 else
   ujust margine-scheduler "$choice"
 fi

@@ -34,7 +34,10 @@
 FROM scratch AS ctx
 COPY build_files /
 COPY installer/flatpaks-base    /installer-flatpaks-base
-COPY installer/flatpaks-gaming  /installer-flatpaks-gaming
+# (flatpaks-gaming retired 2026-06-06 with the gaming ISO variant — a
+# COPY of it here guaranteed failure if this plan-B was ever invoked;
+# caught by the 2026-06-12 review. Keep this file in sync with the
+# primary Containerfile when touching either.)
 
 # ----- Base: Bluefin (NOT bluefin-dx) -----
 # What we lose vs bluefin-dx:stable, and where we re-add it below:

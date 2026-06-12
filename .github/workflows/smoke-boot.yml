@@ -19,7 +19,7 @@
 #   3. Build a qcow2 from it (no LUKS — automated boot can't enter
 #      a passphrase; LUKS boot is exercised manually in the VM lab)
 #   4. Boot the qcow2 in QEMU with serial console
-#   5. Wait up to 10 min for "Reached target Multi-User System"
+#   5. Wait up to 30 min (loop below) for a usable-boot marker
 #   6. If reached → pass; if not → upload serial log as artifact, fail
 #
 # Notes:
@@ -46,6 +46,14 @@ on:
     workflows: ["Build Margine image"]
     types: [completed]
     branches: [main]
+
+# This is the only workflow that mutates :stable. Two builds finishing
+# close together must not race their promotions — queue, never cancel
+# (a cancelled run mid-`skopeo copy` could leave the three stable tags
+# pointing at two different digests).
+concurrency:
+  group: smoke-boot
+  cancel-in-progress: false
 
 jobs:
   smoke_boot:
@@ -81,24 +89,53 @@ jobs:
           ls -la /dev/kvm || true
           kvm-ok 2>&1 || true
 
+      # Resolve the ref under test to an immutable digest ONCE, and use
+      # that digest for both the boot test and the promotion. Until
+      # 2026-06-12 the boot step fell back to :stable while the promote
+      # step fell back to :candidate — on every workflow_run trigger
+      # (inputs empty) the gate booted the PREVIOUS stable and then
+      # promoted the never-tested candidate. Found by the code-quality
+      # review (finding A1); the tag was also re-resolved once per
+      # promoted tag, a race window when a build finishes mid-smoke (A2).
+      - name: Resolve image ref to digest
+        id: ref
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.image_ref || 'ghcr.io/daniel-g-carrasco/margine:candidate' }}"
+          if [[ "$REF" == *"@sha256:"* ]]; then
+            # Dispatch input was already a digest ref.
+            BASE="${REF%@*}"
+            DIGEST="${REF#*@}"
+          else
+            BASE="${REF%:*}"
+            DIGEST="$(sudo skopeo inspect --no-tags --format '{{.Digest}}' "docker://$REF")"
+          fi
+          echo "Testing $REF @ $DIGEST"
+          {
+            echo "pinned=${BASE}@${DIGEST}"
+            echo "registry_image=${BASE}"
+            echo "digest=${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build qcow2 with bootc-image-builder
         run: |
           set -euo pipefail
           mkdir -p output
-          IMG="${{ github.event.inputs.image_ref || 'ghcr.io/daniel-g-carrasco/margine:stable' }}"
+          IMG="${{ steps.ref.outputs.pinned }}"
           echo "Building qcow2 from: $IMG"
           # Pull the image first so bootc-image-builder doesn't have to
           # re-download under root.
           sudo podman pull "$IMG"
           # bootc-image-builder needs --privileged + a few specific
           # mounts. Defaults produce qcow2 with no LUKS.
+          # BIB pinned to the same digest build-disk.yml uses — this
+          # workflow floated on :latest --pull=newer until 2026-06-12.
           sudo podman run --rm \
             --privileged \
-            --pull=newer \
             --security-opt label=type:unconfined_t \
             -v "$(pwd)/output:/output" \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
-            quay.io/centos-bootc/bootc-image-builder:latest \
+            quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905 \
             --type qcow2 \
             --rootfs btrfs \
             "$IMG"
@@ -121,10 +158,16 @@ jobs:
         run: |
           set -euo pipefail
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
+          # Trap installed BEFORE qemu-nbd connects, and covering BOTH
+          # mountpoints: until 2026-06-12 /mnt/smokeboot (mounted rw
+          # further down) was missing from it, so a mid-injection
+          # failure disconnected nbd0 under a mounted boot partition —
+          # dirty ext4 journal on the very qcow2 the gating Layer B
+          # boot then runs (review finding A5).
+          trap 'sudo umount -R /mnt/smokeboot 2>/dev/null || true; sudo umount -R /mnt/smoke 2>/dev/null || true; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true' EXIT
           sudo modprobe nbd max_part=16
           sudo qemu-nbd --connect=/dev/nbd0 "$QCOW"
           sudo udevadm settle || sleep 2
-          trap 'sudo umount -R /mnt/smoke 2>/dev/null || true; sudo qemu-nbd --disconnect /dev/nbd0 || true' EXIT
 
           # Root = the btrfs partition (BIB --rootfs btrfs above).
           ROOTPART=""
@@ -311,7 +354,7 @@ jobs:
           QEMU_PID=$!
           echo "QEMU PID: $QEMU_PID"
 
-          # Watch the serial log for the marker. 20 min cap.
+          # Watch the serial log for the marker. 30 min cap (seq 1 1800).
           # First boot of Margine downloads ~2-3 GB of Flatpaks via
           # flatpak-preinstall.service (Zen, Bitwarden, GIMP, ...),
           # plus ostree-finalize-staged, bootc-fix-deploy, machine-id
@@ -364,7 +407,7 @@ jobs:
             exit 0
           fi
 
-          echo "✗ Boot did NOT reach multi-user target within 20 minutes"
+          echo "✗ Boot did NOT reach a usable state within 30 minutes"
           echo "Last 200 lines of serial log:"
           tail -200 serial.log
           echo
@@ -403,7 +446,7 @@ jobs:
             GUI="${{ steps.boot.outputs.gui }}"
             case "$GUI" in
               pass) MSG="Candidate healthy. GUI probe: PASS. New :stable available." ;;
-              fail) MSG="Boot OK ma GUI probe FAILED (warn-only) — controlla il serial log prima di fidarti." ; PRIO="high"; TAGS="warning" ;;
+              fail) MSG="Boot OK but GUI probe FAILED (warn-only) — check the serial log before trusting this stable." ; PRIO="high"; TAGS="warning" ;;
               *)    MSG="Candidate healthy. GUI probe: no verdict (${GUI:-n/a})." ;;
             esac
           else
@@ -422,27 +465,31 @@ jobs:
 
       # Promotion step: only runs when the boot actually reached
       # multi-user.target (steps.boot.outputs.passed == 'true').
-      # Copies the *exact digest* of :candidate (which we just tested)
-      # to the public-facing tags :stable, :stable.<date>, :<date>.
-      # Using --preserve-digests ensures the bytes on disk are identical
-      # to what we booted — no rebuild, no re-rechunk, no surprise.
+      # Copies the EXACT digest resolved in the `ref` step — the same
+      # bytes the QEMU boot exercised. No tag re-resolution: a build
+      # finishing mid-smoke can no longer slip an untested digest into
+      # :stable (review findings A1/A2, fixed 2026-06-12).
       - name: Promote candidate → stable (only if boot passed)
         if: success() && steps.boot.outputs.passed == 'true'
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PINNED: ${{ steps.ref.outputs.pinned }}
+          REGISTRY_IMAGE: ${{ steps.ref.outputs.registry_image }}
         run: |
           set -euo pipefail
           DATE_TAG="$(date -u +%Y%m%d)"
-          SRC_REF="${{ github.event.inputs.image_ref || 'ghcr.io/daniel-g-carrasco/margine:candidate' }}"
-          # Strip any explicit candidate.<date> in favor of plain :candidate
-          # so we always promote the latest tested candidate, not a stale one.
-          REGISTRY_IMAGE="${SRC_REF%:*}"
           echo "$GHCR_TOKEN" | sudo skopeo login --username "$GHCR_USER" --password-stdin ghcr.io
           for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
-            echo "Promoting → ${REGISTRY_IMAGE}:${promo_tag}"
+            echo "Promoting ${PINNED} → ${REGISTRY_IMAGE}:${promo_tag}"
             sudo skopeo copy --retry-times 3 --preserve-digests \
-              "docker://${SRC_REF}" \
+              "docker://${PINNED}" \
               "docker://${REGISTRY_IMAGE}:${promo_tag}"
           done
-          echo "Candidate digest promoted to :stable, :stable.${DATE_TAG}, :${DATE_TAG}"
+          echo "Promoted ${PINNED} to :stable, :stable.${DATE_TAG}, :${DATE_TAG}"
+          {
+            echo "### Promotion"
+            echo "- digest: \`${PINNED}\`"
+            echo "- tags: \`stable\`, \`stable.${DATE_TAG}\`, \`${DATE_TAG}\`"
+            echo "- Layer C GUI probe: \`${{ steps.boot.outputs.gui || 'n/a' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

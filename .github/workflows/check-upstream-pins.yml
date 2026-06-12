@@ -19,6 +19,22 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Assert the two TITANOBOA pin copies agree
+        # GHA cannot template `uses:` from env, so the fork SHA exists
+        # twice in build-disk.yml (env.TITANOBOA_REF + the uses: line).
+        # They can drift independently — this catches it weekly.
+        run: |
+          set -euo pipefail
+          ENV_SHA="$(grep -oE 'TITANOBOA_REF: "[^"]+"' .github/workflows/build-disk.yml | grep -oE '@[0-9a-f]{40}' | tr -d @)"
+          USES_SHA="$(grep -oE 'uses: daniel-g-carrasco/titanoboa@[0-9a-f]{40}' .github/workflows/build-disk.yml | grep -oE '[0-9a-f]{40}')"
+          echo "env=$ENV_SHA uses=$USES_SHA"
+          if [[ -z "$ENV_SHA" || -z "$USES_SHA" || "$ENV_SHA" != "$USES_SHA" ]]; then
+            echo "::error::TITANOBOA_REF env and the uses: pin in build-disk.yml have drifted (env=$ENV_SHA uses=$USES_SHA)"
+            exit 1
+          fi
+
       - name: Check carried patches against upstream
         run: |
           set -euo pipefail

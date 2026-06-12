@@ -70,6 +70,13 @@ jobs:
       packages: write   # needed for the candidate→stable promotion step
 
     steps:
+      # The Layer C injection + boot-watch logic lives in versioned,
+      # shellcheck-gated scripts (extracted from inline heredocs
+      # 2026-06-12 — the ordering-cycle bug that silently skipped the
+      # first probe run was exactly the kind of thing nothing could
+      # lint while the payloads were YAML strings).
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
       - name: Maximize build space
         # ubuntu-24.04 ships with ~14 GiB free, but BIB needs to
         # extract the 14 GB Margine bootc image into /sysroot/ostree/
@@ -155,270 +162,29 @@ jobs:
       - name: Inject GUI smoke probe (Layer C)
         id: inject
         continue-on-error: true
+        # Injection failures must never block the Layer B gate: the
+        # script exits 1 with a ::warning:: at worst. Probe payloads
+        # live in .github/smoke/, the nbd/mount dance in the script.
         run: |
           set -euo pipefail
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
-          # Trap installed BEFORE qemu-nbd connects, and covering BOTH
-          # mountpoints: until 2026-06-12 /mnt/smokeboot (mounted rw
-          # further down) was missing from it, so a mid-injection
-          # failure disconnected nbd0 under a mounted boot partition —
-          # dirty ext4 journal on the very qcow2 the gating Layer B
-          # boot then runs (review finding A5).
-          trap 'sudo umount -R /mnt/smokeboot 2>/dev/null || true; sudo umount -R /mnt/smoke 2>/dev/null || true; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true' EXIT
-          sudo modprobe nbd max_part=16
-          sudo qemu-nbd --connect=/dev/nbd0 "$QCOW"
-          sudo udevadm settle || sleep 2
+          sudo .github/scripts/inject-gui-probe.sh "$QCOW"
 
-          # Root = the btrfs partition (BIB --rootfs btrfs above).
-          ROOTPART=""
-          for part in /dev/nbd0p*; do
-            [[ "$(sudo blkid -s TYPE -o value "$part")" == "btrfs" ]] && ROOTPART="$part"
-          done
-          [[ -n "$ROOTPART" ]] || { echo "::warning::Layer C: no btrfs partition found, skipping injection"; exit 1; }
-          sudo mkdir -p /mnt/smoke
-          sudo mount "$ROOTPART" /mnt/smoke
-          R=/mnt/smoke
-          if [[ ! -d "$R/ostree" ]]; then
-            # content may live in a 'root' subvolume
-            sudo umount /mnt/smoke
-            sudo mount -o subvol=root "$ROOTPART" /mnt/smoke
-          fi
-          [[ -d "$R/ostree" ]] || { echo "::warning::Layer C: ostree root not found on $ROOTPART"; exit 1; }
 
-          DEP=$(sudo sh -c 'ls -d '"$R"'/ostree/deploy/*/deploy/*.0' | head -1)
-          ETC="$DEP/etc"
-          VAR=$(dirname "$(dirname "$DEP")")/var
-          [[ -d "$ETC" && -d "$VAR" ]] || { echo "::warning::Layer C: deployment etc/var not found"; exit 1; }
-          echo "deployment: $DEP"
-
-          # 1. Test user (uid/gid 1010), offline useradd. Password
-          #    locked — GDM autologin doesn't need one.
-          sudo tee -a "$ETC/passwd" >/dev/null <<<'smoke:x:1010:1010:GUI smoke:/var/home/smoke:/bin/bash'
-          sudo tee -a "$ETC/group"  >/dev/null <<<'smoke:x:1010:'
-          sudo tee -a "$ETC/shadow" >/dev/null <<<'smoke:!:20000:0:99999:7:::'
-          sudo tee -a "$ETC/gshadow" >/dev/null <<<'smoke:!::'
-          sudo mkdir -p "$VAR/home/smoke/.config"
-          sudo touch "$VAR/home/smoke/.config/gnome-initial-setup-done"
-          sudo chown -R 1010:1010 "$VAR/home/smoke"
-
-          # 2. GDM autologin
-          sudo tee "$ETC/gdm/custom.conf" >/dev/null <<'GDMEOF'
-          [daemon]
-          AutomaticLoginEnable=True
-          AutomaticLogin=smoke
-          GDMEOF
-
-          # 3. Probe script + oneshot unit (enabled via static wants)
-          sudo mkdir -p "$ETC/margine-smoke" "$ETC/systemd/system/multi-user.target.wants"
-          sudo tee "$ETC/margine-smoke/gui-probe.sh" >/dev/null <<'PROBE'
-          #!/usr/bin/env bash
-          # Runs as root well after graphical.target; verdict on /dev/console.
-          set -u
-          out() { echo "$@" > /dev/console; }
-          fail() { out "MARGINE-GUI-SMOKE: FAIL $*"; sleep 2; systemctl poweroff; exit 0; }
-
-          # Wait for the autologin session's gnome-shell (first boot is
-          # slow: flatpak preinstall etc. competes for I/O).
-          for i in $(seq 1 60); do
-            pgrep -u smoke -x gnome-shell >/dev/null && break
-            sleep 5
-          done
-          pgrep -u smoke -x gnome-shell >/dev/null || fail "gnome-shell never started for autologin user"
-
-          # Give extensions time to load, then count the enabled ones
-          # through the user's session bus.
-          sleep 30
-          EXT=$(runuser -u smoke -- env XDG_RUNTIME_DIR=/run/user/1010                 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1010/bus                 gnome-extensions list --enabled 2>/dev/null | wc -l)
-          [[ "$EXT" -ge 6 ]] || fail "only $EXT extensions enabled (expected >=6)"
-
-          # The shell must still be alive AND nothing may have dumped core.
-          pgrep -u smoke -x gnome-shell >/dev/null || fail "gnome-shell died during the probe window"
-          CORES=$(coredumpctl --no-pager -q list 2>/dev/null | grep -c gnome-shell || true)
-          [[ "$CORES" -eq 0 ]] || fail "gnome-shell dumped core ($CORES)"
-          journalctl -b -q --no-pager 2>/dev/null | grep -q "Bail out!" && fail "Clutter assertion (Bail out!) in journal"
-
-          # Branding validator (from margine-fedora-atomic) — same gjs
-          # lookup the welcome dialogs use, plus About-pixmap checks.
-          if [[ -x /usr/bin/margine-validate-branding ]]; then
-            /usr/bin/margine-validate-branding > /tmp/branding.out 2>&1 \
-              || fail "margine-validate-branding: $(tail -3 /tmp/branding.out | tr '\n' ' ')"
-          fi
-
-          out "MARGINE-GUI-SMOKE: PASS ext=$EXT"
-          sleep 2
-          systemctl poweroff
-          PROBE
-          sudo chmod 0755 "$ETC/margine-smoke/gui-probe.sh"
-
-          sudo tee "$ETC/systemd/system/margine-gui-smoke.service" >/dev/null <<'UNIT'
-          [Unit]
-          Description=Margine Layer C GUI smoke probe
-          After=graphical.target
-          [Service]
-          Type=oneshot
-          ExecStartPre=/bin/sleep 150
-          ExecStart=/etc/margine-smoke/gui-probe.sh
-          UNIT
-          sudo ln -sf ../margine-gui-smoke.service "$ETC/systemd/system/multi-user.target.wants/margine-gui-smoke.service"
-
-          # 4. Injected files carry no SELinux labels — run this boot
-          #    permissive (test VM only; the gating Layer B boot
-          #    semantics are unaffected). BLS entries live on the
-          #    separate /boot partition, which we mount on its own.
-          BOOTPART=""
-          for part in /dev/nbd0p*; do
-            T="$(sudo blkid -s TYPE -o value "$part")"
-            if [[ "$T" == "ext4" || "$T" == "xfs" ]]; then
-              sudo mkdir -p /mnt/smokeboot
-              if sudo mount -o ro "$part" /mnt/smokeboot 2>/dev/null; then
-                if compgen -G '/mnt/smokeboot/loader/entries/*.conf' >/dev/null; then
-                  BOOTPART="$part"
-                  sudo mount -o remount,rw /mnt/smokeboot
-                  break
-                fi
-                sudo umount /mnt/smokeboot
-              fi
-            fi
-          done
-          if [[ -n "$BOOTPART" ]]; then
-            for bls in /mnt/smokeboot/loader/entries/*.conf; do
-              grep -q 'enforcing=0' "$bls" || sudo sed -i 's/^options \(.*\)$/options \1 enforcing=0/' "$bls"
-              echo "kargs: enforcing=0 -> $bls"
-            done
-            sudo umount /mnt/smokeboot
-          else
-            echo "::warning::Layer C: BLS entries not found — probe files may be blocked by SELinux this run"
-          fi
-
-          sudo umount -R /mnt/smoke
-          sudo qemu-nbd --disconnect /dev/nbd0
-          trap - EXIT
-          echo "Layer C injection complete"
-
-      - name: Boot qcow2 in QEMU and wait for multi-user.target
+      - name: Boot qcow2 in QEMU and wait for a usable state
         id: boot
+        # Shared boot-watcher (same script gates the live ISO in
+        # build-disk.yml). Emits passed= and gui= to GITHUB_OUTPUT;
+        # Layer C verdict stays WARN-ONLY until two green runs.
         run: |
           set -euo pipefail
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
           echo "Booting: $QCOW"
-
-          # Auto-detect OVMF firmware paths. Ubuntu 24.04 renamed the
-          # files in 2024 to a *_4M.* convention (4 MB layout); older
-          # docs/templates still reference the 2 MB names. Try modern
-          # names first, fall back to legacy.
-          OVMF_CODE=""
-          for c in \
-              /usr/share/OVMF/OVMF_CODE_4M.secboot.fd \
-              /usr/share/OVMF/OVMF_CODE.secboot.fd \
-              /usr/share/OVMF/OVMF_CODE_4M.fd \
-              /usr/share/OVMF/OVMF_CODE.fd ; do
-            [[ -f "$c" ]] && OVMF_CODE="$c" && break
-          done
-          OVMF_VARS_SRC=""
-          for v in \
-              /usr/share/OVMF/OVMF_VARS_4M.fd \
-              /usr/share/OVMF/OVMF_VARS.fd ; do
-            [[ -f "$v" ]] && OVMF_VARS_SRC="$v" && break
-          done
-          if [[ -z "$OVMF_CODE" || -z "$OVMF_VARS_SRC" ]]; then
-            echo "✗ OVMF firmware not found. Files present:"
-            ls -la /usr/share/OVMF/ 2>&1
-            exit 1
-          fi
-          # Copy VARS to a writable location (guest mutates it).
-          cp "$OVMF_VARS_SRC" ovmf_vars.fd
-          chmod 0644 ovmf_vars.fd
-          echo "Using OVMF_CODE=$OVMF_CODE OVMF_VARS=$OVMF_VARS_SRC"
-
-          # Start QEMU in the background, capture serial console to file.
-          # -no-reboot exits when guest shuts down.
-          # Note: Secure Boot is INTENTIONALLY DISABLED for smoke-boot.
-          # SB-enabled would require the Margine MOK pre-enrolled into
-          # the VARS file (interactive on first boot otherwise). The
-          # CachyOS kernel signature is verified by build-time Layer A
-          # checks; SB is exercised on the real hardware lab VM. Layer
-          # B's job here is "does ostree+composefs+systemd reach
-          # multi-user?", not "does SB chain trust intact?".
-          sudo qemu-system-x86_64 \
-            -enable-kvm \
-            -m 4096 -smp 4 \
-            -machine q35 \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file=ovmf_vars.fd \
-            -drive file="$QCOW",format=qcow2,if=virtio \
-            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-            -serial file:serial.log \
-            -display none \
-            -no-reboot \
-            &
-          QEMU_PID=$!
-          echo "QEMU PID: $QEMU_PID"
-
-          # Watch the serial log for the marker. 30 min cap (seq 1 1800).
-          # First boot of Margine downloads ~2-3 GB of Flatpaks via
-          # flatpak-preinstall.service (Zen, Bitwarden, GIMP, ...),
-          # plus ostree-finalize-staged, bootc-fix-deploy, machine-id
-          # commit, etc. On a non-KVM GHA runner that is slow.
-          # Test confirmed network.target reached at ~8 min, multi-user
-          # at ~10-12 min — so 10 min was too tight, 20 min is safe.
-          # Multi-marker approach (2026-06-01): systemd recent does NOT
-          # always emit "Reached target multi-user.target" verbatim on
-          # the serial console (seen on Fedora 44 with CachyOS kernel —
-          # log goes straight to graphical.target boot events). We
-          # accept any of three equivalent signals:
-          #   1. gdm.service started → implies graphical.target reached
-          #      → implies multi-user.target reached.
-          #   2. Plymouth has quit → boot process is wrapping up.
-          #   3. The getty banner "margine login:" → user-space fully up.
-          # Any one of these means the boot is healthy.
-          BOOT_OK=""
-          GUI_RESULT=""
-          GUI_DEADLINE=0
-          for i in $(seq 1 1800); do
-            if [[ -z "$BOOT_OK" && -f serial.log ]] && grep -qE "Started.*gdm\.service|Reached target graphical\.target|margine login:" serial.log; then
-              echo "✓ Boot reached usable state at second $i"
-              echo "passed=true" >> $GITHUB_OUTPUT
-              BOOT_OK=$i
-              # Layer C window: the probe sleeps 150s after graphical,
-              # first boot is I/O-heavy — allow 8 more minutes.
-              GUI_DEADLINE=$((i + 480))
-            fi
-            if [[ -n "$BOOT_OK" ]]; then
-              if grep -q "MARGINE-GUI-SMOKE: PASS" serial.log; then GUI_RESULT=pass; break; fi
-              if grep -q "MARGINE-GUI-SMOKE: FAIL" serial.log; then GUI_RESULT=fail; break; fi
-              if (( i > GUI_DEADLINE )); then GUI_RESULT=timeout; break; fi
-            fi
-            sleep 1
-          done
-
-          if [[ -n "$BOOT_OK" ]]; then
-            # ---- Layer C verdict — WARN-ONLY until proven stable ----
-            # (flip the warning paths to fail=1 after two green runs)
-            grep -E "MARGINE-GUI-SMOKE" serial.log || true
-            echo "gui=${GUI_RESULT:-none}" >> $GITHUB_OUTPUT
-            case "$GUI_RESULT" in
-              pass)    echo "✓ Layer C GUI probe: PASS" ;;
-              fail)    echo "::warning::Layer C GUI probe FAILED — graphical session unhealthy (extensions/coredump). See serial log artifact. This will become gating." ;;
-              *)       echo "::warning::Layer C GUI probe gave no verdict (injection skipped or probe stuck) — see inject step + serial log." ;;
-            esac
-            # The probe powers the VM off on its own; reap or kill.
-            sudo kill "$QEMU_PID" 2>/dev/null || true
-            wait "$QEMU_PID" 2>/dev/null || true
-            exit 0
-          fi
-
-          echo "✗ Boot did NOT reach a usable state within 30 minutes"
-          echo "Last 200 lines of serial log:"
-          tail -200 serial.log
-          echo
-          echo "=== systemd target progress (Reached vs Failed) ==="
-          grep -E "Reached target|Failed to start|systemd\[1\]: Starting" serial.log | tail -40
-          echo
-          echo "=== units still starting (likely culprits) ==="
-          grep -oE "[a-z0-9_-]+\.service" serial.log | sort | uniq -c | sort -rn | head -10
-          sudo kill -9 "$QEMU_PID" 2>/dev/null || true
-          echo "passed=false" >> $GITHUB_OUTPUT
-          exit 1
+          sudo -E .github/scripts/qemu-boot-wait.sh \
+            --disk "$QCOW" \
+            --log serial.log \
+            --timeout 1800 \
+            --gui-watch
 
       - name: Upload serial log
         # Always: the Layer C warn-only verdict is judged from this log.

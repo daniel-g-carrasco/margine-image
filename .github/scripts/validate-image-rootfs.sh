@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Layer A file-level validation of a built (pre-rechunk) Margine image.
+#
+#   usage: sudo .github/scripts/validate-image-rootfs.sh <image-ref>
+#
+# Extracted from build.yml's inline run: block (2026-06-12 review,
+# phase 3) so it is shellcheck-gated, reviewable as a file, and
+# runnable locally against any locally built image:
+#   sudo .github/scripts/validate-image-rootfs.sh localhost/margine:latest
+#
+# Guardrail against the 5 first-boot regressions surfaced on the
+# 2026-06-06 fresh install (Bluefin logo in About, missing welcome
+# screen icon, extensions not installed, no background-Flatpak toast,
+# icon-size drift). Runs BEFORE rechunk/push/SBOM/sign so a regression
+# fails fast instead of leaking into :stable. The grep sentinels here
+# overlap the shipped validators (run in-container by a sibling CI
+# step) on purpose during the adoption window — once the in-container
+# run has two green runs, the duplicated checks below get deleted.
+set -euo pipefail
+
+IMAGE_REF="${1:?usage: validate-image-rootfs.sh <image-ref>}"
+
+podman container create --replace --name validate-fs \
+  --entrypoint /bin/true "$IMAGE_REF" >/dev/null
+ROOTFS=$(mktemp -d)
+trap 'rm -rf "$ROOTFS"; podman rm validate-fs >/dev/null 2>&1 || true' EXIT
+podman export validate-fs | tar -C "$ROOTFS" -xf -
+
+fail=0
+check_file() { [[ -f "$ROOTFS/$1" ]] || { echo "::error::missing file $1 ($2)"; fail=1; }; }
+check_dir()  { [[ -d "$ROOTFS/$1" ]] || { echo "::error::missing dir $1 ($2)";  fail=1; }; }
+check_nonempty() { [[ -s "$ROOTFS/$1" ]] || { echo "::error::file $1 missing or empty ($2)"; fail=1; }; }
+check_exec() { [[ -x "$ROOTFS/$1" ]] || { echo "::error::not executable $1 ($2)"; fail=1; }; }
+
+# A.1 — About-panel logo: os-release LOGO + asset on disk
+if ! grep -qE '^LOGO=margine-logo$' "$ROOTFS/etc/os-release"; then
+  echo "::error::A.1 /etc/os-release does not declare LOGO=margine-logo"; fail=1
+fi
+if [[ ! -f "$ROOTFS/usr/share/pixmaps/margine-logo.png" && ! -f "$ROOTFS/usr/share/pixmaps/margine-logo.svg" ]]; then
+  echo "::error::A.1 /usr/share/pixmaps/margine-logo.{png,svg} missing"; fail=1
+fi
+check_nonempty "usr/share/pixmaps/fedora_logo_med.png" "A.1"
+check_nonempty "usr/share/pixmaps/fedora_whitelogo_med.png" "A.1"
+
+# A.2 — Welcome screen icon: present + non-empty (retry_curl_strict)
+check_nonempty "usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg" "A.2"
+if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg"; then
+  echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
+fi
+
+# A.3 — All 10 enabled-extensions UUIDs installed system-wide
+for uuid in \
+  appindicatorsupport@rgcjonas.gmail.com \
+  bazaar-integration@kolunmi.github.io \
+  blur-my-shell@aunetx \
+  dash-to-dock@micxgx.gmail.com \
+  gradia-integration@alexandervanhee.github.io \
+  gsconnect@andyholmes.github.io \
+  search-light@icedman.github.com \
+  o-tiling@oliwebd.github.com \
+  hide-cursor@elcste.com \
+  caffeine@patapon.info; do
+  check_dir "usr/share/gnome-shell/extensions/$uuid" "A.3"
+done
+
+# A.4 — First-boot notify autostart + libexec
+check_file "etc/xdg/autostart/margine-first-boot.desktop" "A.4"
+check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
+check_exec "usr/libexec/margine-first-boot-status" "A.4"
+
+# A.4.bis — desktop launchers have high-res icons and docs fallback
+check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
+check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"
+check_exec "usr/libexec/margine/docs-open" "A.4.bis"
+check_exec "usr/bin/margine-docs-open" "A.4.bis"
+check_nonempty "usr/share/margine/offline-docs/index.html" "A.4.bis"
+check_nonempty "usr/share/margine/offline-docs/docs/index.html" "A.4.bis"
+check_nonempty "usr/share/margine/offline-docs/docs/install-status/index.html" "A.4.bis"
+docs_count="$(find "$ROOTFS/usr/share/margine/offline-docs" -path '*/index.html' -type f | wc -l)"
+if (( docs_count < 14 )); then
+  echo "::error::A.4.bis offline docs mirror is incomplete (index.html count=$docs_count)"
+  fail=1
+fi
+if grep -R -n -E '<script|/assets/.*\.(js|css)|href="/docs' "$ROOTFS/usr/share/margine/offline-docs"; then
+  echo "::error::A.4.bis offline docs still reference live JS/CSS assets or root-relative docs links"
+  fail=1
+fi
+grep -qxF 'Icon=margine-scheduler' "$ROOTFS/usr/share/applications/margine-scheduler.desktop" || { echo "::error::A.4.bis scheduler launcher does not use margine-scheduler icon"; fail=1; }
+grep -qxF 'Exec=margine-docs-open' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-docs-open"; fail=1; }
+grep -qxF 'Icon=margine-documentation' "$ROOTFS/usr/share/applications/margine-documentation.desktop" || { echo "::error::A.4.bis docs launcher does not use margine-documentation icon"; fail=1; }
+
+# A.5 — REMOVED (org.gnome.shell.app-grid schema does not exist in
+# GNOME 47/48; the keys we tried to set are ignored. Icon-size drift
+# between app-grid/folder is a CSS theme issue, not a gschema one).
+
+# A.3.bis — extension settings defaults are shipped through the
+# distro dconf database. They intentionally do not live in zz1:
+# GNOME Shell extensions may load their local schema source ahead
+# of the global one, while dconf defaults apply at the backend path.
+DCONF_DIR="$ROOTFS/etc/dconf/db/distro.d"
+for keyfile in \
+  01-margine-dash-to-dock \
+  02-margine-search-light \
+  03-margine-o-tiling \
+  04-margine-tilingshell \
+  05-margine-blur-my-shell \
+  06-margine-caffeine \
+  07-margine-custom-keybindings; do
+  check_file "etc/dconf/db/distro.d/$keyfile" "A.3.bis"
+done
+if grep -qE '^\[org\.gnome\.shell\.extensions\.' "$ROOTFS/usr/share/glib-2.0/schemas/zz1-margine.gschema.override"; then
+  echo "::error::A.3.bis extension defaults are still present in zz1 override"; fail=1
+fi
+grep -qxF 'system-db:distro' "$ROOTFS/etc/dconf/profile/user" || { echo "::error::A.3.bis /etc/dconf/profile/user lacks system-db:distro"; fail=1; }
+grep -qxF '[org/gnome/shell/extensions/dash-to-dock]' "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock dconf section missing"; fail=1; }
+grep -qxF '[org/gnome/shell/extensions/search-light]' "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light dconf section missing"; fail=1; }
+grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tiling" || { echo "::error::A.3.bis o-tiling dconf section missing"; fail=1; }
+
+# A.3.ter — downstream patches + branding must land on the FINAL
+# image (added 2026-06-12 after the search-light mitigation nearly
+# shipped unapplied: the build script's soft-fail and a 2-day-old
+# staged deployment hid it). These assert OUTCOMES, independent of
+# how the build scripts behave.
+SL_EXT="$ROOTFS/usr/share/gnome-shell/extensions/search-light@icedman.github.com/extension.js"
+grep -q 'margine: unmap before detach' "$SL_EXT" \
+  || { echo "::error::A.3.ter search-light unrealize mitigation NOT present in the image"; fail=1; }
+test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/margine-logo.svg" \
+  || { echo "::error::A.3.ter margine-logo.svg missing from hicolor"; fail=1; }
+test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg" \
+  || { echo "::error::A.3.ter fedora-logo-icon.svg missing (fedora-welcome + gnome-initial-setup hardcode it)"; fail=1; }
+test -s "$ROOTFS/usr/share/pixmaps/fedora_logo_med.png" \
+  || { echo "::error::A.3.ter About wordmark (fedora_logo_med.png) missing"; fail=1; }
+if cmp -s "$ROOTFS/usr/share/pixmaps/fedora_logo_med.png" "$ROOTFS/usr/share/pixmaps/fedora_whitelogo_med.png"; then
+  echo "::error::A.3.ter About wordmark dark/light variants are byte-identical (theme differentiation lost)"; fail=1
+fi
+test -x "$ROOTFS/usr/libexec/margine/staged-update-notify" \
+  || { echo "::error::A.3.ter staged-update-notify missing"; fail=1; }
+
+# search-light rounded-corners daniel default: border-radius=7.0
+# (the value is an INDEX 0-7 into the extension's px table, not
+# pixels — 7 = 32px max rounding; the old 30 was out of range and
+# silently ignored. See #94.)
+grep -qE "^border-radius=7" "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light border-radius!=7 — daniel default lost"; fail=1; }
+# dash-to-dock background customisation present (cosmetic regression sentinel)
+grep -qE "^running-indicator-style='DOTS'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
+
+if (( fail != 0 )); then
+  echo "::error::First-boot asset validation FAILED — blocking rechunk/push/sign."
+  exit 1
+fi
+echo "✓ First-boot asset validation PASSED (6/6 sections clean)"

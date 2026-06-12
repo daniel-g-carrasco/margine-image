@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -14,11 +15,18 @@ from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 
+# Fallback route list — used only when the live site's machine-readable
+# /routes.json (emitted by its prerender step since 2026-06-12) cannot
+# be fetched or parsed. With routes.json available, a new docs page or
+# handbook chapter reaches the offline mirror with zero edits here.
+# (This hardcoded copy had already drifted: /docs/install-iso was
+# missing, so the offline mirror never carried the install guide.)
 ROUTES = [
     "/docs",
     "/docs/what-is-margine",
     "/docs/why-margine",
     "/docs/install-status",
+    "/docs/install-iso",
     "/docs/first-boot",
     "/docs/install-apps",
     "/docs/your-home",
@@ -191,13 +199,38 @@ def write_redirect_index(output_dir: Path) -> None:
     )
 
 
+def discover_routes(base_url: str) -> list[str]:
+    """Prefer the site's own /routes.json; fall back to the static list.
+
+    Only routes under MIRRORED_PREFIXES are mirrored (the home page and
+    anything else stay online-only)."""
+    try:
+        raw = fetch_text(f"{base_url}/routes.json", retries=2)
+        routes = json.loads(raw)
+        mirrored = [
+            r for r in routes
+            if isinstance(r, str) and normalize_docs_path(r) is not None
+        ]
+        if len(mirrored) >= 10:
+            print(f"[offline-docs] using {len(mirrored)} routes from {base_url}/routes.json")
+            return mirrored
+        print(
+            f"[offline-docs] routes.json suspiciously small ({len(mirrored)}) — using static fallback",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 - any fetch/parse problem means fallback.
+        print(f"[offline-docs] routes.json unavailable ({exc}) — using static fallback", file=sys.stderr)
+    return ROUTES
+
+
 def build_offline_docs(output_dir: Path, base_url: str) -> None:
     base_url = base_url.rstrip("/")
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True)
 
-    for route in ROUTES:
+    routes = discover_routes(base_url)
+    for route in routes:
         source_url = f"{base_url}{route}/"
         destination = output_path_for_route(output_dir, route)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -206,7 +239,7 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
         destination.write_text(rewrite_html(html_text, route, output_dir, base_url), encoding="utf-8")
 
     write_redirect_index(output_dir)
-    (output_dir / "manifest.txt").write_text("\n".join(ROUTES) + "\n", encoding="utf-8")
+    (output_dir / "manifest.txt").write_text("\n".join(routes) + "\n", encoding="utf-8")
     # Freshness stamp consumed by docs-refresh to decide whether the /usr
     # seed (image build) is newer than the /var mirror (runtime refresh
     # by margine-docs-refresh.service). Epoch seconds.

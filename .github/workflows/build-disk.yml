@@ -41,13 +41,16 @@ name: Build disk images
 on:
   workflow_dispatch:
   pull_request:
+    # `labeled` included so adding the iso-test label triggers a run
+    # immediately (without it, the label did nothing until the next
+    # push — unlike build.yml's documented label-then-build flow).
+    types: [labeled, synchronize, opened, reopened]
     branches:
       - main
     paths:
       # NB: GitHub path filters do NOT match a leading './' — the old
       # './disk_config/...' globs never fired. Plain repo-relative globs.
       - 'disk_config/disk.toml'
-      - 'disk_config/iso-gnome.toml'
       - '.github/workflows/build-disk.yml'
       - 'live-env/**'
 
@@ -100,19 +103,11 @@ jobs:
         disk-type: ["qcow2"]
     permissions:
       contents: read
-      # packages: write (NOT just read) — required for installer-image
-      # push step. The GHCR `margine-installer` package has been
-      # bootstrap-pushed once manually (2026-06-05 by daniel) so CI
-      # doesn't need create-package scope, but it does need write to
-      # push new run-* tags on top.
-      packages: write
-      id-token: write
-    outputs:
-      # These are matrix outputs — to consume them from a non-matrix
-      # downstream job (publish_ia), reference the artifact name pattern
-      # directly instead. We expose disk-type just for clarity in the
-      # ntfy step.
-      iso_artifact: ${{ steps.upload.outputs.artifact-id }}
+      # packages: read only — the installer-image push step this job
+      # carried write for was retired with the BIB ISO path (ADR-0008
+      # Phase 7); this job now only pulls. id-token dropped: nothing
+      # here is OIDC/keyless. Least privilege (review P2.6).
+      packages: read
 
     steps:
       - name: Maximize build space
@@ -136,7 +131,7 @@ jobs:
           echo "USER_GID=${USER_GID}" >> ${GITHUB_ENV}
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Pre-build login to GHCR (for base-image pull)
         run: |
@@ -164,17 +159,9 @@ jobs:
           echo "::error::Unable to pull ${{ env.BIB_IMAGE }} after 8 attempts; quay.io may be down"
           exit 1
 
-      # === installer-image pattern (Bazzite) for anaconda-iso only ===
-      # Build a transient `<flavor>-installer` image that's the base
-      # bootc image + Flatpaks pre-baked into /var/lib/flatpak. BIB
-      # anaconda-iso uses THIS image instead of the base — the
-      # installer rootfs ships with all Flatpaks already in
-      # /var/lib/flatpak, and the kickstart in iso-gnome.toml just
-      # rsyncs them to the target's /var/lib/flatpak. No flatpak
-      # install at install time → no /tmp OOM in installer env →
-      # no silent failure → user actually gets the apps at first
-      # login. qcow2 path keeps using the base image (qcow2 is for
-      # QEMU smoke test, no need to inflate it with Flatpaks).
+      # (The Bazzite installer-image pattern that lived here served the
+      # retired BIB anaconda-iso path — ADR-0008 Phase 7. qcow2 builds
+      # straight from the base image.)
       - name: Build disk image
         id: build
         # SHA-pinned for supply-chain safety (audit §6.3). v0.0.2 is the
@@ -275,8 +262,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
     permissions:
       contents: read
+      # write: pushes the run-scoped margine-live tag + prunes old ones.
+      # id-token dropped — nothing OIDC/keyless here (review P2.6).
       packages: write
-      id-token: write
     steps:
       - name: Maximize build space
         uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
@@ -284,7 +272,7 @@ jobs:
           remove-codeql: true
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Prepare environment
         run: |
@@ -323,8 +311,8 @@ jobs:
           echo "Building ${LIVE_TAG} from ${BASE_IMAGE}"
           # --cap-add sys_admin + label=disable: build.sh regenerates the
           # initramfs (dracut) and, from Phase 2 on, installs Flatpaks via
-          # bwrap which needs user namespaces. Same flags BIB's installer
-          # image build uses (see build_disk job above).
+          # bwrap which needs user namespaces. (Flags inherited from the
+          # retired BIB installer-image build.)
           sudo podman build \
             --cap-add sys_admin \
             --security-opt label=disable \
@@ -375,47 +363,27 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
           ISO="$(ls "${{ steps.iso.outputs.outdir }}"/*.iso | head -1)"
-          # Explicit candidate list (modern 4M names first), same pattern
-          # smoke-boot.yml uses — the old `ls | grep -v secboot | head -1`
-          # depended on glob ordering and broke shellcheck SC2010.
-          OVMF_CODE=""
-          for c in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
-            [[ -f "$c" ]] && OVMF_CODE="$c" && break
-          done
-          OVMF_VARS=""
-          for v in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
-            [[ -f "$v" ]] && OVMF_VARS="$v" && break
-          done
-          if [[ -z "$OVMF_CODE" || -z "$OVMF_VARS" ]]; then
-            echo "OVMF firmware not found:"; ls -la /usr/share/OVMF/; exit 1
-          fi
-          cp "$OVMF_VARS" vars.fd
-          sudo qemu-system-x86_64 \
-            -enable-kvm -m 4096 -smp 4 -machine q35 \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file=vars.fd \
-            -cdrom "$ISO" \
-            -serial file:iso-serial.log -display none -no-reboot &
-          QPID=$!
-          # Live-healthy markers: GDM session (the live autologin) or
-          # livesys completing. dracut emergency = instant fail.
-          for i in $(seq 1 900); do
-            if grep -qE "Started.*gdm\.service|Reached target graphical\.target|livesys.*Finished" iso-serial.log 2>/dev/null; then
-              echo "OK: Live ISO healthy at second $i"
-              sudo kill "$QPID" 2>/dev/null || true
-              exit 0
-            fi
-            if grep -qE "dracut-emergency|Failed to start.*dmsquash|emergency shell" iso-serial.log 2>/dev/null; then
-              echo "FAIL: Live ISO dropped to emergency"; tail -120 iso-serial.log
-              sudo kill -9 "$QPID" 2>/dev/null || true
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "FAIL: Live ISO did not reach a usable state in 15 min"
-          tail -200 iso-serial.log
-          sudo kill -9 "$QPID" 2>/dev/null || true
-          exit 1
+          echo "Boot-testing: $ISO"
+          # Shared watcher (same script gates the qcow2 in smoke-boot).
+          # Live-healthy markers: GDM session (live autologin) or livesys
+          # completing; dracut emergency = instant fail.
+          sudo -E .github/scripts/qemu-boot-wait.sh \
+            --cdrom "$ISO" \
+            --log iso-serial.log \
+            --timeout 900 \
+            --ok-regex 'Started.*gdm\.service|Reached target graphical\.target|livesys.*Finished' \
+            --fail-regex 'dracut-emergency|Failed to start.*dmsquash|emergency shell'
+
+      - name: Upload ISO serial log
+        # Always — a failed boot-test is debugged from this log (the
+        # qcow2 gate has had the same artifact from day one).
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: iso-boot-serial-log
+          path: iso-serial.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload Live ISO artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -435,9 +403,12 @@ jobs:
           PKG="margine-live"
           OWNER="${{ github.repository_owner }}"
           echo "Pruning $OWNER/$PKG GHCR tags, keeping newest 3"
-          VERSIONS_JSON="$(gh api --paginate \
+          # --slurp: --paginate emits ONE JSON ARRAY PER PAGE, so the
+          # downstream `jq length` would count only the first page past
+          # 100 versions. Slurp flattens all pages into a single array.
+          VERSIONS_JSON="$(gh api --paginate --slurp \
               "/users/${OWNER}/packages/container/${PKG}/versions" \
-              --jq '[.[] | {id, name: (.metadata.container.tags[0] // "<untagged>"), updated_at}]' \
+              --jq '[.[][] | {id, name: (.metadata.container.tags[0] // "<untagged>"), updated_at}]' \
               2>/dev/null || echo '[]')"
           COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
           echo "Found $COUNT version(s) total"
@@ -636,24 +607,24 @@ jobs:
           </head><body>
             <h1>${HEADER}</h1>
             <p>${SUBHEAD}
-               Build dal commit <code>${{ github.sha }}</code>.</p>
+               Built from commit <code>${{ github.sha }}</code>.</p>
 
             <div class="pkg">
-              <strong>Anaconda installer ISO</strong> · <code>${ISO_NAME}</code><br>
+              <strong>Live installer ISO</strong> · <code>${ISO_NAME}</code><br>
               <p>
-                ⤓ <a href="${TORRENT_URL}">Download .torrent</a> (consigliato)<br>
-                ⤓ <a href="${MIRROR_HTTP}">Download HTTP diretto</a> (IA mirror)<br>
-                🗂 <a href="https://archive.org/details/${IDENTIFIER}">Pagina Internet Archive</a> (tutti i mirror)
+                ⤓ <a href="${TORRENT_URL}">Download .torrent</a> (recommended)<br>
+                ⤓ <a href="${MIRROR_HTTP}">Direct HTTP download</a> (IA mirror)<br>
+                🗂 <a href="https://archive.org/details/${IDENTIFIER}">Internet Archive page</a> (all mirrors)
               </p>
             </div>
 
-            <p>Hash di verifica: <a href="SHA256SUMS">SHA256SUMS</a></p>
+            <p>Verify hashes: <a href="SHA256SUMS">SHA256SUMS</a></p>
 
             <footer>
-              Pubblicato il $(date -u +%Y-%m-%dT%H:%MZ).
-              ISO ospitate da <a href="https://archive.org">Internet Archive</a>;
-              questo sito serve solo magnet/HTML.
-              Sorgente: <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a>.
+              Published $(date -u +%Y-%m-%dT%H:%MZ).
+              ISOs are hosted by the <a href="https://archive.org">Internet Archive</a>;
+              this page only serves torrent/HTML links.
+              Source: <a href="https://github.com/${{ github.repository }}">${{ github.repository }}</a>.
             </footer>
           </body></html>
           HTML
@@ -712,6 +683,12 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout this repo (for the bump script)
+        if: steps.secret_check.outputs.skip != 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 1
+
       - name: Checkout site repo
         if: steps.secret_check.outputs.skip != 'true'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
@@ -722,6 +699,7 @@ jobs:
           fetch-depth: 1
 
       - name: Bump LATEST_ISO_DATE + open PR
+        # Logic extracted to a shellcheck-gated script (2026-06-12).
         if: steps.secret_check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.SITE_BUMP_TOKEN }}
@@ -729,109 +707,25 @@ jobs:
         run: |
           set -euo pipefail
           cd site
+          ../.github/scripts/bump-site-iso-date.sh
 
-          NEW_DATE="$(date -u +%Y%m%d)"
-          # Match the line shape exactly: `const LATEST_ISO_DATE = "YYYYMMDD";`
-          OLD_DATE="$(grep -oE 'LATEST_ISO_DATE = "[0-9]+"' src/routes/index.tsx \
-            | head -1 | grep -oE '[0-9]+' || true)"
-
-          if [[ -z "$OLD_DATE" ]]; then
-            echo "::error::Could not find LATEST_ISO_DATE in src/routes/index.tsx"
-            exit 1
-          fi
-          if [[ "$OLD_DATE" == "$NEW_DATE" ]]; then
-            echo "LATEST_ISO_DATE already at $NEW_DATE — no bump needed."
-            exit 0
-          fi
-          echo "Bumping LATEST_ISO_DATE: $OLD_DATE → $NEW_DATE"
-
-          sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
-            src/routes/index.tsx
-          # Note: LATEST_ISO_BTIH used to be bumped here too, when the
-          # Hero had a magnet:? button composed from the btih. That
-          # button was retired 2026-06-07 — Fragments rejects valid
-          # magnets parsed from arbitrary trackers — and replaced with
-          # a direct link to the .torrent file (which the LATEST_ISO_TORRENT
-          # constant already computes from LATEST_ISO_DATE). So a single
-          # date bump now suffices.
-
-          # If a PR for the same target date already exists on the head
-          # branch (re-dispatch on same UTC day), skip — don't churn.
-          BRANCH="chore/bump-iso-date-$NEW_DATE"
-          if gh pr list --repo daniel-g-carrasco/margine-os-1084ca72 \
-               --head "$BRANCH" --state open --json number --jq '.[0].number' \
-             | grep -q '^[0-9]'; then
-            echo "PR for branch $BRANCH already exists — leaving in place."
-            exit 0
-          fi
-
-          git config user.email "noreply@margine.the-empty.place"
-          git config user.name "margine-bump-bot"
-          git checkout -b "$BRANCH"
-          git add src/routes/index.tsx
-
-          # Heredoc keeps the YAML scanner happy (no unindented lines
-          # inside the run: block) and bash handles the multiline message.
-          COMMIT_MSG=$(cat <<EOF
-          chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}
-
-          Auto-bump triggered by margine-image build-disk.yml after a
-          successful IA publish for both flavours.
-
-          Previous: ${OLD_DATE}
-          New:      ${NEW_DATE}
-          EOF
-          )
-          git commit -m "$COMMIT_MSG"
-          git push -u origin "$BRANCH"
-
-          PR_BODY=$(cat <<EOF
-          Auto-opened by [margine-image build-disk #${{ github.run_id }}](${RUN_URL}).
-
-          The site's hardcoded direct-link URLs point at
-          \`archive.org/details/margine-anaconda-iso-\$LATEST_ISO_DATE\`.
-          This PR bumps the date constant after a successful Internet Archive
-          publish so the Hero CTAs and Install Option A reference the just-
-          released ISO.
-
-          Previous: \`${OLD_DATE}\`
-          New:      \`${NEW_DATE}\`
-
-          If everything looks right, squash-merge. The webhook deploy on
-          VM 110 picks up the change in ~2-3 min.
-          EOF
-          )
-          gh pr create \
-            --repo daniel-g-carrasco/margine-os-1084ca72 \
-            --base main \
-            --head "$BRANCH" \
-            --title "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}" \
-            --body "$PR_BODY"
-
-          # Auto-merge the bump PR so the Hero buttons + Install Option A
-          # block start pointing at the just-published ISO without manual
-          # intervention. Margine-os-1084ca72 has no required reviews on
-          # main, so --auto + --squash merges immediately. If the merge
-          # fails (network/permission), the PR stays open for manual
-          # squash-merge — exactly the previous behaviour.
-          gh pr merge \
-            --repo daniel-g-carrasco/margine-os-1084ca72 \
-            "$BRANCH" \
-            --squash --auto --delete-branch \
-            || echo "::warning::bump PR auto-merge failed — falls back to manual squash-merge"
 
   notify:
     name: ntfy notification (aggregated)
-    needs: [build_disk, build_iso_titanoboa, publish_ia]
+    needs: [build_disk, build_iso_titanoboa, publish_ia, bump_site]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Sends one curl; needs nothing from the token.
+    permissions: {}
     steps:
       - name: Notify ntfy
         env:
           NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
           BUILD_RESULT: ${{ needs.build_disk.result }}
+          ISO_RESULT: ${{ needs.build_iso_titanoboa.result }}
           PUBLISH_RESULT: ${{ needs.publish_ia.result }}
+          BUMP_RESULT: ${{ needs.bump_site.result }}
         run: |
           if [[ -z "${NTFY_URL:-}" ]]; then
             echo "NTFY_TOPIC_URL secret not set, skipping notification."
@@ -839,19 +733,25 @@ jobs:
           fi
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Decision matrix — the partial-success case (BIB OK, IA failed)
-          # is the interesting one: it tells daniel exactly how to retry
-          # without redoing the whole BIB pipeline.
-          if [[ "$BUILD_RESULT" == "success" && "$PUBLISH_RESULT" == "success" ]]; then
+          # Decision matrix — the partial-success cases are the
+          # interesting ones: each names the exact cheap retry. Until
+          # 2026-06-12 the live-ISO job's result wasn't inspected at
+          # all, so a release-ISO failure arrived as a generic shrug.
+          if [[ "$BUILD_RESULT" == "success" && "$ISO_RESULT" == "success" && "$PUBLISH_RESULT" == "success" ]]; then
             TITLE="Disk images built + ISO on Internet Archive"
             PRIO="default"
             TAGS="cd,white_check_mark"
-            MSG="Run #${{ github.run_number }} done. Both qcow2 and ISO built; ISO + magnet on archive.org/details/."
+            MSG="Run #${{ github.run_number }} done. qcow2 + live ISO built; ISO + torrent on archive.org. Site bump: ${BUMP_RESULT}."
           elif [[ "$BUILD_RESULT" == "failure" ]]; then
-            TITLE="Disk build FAILED (BIB)"
+            TITLE="Disk build FAILED (BIB qcow2)"
             PRIO="high"
             TAGS="x,cd"
             MSG="bootc-image-builder failed. See logs: ${RUN_URL}"
+          elif [[ "$ISO_RESULT" == "failure" ]]; then
+            TITLE="Live ISO build FAILED (Titanoboa)"
+            PRIO="high"
+            TAGS="x,optical_disk"
+            MSG="qcow2 OK but the Titanoboa live ISO failed (build or QEMU boot-test). Retry: gh run rerun --failed ${{ github.run_id }} — see iso-boot-serial-log artifact if the boot-test tripped."
           elif [[ "$PUBLISH_RESULT" == "failure" ]]; then
             TITLE="ISO built but IA upload FAILED — retry only the publish job"
             PRIO="high"
@@ -863,7 +763,7 @@ jobs:
             TAGS="warning"
             MSG=""
           else
-            TITLE="Disk pipeline status: build=${BUILD_RESULT}, publish=${PUBLISH_RESULT}"
+            TITLE="Disk pipeline status: build=${BUILD_RESULT}, iso=${ISO_RESULT}, publish=${PUBLISH_RESULT}, bump=${BUMP_RESULT}"
             PRIO="default"
             TAGS="warning"
             MSG=""

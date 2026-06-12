@@ -222,7 +222,7 @@ cat > /etc/dconf/db/gdm.d/locks/02-margine-logo <<'EOF'
 EOF
 # Compile the gdm dconf db (best-effort; safe to skip if dconf is absent).
 if command -v dconf >/dev/null 2>&1; then
-  dconf update || log "(warning: dconf update failed)"
+  dconf update || { log "ERROR: dconf update failed — distro defaults database would ship stale/absent"; exit 1; }
 fi
 log "Installed: GDM background + greeter logo overrides"
 
@@ -528,7 +528,7 @@ rm -f /etc/dconf/db/distro.d/*bluefin* \
       /usr/etc/dconf/db/distro.d/locks/*bluefin*
 # Rebuild dconf db so removed overrides don't keep being compiled.
 if command -v dconf >/dev/null 2>&1; then
-  dconf update 2>/dev/null || true
+  dconf update || { log "ERROR: dconf update failed (final pass)"; exit 1; }
 fi
 
 # Update the icon-theme cache so removed SVGs disappear from icon

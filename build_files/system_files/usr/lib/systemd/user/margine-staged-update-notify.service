@@ -1,0 +1,8 @@
+[Unit]
+Description=Margine: notify when a staged update has been waiting for days
+# Notifications need the session bus + a notification daemon.
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine/staged-update-notify

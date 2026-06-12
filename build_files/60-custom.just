@@ -514,3 +514,50 @@ wsf-preload STATE="status":
         command -v wsf >/dev/null && wsf status || true
         ;;
     esac
+
+# Enroll the TPM2 so the encrypted root unlocks automatically at boot; the install passphrase stays valid as recovery. `remove` undoes it.
+[group('Margine')]
+margine-tpm2-enroll ACTION="enroll":
+    #!/usr/bin/bash
+    set -euo pipefail
+    # Validated flow (2026-06-11, ADR-0008 Phase 6): systemd-cryptenroll
+    # binds the secret to PCR 7 (Secure Boot policy state), and the
+    # shipped initramfs already includes the tpm2 unlock path — no
+    # dracut regeneration needed.
+    if [[ ! -e /dev/tpmrm0 && ! -e /dev/tpm0 ]]; then
+      echo "No TPM2 device found (/dev/tpmrm0). Nothing to do."; exit 1
+    fi
+    mapfile -t LUKS_DEVS < <(lsblk -prno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}')
+    if [[ ${#LUKS_DEVS[@]} -eq 0 ]]; then
+      echo "No LUKS device found — is the disk encrypted?"; exit 1
+    fi
+    if [[ ${#LUKS_DEVS[@]} -gt 1 ]]; then
+      echo "Multiple LUKS devices found (${LUKS_DEVS[*]})."
+      echo "Run systemd-cryptenroll manually on the one you want."; exit 1
+    fi
+    DEV="${LUKS_DEVS[0]}"
+    UUID="$(blkid -s UUID -o value "$DEV")"
+    case "{{ ACTION }}" in
+      enroll)
+        echo "Enrolling TPM2 (PCR 7) on $DEV — you'll be asked for the current LUKS passphrase."
+        sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$DEV"
+        # Add tpm2-device=auto to the matching crypttab options so the
+        # initrd tries the TPM before prompting.
+        if sudo grep -E "UUID=${UUID}" /etc/crypttab | grep -qv 'tpm2-device='; then
+          sudo sed -i -E "/UUID=${UUID}/ s/(\S+\s+\S+\s+\S+\s+)(\S+)/\1\2,tpm2-device=auto/" /etc/crypttab
+        fi
+        echo
+        echo "Done. Reboot to verify the disk unlocks without a passphrase."
+        echo "Your passphrase REMAINS valid — keep it: it's the recovery path"
+        echo "(firmware updates or Secure Boot changes can rotate PCR 7)."
+        ;;
+      remove)
+        echo "Removing the TPM2 enrollment from $DEV…"
+        sudo systemd-cryptenroll --wipe-slot=tpm2 "$DEV"
+        sudo sed -i -E "/UUID=${UUID}/ s/,?tpm2-device=auto//" /etc/crypttab
+        echo "Done. The passphrase prompt is back at boot."
+        ;;
+      *)
+        echo "Usage: ujust margine-tpm2-enroll [enroll|remove]"; exit 1
+        ;;
+    esac

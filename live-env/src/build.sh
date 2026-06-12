@@ -136,8 +136,10 @@ cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
 install -Dm0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
   /usr/share/icons/hicolor/scalable/apps/org.fedoraproject.AnacondaInstaller.svg
 gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
-sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' \
-  /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop 2>/dev/null || true
+WELCOME_DESKTOP=/usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop
+test -f "$WELCOME_DESKTOP" || { echo "ERROR: anaconda-live welcome .desktop missing — did the anaconda-live install change?" >&2; exit 1; }
+sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' "$WELCOME_DESKTOP"
+grep -q '^Name=Welcome to Margine$' "$WELCOME_DESKTOP" || { echo "ERROR: welcome .desktop rebrand did not apply" >&2; exit 1; }
 
 # / in a booted live ISO is an overlayfs whose upperdir is under /run
 # (a small tmpfs). Anaconda's ostree install needs lots of scratch in

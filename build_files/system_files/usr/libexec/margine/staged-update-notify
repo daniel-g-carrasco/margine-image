@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Margine: nudge the user when a staged deployment has been waiting.
+#
+# rpm-ostree/uupd stage updates silently; nothing tells the user a
+# reboot would apply them. Real incident (2026-06-11): a gnome-shell
+# crash fix sat STAGED on disk for two days while the user kept
+# hitting the crash on the booted, unpatched deployment. This timer
+# turns "staged and forgotten" into a daily, low-urgency notification.
+#
+# Runs from a user timer (margine-staged-update-notify.timer):
+# rpm-ostree status is daemon-mediated and read-only for users.
+set -euo pipefail
+
+command -v rpm-ostree >/dev/null 2>&1 || exit 0
+command -v notify-send >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+MIN_AGE_DAYS=2
+
+STAGED_TS="$(rpm-ostree status --json 2>/dev/null \
+  | jq -r '[.deployments[] | select(.staged == true)][0].timestamp // empty')"
+[[ -n "$STAGED_TS" ]] || exit 0
+
+AGE_DAYS=$(( ($(date +%s) - STAGED_TS) / 86400 ))
+(( AGE_DAYS >= MIN_AGE_DAYS )) || exit 0
+
+# At most one notification per day.
+STAMP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/margine"
+STAMP="$STAMP_DIR/staged-notify.stamp"
+mkdir -p "$STAMP_DIR"
+TODAY="$(date +%F)"
+[[ "$(cat "$STAMP" 2>/dev/null)" == "$TODAY" ]] && exit 0
+printf '%s\n' "$TODAY" > "$STAMP"
+
+# English to match the sibling notifiers (margine-upgrade-notify,
+# margine-staleness-check); IT/EN coherence tracked as its own item.
+notify-send \
+  --app-name="Margine" \
+  --icon="margine-logo" \
+  --urgency=normal \
+  "Update staged for ${AGE_DAYS} days" \
+  "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version."

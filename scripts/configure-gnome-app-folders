@@ -104,7 +104,7 @@ def apply(folders: list[dict], dry_run: bool) -> None:
 
 
 def reset(folders: list[dict], dry_run: bool) -> None:
-    print(f"== Reset top-level folders to []")
+    print("== Reset top-level folders to []")
     run(
         ["gsettings", "set", FOLDERS_SCHEMA, "folder-children", "[]"],
         dry_run,

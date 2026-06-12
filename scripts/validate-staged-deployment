@@ -40,7 +40,8 @@ fi
 
 check() {
   local label="$1"; shift
-  if eval "$@" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
+  # Callers pass the command as a single string — eval it as one.
+  if eval "$*" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
 }
 
 # ---------------------------------------------------------------------------

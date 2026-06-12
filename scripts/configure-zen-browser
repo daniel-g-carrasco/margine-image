@@ -46,7 +46,9 @@ fi
 echo "Profile: $PROFILE"
 
 USER_JS="$PROFILE/user.js"
-MARKER="// margine-configure-zen-browser — managed block"
+# The managed-block marker is spelled out literally at every use site
+# (awk range, embedded-python regex, heredoc) — a shell variable cannot
+# reach the python anyway, so there is deliberately no MARKER var.
 
 prefs=$(cat <<'EOF'
 // margine-configure-zen-browser — managed block

@@ -90,7 +90,8 @@ including (post-2026-06-05):
   keybindings are inert because the schema XML was only compiled in
   the per-extension dir
 - **BAKE Flatpak presence** — cross-checks every app listed in
-  `/usr/share/margine/installer-flatpaks-base` (and `-gaming`)
+  `/usr/share/margine/installer-flatpaks-base` (the `-gaming` list
+  was retired 2026-06-06 with the gaming ISO variant)
   against `flatpak list`. Catches the case where the kickstart
   install-time BAKE silently fails AND the
   `flatpak-preinstall.service` belt+suspenders fallback hasn't yet

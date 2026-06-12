@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
+# Hardware/media diagnostic with conditional failures.
+#
+# Most checks are informational (GPU/audio state is hardware-dependent,
+# so absence or oddity is a WARN). It FAILS only on guarantees the base
+# image itself makes regardless of hardware: ffmpeg must exist and
+# answer, and the GStreamer VA plugin must be inspectable (both ship in
+# base Margine). Until 2026-06-12 the script could not fail at all,
+# which made it an unconditional PASS line in `ujust margine-doctor`.
 set -u
 set -o pipefail
 
 warnings=0
+failures=0
 
 section() {
   printf '\n== %s ==\n' "$1"
@@ -15,6 +24,11 @@ ok() {
 warn() {
   warnings=$((warnings + 1))
   printf 'WARN: %s\n' "$1"
+}
+
+fail() {
+  failures=$((failures + 1))
+  printf 'FAIL: %s\n' "$1"
 }
 
 have_cmd() {
@@ -130,7 +144,18 @@ section "VA-API"
 run_if_present vainfo
 
 section "FFmpeg and GStreamer"
-run_if_present ffmpeg -hide_banner -hwaccels
+# Base Margine ships full ffmpeg and the GStreamer VA plugin — their
+# absence is an image regression, not a hardware quirk.
+if have_cmd ffmpeg; then
+  print_cmd ffmpeg -hide_banner -hwaccels
+  if ffmpeg -hide_banner -hwaccels; then
+    ok "ffmpeg answers"
+  else
+    fail "ffmpeg is present but '-hwaccels' fails — broken ffmpeg install"
+  fi
+else
+  fail "ffmpeg missing — base image ships it; this is a regression"
+fi
 if have_cmd gst-inspect-1.0; then
   print_cmd gst-inspect-1.0 va
   tmp_gst=$(mktemp /tmp/margine-gst-va.XXXXXX)
@@ -139,7 +164,7 @@ if have_cmd gst-inspect-1.0; then
     ok "GStreamer VA plugin is inspectable"
   else
     sed -n '1,120p' "$tmp_gst"
-    warn "GStreamer VA plugin is not inspectable"
+    fail "GStreamer VA plugin is not inspectable — base image ships it; this is a regression"
   fi
   rm -f "$tmp_gst"
 else
@@ -180,6 +205,11 @@ else
 fi
 
 section "Summary"
-printf 'Warnings: %d\n' "$warnings"
+printf 'Warnings: %d  Failures: %d\n' "$warnings" "$failures"
 
+if (( failures > 0 )); then
+  echo "margine-validate-hardware-media-stack: FAIL"
+  exit 1
+fi
+echo "margine-validate-hardware-media-stack: PASS"
 exit 0

@@ -81,10 +81,20 @@ updates:
     automatic: false
     reason: requires-hardware-runbook
   validators_on_demand:
+    # The 7 validators shipped in the image as /usr/bin/margine-validate-*
+    # (fetched by margine-image 40-spec-scripts; run together by
+    # `ujust margine-doctor`). Kept in sync with that fetch list —
+    # this list rotted at 4 entries while the image shipped 7
+    # (caught 2026-06-12).
+    - scripts/validate-margine-system
+    - scripts/validate-declared-state
     - scripts/validate-atomic-layout
     - scripts/validate-cachyos-kernel
+    - scripts/validate-branding
     - scripts/validate-hardware-media-stack
     - scripts/validate-gaming-runtime
+    # Dev-side tools (not shipped in the image):
+    - scripts/validate-staged-deployment  # curl|bash before rebooting into a staged deployment
     - scripts/collect-diagnostics
 
 storage:
@@ -425,21 +435,61 @@ flatpaks:
     - name: flathub
       url: https://flathub.org/repo/flathub.flatpakrepo
   default_apps:
+    # Canonical default-app set — matches the preinstall file the image
+    # generates (margine-image 20-flatpaks: BAKE + DEFER merged, 42 apps).
+    # This list had rotted to 13 entries (one with a wrong id:
+    # org.mozilla.Thunderbird vs the shipped thunderbird_esr) by
+    # 2026-06-12; realigned during the code-quality review.
     internet:
       - app.zen_browser.zen
+      - de.haeckerfelix.Fragments
     productivity:
       - com.bitwarden.desktop
-      - org.mozilla.Thunderbird
+      - org.mozilla.thunderbird_esr
       - org.libreoffice.LibreOffice
+      - com.mattjakeman.ExtensionManager
+    gnome_core:
+      # Silverblue ships these as RPMs; Bluefin DX strips them; Margine
+      # restores them as Flatpaks for a complete GNOME desktop without
+      # /usr layer cost.
+      - org.gnome.Calculator
+      - org.gnome.Calendar
+      - org.gnome.clocks
+      - org.gnome.Contacts
+      - org.gnome.Weather
+      - org.gnome.Maps
+      - org.gnome.TextEditor
+      - org.gnome.baobab
+      - org.gnome.Characters
+      - org.gnome.Logs
+      - org.gnome.font-viewer
+      - org.gnome.Snapshot
+      - org.gnome.Showtime
+      - org.gnome.Papers
+      - org.gnome.Loupe
+      - org.gnome.SoundRecorder
     graphics:
       - org.gimp.GIMP
       - org.inkscape.Inkscape
+      - com.github.PintaProject.Pinta
+      - org.darktable.Darktable
+      - io.gitlab.adhami3310.Impression
     multimedia:
       - com.github.neithern.g4music
       - org.audacityteam.Audacity
       - com.obsproject.Studio
       - com.github.wwmm.easyeffects
       - fm.reaper.Reaper
+      - com.rafaelmardojai.Blanket
+    system_utilities:
+      - com.ranfdev.DistroShelf
+      - com.github.tchx84.Flatseal
+      - io.github.flattool.Warehouse
+      - io.github.flattool.Ignition
+      - io.missioncenter.MissionCenter
+      - org.gnome.DejaDup
+      - org.gnome.Firmware
+      - it.mijorus.smile
     documentation:
       # GTK 4 markdown viewer/editor (libadwaita). Used as the default
       # `.md` opener so docs in margine-fedora-atomic and similar repos
@@ -451,12 +501,14 @@ flatpaks:
     # keeps that as the default IDE. See docs/16-developer-toolbox.md.
   optional_apps:
     gaming:
+      # Installed by `ujust margine-gaming` (Flatpak path; the native
+      # path swaps Steam/Lutris/RetroArch for layered RPMs).
       - com.valvesoftware.Steam
       - net.lutris.Lutris
       - com.heroicgameslauncher.hgl
       - com.usebottles.bottles
       - com.github.Matoking.protontricks
-      - net.davidotek.pupgui2
+      - com.vysp3r.ProtonPlus
     emulation_optional:
       - org.libretro.RetroArch
       - net.retrodeck.retrodeck

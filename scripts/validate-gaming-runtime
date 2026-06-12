@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
+# Gaming-runtime diagnostic with conditional failures.
+#
+# Most of this script is informational (the gaming layer is opt-in, so
+# absence is never an error). It FAILS only on broken-while-present
+# states: Steam is installed but the Vulkan stack it depends on does
+# not answer. Until 2026-06-12 the script could not fail at all, which
+# made it an unconditional PASS line in `ujust margine-doctor`.
 set -u
 set -o pipefail
 
 warnings=0
+failures=0
 
 section() {
   printf '\n== %s ==\n' "$1"
@@ -15,6 +23,11 @@ ok() {
 warn() {
   warnings=$((warnings + 1))
   printf 'WARN: %s\n' "$1"
+}
+
+fail() {
+  failures=$((failures + 1))
+  printf 'FAIL: %s\n' "$1"
 }
 
 have_cmd() {
@@ -75,7 +88,7 @@ if have_cmd flatpak; then
   flatpak_info com.heroicgameslauncher.hgl
   flatpak_info com.usebottles.bottles
   flatpak_info com.github.Matoking.protontricks
-  flatpak_info net.davidotek.pupgui2
+  flatpak_info com.vysp3r.ProtonPlus
 
   if flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then
     section "Steam Flatpak permissions"
@@ -122,7 +135,24 @@ else
 fi
 
 section "Vulkan baseline"
-run_if_present vulkaninfo --summary
+# Steam (either packaging) without a working Vulkan stack is the one
+# deterministic broken-while-present state this script can assert.
+steam_installed=0
+if rpm -q steam >/dev/null 2>&1 || { have_cmd flatpak && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; }; then
+  steam_installed=1
+fi
+if (( steam_installed == 1 )); then
+  if ! have_cmd vulkaninfo; then
+    fail "Steam is installed but vulkaninfo is missing — Vulkan stack incomplete"
+  elif ! vulkaninfo --summary >/dev/null 2>&1; then
+    fail "Steam is installed but 'vulkaninfo --summary' fails — no usable Vulkan device/ICD"
+  else
+    vulkaninfo --summary
+    ok "Vulkan answers with Steam installed"
+  fi
+else
+  run_if_present vulkaninfo --summary
+fi
 
 section "Vulkan layer files"
 for dir in /usr/share/vulkan /etc/vulkan "${HOME}/.local/share/vulkan"; do
@@ -171,6 +201,11 @@ section "rpm-ostree status"
 run_if_present rpm-ostree status
 
 section "Summary"
-printf 'Warnings: %d\n' "$warnings"
+printf 'Warnings: %d  Failures: %d\n' "$warnings" "$failures"
 
+if (( failures > 0 )); then
+  echo "margine-validate-gaming-runtime: FAIL"
+  exit 1
+fi
+echo "margine-validate-gaming-runtime: PASS"
 exit 0

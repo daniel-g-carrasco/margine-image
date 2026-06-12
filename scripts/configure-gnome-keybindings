@@ -254,13 +254,13 @@ def apply_tiling_extension(yaml_block: dict, schema: str, hint_uuid: str, dry: b
     tilingshell). Both use the same gsettings-key-per-binding pattern;
     only the schema name differs."""
     print(f"\n== Tiling extension  ->  {schema} ==")
-    print(f"  (schema is loaded only after the extension is enabled;")
-    print(f"   if gsettings complains about an unknown schema, run:")
-    print(f"     scripts/install-user-extensions --apply")
+    print("  (schema is loaded only after the extension is enabled;")
+    print("   if gsettings complains about an unknown schema, run:")
+    print("     scripts/install-user-extensions --apply")
     print(f"     gnome-extensions enable {hint_uuid}")
-    print(f"   then re-run this script. If still unknown, write the")
-    print(f"   binding via `dconf write /org/gnome/shell/extensions/.../<key>`")
-    print(f"   instead — dconf bypasses schema check.)")
+    print("   then re-run this script. If still unknown, write the")
+    print("   binding via `dconf write /org/gnome/shell/extensions/.../<key>`")
+    print("   instead — dconf bypasses schema check.)")
     for yaml_key, value in yaml_block.items():
         # YAML keys are already in dash-case
         gset_key = yaml_key

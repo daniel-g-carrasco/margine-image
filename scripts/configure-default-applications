@@ -146,8 +146,8 @@ def apply(defaults: dict[str, str], dry_run: bool) -> None:
             key_parts = XDG_SETTINGS_KEYS[role].split()
             try:
                 run(["xdg-settings", "set", *key_parts, desktop], dry_run)
-            except subprocess.CalledProcessError as e:
-                print(f"  (xdg-settings rejected; continuing with xdg-mime)")
+            except subprocess.CalledProcessError:
+                print("  (xdg-settings rejected; continuing with xdg-mime)")
                 failures.append(f"xdg-settings {role}")
 
         # xdg-mime per MIME type — this is what GNOME Settings reads.

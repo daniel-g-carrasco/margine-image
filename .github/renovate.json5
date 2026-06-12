@@ -1,0 +1,15 @@
+// Renovate config — mirrors margine-image's. Covers the GHA action
+// SHA pins (digest-pinning preset) in this repo's two workflows.
+// The Mend Renovate app must be installed on the repo for this to run.
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "rebaseWhen": "never",
+  "packageRules": [
+    {
+      "description": "Auto-merge pure pin/digest updates",
+      "matchUpdateTypes": ["pin", "pinDigest"],
+      "automerge": true
+    }
+  ]
+}

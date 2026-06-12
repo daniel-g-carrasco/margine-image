@@ -143,7 +143,7 @@ def install_from_git(uuid: str, git_url: str, git_ref: str | None, dry: bool) ->
                     clone_dir = clone_dir / sub
                     break
         if not (clone_dir / "metadata.json").is_file():
-            print(f"  (skip: metadata.json not found in clone)")
+            print("  (skip: metadata.json not found in clone)")
             return
 
         # Some extensions need a build step. We don't run it here; we trust
@@ -183,7 +183,7 @@ def install_from_zip(uuid: str, zip_url: str, dry: bool) -> None:
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
         zf.extractall(target_dir)
     if not (target_dir / "metadata.json").is_file():
-        print(f"  (warning: metadata.json missing — zip layout may be unusual)")
+        print("  (warning: metadata.json missing — zip layout may be unusual)")
     print(f"  Installed: {target_dir}")
 
 

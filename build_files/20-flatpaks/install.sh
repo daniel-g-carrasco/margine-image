@@ -44,9 +44,9 @@ set -euo pipefail
 # ---- BAKE list (instant at first boot) ----
 # Source of truth: installer/flatpaks-base, accessible from this script
 # at /ctx/installer-flatpaks-base via the ctx layer (Containerfile).
-# That same file is consumed at ISO build time by installer/build.sh,
-# so a single edit propagates to BOTH the OCI image manifest and the
-# installer-rootfs that the Anaconda kickstart rsyncs. Audit §3.5.
+# The Titanoboa live ISO bakes the same set (live-env/src/flatpaks —
+# kept content-identical; the old BIB installer/build.sh consumer was
+# retired 2026-06-12 with ADR-0008 Phase 7). Audit §3.5.
 log "Installing /usr/share/margine/installer-flatpaks-base from /ctx/installer-flatpaks-base"
 mkdir -p /usr/share/margine
 cp /ctx/installer-flatpaks-base /usr/share/margine/installer-flatpaks-base

@@ -136,6 +136,39 @@ cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
 install -Dm0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
   /usr/share/icons/hicolor/scalable/apps/org.fedoraproject.AnacondaInstaller.svg
 gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+# Secure Boot notice for the live session (ADR-0008 Phase 6 UX).
+# If the live booted with SB disabled, a one-shot dialog explains that
+# Margine fully supports Secure Boot and how enrollment works, with a
+# pointer to the docs. Bazzite ships the same idea (yad + QR); zenity
+# is already in the image via the scheduler picker. Live-only: the
+# autostart entry exists only on the ISO.
+cat > /usr/libexec/margine-live-sb-notice <<'SBNOTICE'
+#!/usr/bin/env bash
+# One-shot, live-session only. No-op when Secure Boot is already on.
+set -uo pipefail
+MARKER="${XDG_RUNTIME_DIR:-/tmp}/.margine-sb-notice-shown"
+[ -e "$MARKER" ] && exit 0
+touch "$MARKER" 2>/dev/null || true
+command -v mokutil >/dev/null 2>&1 || exit 0
+command -v zenity  >/dev/null 2>&1 || exit 0
+if mokutil --sb-state 2>/dev/null | grep -qi 'enabled'; then
+  exit 0
+fi
+zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
+SBNOTICE
+chmod 0755 /usr/libexec/margine-live-sb-notice
+
+mkdir -p /etc/xdg/autostart
+cat > /etc/xdg/autostart/margine-live-sb-notice.desktop <<'SBDESK'
+[Desktop Entry]
+Type=Application
+Name=Margine Secure Boot notice
+Exec=/usr/libexec/margine-live-sb-notice
+Icon=margine-logo
+X-GNOME-Autostart-Delay=20
+NoDisplay=true
+SBDESK
+
 WELCOME_DESKTOP=/usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop
 test -f "$WELCOME_DESKTOP" || { echo "ERROR: anaconda-live welcome .desktop missing — did the anaconda-live install change?" >&2; exit 1; }
 sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' "$WELCOME_DESKTOP"

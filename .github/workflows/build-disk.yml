@@ -175,45 +175,6 @@ jobs:
       # no silent failure → user actually gets the apps at first
       # login. qcow2 path keeps using the base image (qcow2 is for
       # QEMU smoke test, no need to inflate it with Flatpaks).
-      - name: Login to GHCR for installer push
-        if: matrix.disk-type == 'anaconda-iso'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-
-      - name: Pull base image (for installer FROM)
-        if: matrix.disk-type == 'anaconda-iso'
-        run: |
-          sudo podman pull "${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-
-      - name: Build installer image (BAKE Flatpaks)
-        if: matrix.disk-type == 'anaconda-iso'
-        id: installer
-        run: |
-          set -euo pipefail
-          FLATPAK_LIST_FILE=flatpaks-base
-          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-          INSTALLER_TAG="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}-installer:run-${{ github.run_id }}"
-          echo "Building $INSTALLER_TAG from $BASE_IMAGE with $FLATPAK_LIST_FILE"
-          # --cap-add sys_admin --security-opt label=disable: flatpak
-          # install in the installer Containerfile uses bwrap which
-          # needs user namespaces. Without these flags bwrap fails
-          # with "Creating new namespace failed: Operation not
-          # permitted" and Reaper/Steam/openh264 apply_extra dies.
-          # Bazzite's installer/Containerfile documents the same
-          # requirement: "# run with --cap-add sys_admin
-          # --security-opt label=disable".
-          sudo podman build \
-            --cap-add sys_admin \
-            --security-opt label=disable \
-            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
-            --build-arg "FLATPAK_LIST_FILE=$FLATPAK_LIST_FILE" \
-            -t "$INSTALLER_TAG" \
-            -f installer/Containerfile \
-            installer/
-          sudo podman push "$INSTALLER_TAG"
-          echo "installer_tag=$INSTALLER_TAG" >> "$GITHUB_OUTPUT"
-
       - name: Build disk image
         id: build
         # SHA-pinned for supply-chain safety (audit §6.3). v0.0.2 is the
@@ -223,8 +184,8 @@ jobs:
         uses: osbuild/bootc-image-builder-action@019bb59c5100ecec4e78c9e94e18a840110f7a0b  # v0.0.2
         with:
           builder-image: ${{ env.BIB_IMAGE }}
-          config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || './disk_config/disk.toml' }}
-          image: ${{ matrix.disk-type == 'anaconda-iso' && steps.installer.outputs.installer_tag || format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
+          config-file: './disk_config/disk.toml'
+          image: ${{ format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
           chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
           types: ${{ matrix.disk-type }}
           # Margine's :stable inherits from Bluefin DX, which doesn't
@@ -302,55 +263,6 @@ jobs:
           if-no-files-found: error
           compression-level: 0  # ISOs/qcow2s are not further compressible
 
-      - name: Prune stale margine-installer GHCR tags (keep newest 3)
-        # Each anaconda-iso build creates a transient installer image
-        # tagged margine-installer:run-<run_id>. They're never consumed
-        # downstream — only BIB pulls them in the same job and is done.
-        # GHCR keeps everything forever by default → tag list grows
-        # monotonically. Keep the 3 newest, delete the rest. Idempotent;
-        # non-fatal if the package doesn't exist yet (first run) or the
-        # API is rate-limited (don't block the disk pipeline). Audit §8
-        # rec #16.
-        if: matrix.disk-type == 'anaconda-iso' && always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -uo pipefail
-          PKG="${{ matrix.image }}-installer"
-          OWNER="${{ github.repository_owner }}"
-          echo "Pruning $OWNER/$PKG GHCR tags, keeping newest 3"
-          # gh api supports paginating with --paginate; the response is
-          # sorted by 'updated_at' desc by default. Capture (id, name, updated_at).
-          VERSIONS_JSON="$(gh api --paginate \
-              "/users/${OWNER}/packages/container/${PKG}/versions" \
-              --jq '[.[] | {id, name: (.metadata.container.tags[0] // "<untagged>"), updated_at}]' \
-              2>/dev/null || echo '[]')"
-          COUNT=$(echo "$VERSIONS_JSON" | jq 'length')
-          echo "Found $COUNT version(s) total"
-          if (( COUNT <= 3 )); then
-            echo "Nothing to prune."
-            exit 0
-          fi
-          # The first 3 are the newest (sorted desc). Delete from index 3+.
-          TO_DELETE=$(echo "$VERSIONS_JSON" | jq -r '.[3:] | .[].id')
-          PRUNED=0
-          for vid in $TO_DELETE; do
-            if gh api --method DELETE \
-                 "/users/${OWNER}/packages/container/${PKG}/versions/${vid}" \
-                 >/dev/null 2>&1; then
-              PRUNED=$((PRUNED+1))
-            fi
-          done
-          echo "Pruned $PRUNED stale version(s)."
-
-  # === Titanoboa Live ISO (ADR-0008) — NOT yet the published ISO ===
-  # Builds a margine-live OCI layer (margine:stable + dracut-live +
-  # livesys + Anaconda + BAKE Flatpaks + iso.yaml) and feeds it to
-  # Titanoboa, producing a Live ISO. Runs in PARALLEL with the BIB
-  # anaconda-iso path above. `continue-on-error: true` until the Phase 5
-  # cutover (ADR-0008 §6) so a Titanoboa regression never blocks the BIB
-  # pipeline or publish_ia. The ISO is uploaded as a build artifact for
-  # project-lead QEMU/hardware validation; it is NOT published to IA yet.
   build_iso_titanoboa:
     name: Build Live ISO (Titanoboa)
     runs-on: ubuntu-24.04
@@ -452,6 +364,45 @@ jobs:
           echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
           echo "size_mb=$((SIZE_BYTES / 1024 / 1024))" >> "$GITHUB_OUTPUT"
           echo "Live ISO: $((SIZE_BYTES / 1024 / 1024)) MB"
+
+      # Gate (2026-06-12, review item #9): boot the freshly built ISO
+      # in UEFI QEMU and require the live system to reach a usable
+      # state. Catches Titanoboa/dracut/livesys regressions that static
+      # checks can't see. ~3-6 min on KVM runners; generous 15 min cap.
+      - name: Boot-test the ISO in QEMU (UEFI)
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
+          ISO="$(ls ${{ steps.iso.outputs.outdir }}/*.iso | head -1)"
+          OVMF_CODE=$(ls /usr/share/OVMF/OVMF_CODE*.fd | grep -v -i secboot | head -1)
+          OVMF_VARS=$(ls /usr/share/OVMF/OVMF_VARS*.fd | grep -v -i secboot | head -1)
+          cp "$OVMF_VARS" vars.fd
+          sudo qemu-system-x86_64 \
+            -enable-kvm -m 4096 -smp 4 -machine q35 \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=vars.fd \
+            -cdrom "$ISO" \
+            -serial file:iso-serial.log -display none -no-reboot &
+          QPID=$!
+          # Live-healthy markers: GDM session (the live autologin) or
+          # livesys completing. dracut emergency = instant fail.
+          for i in $(seq 1 900); do
+            if grep -qE "Started.*gdm\.service|Reached target graphical\.target|livesys.*Finished" iso-serial.log 2>/dev/null; then
+              echo "OK: Live ISO healthy at second $i"
+              sudo kill "$QPID" 2>/dev/null || true
+              exit 0
+            fi
+            if grep -qE "dracut-emergency|Failed to start.*dmsquash|emergency shell" iso-serial.log 2>/dev/null; then
+              echo "FAIL: Live ISO dropped to emergency"; tail -120 iso-serial.log
+              sudo kill -9 "$QPID" 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "FAIL: Live ISO did not reach a usable state in 15 min"
+          tail -200 iso-serial.log
+          sudo kill -9 "$QPID" 2>/dev/null || true
+          exit 1
 
       - name: Upload Live ISO artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -31,6 +31,21 @@ ROUTES = [
     "/docs/audio",
     "/docs/troubleshooting",
     "/docs/faq",
+    # Handbook (added 2026-06-12) — the same offline-first treatment as
+    # the wiki. Chapter slugs mirror the site's generated manifest.
+    "/handbook",
+    "/handbook/atomic-model",
+    "/handbook/repo-and-containerfile",
+    "/handbook/kernel",
+    "/handbook/secure-boot",
+    "/handbook/desktop-payload",
+    "/handbook/flatpaks-and-offline-docs",
+    "/handbook/rechunk-and-oci-packaging",
+    "/handbook/signing-supply-chain",
+    "/handbook/ci-cd",
+    "/handbook/installers-and-iso",
+    "/handbook/distribution-and-updates",
+    "/handbook/validation-and-lessons",
 ]
 
 LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
@@ -67,19 +82,20 @@ def fetch_text(url: str, retries: int = 5) -> str:
 
 
 def output_path_for_route(output_dir: Path, route: str) -> Path:
-    route = route.rstrip("/")
-    slug = route.removeprefix("/docs").strip("/")
-    if not slug:
-        return output_dir / "docs" / "index.html"
-    return output_dir / "docs" / slug / "index.html"
+    # /docs -> docs/index.html ; /handbook/kernel -> handbook/kernel/index.html
+    slug = route.rstrip("/").strip("/")
+    return output_dir / slug / "index.html"
+
+
+# Sections mirrored offline; links to anything else stay absolute.
+MIRRORED_PREFIXES = ("/docs", "/handbook")
 
 
 def normalize_docs_path(path: str) -> str | None:
     clean = path.rstrip("/")
-    if clean == "/docs":
-        return "/docs"
-    if clean.startswith("/docs/"):
-        return clean
+    for prefix in MIRRORED_PREFIXES:
+        if clean == prefix or clean.startswith(prefix + "/"):
+            return clean
     return None
 
 

@@ -596,6 +596,31 @@ jobs:
           name: sbom-${{ env.IMAGE_NAME }}-${{ github.run_id }}
           path: .
 
+      # CVE visibility (2026-06-12, review item F): grype over the SBOM
+      # we already generate — report-only, never gates. The summary
+      # lands in the job's step summary; fixable Critical/High counts
+      # give a weekly pulse without blocking ships (base-image CVEs are
+      # Bluefin/Fedora's cadence, not ours).
+      - name: CVE scan (grype, report-only)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin >/dev/null
+          SBOM_FILE="$(ls *.spdx.json sbom*.json 2>/dev/null | head -1)"
+          [[ -n "$SBOM_FILE" ]] || { echo "::warning::no SBOM file found for grype"; exit 0; }
+          grype "sbom:${SBOM_FILE}" -o table > grype.txt || true
+          CRIT=$(grep -c ' Critical' grype.txt || true)
+          HIGH=$(grep -c ' High' grype.txt || true)
+          {
+            echo "## Grype CVE report (report-only)"
+            echo "Critical: ${CRIT} — High: ${HIGH} (full table below)"
+            echo '~~~'
+            head -100 grype.txt
+            echo '~~~'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Critical=${CRIT} High=${HIGH}"
+
       - name: Install ORAS
         uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3  # v2.0.0
 

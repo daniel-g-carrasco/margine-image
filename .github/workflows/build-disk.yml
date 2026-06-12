@@ -372,10 +372,23 @@ jobs:
       - name: Boot-test the ISO in QEMU (UEFI)
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
-          ISO="$(ls ${{ steps.iso.outputs.outdir }}/*.iso | head -1)"
-          OVMF_CODE=$(ls /usr/share/OVMF/OVMF_CODE*.fd | grep -v -i secboot | head -1)
-          OVMF_VARS=$(ls /usr/share/OVMF/OVMF_VARS*.fd | grep -v -i secboot | head -1)
+          ISO="$(ls "${{ steps.iso.outputs.outdir }}"/*.iso | head -1)"
+          # Explicit candidate list (modern 4M names first), same pattern
+          # smoke-boot.yml uses — the old `ls | grep -v secboot | head -1`
+          # depended on glob ordering and broke shellcheck SC2010.
+          OVMF_CODE=""
+          for c in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd; do
+            [[ -f "$c" ]] && OVMF_CODE="$c" && break
+          done
+          OVMF_VARS=""
+          for v in /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd; do
+            [[ -f "$v" ]] && OVMF_VARS="$v" && break
+          done
+          if [[ -z "$OVMF_CODE" || -z "$OVMF_VARS" ]]; then
+            echo "OVMF firmware not found:"; ls -la /usr/share/OVMF/; exit 1
+          fi
           cp "$OVMF_VARS" vars.fd
           sudo qemu-system-x86_64 \
             -enable-kvm -m 4096 -smp 4 -machine q35 \

@@ -1,6 +1,11 @@
-export image_name := env("IMAGE_NAME", "image-template") # output image name, usually same as repo name, change as needed
+# Adapted from the ublue image-template Justfile. Template defaults
+# ("image-template", floating BIB tag, secret-less build) sat here
+# unchanged until the 2026-06-12 review — half the recipes could not
+# build THIS image at all.
+export image_name := env("IMAGE_NAME", "margine")
 export default_tag := env("DEFAULT_TAG", "latest")
-export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
+# Same digest build-disk.yml and smoke-boot.yml pin.
+export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905")
 
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
@@ -88,15 +93,25 @@ sudoif command *args:
 # Build the image using the specified parameters
 build $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash
+    set -euo pipefail
 
-    BUILD_ARGS=()
-    if [[ -z "$(git status -s)" ]]; then
-        BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
+    # The kernel layer signs vmlinuz with the MOK key — without the
+    # secret mounts custom-kernel/install.sh aborts immediately. Use
+    # the production keys if present, otherwise tell the developer how
+    # to mint local throwaway ones.
+    if [[ ! -f secrets/MOK.key || ! -f secrets/MOK.pem ]]; then
+        echo "ERROR: secrets/MOK.key + secrets/MOK.pem are required (kernel signing)." >&2
+        echo "For a local dev build, generate throwaway keys:" >&2
+        echo "  openssl req -new -x509 -newkey rsa:2048 -nodes -days 3650 \\" >&2
+        echo "    -subj '/CN=Margine local dev MOK/' \\" >&2
+        echo "    -keyout secrets/MOK.key -out secrets/MOK.pem" >&2
+        exit 1
     fi
 
     podman build \
-        "${BUILD_ARGS[@]}" \
         --pull=newer \
+        --secret id=mok-key,src=secrets/MOK.key \
+        --secret id=mok-cert,src=secrets/MOK.pem \
         --tag "${target_image}:${tag}" \
         .
 
@@ -205,9 +220,11 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
-# Build an ISO virtual machine image
-[group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
+# NOTE: there are deliberately no ISO recipes here. Margine ISOs are
+# built by Titanoboa in CI (build-disk.yml, ADR-0008) — the BIB
+# anaconda-iso path was retired 2026-06-12 and disk_config/iso.toml no
+# longer exists. The template's build-iso/rebuild-iso/run-vm-iso
+# recipes referenced that file and could never run.
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -216,10 +233,6 @@ rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_r
 # Rebuild a RAW virtual machine image
 [group('Build Virtal Machine Image')]
 rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "raw" "disk_config/disk.toml")
-
-# Rebuild an ISO virtual machine image
-[group('Build Virtal Machine Image')]
-rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:
@@ -271,10 +284,6 @@ run-vm-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_ru
 [group('Run Virtal Machine')]
 run-vm-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "raw" "disk_config/disk.toml")
 
-# Run a virtual machine from an ISO
-[group('Run Virtal Machine')]
-run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "disk_config/iso.toml")
-
 # Run a virtual machine using systemd-vmspawn
 [group('Run Virtal Machine')]
 spawn-vm rebuild="0" type="qcow2" ram="6G":
@@ -282,7 +291,12 @@ spawn-vm rebuild="0" type="qcow2" ram="6G":
 
     set -euo pipefail
 
-    [ "{{ rebuild }}" -eq 1 ] && echo "Rebuilding the ISO" && just build-vm {{ rebuild }} {{ type }}
+    # (plain `[ ... ] &&` under set -e exits 1 whenever rebuild=0 — the
+    # template shipped that bug; use an if.)
+    if [ "{{ rebuild }}" -eq 1 ]; then
+        echo "Rebuilding the image"
+        just "build-{{ type }}"
+    fi
 
     systemd-vmspawn \
       -M "bootc-image" \
@@ -294,26 +308,29 @@ spawn-vm rebuild="0" type="qcow2" ram="6G":
       -i ./output/**/*.{{ type }}
 
 
-# Runs shell check on all Bash scripts
+# Shellcheck every OUR bash script: tracked *.sh plus the extensionless
+# bash shipped under build_files/system_files (shebang-discovered).
+# Excludes live-env/references/ (vendored third-party). Mirrors what CI
+# runs in lint.yml — keep the two in sync.
 lint:
     #!/usr/bin/env bash
-    set -eoux pipefail
-    # Check if shellcheck is installed
+    set -euo pipefail
     if ! command -v shellcheck &> /dev/null; then
         echo "shellcheck could not be found. Please install it."
         exit 1
     fi
-    # Run shellcheck on all Bash scripts
-    /usr/bin/find . -iname "*.sh" -type f -exec shellcheck "{}" ';'
+    mapfile -t SH < <(git ls-files '*.sh' | grep -v '^live-env/references/')
+    mapfile -t BIN < <(git grep -lE '^#!.*\b(ba)?sh\b' -- build_files/system_files | grep -v '\.sh$' || true)
+    printf 'linting %d scripts\n' "$(( ${#SH[@]} + ${#BIN[@]} ))"
+    shellcheck -S warning "${SH[@]}" "${BIN[@]}"
 
-# Runs shfmt on all Bash scripts
+# Runs shfmt on our Bash scripts (same discovery as lint)
 format:
     #!/usr/bin/env bash
-    set -eoux pipefail
-    # Check if shfmt is installed
+    set -euo pipefail
     if ! command -v shfmt &> /dev/null; then
         echo "shfmt could not be found. Please install it."
         exit 1
     fi
-    # Run shfmt on all Bash scripts
-    /usr/bin/find . -iname "*.sh" -type f -exec shfmt --write "{}" ';'
+    mapfile -t SH < <(git ls-files '*.sh' | grep -v '^live-env/references/')
+    shfmt --write "${SH[@]}"

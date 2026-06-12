@@ -365,15 +365,21 @@ margine-scheduler MODE="status":
       [[ -n "$state" ]] && ! grep -qi 'no scx scheduler running' <<<"$state"
     }
 
+    # scx_loader is a SYSTEM service — enable/disable need sudo.
+    # ("systemctl --user-or-sudo" is not a real flag: it failed silently
+    # here for weeks because this recipe runs without -e. Found by the
+    # 2026-06-12 code-quality review, finding A3.)
     ensure_loader() {
-      systemctl --user-or-sudo enable --now "$SERVICE"
+      sudo systemctl enable --now "$SERVICE" \
+        || { echo "FAILED to enable $SERVICE — scheduler will not persist across reboots."; exit 1; }
     }
 
     stop_loader() {
       if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
         scxctl stop 2>/dev/null || true
       fi
-      systemctl --user-or-sudo disable --now "$SERVICE"
+      sudo systemctl disable --now "$SERVICE" \
+        || { echo "FAILED to disable $SERVICE — it may restart a scheduler at next boot."; exit 1; }
     }
 
     require_scxctl
@@ -542,9 +548,19 @@ margine-tpm2-enroll ACTION="enroll":
         echo "Enrolling TPM2 (PCR 7) on $DEV — you'll be asked for the current LUKS passphrase."
         sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$DEV"
         # Add tpm2-device=auto to the matching crypttab options so the
-        # initrd tries the TPM before prompting.
+        # initrd tries the TPM before prompting. The sed assumes the
+        # 4-field crypttab layout; a legal 3-field line (no options
+        # column) matches the grep but not the sed — so VERIFY after
+        # editing instead of trusting it (review finding A7).
         if sudo grep -E "UUID=${UUID}" /etc/crypttab | grep -qv 'tpm2-device='; then
           sudo sed -i -E "/UUID=${UUID}/ s/(\S+\s+\S+\s+\S+\s+)(\S+)/\1\2,tpm2-device=auto/" /etc/crypttab
+        fi
+        if ! sudo grep -E "UUID=${UUID}" /etc/crypttab | grep -q 'tpm2-device=auto'; then
+          echo "ERROR: /etc/crypttab was NOT updated (unexpected line layout)."
+          echo "The TPM2 secret IS enrolled, but the initrd will still prompt."
+          echo "Add ',tpm2-device=auto' to the options column of the line for"
+          echo "UUID=${UUID} in /etc/crypttab, then reboot to verify."
+          exit 1
         fi
         echo
         echo "Done. Reboot to verify the disk unlocks without a passphrase."
@@ -567,17 +583,33 @@ margine-tpm2-enroll ACTION="enroll":
 margine-doctor:
     #!/usr/bin/bash
     set -uo pipefail
+    # Private log dir per run: fixed /tmp/<name>.out paths were
+    # predictable (symlink hazard) and collided across users (A8).
+    outdir="$(mktemp -d /tmp/margine-doctor.XXXXXX)"
     overall=0
+    ran=0
     for v in /usr/bin/margine-validate-*; do
       [[ -x "$v" ]] || continue
+      ran=$((ran + 1))
       name="$(basename "$v")"
       echo "── $name"
-      if "$v" >/tmp/"$name".out 2>&1; then
+      if "$v" >"$outdir/$name.out" 2>&1; then
         echo "   PASS"
       else
-        echo "   FAIL — dettagli: /tmp/$name.out"
+        echo "   FAIL — details: $outdir/$name.out"
         overall=1
       fi
     done
-    if [[ "$overall" -eq 0 ]]; then echo "margine-doctor: tutto in ordine ✅"; else echo "margine-doctor: qualcosa non torna — vedi i file in /tmp" ; fi
+    # Zero validators executed = the fetch step regressed — exactly the
+    # failure class this recipe exists to catch. Never report healthy
+    # on an empty loop (review finding A8).
+    if [[ "$ran" -eq 0 ]]; then
+      echo "margine-doctor: NO validators found under /usr/bin/margine-validate-* — image regression."
+      exit 1
+    fi
+    if [[ "$overall" -eq 0 ]]; then
+      echo "margine-doctor: all $ran validators passed ✅ (logs: $outdir)"
+    else
+      echo "margine-doctor: something is off — see the FAIL logs in $outdir"
+    fi
     exit $overall

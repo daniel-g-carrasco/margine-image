@@ -14,7 +14,9 @@ set -euo pipefail
 # from any terminal post-install.
 #
 # The scripts live in the margine-fedora-atomic repo, fetched at build
-# time. Pin a specific commit in CI so the image is reproducible.
+# time. CI pins MARGINE_REF to a commit SHA via --build-arg (resolved
+# by build.yml's specref step, same value as the OCI label), so CI
+# images are reproducible; local builds default to `main`.
 log "Fetching Margine configure-* scripts"
 
 # (var defined in 00-common.sh)
@@ -24,10 +26,11 @@ log "Fetching Margine configure-* scripts"
 # Without this, individual silent-skip fallbacks (the previous pattern)
 # masked real connectivity / repo-visibility bugs and shipped incomplete
 # images. Fail loud + fail early.
+err() { printf '[margine-build] ERROR: %s\n' "$*" >&2; }
+
 log "Preflight: probing spec repo at ${MARGINE_REPO}/${MARGINE_REF}/"
 if ! curl --fail --silent --show-error --head -L \
      "${MARGINE_REPO}/${MARGINE_REF}/README.md" >/dev/null; then
-  err() { printf '[margine-build] ERROR: %s\n' "$*" >&2; }
   err "cannot reach the Margine spec repo (${MARGINE_REPO}/${MARGINE_REF}/)."
   err "Check that the repo is PUBLIC on GitHub and that the runner has network access."
   exit 1
@@ -51,7 +54,10 @@ for s in \
     validate-declared-state \
     validate-branding \
     collect-diagnostics ; do
-  retry_curl "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
+  # _strict: a 200-with-empty-body must not install a zero-byte
+  # EXECUTABLE silently (review P2.2 — the strict variant existed but
+  # only the branding assets used it).
+  retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
              "/usr/bin/margine-${s}"
   chmod 0755 "/usr/bin/margine-${s}"
   log "Installed: /usr/bin/margine-${s}"
@@ -59,7 +65,7 @@ done
 
 # Also pull the declarations YAML the scripts read.
 mkdir -p /usr/share/margine
-retry_curl "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" /usr/share/margine/declarations.yaml
+retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" /usr/share/margine/declarations.yaml
 log "Installed: /usr/share/margine/declarations.yaml"
 
 # Compat symlink: 6 of the 7 configure-* scripts compute

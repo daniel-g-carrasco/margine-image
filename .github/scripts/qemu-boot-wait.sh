@@ -75,12 +75,17 @@ qemu-system-x86_64 \
   -daemonize -pidfile qemu.pid
 QPID="$(cat qemu.pid)"
 echo "QEMU PID: $QPID"
-kill_qemu() {
+cleanup() {
   kill "$QPID" 2>/dev/null || true
   sleep 2
   kill -9 "$QPID" 2>/dev/null || true
+  # The script runs as root, so qemu writes the serial log root-owned;
+  # the (non-root) upload-artifact step then EACCESed on it and failed
+  # an otherwise fully green run (27443157244 — the one where Layer C
+  # produced its first real PASS). Hand the log back to the runner.
+  chmod a+r "$LOG" 2>/dev/null || true
 }
-trap kill_qemu EXIT
+trap cleanup EXIT
 
 BOOT_OK=""
 GUI_RESULT=""

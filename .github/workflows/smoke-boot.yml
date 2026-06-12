@@ -194,6 +194,13 @@ jobs:
           [[ "$CORES" -eq 0 ]] || fail "gnome-shell dumped core ($CORES)"
           journalctl -b -q --no-pager 2>/dev/null | grep -q "Bail out!" && fail "Clutter assertion (Bail out!) in journal"
 
+          # Branding validator (from margine-fedora-atomic) — same gjs
+          # lookup the welcome dialogs use, plus About-pixmap checks.
+          if [[ -x /usr/bin/margine-validate-branding ]]; then
+            /usr/bin/margine-validate-branding > /tmp/branding.out 2>&1 \
+              || fail "margine-validate-branding: $(tail -3 /tmp/branding.out | tr '\n' ' ')"
+          fi
+
           out "MARGINE-GUI-SMOKE: PASS ext=$EXT"
           sleep 2
           systemctl poweroff

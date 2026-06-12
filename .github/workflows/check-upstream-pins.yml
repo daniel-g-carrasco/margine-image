@@ -1,0 +1,50 @@
+# Watch the upstream PRs our forked Titanoboa pin carries. When one
+# merges, open (once) an issue reminding us to advance/revert
+# TITANOBOA_REF — today that lives only in human memory, which is how
+# pins rot. Weekly is plenty; upstream review moves slowly.
+name: Check upstream pins
+
+on:
+  schedule:
+    - cron: "17 8 * * 1" # Monday morning
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check carried patches against upstream
+        run: |
+          set -euo pipefail
+          # PR -> short description of the carried patch
+          declare -A PRS=(
+            ["147"]="mksquashfs -e ordering (zstd fallback fix)"
+            ["148"]="grub2.extra_cfg (Secure Boot enroll menu entry)"
+          )
+          MERGED=()
+          for pr in "${!PRS[@]}"; do
+            STATE=$(gh api "repos/ublue-os/titanoboa/pulls/${pr}" --jq '.merged' 2>/dev/null || echo "unknown")
+            echo "ublue-os/titanoboa#${pr} (${PRS[$pr]}): merged=${STATE}"
+            [[ "$STATE" == "true" ]] && MERGED+=("$pr — ${PRS[$pr]}")
+          done
+          [[ ${#MERGED[@]} -gt 0 ]] || { echo "Nothing merged upstream yet."; exit 0; }
+
+          TITLE="Upstream titanoboa PR(s) merged — revisit TITANOBOA_REF pin"
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --search "in:title \"$TITLE\"" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$EXISTING" ]]; then
+            echo "Issue #$EXISTING already open — not duplicating."
+            exit 0
+          fi
+          BODY="The following patch(es) carried on our fork branch \`margine-pins\` have merged upstream:\n"
+          for m in "${MERGED[@]}"; do BODY+="\n- ublue-os/titanoboa#${m}"; done
+          BODY+="\n\nNext step: rebase \`margine-pins\` (drop the merged patch) or, if both are upstream, point \`TITANOBOA_REF\` and the \`uses:\` line in \`.github/workflows/build-disk.yml\` back at an upstream SHA. Then build + boot-test an ISO."
+          printf "%b" "$BODY" | gh issue create --repo "${{ github.repository }}" \
+            --title "$TITLE" --body-file - --label "upstream"
+          echo "Issue opened."

@@ -561,3 +561,23 @@ margine-tpm2-enroll ACTION="enroll":
         echo "Usage: ujust margine-tpm2-enroll [enroll|remove]"; exit 1
         ;;
     esac
+
+# Run every Margine validator in sequence with a one-line verdict each — the "is my system as shipped?" health check.
+[group('Margine')]
+margine-doctor:
+    #!/usr/bin/bash
+    set -uo pipefail
+    overall=0
+    for v in /usr/bin/margine-validate-*; do
+      [[ -x "$v" ]] || continue
+      name="$(basename "$v")"
+      echo "── $name"
+      if "$v" >/tmp/"$name".out 2>&1; then
+        echo "   PASS"
+      else
+        echo "   FAIL — dettagli: /tmp/$name.out"
+        overall=1
+      fi
+    done
+    if [[ "$overall" -eq 0 ]]; then echo "margine-doctor: tutto in ordine ✅"; else echo "margine-doctor: qualcosa non torna — vedi i file in /tmp" ; fi
+    exit $overall

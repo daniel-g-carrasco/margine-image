@@ -23,7 +23,7 @@ COPY build_files /
 # Make installer/flatpaks-base reachable from build.sh at
 # /ctx/installer-flatpaks-base. Single source of truth for the BAKE
 # Flatpak list (audit §3.5: drop the duplicate here-doc in build.sh).
-# The same file is still consumed by installer/build.sh at ISO build
+# (The old BIB installer image that also consumed it was retired in
 # time via the installer/ working dir. The gaming variant was retired
 # 2026-06-06 so there is no installer/flatpaks-gaming any more.
 COPY installer/flatpaks-base    /installer-flatpaks-base

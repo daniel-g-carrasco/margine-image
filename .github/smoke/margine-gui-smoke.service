@@ -1,0 +1,14 @@
+[Unit]
+Description=Margine Layer C GUI smoke probe
+# After=graphical.target REQUIRES the wants-symlink to live in
+# graphical.target.wants. The first deployment hooked it into
+# multi-user.target.wants instead — multi-user orders BEFORE graphical,
+# so systemd found an ordering cycle and SKIPPED the unit: the probe
+# never ran and Layer C reported "no verdict" (first real run,
+# 2026-06-12, run 27438544775).
+After=graphical.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 150
+ExecStart=/etc/margine-smoke/gui-probe.sh

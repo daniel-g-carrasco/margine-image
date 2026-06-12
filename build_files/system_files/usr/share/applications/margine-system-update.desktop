@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=false
+Terminal=true
+Exec=ujust update
+Icon=system-software-update
+Name=Margine system update
+Comment=Run Margine's full system update (bootc + flatpak + distrobox via uupd)
+Categories=ConsoleOnly;System;

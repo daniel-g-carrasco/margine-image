@@ -14,10 +14,11 @@
 # This script — autostarted by GDM via /etc/xdg/autostart/ — posts
 # two GNOME notifications:
 #   1. On first login, if flatpak-preinstall.service is still
-#      running: "Margine sta scaricando alcune app aggiuntive in
-#      background. ~5-15 min. Tieni la rete attiva."
-#   2. When the service completes: "Margine pronto: apri Activities
-#      per vedere tutte le app."
+#      running: "Margine is installing some extra apps in the
+#      background. ~5-15 min. Keep the network up."
+#   2. When the service completes: "Margine is ready: open
+#      Activities to see all the apps."
+# (English by policy since 2026-06-12 — no Italian default anywhere.)
 #
 # Idempotent: ~/.cache/margine/first-boot-notified marks the
 # notification done so subsequent logins stay quiet. If
@@ -83,8 +84,8 @@ case "$initial" in
       --icon="margine-logo" \
       --urgency=low \
       --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
-      "Margine sta installando alcune app aggiuntive" \
-      "GIMP, Inkscape, darktable, OBS, Reaper e altre stanno arrivando in background. ~5-15 minuti. Tieni la rete attiva — riceverai un'altra notifica quando avrà finito."
+      "Margine is installing some extra apps" \
+      "GIMP, Inkscape, darktable, OBS, Reaper and more are arriving in the background. ~5-15 minutes. Keep the network up — you'll get another notification when it's done."
     log "posted START notification"
 
     # Poll for completion. Cap at 60 min so we don't sit here forever
@@ -108,8 +109,8 @@ case "$initial" in
         --app-name="Margine" \
         --icon="dialog-warning" \
         --urgency=normal \
-        "Alcune app non sono state installate" \
-        "L'installazione di alcune app aggiuntive non è riuscita (rete?). Riprova manualmente da Bazaar, oppure esegui: systemctl restart flatpak-preinstall.service"
+        "Some apps were not installed" \
+        "Installing some extra apps failed (network?). Retry from Bazaar, or run: systemctl restart flatpak-preinstall.service"
       log "posted FAIL notification"
     else
       installed=$(flatpak list --app --columns=application 2>/dev/null | wc -l)
@@ -118,8 +119,8 @@ case "$initial" in
         --icon="emblem-ok" \
         --urgency=low \
         --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
-        "Margine pronto" \
-        "Tutte le app aggiuntive sono installate (${installed} Flatpak totali). Apri Activities (tasto Super) per vederle."
+        "Margine is ready" \
+        "All extra apps are installed (${installed} Flatpaks total). Open Activities (Super key) to see them."
       log "posted DONE notification (apps=$installed)"
     fi
     ;;

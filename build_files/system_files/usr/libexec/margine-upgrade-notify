@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""On first graphical login after a reboot, if the booted deployment's
+image digest differs from the one recorded at last run, raise a
+notification telling the user *which version they just upgraded to*.
+Reassures them that the reboot actually did something."""
+
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+state_dir = pathlib.Path(os.environ["HOME"]) / ".cache" / "margine"
+state_dir.mkdir(parents=True, exist_ok=True)
+state_file = state_dir / "last-booted-digest"
+
+r = subprocess.run(["bootc", "status", "--json"], capture_output=True, text=True, timeout=15)
+if r.returncode != 0:
+    sys.exit(0)
+booted = json.loads(r.stdout)["status"]["booted"]
+digest = booted["image"].get("imageDigest", "?")
+version = booted["image"].get("version", "?")
+
+previous = state_file.read_text().strip() if state_file.exists() else ""
+
+if previous and previous != digest:
+    title = "Margine updated"
+    body = f"Now running: {version}\nDigest: {digest[:23]}…"
+    subprocess.run(
+        [
+            "notify-send", "-u", "normal", "-a", "Margine",
+            "-i", "margine-logo", title, body,
+        ]
+    )
+
+state_file.write_text(digest)

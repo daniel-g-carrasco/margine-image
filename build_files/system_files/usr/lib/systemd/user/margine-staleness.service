@@ -1,0 +1,10 @@
+[Unit]
+Description=Margine: check ghcr.io/:stable staleness
+# No network-online.target dependency: that target does not exist in
+# the USER manager (it never becomes active there). The script itself
+# exits silently when skopeo can't reach the registry, which is the
+# real guard.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-staleness-check

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Wrapper for the first-login autostart entry. A .desktop Exec= line
+# cannot legally carry shell syntax (quotes, &&, redirection —
+# desktop-file-validate rejects it; GNOME merely tolerated it), so the
+# one-liner that used to live inline in margine-first-boot.desktop
+# lives here instead.
+set -u
+mkdir -p "$HOME/.config/margine"
+if [[ ! -f "$HOME/.config/margine/bootstrapped" ]]; then
+  ujust margine-bootstrap unattended > "$HOME/.config/margine/bootstrap.log" 2>&1
+fi

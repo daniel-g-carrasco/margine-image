@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=false
+Terminal=false
+Exec=margine-docs-open
+Icon=margine-documentation
+Name=Margine documentation
+Comment=Open the Margine documentation (local copy, auto-updated in the background)
+Categories=System;Documentation;

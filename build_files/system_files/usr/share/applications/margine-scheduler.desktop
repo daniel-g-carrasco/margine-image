@@ -6,7 +6,7 @@ Comment=Opt in to scx_loader and switch the active CPU scheduler at runtime. Mar
 Exec=/usr/libexec/margine/scheduler-picker
 Icon=margine-scheduler
 Terminal=false
-Categories=System;Settings;
+Categories=System;
 Keywords=scheduler;sched_ext;scx;cpu;performance;latency;
 StartupNotify=false
 
@@ -17,32 +17,32 @@ Actions=lavd;bpfland;rusty;flash;cosmos;rustland;off;status;
 
 [Desktop Action lavd]
 Name=Switch to scx_lavd (low-latency, gaming-tuned)
-Exec=ptyxis -- bash -c "ujust margine-scheduler lavd; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler lavd; read -rp \"Press Enter to close... \""
 
 [Desktop Action bpfland]
 Name=Switch to scx_bpfland (interactive + throughput balance)
-Exec=ptyxis -- bash -c "ujust margine-scheduler bpfland; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler bpfland; read -rp \"Press Enter to close... \""
 
 [Desktop Action rusty]
 Name=Switch to scx_rusty (general-purpose CFS-like)
-Exec=ptyxis -- bash -c "ujust margine-scheduler rusty; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler rusty; read -rp \"Press Enter to close... \""
 
 [Desktop Action flash]
 Name=Switch to scx_flash (low-latency interactive)
-Exec=ptyxis -- bash -c "ujust margine-scheduler flash; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler flash; read -rp \"Press Enter to close... \""
 
 [Desktop Action cosmos]
 Name=Switch to scx_cosmos (general-purpose)
-Exec=ptyxis -- bash -c "ujust margine-scheduler cosmos; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler cosmos; read -rp \"Press Enter to close... \""
 
 [Desktop Action rustland]
 Name=Switch to scx_rustland
-Exec=ptyxis -- bash -c "ujust margine-scheduler rustland; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler rustland; read -rp \"Press Enter to close... \""
 
 [Desktop Action off]
 Name=Turn scx off - return to kernel default (BORE)
-Exec=ptyxis -- bash -c "ujust margine-scheduler off; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler off; read -rp \"Press Enter to close... \""
 
 [Desktop Action status]
 Name=Show current scheduler status
-Exec=ptyxis -- bash -c "ujust margine-scheduler; read -rp \"Premi Invio per chiudere... \""
+Exec=ptyxis -- bash -c "ujust margine-scheduler; read -rp \"Press Enter to close... \""

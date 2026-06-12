@@ -1,0 +1,11 @@
+[Unit]
+Description=Margine: notify if booted deployment changed since last login
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-upgrade-notify
+
+[Install]
+WantedBy=default.target

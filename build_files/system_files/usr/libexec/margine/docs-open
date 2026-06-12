@@ -20,7 +20,10 @@ set -euo pipefail
 
 VAR_DIR="/var/lib/margine/offline-docs"
 SEED_DIR="/usr/share/margine/offline-docs"
-ONLINE_URL="https://margine.the-empty.place/docs"
+# Same override its sibling docs-refresh honors — the two used to
+# disagree (refresh respected MARGINE_DOCS_BASE_URL, this hardcoded).
+BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
+ONLINE_URL="${BASE_URL}/docs"
 
 if [[ -f "${VAR_DIR}/docs/index.html" ]]; then
   exec xdg-open "file://${VAR_DIR}/docs/index.html"
@@ -29,7 +32,7 @@ fi
 # /var mirror missing (first boot before the seed service ran, or the
 # state dir was wiped). Prefer the live site over the seed: the seed
 # is unreadable from Flatpak browsers.
-if curl -fsS --max-time 3 "https://margine.the-empty.place/healthz" >/dev/null 2>&1; then
+if curl -fsS --max-time 3 "${BASE_URL}/healthz" >/dev/null 2>&1; then
   exec xdg-open "$ONLINE_URL"
 fi
 

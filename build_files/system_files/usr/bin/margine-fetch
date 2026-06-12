@@ -1,0 +1,3 @@
+#!/usr/bin/sh
+# margine-fetch: fastfetch with Margine ASCII logo + module set.
+exec fastfetch --config /usr/share/fastfetch/margine.jsonc "$@"

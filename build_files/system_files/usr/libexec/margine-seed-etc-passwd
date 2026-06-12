@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Seed /etc/passwd + /etc/group from the /usr/lib factory.
+
+Two callers, one merge (deduplicated 2026-06-12 — the same logic used
+to live twice, as a build-time heredoc in 10-os-identity and as this
+boot script, hand-synced):
+
+  - at image build: 10-os-identity runs `--force` after copying
+    system_files, so the post-rechunk /usr/etc factory is complete
+    (Bug 6: rechunk strips /etc/passwd when re-committing the tree);
+  - at every boot: margine-seed-etc-passwd.service runs without
+    --force, re-applying the seed only if /etc/passwd has fewer than
+    20 entries (the post-rebase stripped state). Otherwise no-op.
+
+Local /etc lines override factory ones for the same name, so a custom
+root shell or a real user account is never clobbered.
+"""
+
+import os
+import sys
+
+
+def load(p):
+    try:
+        with open(p) as f:
+            return [line.rstrip("\n") for line in f if line.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def by_name(lines):
+    return {line.split(":", 1)[0]: line for line in lines}
+
+
+force = "--force" in sys.argv[1:]
+
+if not force:
+    need_seed = False
+    for kind in ("passwd", "group"):
+        if len(load(f"/etc/{kind}")) < 20:
+            need_seed = True
+            break
+    if not need_seed:
+        print("/etc/passwd + /etc/group look populated, no seeding needed")
+        sys.exit(0)
+
+for kind in ("passwd", "group"):
+    local = by_name(load(f"/etc/{kind}"))
+    factory = by_name(load(f"/usr/lib/{kind}"))
+    merged = dict(factory)
+    merged.update(local)
+
+    def k(line):
+        try:
+            u = int(line.split(":")[2])
+            return (u >= 1000, u)
+        except Exception:
+            return (True, 999999)
+
+    tmp = f"/etc/{kind}.new"
+    with open(tmp, "w") as f:
+        for line in sorted(merged.values(), key=k):
+            f.write(line + "\n")
+    os.replace(tmp, f"/etc/{kind}")
+    print(f"/etc/{kind}: was {len(local)} → now {len(merged)} (+{len(merged) - len(local)} from factory)")

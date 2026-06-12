@@ -1,0 +1,65 @@
+name: Lint
+
+# Fast static gate (~1 min) in front of the 25-minute image build.
+# Born from the 2026-06-12 code-quality review: that week's two real
+# bugs lived in a just-recipe body and a workflow expression — places
+# no existing check was looking at. actionlint covers workflow files
+# (including shellcheck over run: blocks); the shellcheck step covers
+# build scripts AND the extensionless bash shipped into the image under
+# build_files/system_files (which an extension-glob lint never saw).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: actionlint (workflows, incl. shellcheck on run blocks)
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        env:
+          # Gate on warnings and above. The info/style tail (quote
+          # $GITHUB_OUTPUT, SC2129 grouped redirects) is tracked for the
+          # phase-3 inline-bash extraction, not worth failing builds on.
+          SHELLCHECK_OPTS: --severity=warning
+        with:
+          args: -color
+
+      - name: shellcheck (tracked *.sh + shebang-discovered system_files)
+        # -S warning: the only info-level items are SC1091 ("can't
+        # follow /ctx/00-common.sh") — a build-container path that does
+        # not exist at lint time, structurally unfixable here.
+        run: |
+          set -euo pipefail
+          mapfile -t SH < <(git ls-files '*.sh' | grep -v '^live-env/references/')
+          mapfile -t BIN < <(git grep -lE '^#!.*\b(ba)?sh\b' -- build_files/system_files | grep -v '\.sh$' || true)
+          printf 'shellcheck over %d scripts\n' "$(( ${#SH[@]} + ${#BIN[@]} ))"
+          shellcheck -S warning "${SH[@]}" "${BIN[@]}"
+
+      - name: ruff (python build helpers)
+        run: |
+          set -euo pipefail
+          mapfile -t PY < <(git ls-files '*.py')
+          pipx run ruff check "${PY[@]}"
+
+      - name: just syntax (60-custom.just + Justfile parse)
+        # rust-just on PyPI ships the `just` binary; pipx is
+        # preinstalled on GitHub runners — no apt dependency.
+        run: |
+          set -euo pipefail
+          pipx run --spec rust-just just --summary --justfile build_files/60-custom.just >/dev/null
+          echo "60-custom.just OK"
+          pipx run --spec rust-just just --summary >/dev/null
+          echo "Justfile OK"

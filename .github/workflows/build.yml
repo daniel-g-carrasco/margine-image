@@ -123,16 +123,19 @@ jobs:
             -u "${{ github.actor }}" --password-stdin
 
       - name: Stage MOK secrets for BuildKit
+        # Key + cert only. The enrollment PASSPHRASE is public by design
+        # (printed in the live-ISO dialog and the install docs) and is a
+        # constant in custom-kernel/install.sh since 2026-06-12 — the
+        # MOK_PASSWORD repo secret is no longer consumed and can be
+        # deleted from the repository settings.
         env:
           MOK_KEY:      ${{ secrets.MOK_KEY }}
           MOK_CERT:     ${{ secrets.MOK_CERT }}
-          MOK_PASSWORD: ${{ secrets.MOK_PASSWORD }}
         run: |
           mkdir -p /tmp/margine-secrets
           chmod 700 /tmp/margine-secrets
           printf '%s' "$MOK_KEY"      > /tmp/margine-secrets/MOK.key
           printf '%s' "$MOK_CERT"     > /tmp/margine-secrets/MOK.pem
-          printf '%s' "$MOK_PASSWORD" > /tmp/margine-secrets/mok-password
           chmod 600 /tmp/margine-secrets/*
 
       - name: Get current date
@@ -235,13 +238,17 @@ jobs:
             LABEL_ARGS+=(--label "$line")
           done <<< "${{ steps.metadata.outputs.labels }}"
 
+          # MARGINE_REF: the spec-repo SHA resolved by the specref step.
+          # Until 2026-06-12 the SHA was only stamped as a label while
+          # the build itself kept fetching the moving `main` — the
+          # label could lie. Now the fetches and the label agree.
           sudo -E buildah build \
             --file ./Containerfile \
             --format docker \
             --layers \
+            --build-arg "MARGINE_REF=${{ steps.specref.outputs.sha }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
-            --secret id=mok-password,src=/tmp/margine-secrets/mok-password \
             "${TAG_ARGS[@]}" \
             "${LABEL_ARGS[@]}" \
             .
@@ -467,7 +474,7 @@ jobs:
 
       - name: ReChunk image
         id: rechunk
-        uses: hhd-dev/rechunk@v1.2.4
+        uses: hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2 # v1.2.4
         with:
           ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
@@ -605,8 +612,14 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin >/dev/null
+          # Pinned installer + pinned grype version. The previous
+          # `curl | sh` from anchore's moving `main` ran inside the job
+          # that holds the cosign key and wrote to a PATH dir that
+          # precedes cosign's — an unpinned write there is exactly the
+          # supply-chain shape this repo's SHA-pin policy exists to
+          # prevent (review P2.3).
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/v0.114.0/install.sh \
+            | sh -s -- -b /usr/local/bin v0.114.0 >/dev/null
           SBOM_FILE="$(ls *.spdx.json sbom*.json 2>/dev/null | head -1)"
           [[ -n "$SBOM_FILE" ]] || { echo "::warning::no SBOM file found for grype"; exit 0; }
           grype "sbom:${SBOM_FILE}" -o table > grype.txt || true

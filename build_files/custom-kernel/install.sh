@@ -23,14 +23,21 @@ err() { printf '[custom-kernel] ERROR: %s\n' "$*" >&2; }
 
 SIGNING_KEY="/tmp/certs/MOK.key"
 SIGNING_CERT="/tmp/certs/MOK.pem"
-MOK_PASSWORD_FILE="/tmp/certs/mok-password"
 
-for f in "$SIGNING_KEY" "$SIGNING_CERT" "$MOK_PASSWORD_FILE"; do
+for f in "$SIGNING_KEY" "$SIGNING_CERT"; do
   [[ -f "$f" ]] || { err "Missing secret: $f"; exit 1; }
 done
 
-MOK_PASSWORD="$(tr -d '[:space:]' < "$MOK_PASSWORD_FILE")"
-[[ -n "$MOK_PASSWORD" ]] || { err "MOK password is empty"; exit 1; }
+# The MOK *enrollment passphrase* is PUBLIC BY DESIGN: every installer
+# must type it into MokManager, the live-ISO Secure Boot dialog prints
+# it, and the install docs spell it out. Only the signing KEY above is
+# secret. Until 2026-06-12 this value was plumbed through GHA secrets +
+# a BuildKit secret mount — implying a confidentiality that never
+# existed (the unit below ships world-readable in the image anyway) and
+# inviting a pointless "rotation" that would only break the docs.
+# Keep it a simple constant; if it ever changes, update the live-ISO
+# dialog (live-env/src/build.sh) and the install docs together.
+MOK_PASSWORD="margine-os"
 
 # Validate that key and cert match.
 openssl pkey -in "$SIGNING_KEY"  -noout >/dev/null \
@@ -198,6 +205,8 @@ log "Installing CachyOS kernel: $KERNEL_PACKAGES"
 attempt=1
 max_attempts=5
 while :; do
+  # KERNEL_PACKAGES is a deliberate space-separated package list.
+  # shellcheck disable=SC2086
   if dnf -y install --refresh $KERNEL_PACKAGES akmods; then
     log "CachyOS kernel install OK on attempt $attempt"
     break
@@ -212,7 +221,6 @@ while :; do
   dnf -y clean metadata || true
   attempt=$(( attempt + 1 ))
 done
-# shellcheck disable=SC2086
 
 KERNEL_VERSION="$(rpm -q "$KERNEL_PKG" --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}')"
 log "Installed kernel: $KERNEL_VERSION"
@@ -463,7 +471,7 @@ for kver_dir in /usr/lib/modules/*/; do
       --add "ostree" \
       --kver "$kver" \
       "${kver_dir}initramfs.img"
-  log "Wrote ${kver_dir}initramfs.img ($(du -h ${kver_dir}initramfs.img | cut -f1))"
+  log "Wrote ${kver_dir}initramfs.img ($(du -h "${kver_dir}initramfs.img" | cut -f1))"
 done
 
 log "custom-kernel install complete: $KERNEL_VERSION"

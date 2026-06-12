@@ -52,16 +52,22 @@ log() { printf '[margine-extensions] %s\n' "$*"; }
 
 EXT_DIR=/usr/share/gnome-shell/extensions
 
-# Versions are pinned. Bumps go through a PR so the change is reviewable.
+# Versions are pinned AND checksummed. Bumps go through a PR so the
+# change is reviewable; a re-tagged release or a tampered download
+# fails the sha256 check instead of shipping silently (review P2.4 —
+# hide-cursor used to resolve "latest from EGO" at every build, and
+# neither zip was verified).
 OTILING_VERSION="v2.8.8"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
+OTILING_SHA256="6b0a242a61b269995e1f6166f8995aac1931147784ec5a712abf49536b87322e"
 
-# Hide Cursor is hosted only on EGO. We query its info endpoint to get
-# the latest version_tag compatible with the GNOME Shell version that
-# the BASE Bluefin DX layer ships — by the time this script runs,
-# `gnome-shell --version` reflects the booted shell of that layer.
+# Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
+# Shell major of the current base (50). When Bluefin bumps GNOME, the
+# metadata shell-version guard below fails the build with instructions
+# instead of shipping an incompatible extension.
 HIDECURSOR_UUID="hide-cursor@elcste.com"
-HIDECURSOR_EGO_ID=6727
+HIDECURSOR_VERSION_TAG="69559"   # GNOME 50; resolved 2026-06-12
+HIDECURSOR_SHA256="2fd9ffdaf176d2fba6f998c453ce91908d7e134b841a8e25d35389b60c7b1379"
 
 # NO transient dnf installs. Lesson learned the hard way 2026-06-04
 # (build #26918323253 + #26913265617):
@@ -99,12 +105,34 @@ zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 " "$zipfile" "$target"
 }
 
+verify_sha256() {
+  local file="$1" expected="$2"
+  echo "${expected}  ${file}" | sha256sum -c - >/dev/null \
+    || { log "ERROR: sha256 mismatch for ${file} (expected ${expected}) — upstream re-tagged or download corrupted; verify manually and bump the pin"; exit 1; }
+  log "sha256 OK: ${file}"
+}
+
+assert_shell_compat() {
+  # The pinned zip must declare support for the base image's GNOME
+  # Shell major, or the extension would silently never load.
+  local target="$1"
+  python3 -c '
+import json, sys
+md = json.load(open(sys.argv[1]))
+want = sys.argv[2]
+vers = [str(v).split(".")[0] for v in md.get("shell-version", [])]
+sys.exit(0 if want in vers else 1)
+' "${target}/metadata.json" "${GNOME_SHELL_MAJOR}" \
+    || { log "ERROR: ${target} pinned version does not list GNOME ${GNOME_SHELL_MAJOR} in shell-version — base bumped GNOME; bump the extension pin"; exit 1; }
+}
+
 install_otiling() {
   local target="${EXT_DIR}/o-tiling@oliwebd.github.com"
   log "o-tiling ${OTILING_VERSION} → ${target}"
   rm -rf "${target}"
   mkdir -p "${target}"
   curl -fL --retry 5 --retry-delay 10 -o /tmp/otiling.zip "${OTILING_URL}"
+  verify_sha256 /tmp/otiling.zip "${OTILING_SHA256}"
   extract_zip /tmp/otiling.zip "${target}"
   rm -f /tmp/otiling.zip
   if [[ ! -f "${target}/metadata.json" ]]; then
@@ -112,6 +140,7 @@ install_otiling() {
     ls -la "${target}"
     exit 1
   fi
+  assert_shell_compat "${target}"
   if [[ -d "${target}/schemas" ]] && compgen -G "${target}/schemas/*.xml" > /dev/null; then
     glib-compile-schemas --strict "${target}/schemas"
   fi
@@ -119,23 +148,14 @@ install_otiling() {
 
 install_hidecursor() {
   local target="${EXT_DIR}/${HIDECURSOR_UUID}"
-  log "hide-cursor (EGO id ${HIDECURSOR_EGO_ID}) for shell ${GNOME_SHELL_MAJOR} → ${target}"
-
-  local version_tag
-  version_tag="$(curl -fsSL --retry 5 --retry-delay 10 \
-    "https://extensions.gnome.org/extension-info/?uuid=${HIDECURSOR_UUID}&shell_version=${GNOME_SHELL_MAJOR}" \
-    | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d.get("version_tag",""))')"
-  if [[ -z "${version_tag}" ]]; then
-    log "ERROR: no EGO release of ${HIDECURSOR_UUID} for GNOME ${GNOME_SHELL_MAJOR}"
-    exit 1
-  fi
-  log "hide-cursor resolved to version_tag=${version_tag}"
+  log "hide-cursor (pinned version_tag ${HIDECURSOR_VERSION_TAG}) for shell ${GNOME_SHELL_MAJOR} → ${target}"
 
   rm -rf "${target}"
   mkdir -p "${target}"
   curl -fL --retry 5 --retry-delay 10 \
     -o /tmp/hidecursor.zip \
-    "https://extensions.gnome.org/download-extension/${HIDECURSOR_UUID}.shell-extension.zip?version_tag=${version_tag}"
+    "https://extensions.gnome.org/download-extension/${HIDECURSOR_UUID}.shell-extension.zip?version_tag=${HIDECURSOR_VERSION_TAG}"
+  verify_sha256 /tmp/hidecursor.zip "${HIDECURSOR_SHA256}"
   extract_zip /tmp/hidecursor.zip "${target}"
   rm -f /tmp/hidecursor.zip
   if [[ ! -f "${target}/metadata.json" ]]; then
@@ -143,6 +163,7 @@ install_hidecursor() {
     ls -la "${target}"
     exit 1
   fi
+  assert_shell_compat "${target}"
   if [[ -d "${target}/schemas" ]] && compgen -G "${target}/schemas/*.xml" > /dev/null; then
     glib-compile-schemas --strict "${target}/schemas"
   fi
@@ -155,7 +176,7 @@ log "Recompiling /usr/share/glib-2.0/schemas to pick up new extension schemas"
 glib-compile-schemas /usr/share/glib-2.0/schemas
 
 log "Final extension inventory under ${EXT_DIR}:"
-ls -la "${EXT_DIR}/" | grep -v '^total' | awk '{print "  " $NF}' | sort
+for d in "${EXT_DIR}"/*/; do echo "  $(basename "$d")"; done | sort
 
 log "metadata.json for the two we just added:"
 for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com; do

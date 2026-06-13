@@ -300,3 +300,67 @@ else
   log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Downstream patch #2: search-light press-gesture SIGABRT (2026-06-13).
+#
+# Clicking the panel button crashes the whole shell under GNOME 50:
+#   Clutter:ERROR:clutter-gesture.c:544:set_state:
+#     assertion failed: (new_state == CLUTTER_GESTURE_STATE_POSSIBLE)
+#   #  clutter_press_gesture_point_began -> clutter_gesture_handle_event
+# The 'button-press-event' handler calls _toggle_search_light() -> show()
+# SYNCHRONOUSLY inside the Clutter 18 press gesture; show() reparents the
+# entry/search actors, grabs key focus and connects global stage events,
+# which corrupts the in-flight gesture's state machine. The next gesture
+# point event then asserts and SIGABRTs. On Wayland that kills the session
+# and, after a couple of crashes, GNOME trips safe-mode (all extensions
+# off). Reproduced on the reference host (coredump 2026-06-13 14:28,
+# journal-verified). This is the "show-path" sibling of patch #1 above,
+# which only covered the app-launch (_release_ui) path.
+#
+# Mitigation: defer the toggle out of the gesture's call stack with
+# GLib.idle_add (GLib + Clutter are already imported), so the press
+# gesture finishes cleanly before any actor surgery runs. Imperceptible
+# (one idle tick). Same hard-fail-if-pattern-missing contract as #1: this
+# crash is load-bearing (it ends the session), so a future upstream rename
+# must stop the build, not ship a crasher. Layer A asserts the marker too.
+if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
+  if grep -q 'margine: defer the toggle out of the' "$SEARCH_LIGHT_EXT"; then
+    log "search-light press-gesture patch already present"
+  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """    this._indicator.connectObject(
+      'button-press-event',
+      this._toggle_search_light.bind(this),
+      this,
+    );"""
+new = """    this._indicator.connectObject(
+      'button-press-event',
+      () => {
+        // margine: defer the toggle out of the Clutter 18 press-gesture
+        // handler. Running show()/actor-reparent synchronously here
+        // corrupts the gesture state machine and SIGABRTs the session.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+          this._toggle_search_light();
+          return GLib.SOURCE_REMOVE;
+        });
+        return Clutter.EVENT_STOP;
+      },
+      this,
+    );"""
+if old not in s:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "search-light: applied press-gesture mitigation (deferred button-press toggle)"
+  else
+    log "ERROR: search-light button-press connectObject pattern not found (upstream changed?) — refusing to ship unpatched"
+    exit 1
+  fi
+else
+  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
+  exit 1
+fi

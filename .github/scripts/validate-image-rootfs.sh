@@ -136,6 +136,19 @@ fi
 test -x "$ROOTFS/usr/libexec/margine/staged-update-notify" \
   || { echo "::error::A.3.ter staged-update-notify missing"; fail=1; }
 
+# A.3.quater — legacy icon-name compat shims (2026-06-13). adwaita-icon-
+# theme 50 dropped these symbolic names, but the baked o-tiling and
+# search-light extensions still reference them and render the broken-image
+# placeholder without a shim (build-margine-extensions.sh copies the
+# closest Adwaita symbolic under each legacy name). Assert the OUTCOME so
+# a vanished source — which the build only warns about — cannot silently
+# re-introduce the placeholders.
+ICON_ACT="$ROOTFS/usr/share/icons/hicolor/scalable/actions"
+for ic in view-quilt-symbolic view-compact-symbolic border-all-symbolic search-symbolic; do
+  test -s "$ICON_ACT/${ic}.svg" \
+    || { echo "::error::A.3.quater icon shim ${ic}.svg missing/empty — baked extensions will show placeholder icons"; fail=1; }
+done
+
 # search-light rounded-corners daniel default: border-radius=7.0
 # (the value is an INDEX 0-7 into the extension's px table, not
 # pixels — 7 = 32px max rounding; the old 30 was out of range and

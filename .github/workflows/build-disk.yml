@@ -63,7 +63,7 @@ env:
   #   2. grub2.extra_cfg raw fragment (upstream PR pending) — used
   #      for the Secure Boot "Enroll key (MokManager)" menu entry
   # Revert to the upstream pin once both PRs land. Renovate disabled.
-  TITANOBOA_REF: "daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392"
+  TITANOBOA_REF: "daniel-g-carrasco/titanoboa@cce73fc476e97fed626283afb6c518e0882a12d7"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
   BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905"
@@ -330,7 +330,7 @@ jobs:
         id: titanoboa
         # Pinned to the margine-pins fork branch (see env.TITANOBOA_REF
         # comment for the exact carried patches + revert condition).
-        uses: daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392
+        uses: daniel-g-carrasco/titanoboa@cce73fc476e97fed626283afb6c518e0882a12d7
         with:
           image-ref: ${{ steps.live.outputs.live_tag }}
           iso-dest: ${{ github.workspace }}/margine-live.iso

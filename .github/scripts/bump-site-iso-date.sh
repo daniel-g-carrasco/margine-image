@@ -83,14 +83,40 @@ gh pr create \
   --title "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}" \
   --body "$PR_BODY"
 
-# Auto-merge the bump PR so the Hero buttons + Install Option A block
-# start pointing at the just-published ISO without manual
-# intervention. The site repo has no required reviews on main, so
-# --auto --squash merges as soon as its lint check passes. If the
-# merge fails (network/permission), the PR stays open for manual
-# squash-merge — exactly the previous behaviour.
-gh pr merge \
-  --repo "$SITE_REPO" \
-  "$BRANCH" \
-  --squash --auto --delete-branch \
-  || echo "::warning::bump PR auto-merge failed — falls back to manual squash-merge"
+# Merge the bump PR so the Hero buttons + Install Option A block point at
+# the just-published ISO without manual intervention. This is a critical
+# path: if it stays open, the live site keeps advertising the PREVIOUS
+# ISO.
+#
+# Prefer GitHub auto-merge (waits for the lint check). It needs the repo's
+# "Allow auto-merge" setting; when that's off, --auto errors out — so fall
+# back to a direct squash merge after the lint check goes green. The change
+# is a single date constant, so a direct merge once lint passes is safe.
+if gh pr merge --repo "$SITE_REPO" "$BRANCH" --squash --auto --delete-branch; then
+  echo "Auto-merge enabled on the bump PR."
+else
+  echo "::warning::auto-merge unavailable (repo 'Allow auto-merge' off?) — merging directly once lint is green"
+  merged=false
+  for _ in $(seq 1 30); do
+    state="$(gh pr checks "$BRANCH" --repo "$SITE_REPO" --json bucket \
+      --jq '[.[].bucket] | join(",")' 2>/dev/null || echo "")"
+    case ",$state," in
+      *,fail,*|*,cancelled,*)
+        echo "::error::bump PR checks not green ($state) — leaving it open for review"
+        break
+        ;;
+      *,pending,*|,,)
+        sleep 15
+        ;;
+      *)
+        if gh pr merge --repo "$SITE_REPO" "$BRANCH" --squash --delete-branch; then
+          merged=true
+        fi
+        break
+        ;;
+    esac
+  done
+  if [ "$merged" != true ]; then
+    echo "::warning::bump PR not merged automatically — merge ${BRANCH} manually so the site points at ${NEW_DATE}"
+  fi
+fi

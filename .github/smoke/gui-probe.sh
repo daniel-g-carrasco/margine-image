@@ -9,8 +9,21 @@
 # file it can be executed on the lab VM directly, which matters now
 # that this probe is slated to become gating.
 set -u
-out() { echo "$@" > /dev/console; }
-fail() { out "MARGINE-GUI-SMOKE: FAIL $*"; sleep 2; systemctl poweroff; exit 0; }
+# Markers go to BOTH /dev/console (the watcher reads -serial) and
+# /dev/kmsg: if a BLS entry lacks the serial console karg the console
+# write would vanish, but kmsg is mirrored to console=ttyS0 (now forced
+# by inject-gui-probe.sh), so the verdict still reaches serial.log.
+out() {
+  echo "$@" > /dev/console 2>/dev/null || true
+  echo "<smoke> $*" > /dev/kmsg 2>/dev/null || true
+}
+
+# gaming_check runs in the BACKGROUND (started below): its up-to-240s
+# rpm-ostree dry-run must never delay the GUI verdict. wait_gaming is
+# called before every poweroff so the gaming verdict is still captured,
+# even when the GUI checks bail out early. Safe to call more than once.
+wait_gaming() { [[ -n "${GAMING_PID:-}" ]] && wait "$GAMING_PID" 2>/dev/null || true; }
+fail() { out "MARGINE-GUI-SMOKE: FAIL $*"; wait_gaming; sleep 2; systemctl poweroff; exit 0; }
 
 # ---- Gaming-native layer resolvability (independent of the GUI) ------------
 # `ujust margine-gaming-native` layers a multilib RPM set whose fragile
@@ -19,8 +32,7 @@ fail() { out "MARGINE-GUI-SMOKE: FAIL $*"; sleep 2; systemctl poweroff; exit 0; 
 # recipe would, WITHOUT applying it — so a depsolve failure here is the
 # i686/x86_64 skew that broke `margine-gaming-native` for real. Package
 # set is read from the same file the recipe installs from (no drift).
-# Verdict is WARN-ONLY for now (parsed by qemu-boot-wait.sh); run first so
-# it produces a verdict even when the GUI checks below bail out early.
+# Verdict is WARN-ONLY for now (parsed by qemu-boot-wait.sh).
 gaming_check() {
   local list=/usr/share/margine/gaming-native-packages.txt
   if [[ ! -r "$list" ]]; then
@@ -33,13 +45,22 @@ gaming_check() {
     out "MARGINE-GAMING-NATIVE: SKIP (empty package list)"
     return
   fi
+  # rpm-ostreed is dbus-activated and not reachable at the very start of
+  # boot; wait for it so an unready daemon SKIPs instead of burning the
+  # whole 240s budget on a spurious failure.
+  local ready=
+  for _ in $(seq 1 30); do
+    rpm-ostree status >/dev/null 2>&1 && { ready=1; break; }
+    sleep 2
+  done
+  [[ -n "$ready" ]] || { out "MARGINE-GAMING-NATIVE: SKIP (rpm-ostreed not ready)"; return; }
   if timeout 240 rpm-ostree install --dry-run "${pkgs[@]}" >/tmp/gaming.out 2>&1; then
     out "MARGINE-GAMING-NATIVE: PASS (${#pkgs[@]} pkgs resolve)"
   else
     out "MARGINE-GAMING-NATIVE: FAIL $(grep -iE 'cannot install|conflict|requires|nothing provides|depsolve' /tmp/gaming.out | head -2 | tr '\n' ' ' | tr -s ' ')"
   fi
 }
-gaming_check
+gaming_check & GAMING_PID=$!
 
 # Wait for the autologin session's gnome-shell (first boot is slow:
 # flatpak preinstall etc. competes for I/O).
@@ -49,13 +70,17 @@ for _ in $(seq 1 60); do
 done
 pgrep -u smoke -x gnome-shell >/dev/null || fail "gnome-shell never started for autologin user"
 
-# Give extensions time to load, then count the enabled ones through
-# the user's session bus.
-sleep 30
-EXT=$(runuser -u smoke -- env \
-  XDG_RUNTIME_DIR=/run/user/1010 \
-  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1010/bus \
-  gnome-extensions list --enabled 2>/dev/null | wc -l)
+# Give extensions time to load — a bounded poll (not a fixed sleep) so a
+# slow-loading session isn't a spurious FAIL.
+EXT=0
+for _ in $(seq 1 12); do
+  EXT=$(runuser -u smoke -- env \
+    XDG_RUNTIME_DIR=/run/user/1010 \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1010/bus \
+    gnome-extensions list --enabled 2>/dev/null | wc -l)
+  [[ "$EXT" -ge 6 ]] && break
+  sleep 5
+done
 [[ "$EXT" -ge 6 ]] || fail "only $EXT extensions enabled (expected >=6)"
 
 # The shell must still be alive AND nothing may have dumped core.
@@ -74,5 +99,6 @@ if [[ -x /usr/bin/margine-validate-branding ]]; then
 fi
 
 out "MARGINE-GUI-SMOKE: PASS ext=$EXT"
+wait_gaming
 sleep 2
 systemctl poweroff

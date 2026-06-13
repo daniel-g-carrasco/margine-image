@@ -169,8 +169,52 @@ install_hidecursor() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Legacy icon-name compat shims for the baked extensions (2026-06-13).
+#
+# adwaita-icon-theme 50 dropped several long-standing symbolic icon names
+# that third-party extensions still reference BY NAME. On Margine the
+# affected menu/panel items render as the broken-image placeholder.
+# Reported (icons confirmed absent from Adwaita 50):
+#   o-tiling      "Tile This Workspace"  view-quilt-symbolic (on)
+#                                         view-compact-symbolic (off)
+#   o-tiling      "Border Width"          border-all-symbolic
+#   search-light  panel button            search-symbolic
+#
+# Rather than sed-patch each extension's JS (fragile across upstream bumps,
+# and it would only fix OUR baked set), provide the removed names as compat
+# aliases in the theme-agnostic hicolor fallback path, each copied from the
+# closest existing Adwaita symbolic. Because they are byte-for-byte real
+# Adwaita symbolics under a legacy name, they recolor exactly like native
+# ones, and ANY app/extension referencing these names is fixed — not just
+# o-tiling/search-light. Cosmetic: a vanished source warns and skips
+# rather than failing the build.
+declare -A ICON_SHIMS=(
+  [view-quilt-symbolic]=view-grid-symbolic        # tiling ON  (tiled grid)
+  [view-compact-symbolic]=view-restore-symbolic   # tiling OFF (floating/overlap)
+  [border-all-symbolic]=checkbox-symbolic         # border width (bordered box)
+  [search-symbolic]=system-search-symbolic        # search-light magnifier
+)
+install_legacy_icon_shims() {
+  local dst=/usr/share/icons/hicolor/scalable/actions
+  mkdir -p "$dst"
+  local missing src srcpath
+  for missing in "${!ICON_SHIMS[@]}"; do
+    src="${ICON_SHIMS[$missing]}"
+    srcpath="$(find /usr/share/icons/Adwaita -name "${src}.svg" 2>/dev/null | head -1)"
+    if [[ -z "$srcpath" ]]; then
+      log "WARN: icon-shim source ${src}.svg absent from Adwaita — ${missing} stays a placeholder"
+      continue
+    fi
+    install -m 0644 "$srcpath" "${dst}/${missing}.svg"
+    log "icon-shim: ${missing} <- ${src} ($(basename "$(dirname "$srcpath")"))"
+  done
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+}
+
 install_otiling
 install_hidecursor
+install_legacy_icon_shims
 
 log "Recompiling /usr/share/glib-2.0/schemas to pick up new extension schemas"
 glib-compile-schemas /usr/share/glib-2.0/schemas

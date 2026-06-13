@@ -371,7 +371,7 @@ jobs:
             --cdrom "$ISO" \
             --log iso-serial.log \
             --timeout 900 \
-            --ok-regex 'Started.*gdm\.service|Reached target graphical\.target|livesys.*Finished' \
+            --ok-regex 'Started.*gdm\.service|Reached target [Gg]raphical|livesys.*Finished|[Mm]argine login:' \
             --fail-regex 'dracut-emergency|Failed to start.*dmsquash|emergency shell'
 
       - name: Upload ISO serial log

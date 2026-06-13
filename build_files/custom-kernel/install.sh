@@ -341,6 +341,40 @@ dnf -y install \
 retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly' \
   || { err "creator-tier RPM install failed after 5 attempts; aborting"; exit 1; }
 
+# ---------------------------------------------------------------------------
+# Native-gaming 32-bit dependency closure — baked + version-locked
+# ---------------------------------------------------------------------------
+# `ujust margine-gaming-native` layers steam, whose 32-bit (i686) deps pull
+# a deep multilib chain: mesa/llvm, SDL3, gtk3, gdk-pixbuf2, glycin, libheif,
+# libde265, libdecor, ... Multilib demands every i686 lib match its x86_64
+# twin EXACTLY. Layered at RUNTIME against a frozen base, the i686 libs come
+# from whatever the live repos offer, and the moment any one drifts past the
+# baked x86_64 version the whole transaction fails to depsolve — the repeated
+# 2026-06-13 breakages (first mesa/llvm, then SDL3/libheif/libde265/...).
+#
+# Fix (Bazzite's approach): install the full native-gaming app set HERE so
+# dnf resolves the entire i686+x86_64 closure in ONE transaction (version-
+# locked to this build), then remove ONLY the apps with --no-autoremove so
+# their whole dependency closure stays baked in the base. The opt-in gaming-
+# native layer then re-adds the apps against deps already satisfied by
+# @System — no runtime i686 fetch, no skew, ever. RPMFusion is still enabled
+# here (scrubbed just below), which is where steam resolves at build time.
+#
+# vkBasalt is intentionally NOT in this set: it already ships in the base, so
+# install would be a no-op and remove would strip a base package. Keep this
+# list in sync with build_files/60-ujust-services/gaming-native-packages.txt
+# (minus vkBasalt). Hard-fail on any error: a build that cannot bake the
+# closure must stop, never promote a :stable where margine-gaming-native is
+# broken. The smoke-boot dry-run guard (.github/smoke/gui-probe.sh) then
+# re-verifies the full recipe set resolves on the booted image.
+GAMING_BAKE=(steam lutris retroarch gamescope)
+log "Baking native-gaming 32-bit dependency closure: ${GAMING_BAKE[*]}"
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh "$@"' _ "${GAMING_BAKE[@]}" \
+  || { err "native-gaming closure install failed after 5 attempts (repo down or unresolvable multilib at build?); aborting"; exit 1; }
+dnf -y remove --no-autoremove "${GAMING_BAKE[@]}" \
+  || { err "failed to strip gaming apps while keeping their deps; aborting"; exit 1; }
+log "Native-gaming 32-bit closure baked (apps removed, deps version-locked in base)"
+
 # Scrub RPMFusion from the base image — gaming variant will re-add
 # it (and keep it) for the gamescope+vkBasalt install. Base stays
 # clean of third-party repos. NB: we deliberately do NOT
@@ -350,34 +384,6 @@ log "Removing RPMFusion .repo files from base"
 dnf -y remove rpmfusion-free-release rpmfusion-nonfree-release || true
 rm -f /etc/yum.repos.d/rpmfusion-*.repo
 log "Base now ships: mangohud + goverlay + steam-devices + gstreamer freeworld/ugly codecs"
-
-# ---------------------------------------------------------------------------
-# 32-bit (i686) graphics foundation for native gaming — version-locked
-# ---------------------------------------------------------------------------
-# `ujust margine-gaming-native` layers steam, whose 32-bit deps pull the
-# i686 graphics stack (mesa-dri-drivers(x86-32) -> mesa.i686 -> llvm-libs
-# .i686). Multilib demands the i686 mesa/llvm match the x86_64 EXACTLY.
-# Layered at RUNTIME the i686 libs come from whatever the live repos offer,
-# so once `updates` advances past the version baked here they no longer
-# match and the whole transaction fails to depsolve — the real breakage of
-# 2026-06-13 (i686 llvm-libs 22.1.7 in updates vs x86_64 22.1.6 on the
-# deployment, with no i686 22.1.6 left to pull).
-#
-# Fix: bake the i686 graphics foundation into the BASE, in the SAME dnf
-# transaction as the x86_64 stack, so the two arches are version-locked at
-# build time and every `bootc upgrade` ships them matched. The gaming-
-# native layer then only adds steam itself — its 32-bit graphics deps are
-# already satisfied by the base, so there is no runtime i686 fetch and no
-# skew. Pure Fedora packages (no RPMFusion needed); ~30-50 MB, paid by all
-# images, in exchange for a class of breakage that can no longer recur.
-# This is how Bazzite handles multilib gaming. The smoke-boot dry-run
-# guard (.github/smoke/gui-probe.sh) verifies the gaming set still
-# resolves on every build; if a future i686 lib outside this set ever
-# skews, that guard flags it and we widen the bake.
-log "Baking the 32-bit (i686) graphics foundation for native gaming (steam multilib)"
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mesa-dri-drivers.i686 mesa-vulkan-drivers.i686 mesa-libGL.i686 mesa-libEGL.i686' \
-  || { err "32-bit mesa graphics install failed after 5 attempts (i686/x86_64 mesa skew at build time?); aborting"; exit 1; }
-log "Base now ships the i686 mesa/llvm stack, version-locked to x86_64, for steam multilib"
 
 # ---------------------------------------------------------------------------
 # Signing

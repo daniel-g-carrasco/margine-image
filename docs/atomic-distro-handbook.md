@@ -2974,7 +2974,7 @@ Every third-party action in Margine's workflows is pinned to a full 40-character
   uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 ```
 
-A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-files compromise (March 2025) retroactively poisoned the floating tags of an action used by ~23k repos, exfiltrating CI secrets. A SHA cannot be moved. The same pattern covers `docker/metadata-action`, `anchore/sbom-action`, `actions/upload-artifact`/`download-artifact`, `oras-project/setup-oras`, `ublue-os/remove-unwanted-software`, `osbuild/bootc-image-builder-action`, and `daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392` (a personal fork carrying upstream PR #147's mksquashfs fix, set via the `TITANOBOA_REF` env in `build-disk.yml`) in the disk/ISO workflows.
+A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-files compromise (March 2025) retroactively poisoned the floating tags of an action used by ~23k repos, exfiltrating CI secrets. A SHA cannot be moved. The same pattern covers `docker/metadata-action`, `anchore/sbom-action`, `actions/upload-artifact`/`download-artifact`, `oras-project/setup-oras`, `ublue-os/remove-unwanted-software`, `osbuild/bootc-image-builder-action`, and `daniel-g-carrasco/titanoboa` (a personal fork carrying the margine patch set — see the ISO chapter — SHA-pinned via the `TITANOBOA_REF` env in `build-disk.yml`) in the disk/ISO workflows.
 
 > **Lesson: a floating action tag is also a floating tool version (CVE-2026-39395)**
 > **Symptom:** audit §6.2 flagged `sigstore/cosign-installer@v3` (floating) in both build workflows as CRITICAL.
@@ -3610,12 +3610,12 @@ Since PR #138 (2026-05-19, "Only use container images as the only source of trut
 - name: Build Live ISO (Titanoboa)
   id: titanoboa
   # Pinned to env.TITANOBOA_REF (a personal margine-pins fork).
-  uses: daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392
+  uses: daniel-g-carrasco/titanoboa@cce73fc476e97fed626283afb6c518e0882a12d7
   with:
     image-ref: ${{ steps.live.outputs.live_tag }}
     iso-dest: ${{ github.workspace }}/margine-live.iso
 ```
-*`margine-image/.github/workflows/build-disk.yml` (`build_iso_titanoboa` job).* The pin is a personal fork, `daniel-g-carrasco/titanoboa@ace7ea9b…`, set via the `TITANOBOA_REF` env: upstream's post-#138 HEAD plus exactly upstream PR #147's `mksquashfs -e` ordering fix (the gzip-fallback Lesson below). `image-ref` is a transient `margine-live:ci-run-<run_id>` tag pushed just before — Titanoboa issue #141 (open) hardcodes `podman pull` of the ref, so a local-only tag is not enough. Pin bumps require an explicit follow-up ADR.
+*`margine-image/.github/workflows/build-disk.yml` (`build_iso_titanoboa` job).* The pin is a personal fork, `daniel-g-carrasco/titanoboa` (branch `margine-pins`, SHA-pinned via the `TITANOBOA_REF` env — the snippet above shows the current SHA): upstream's post-#138 HEAD plus the margine patch set — upstream PR #147's `mksquashfs -e` ordering fix (the gzip-fallback Lesson below), the raw `extra_cfg` grub fragment (proposed upstream as #148), and a grub.cfg directory-glob fix so plain files at the ESP root (`EFI/MOK.der`) don't break the build. `image-ref` is a transient `margine-live:ci-run-<run_id>` tag pushed just before — Titanoboa issue #141 (open) hardcodes `podman pull` of the ref, so a local-only tag is not enough. Pin bumps require an explicit follow-up ADR.
 
 ### iso.yaml — label, kargs, and the initrd rename
 
@@ -3685,7 +3685,7 @@ cp -v /boot/efi/EFI/fedora/grubx64.efi /boot/efi/EFI/BOOT/fbx64.efi
 > **Lesson — mksquashfs silently falls back to gzip.**
 > *Symptom:* the squashfs was larger and faster-built than zstd-19 should produce; the requested compression never applied.
 > *Root cause:* in Titanoboa, `-comp zstd -Xcompression-level 19` is placed *after* `-e` on the mksquashfs command line — mksquashfs swallows everything after `-e` as exclude names and silently falls back to its gzip default. Same 2026-06-09 build-log scan; this class of bug is invisible unless you read the tool's own banner output.
-> *Fix:* upstream PR `ublue-os/titanoboa#147` reorders the flags; Margine carries it directly by pinning `TITANOBOA_REF` at the personal fork `daniel-g-carrasco/titanoboa@ace7ea9b…`, which is upstream HEAD plus exactly that patch — so the shipped ISO is zstd-compressed, not gzip.
+> *Fix:* upstream PR `ublue-os/titanoboa#147` reorders the flags; Margine carries it directly by pinning `TITANOBOA_REF` at the personal fork `daniel-g-carrasco/titanoboa`, whose patch set carries exactly that fix — so the shipped ISO is zstd-compressed, not gzip.
 
 **Phase 2 — BAKE Flatpaks.** Same bwrap prep and comment-stripping as `installer/build.sh`, then `flatpak install --system --noninteractive --or-update flathub $APPS` from `live-env/src/flatpaks` (lines 145-171). Then the live session is defended against the user:
 

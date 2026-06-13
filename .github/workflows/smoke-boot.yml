@@ -91,7 +91,10 @@ jobs:
       - name: Install QEMU + OVMF + tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 ovmf swtpm
+          # qemu-utils = qemu-nbd (NOT pulled by qemu-system-x86), parted =
+          # partprobe, util-linux = partx — all needed by the Layer C
+          # inject-gui-probe nbd partition exposure (2026-06-13 hardening).
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf swtpm parted util-linux
           # Verify KVM
           ls -la /dev/kvm || true
           kvm-ok 2>&1 || true

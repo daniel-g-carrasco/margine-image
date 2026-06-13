@@ -97,10 +97,13 @@ for (( i = 1; i <= TIMEOUT; i++ )); do
     emit "passed=true"
     BOOT_OK=$i
     if (( GUI_WATCH )); then
-      # Layer C window: the probe runs a gaming dry-run (≤240s) then
-      # sleeps ~150s after graphical, and first boot is I/O-heavy —
-      # allow 10 more minutes for BOTH the GUI and gaming verdicts.
-      GUI_DEADLINE=$((i + 600))
+      # Layer C window for BOTH verdicts. Worst case from graphical:
+      # the unit's ExecStartPre sleep (~150s) + the gnome-shell wait
+      # (up to 300s) + the bounded extension poll (~60s) + branding,
+      # while the gaming dry-run (≤240s + rpm-ostreed wait) runs in the
+      # background. First boot is I/O-heavy, so allow 15 minutes; the
+      # outer --timeout (1800) and the 40-min job timeout still bound it.
+      GUI_DEADLINE=$((i + 900))
     else
       break
     fi

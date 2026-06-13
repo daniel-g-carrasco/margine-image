@@ -1,42 +1,52 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:best-practices",
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:best-practices',
   ],
-
-  "rebaseWhen": "never",
-
-  "packageRules": [
+  rebaseWhen: 'never',
+  packageRules: [
     {
-      // The Titanoboa pin is a personal fork carrying the margine patch
-      // set; never let Renovate move it (it would drop those patches).
-      "matchDepNames": ["ublue-os/titanoboa", "daniel-g-carrasco/titanoboa"],
-      "enabled": false,
+      matchDepNames: [
+        'ublue-os/titanoboa',
+        'daniel-g-carrasco/titanoboa',
+      ],
+      enabled: false,
     },
     {
-      "automerge": true,
-      "matchUpdateTypes": ["pin", "pinDigest"]
+      automerge: true,
+      matchUpdateTypes: [
+        'pin',
+        'pinDigest',
+      ],
     },
     {
-      "enabled": false,
-      "matchUpdateTypes": ["digest", "pinDigest", "pin"],
-      "matchDepTypes": ["container"],
-      "matchFileNames": [".github/workflows/**.yaml", ".github/workflows/**.yml"],
+      enabled: false,
+      matchUpdateTypes: [
+        'digest',
+        'pinDigest',
+        'pin',
+      ],
+      matchDepTypes: [
+        'container',
+      ],
+      matchFileNames: [
+        '.github/workflows/**.yaml',
+        '.github/workflows/**.yml',
+      ],
     },
   ],
-
-  // Track the baked wayland-scroll-factor version pin. Renovate proposes the
-  // WSF_VERSION bump from upstream GitHub releases; the companion workflow
-  // .github/workflows/wsf-pin-sha.yml then recomputes WSF_SHA256 on the
-  // Renovate branch (hosted Renovate can't hash a release tarball itself).
-  "customManagers": [
+  customManagers: [
     {
-      "customType": "regex",
-      "fileMatch": ["build_files/45-wsf/install\\.sh$"],
-      "matchStrings": ["WSF_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
-      "depNameTemplate": "daniel-g-carrasco/wayland-scroll-factor",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.+)$",
+      customType: 'regex',
+      managerFilePatterns: [
+        '/build_files/45-wsf/install\\.sh$/',
+      ],
+      matchStrings: [
+        'WSF_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)',
+      ],
+      depNameTemplate: 'daniel-g-carrasco/wayland-scroll-factor',
+      datasourceTemplate: 'github-releases',
+      extractVersionTemplate: '^v(?<version>.+)$',
     },
   ],
 }

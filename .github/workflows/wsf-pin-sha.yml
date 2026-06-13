@@ -1,0 +1,58 @@
+name: Fix WSF sha pin
+
+# Companion to the Renovate custom manager (see .github/renovate.json5).
+# Renovate bumps WSF_VERSION in build_files/45-wsf/install.sh from upstream
+# GitHub releases, but hosted Renovate cannot hash the release tarball — so
+# the sha256 the build verifies would go stale and the build would fail its
+# `sha256sum -c`. This recomputes WSF_SHA256 on the Renovate branch right
+# after the version bump, so the PR is mergeable as-is.
+#
+# Runs only on Renovate branches that touch the WSF section. The commit is
+# made with GITHUB_TOKEN, which by design does not re-trigger workflows, so
+# there is no loop.
+
+on:
+  push:
+    branches:
+      - "renovate/**"
+    paths:
+      - "build_files/45-wsf/install.sh"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wsf-pin-sha-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix-sha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the Renovate branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Recompute WSF_SHA256 to match WSF_VERSION
+        run: |
+          set -euo pipefail
+          f=build_files/45-wsf/install.sh
+          ver="$(grep -oP '^WSF_VERSION=\K[0-9]+\.[0-9]+\.[0-9]+' "$f")"
+          cur="$(grep -oP '^WSF_SHA256=\K[0-9a-f]+' "$f")"
+          [ -n "$ver" ] || { echo "::error::could not read WSF_VERSION"; exit 1; }
+          url="https://github.com/daniel-g-carrasco/wayland-scroll-factor/archive/refs/tags/v${ver}.tar.gz"
+          echo "Hashing $url"
+          new="$(curl -fsSL --retry 3 "$url" | sha256sum | cut -d' ' -f1)"
+          [ -n "$new" ] || { echo "::error::failed to hash tarball"; exit 1; }
+          if [ "$new" = "$cur" ]; then
+            echo "WSF_SHA256 already correct for ${ver} — nothing to do."
+            exit 0
+          fi
+          sed -i "s/^WSF_SHA256=.*/WSF_SHA256=${new}/" "$f"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "wsf: sync WSF_SHA256 for ${ver}"
+          git push
+          echo "Updated WSF_SHA256 -> ${new} for ${ver}"

@@ -263,12 +263,12 @@ margine-gaming-native:
 
     echo
     echo "== Layering native gaming RPMs (rpm-ostree) =="
-    sudo rpm-ostree install \
-        steam \
-        lutris \
-        retroarch \
-        gamescope \
-        vkBasalt
+    # Package set lives in a single source-of-truth file shared with the
+    # smoke-boot dry-run check (see /usr/share/margine/).
+    PKGLIST=/usr/share/margine/gaming-native-packages.txt
+    [ -r "$PKGLIST" ] || { echo "Missing $PKGLIST — bad image?" >&2; exit 1; }
+    mapfile -t GAMING_PKGS < <(grep -vE '^[[:space:]]*(#|$)' "$PKGLIST")
+    sudo rpm-ostree install "${GAMING_PKGS[@]}"
 
     echo
     echo "== Installing the rest as Flatpaks =="
@@ -303,12 +303,10 @@ margine-gaming-native-remove:
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
 
-    sudo rpm-ostree uninstall \
-        steam \
-        lutris \
-        retroarch \
-        gamescope \
-        vkBasalt || true
+    PKGLIST=/usr/share/margine/gaming-native-packages.txt
+    [ -r "$PKGLIST" ] || { echo "Missing $PKGLIST — bad image?" >&2; exit 1; }
+    mapfile -t GAMING_PKGS < <(grep -vE '^[[:space:]]*(#|$)' "$PKGLIST")
+    sudo rpm-ostree uninstall "${GAMING_PKGS[@]}" || true
 
     flatpak uninstall --system -y \
         com.heroicgameslauncher.hgl \

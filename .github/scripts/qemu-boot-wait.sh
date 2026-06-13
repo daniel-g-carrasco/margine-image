@@ -89,6 +89,7 @@ trap cleanup EXIT
 
 BOOT_OK=""
 GUI_RESULT=""
+GAMING_RESULT=""
 GUI_DEADLINE=0
 for (( i = 1; i <= TIMEOUT; i++ )); do
   if [[ -z "$BOOT_OK" && -f "$LOG" ]] && grep -qE "$OK_REGEX" "$LOG"; then
@@ -96,9 +97,10 @@ for (( i = 1; i <= TIMEOUT; i++ )); do
     emit "passed=true"
     BOOT_OK=$i
     if (( GUI_WATCH )); then
-      # Layer C window: the probe sleeps 150s after graphical, first
-      # boot is I/O-heavy — allow 8 more minutes.
-      GUI_DEADLINE=$((i + 480))
+      # Layer C window: the probe runs a gaming dry-run (≤240s) then
+      # sleeps ~150s after graphical, and first boot is I/O-heavy —
+      # allow 10 more minutes for BOTH the GUI and gaming verdicts.
+      GUI_DEADLINE=$((i + 600))
     else
       break
     fi
@@ -111,9 +113,20 @@ for (( i = 1; i <= TIMEOUT; i++ )); do
     exit 1
   fi
   if [[ -n "$BOOT_OK" ]] && (( GUI_WATCH )); then
-    if grep -q "MARGINE-GUI-SMOKE: PASS" "$LOG"; then GUI_RESULT=pass; break; fi
-    if grep -q "MARGINE-GUI-SMOKE: FAIL" "$LOG"; then GUI_RESULT=fail; break; fi
-    if (( i > GUI_DEADLINE )); then GUI_RESULT=timeout; break; fi
+    # Two independent warn-only verdicts share one window: the Layer C
+    # GUI probe and the gaming-native dry-run. Break only once BOTH are
+    # decided (or the deadline passes) so neither masks the other.
+    [[ -z "$GUI_RESULT" ]] && grep -q "MARGINE-GUI-SMOKE: PASS" "$LOG" && GUI_RESULT=pass
+    [[ -z "$GUI_RESULT" ]] && grep -q "MARGINE-GUI-SMOKE: FAIL" "$LOG" && GUI_RESULT=fail
+    [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: PASS" "$LOG" && GAMING_RESULT=pass
+    [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: FAIL" "$LOG" && GAMING_RESULT=fail
+    [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: SKIP" "$LOG" && GAMING_RESULT=skip
+    if [[ -n "$GUI_RESULT" && -n "$GAMING_RESULT" ]]; then break; fi
+    if (( i > GUI_DEADLINE )); then
+      [[ -z "$GUI_RESULT" ]] && GUI_RESULT=timeout
+      [[ -z "$GAMING_RESULT" ]] && GAMING_RESULT=timeout
+      break
+    fi
   fi
   sleep 1
 done
@@ -128,6 +141,16 @@ if [[ -n "$BOOT_OK" ]]; then
       pass) echo "✓ Layer C GUI probe: PASS" ;;
       fail) echo "::warning::Layer C GUI probe FAILED — graphical session unhealthy (extensions/coredump). See serial log artifact. This will become gating." ;;
       *)    echo "::warning::Layer C GUI probe gave no verdict (injection skipped or probe stuck) — see inject step + serial log." ;;
+    esac
+
+    # ---- Gaming-native dry-run verdict — WARN-ONLY (same window) ----
+    grep -E "MARGINE-GAMING-NATIVE" "$LOG" || true
+    emit "gaming=${GAMING_RESULT:-none}"
+    case "$GAMING_RESULT" in
+      pass) echo "✓ Gaming-native layer resolves (rpm-ostree dry-run)" ;;
+      fail) echo "::warning::Gaming-native layer does NOT resolve — \`ujust margine-gaming-native\` would fail to depsolve (likely i686/x86_64 multilib skew). See serial log artifact. This will become gating." ;;
+      skip) echo "::warning::Gaming-native check skipped (package list missing/empty in image)." ;;
+      *)    echo "::warning::Gaming-native check gave no verdict (probe skipped or stuck) — see inject step + serial log." ;;
     esac
   fi
   exit 0

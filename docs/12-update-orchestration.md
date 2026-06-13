@@ -1,5 +1,16 @@
 # Update Orchestration
 
+> **Superseded (ADR 0004 / ADR 0005).** Margine no longer ships
+> its own update orchestrator. It inherits Bluefin DX's **`uupd`** (Universal
+> Updater, `uupd.timer` enabled by default), which already orchestrates
+> `bootc upgrade` + `flatpak update` + `brew update` + `distrobox upgrade` in
+> the right order with reboot detection — see `01-architecture.md` (Update
+> Orchestration) and `declarations/margine-atomic.yaml` `updates:`. The
+> `scripts/update-all` + `config/topgrade.toml` files are retained in the repo
+> as an optional manual/legacy helper, **not** as the canonical path. This
+> chapter is kept for the design rationale (why the base-OS update boundary
+> must be respected — still valid); the "Decision" below is historical.
+
 Margine Fedora Atomic needs a new update model. The old Arch/CachyOS
 `update-all` is not portable because it owns pacman, AUR, Snapper/ZFS, Limine,
 UKIs, and Secure Boot refresh paths that do not exist in the same form on
@@ -8,7 +19,7 @@ Fedora Atomic.
 The new model keeps the useful idea: one canonical maintenance command that
 orders the work and makes failure boundaries visible.
 
-## Decision
+## Decision (historical — superseded by uupd)
 
 Use `scripts/update-all` as the Margine orchestrator.
 

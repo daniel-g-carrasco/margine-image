@@ -3,6 +3,21 @@
 Validation records the real system state. If the VM differs from the expected
 model, update the documentation instead of hiding the difference.
 
+> **The validators are the single source of truth (2026-06-12).** The image
+> ships **seven** `margine-validate-*` programs — `margine-system`,
+> `declared-state`, `atomic-layout`, `cachyos-kernel`, `branding`,
+> `hardware-media-stack`, `gaming-runtime` (plus `validate-staged-deployment`
+> and `collect-diagnostics` as dev-side tools). They are listed in
+> `declarations/margine-atomic.yaml` `updates.validators_on_demand` and run
+> three ways from the same code: `ujust margine-doctor` on a booted system,
+> the Layer C GUI probe inside the smoke-boot VM, and **in the build container
+> in CI** via `MARGINE_VALIDATE_CONTEXT=image` (`podman run $IMG
+> margine-validate-…`) — which replaces the old duplicated grep sentinels.
+> `MARGINE_VALIDATE_CONTEXT` values: `install` (default, booted-from-ISO),
+> `smoke-boot`/`qcow2` (VM, no Anaconda %post), `image` (build container —
+> filesystem checks only, runtime checks skipped). The commands below remain
+> valid for manual on-host inspection.
+
 ## Minimum Commands
 
 Run these during baseline and after the kernel experiment:

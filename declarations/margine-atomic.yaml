@@ -1194,7 +1194,7 @@ gaming_runtime:
       - com.heroicgameslauncher.hgl
       - com.usebottles.bottles
       - com.github.Matoking.protontricks
-      - net.davidotek.pupgui2
+      - com.vysp3r.ProtonPlus
     rpm_host_helpers_opt_in:
       # ONLY packages specific to the gaming variant. Everything else
       # (mangohud, goverlay, steam-devices, scx-scheds) has been promoted

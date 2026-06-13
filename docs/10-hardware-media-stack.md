@@ -296,7 +296,7 @@ net.lutris.Lutris
 com.heroicgameslauncher.hgl
 com.usebottles.bottles
 com.github.Matoking.protontricks
-net.davidotek.pupgui2
+com.vysp3r.ProtonPlus
 ```
 
 Kernel policy remains separate. In particular, `kernel.split_lock_mitigate=0`

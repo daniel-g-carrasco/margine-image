@@ -165,7 +165,7 @@ Gaming is a target capability, but it is not allowed to blur the channel model.
 The architecture separates:
 
 - desktop runtime applications such as Steam, Lutris, Heroic, Bottles,
-  Protontricks, and ProtonUp-Qt;
+  Protontricks, and ProtonPlus;
 - host runtime helpers such as Gamescope, MangoHud, vkBasalt, GameMode,
   controller udev rules, and Vulkan layer files;
 - full Steam Gaming Mode or gamescope-session support;

@@ -4,6 +4,17 @@ Margine Fedora Atomic should support a real gaming runtime, but it should do so
 with the same discipline as the rest of the system: Fedora Atomic first,
 channel-aware, declarative, validated, and reversible.
 
+> **As shipped (2026-06):** the gaming layer is opt-in via two `ujust`
+> recipes, not a separate image. **`ujust margine-gaming`** (default) layers
+> only the two strictly gaming-only RPMs (gamescope + vkBasalt) and installs
+> Steam/Lutris/Heroic/Bottles/Protontricks/ProtonPlus/RetroArch as Flatpaks.
+> **`ujust margine-gaming-native`** instead layers steam + lutris + retroarch
+> as RPMs (maximum Proton/anti-cheat/VR compatibility, +30–60 s per
+> `bootc upgrade`) and keeps only the launchers without an RPM as Flatpaks.
+> Either is undone with the matching `-remove` recipe. Everything else
+> (mangohud, goverlay, steam-devices, gamemode, tuned, scx-scheds) is already
+> in base Margine. `validate-gaming-runtime` models both paths.
+
 This document takes inspiration from two places:
 
 - Margine Personal, which split gaming runtime compatibility from launchers and
@@ -72,14 +83,14 @@ launcher/overlay tools, but maps it to Fedora Atomic channels.
 | Component | Preferred channel |
 | --- | --- |
 | Steam | Flatpak first in phase 1 |
-| Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt | Flatpak |
+| Lutris, Heroic, Bottles, Protontricks, ProtonPlus | Flatpak |
 | Gamescope | host package or future image content |
 | MangoHud and vkBasalt | host package or Flatpak runtime extension, validated per app |
 | GameMode | host package or future image content |
 | OBS Studio | Flatpak first |
 | OBS VkCapture | host package only if host OBS/game capture path is chosen |
 | Wine/Winetricks | Flatpak app runtime first; toolbox/distrobox for experiments |
-| Proton GE | ProtonUp-Qt-managed user install, not AUR |
+| Proton GE | ProtonPlus-managed user install, not AUR |
 | Controller udev rules | host package if needed |
 | LACT/GPU control | future hardware policy exception, not default |
 | Steam Gaming Mode | future image/session layer |
@@ -98,7 +109,7 @@ net.lutris.Lutris
 com.heroicgameslauncher.hgl
 com.usebottles.bottles
 com.github.Matoking.protontricks
-net.davidotek.pupgui2
+com.vysp3r.ProtonPlus
 ```
 
 Optional emulation/library tools:

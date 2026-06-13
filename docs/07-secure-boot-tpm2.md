@@ -295,7 +295,7 @@ This section documents the procedure as it actually ships. Source code:
 | `MOK.key` (RSA 2048 private) | GitHub Actions secret `MOK_KEY`; local backup at `~/data/technology/00-admin/security/encryption/margine-image-keys/MOK.key` (chmod 600) | **private — never committed** |
 | `MOK.pem` (X.509 certificate, PEM) | `margine-image/secrets/MOK.pem` (committed) and GH Actions secret `MOK_CERT` | public |
 | `MOK.der` (X.509 certificate, DER) | `margine-image/secrets/MOK.der` (committed) | public |
-| `MOK_PASSWORD` | GH Actions secret `MOK_PASSWORD`. Current value: `margine-os` (rotated 2026-06-06 from the original 24-char base64 to a short human-typable string — same pattern as Bazzite's `ublue-os`, so users can type it at the MOK Manager screen without copy-paste). Public on purpose: this string only gates the one-shot Secure-Boot trust handoff on first boot, not anything secret. | low-sensitivity |
+| MOK enrollment passphrase | **Not a secret.** Hardcoded constant `MOK_PASSWORD="margine-os"` in `margine-image/build_files/custom-kernel/install.sh`. Public by design: the user types it at the MOK Manager screen, the live-ISO dialog prints it, and these docs spell it out — routing it through a GitHub Actions secret would imply a confidentiality that does not exist. The old `MOK_PASSWORD` repo secret was **removed 2026-06-12** (the build no longer consumes it; only `MOK_KEY` + `MOK_CERT` are staged). This string only gates the one-shot physical-presence trust handoff on first boot. | public-by-design |
 
 The cert fingerprint at the time of this writing is
 `DF:C0:A7:0A:8B:90:EC:8F:01:04:1C:F7:7C:05:F0:79:76:B8:CC:72:BC:8C:38:F4:6D:26:5D:DA:6C:1E:55:B1`.

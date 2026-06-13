@@ -63,11 +63,20 @@ root-on-ZFS + mkinitcpio configuration exists because those tools fit the
 Arch/CachyOS update model. Importing that configuration to Fedora Atomic would
 produce a system that can no longer use rpm-ostree safely.
 
+> **Addendum (2026-06):** the "no custom keys / MOK deferred" stance below
+> reflects phase-1 scope, when Margine still ran the stock Fedora kernel. Once
+> Margine swapped in the CachyOS kernel (ADR 0006), MOK signing + first-boot
+> enrollment **were** adopted — the kernel and modules are signed with the
+> Margine MOK and enrolled via shim/MokManager. See `docs/07-secure-boot-tpm2.md`
+> and `margine-image/build_files/custom-kernel/install.sh`. This ADR is kept as
+> the phase-1 record; it is not the current boot-security design.
+
 ## Consequences
 
 - Limine, sbctl, mkinitcpio, and root-on-ZFS are explicitly rejected for
   phase 1 and documented in `docs/00-goals.md` and `docs/05-known-risks.md`.
 - Custom MOK key enrollment is deferred to a future phase if needed.
+  _(Superseded — adopted with the CachyOS kernel; see the addendum above.)_
 - The initramfs is always managed by rpm-ostree; `dracut -f` is not run manually.
 - TPM2 PCR policy is observed in the lab before being locked in; it is not
   assumed from the Arch experience.

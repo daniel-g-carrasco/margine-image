@@ -405,7 +405,7 @@ booted = json.loads(r.stdout)["status"]["booted"]
 digest  = booted["image"].get("imageDigest", "?")
 version = booted["image"].get("version", "?")
 ```
-*`/var/home/daniel/dev/margine-image/build_files/70-passwd-seed-boot/install.sh` (lines 168-173, `margine-upgrade-notify`)*
+*`/var/home/daniel/dev/margine-image/build_files/system_files/usr/libexec/margine-upgrade-notify`*
 
 The booted OS is identified by an OCI **digest** — the same identifier CI signed and smoke-booted. That one-to-one mapping between "what runs on the laptop" and "what passed the pipeline" is the core operational win of the model.
 
@@ -461,7 +461,7 @@ Files the admin never touched track new image defaults; files the admin modified
 > # is below the entry threshold). Doesn't depend on rechunk preserving
 > # /etc — it doesn't need to.
 > ```
-> *`/var/home/daniel/dev/margine-image/build_files/70-passwd-seed-boot/install.sh` (lines 18-21; merge logic in `/usr/libexec/margine-seed-etc-passwd`)*
+> *`/var/home/daniel/dev/margine-image/build_files/system_files/usr/lib/systemd/system/margine-seed-etc-passwd.service`; merge logic in `/usr/libexec/margine-seed-etc-passwd`*
 
 > **Lesson — early-boot unit ordering deadlocked the boot (incident 2026-06-01)**
 > **Symptom:** fresh VM stalled into `emergency.target`; journal showed `local-fs-pre.target: Found ordering cycle` and every `/dev/disk/by-uuid/*` device timing out.
@@ -490,9 +490,9 @@ Files the admin never touched track new image defaults; files the admin modified
 # they install, so without this rsync the Flatpaks would be lost
 # at first reboot.
 ...
-rsync -aAXUHK --open-noatime /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
+rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
 ```
-*`/var/home/daniel/dev/margine-image/disk_config/iso-gnome.toml` (lines 230-234, 271)*
+*`/var/home/daniel/dev/margine-image/live-env/src/anaconda/post-scripts/install-flatpaks.ks`*
 
 Rule of thumb when designing a feature: if it must survive updates and differ per machine → `/var`; if it is host configuration → `/etc`; everything else → `/usr` at build time.
 
@@ -524,7 +524,7 @@ Switching a machine onto (or between) images is one command. Margine's installer
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
 ```
-*`/var/home/daniel/dev/margine-image/disk_config/iso-gnome.toml` (lines 72-78)*
+*`/var/home/daniel/dev/margine-image/live-env/src/anaconda/post-scripts/bootc-switch.ks`*
 
 And the documented adoption path for an existing Fedora Atomic / Bluefin machine, from the Containerfile header:
 
@@ -542,7 +542,7 @@ Naive Containerfile layering is hostile to updates: any change in an early `RUN`
 ```yaml
       - name: ReChunk image
         id: rechunk
-        uses: hhd-dev/rechunk@v1.2.4
+        uses: hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2  # v1.2.4
         with:
           ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
@@ -696,7 +696,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
-    --mount=type=secret,id=mok-password,target=/tmp/certs/mok-password \
     /ctx/custom-kernel/install.sh
 ```
 
@@ -762,7 +761,8 @@ The stages:
 | `45-wsf/` | build `wayland-scroll-factor`, install `LD_PRELOAD` drop-in for `org.gnome.Shell@.service` |
 | `50-branding/` | logo, wallpaper, Plymouth theme, offline docs, GDM background, strip Bluefin branding |
 | `60-ujust-services/` | `60-custom.just` recipes, mask `systemd-remount-fs`, skel defaults |
-| `70-passwd-seed-boot/` | boot-time passwd re-seed unit, staleness/upgrade notifiers, first-boot autostarts |
+
+The boot-time passwd re-seed unit, staleness/upgrade notifiers, and first-boot autostarts no longer have a build stage of their own: their payloads ship as tracked files under `build_files/system_files/` (libexec scripts + systemd units), copied wholesale into the rootfs by stage `10-os-identity` — the system_files overlay this chapter already describes.
 
 One detail in `60-ujust-services` generalizes to any Bluefin derivative: the recipe file **must** be named `60-custom.just`.
 
@@ -863,7 +863,7 @@ A second class of "build-time write" bug: transient dnf installs. The extensions
 > *Root cause:* Bluefin ships a near-empty `/etc/passwd` (sysusers populates it at boot). The build-time seed (stage 10) fills it, and CI confirmed 65 entries post-build — but rechunk's re-commit stripped `/etc/passwd`/`/etc/group` from the `/usr/etc` factory, so ostree's 3-way merge on the rebased machine kept only `root` plus the human user.
 > *Fix:* belt and suspenders — keep the build-time seed *and* ship an idempotent boot-time oneshot that re-merges from `/usr/lib/{passwd,group}` whenever `/etc/passwd` drops below 20 entries:
 > ```ini
-> # written by build_files/70-passwd-seed-boot/install.sh
+> # build_files/system_files/usr/lib/systemd/system/margine-seed-etc-passwd.service
 > [Unit]
 > DefaultDependencies=no
 > # DO NOT add After=local-fs.target: it creates an ordering cycle through
@@ -937,7 +937,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
-    --mount=type=secret,id=mok-password,target=/tmp/certs/mok-password \
     /ctx/custom-kernel/install.sh
 ```
 *`/var/home/daniel/dev/margine-image/Containerfile` (lines 39-46)*
@@ -1284,7 +1283,7 @@ path arrived only with ADR 0006's CachyOS decision. Prove the boring baseline fi
 | `MOK.key` (RSA-2048 private) | GitHub Actions secret `MOK_KEY` + offline backup, chmod 600 | **private, never committed** |
 | `MOK.pem` (X.509 cert, PEM) | committed at `margine-image/secrets/MOK.pem` + secret `MOK_CERT` | public |
 | `MOK.der` (same cert, DER) | committed at `margine-image/secrets/MOK.der`, shipped in-image | public |
-| `MOK_PASSWORD` | secret `MOK_PASSWORD`; value `margine-os` | **public by design** (§4.6) |
+| `MOK_PASSWORD` | hardcoded constant `MOK_PASSWORD="margine-os"` in `build_files/custom-kernel/install.sh` | **public by design** (§4.6) |
 
 The build refuses to proceed with mismatched material — a wrong-cert build would produce an
 image whose kernel can never be trusted, discovered only at a user's boot screen:
@@ -1315,13 +1314,11 @@ CI materializes the GitHub secrets as files, then hands them to buildah as Build
   env:
     MOK_KEY:      ${{ secrets.MOK_KEY }}
     MOK_CERT:     ${{ secrets.MOK_CERT }}
-    MOK_PASSWORD: ${{ secrets.MOK_PASSWORD }}
   run: |
     mkdir -p /tmp/margine-secrets
     chmod 700 /tmp/margine-secrets
     printf '%s' "$MOK_KEY"      > /tmp/margine-secrets/MOK.key
     printf '%s' "$MOK_CERT"     > /tmp/margine-secrets/MOK.pem
-    printf '%s' "$MOK_PASSWORD" > /tmp/margine-secrets/mok-password
 ```
 
 ```dockerfile
@@ -1332,7 +1329,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
-    --mount=type=secret,id=mok-password,target=/tmp/certs/mok-password \
     /ctx/custom-kernel/install.sh
 ```
 
@@ -1475,7 +1471,7 @@ not yet trusted. Margine's installer ISO closes the loop from Anaconda instead.
 > first post-install reboot, *before* the Margine kernel is ever loaded.
 
 ```bash
-# margine-image/disk_config/iso-gnome.toml:80-136 (trimmed)
+# margine-image/live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks:15-64 (trimmed)
 %post --nochroot --log=/mnt/sysimage/var/log/anaconda-post-mok-enroll.log
 if [[ ! -d /sys/firmware/efi ]]; then
   log "EFI mode not detected — skipping MOK import"; exit 0
@@ -1512,8 +1508,8 @@ Details that earn their bytes:
 - Every exit path is a soft `exit 0` — a BIOS-mode install or a missing `mokutil` degrades to
   the service fallback instead of failing the whole install.
 
-The Titanoboa live-ISO migration (ADR 0008) ports this kickstart verbatim as
-`live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks`, with one new wrinkle: the live
+This fragment is the one the Titanoboa live ISO ships (ADR 0008 ported it verbatim from the
+retired `iso-gnome.toml`), and it carries one wrinkle the BIB ISO didn't have: the live
 environment itself runs Margine's CachyOS kernel, which is untrusted before enrollment. The
 documented flow there is *disable Secure Boot → boot live ISO → install (request staged) →
 re-enable Secure Boot → MokManager → enroll*. That is the cost of shipping one kernel in both
@@ -2170,7 +2166,7 @@ Margine's first approach ran `flatpak install --system` directly in Anaconda `%p
 > # time (CI runner has plenty of disk) so install-time stays fast +
 > # reliable.
 > ```
-> *`margine-image/disk_config/iso-gnome.toml` (lines 236–241).*
+> *Originally documented inline in the BIB kickstart (`disk_config/iso-gnome.toml`, now deleted); the same install-time-vs-build-time rationale carries over to `live-env/src/anaconda/post-scripts/install-flatpaks.ks` and ADR-0008 §4.*
 
 ### Installing Flatpaks inside a container build
 
@@ -2214,7 +2210,7 @@ sync
 > ```bash
 > rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
 > ```
-> *`install-flatpaks.ks` line 39; rationale in `margine-fedora-atomic/docs/adr/0008-titanoboa-migration-plan.md` §4.* (The earlier BIB kickstart in `iso-gnome.toml` line 271 still uses plain `-aAXUHK --open-noatime`; the Titanoboa path adopted the filter as the invariant.)
+> *`install-flatpaks.ks` line 39; rationale in `margine-fedora-atomic/docs/adr/0008-titanoboa-migration-plan.md` §4.* (The earlier BIB kickstart used plain `-aAXUHK --open-noatime`; the Titanoboa path adopted the filter as the invariant, and that BIB kickstart — `iso-gnome.toml` — has since been deleted.)
 
 One more guard in the Titanoboa live environment: the live session and the installer share `/var/lib/flatpak`, so the baked set is bind-mounted read-only to keep the live user from tainting it before the rsync (`var-lib-flatpak.mount`, `Options=bind,ro`, `live-env/src/build.sh` lines 173–188 — Bazzite pattern).
 
@@ -2492,7 +2488,7 @@ repeat.
 # /var/home/daniel/dev/margine-image/.github/workflows/build.yml (lines 448-464)
       - name: ReChunk image
         id: rechunk
-        uses: hhd-dev/rechunk@v1.2.4
+        uses: hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2  # v1.2.4
         with:
           ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
@@ -2634,7 +2630,7 @@ build → QEMU smoke-boot → merge).
   when `/etc/passwd` looks stripped:
 
 ```sh
-# /var/home/daniel/dev/margine-image/build_files/70-passwd-seed-boot/install.sh (lines 18-21)
+# build_files/system_files/usr/lib/systemd/system/margine-seed-etc-passwd.service
 # Workaround: ship a systemd oneshot that re-applies the seed at
 # every boot, before sysinit. Idempotent (only seeds if /etc/passwd
 # is below the entry threshold). Doesn't depend on rechunk preserving
@@ -2648,7 +2644,7 @@ build → QEMU smoke-boot → merge).
   the rationale inline:
 
 ```ini
-# 70-passwd-seed-boot/install.sh (unit body, lines 65-75, comment trimmed)
+# system_files/.../margine-seed-etc-passwd.service (unit body, comment trimmed)
 DefaultDependencies=no
 # ... DO NOT add After=local-fs.target: it creates an ordering cycle
 # through systemd-tmpfiles-setup-dev.service ... (incident 2026-06-01)
@@ -2844,18 +2840,19 @@ All tags point at the same manifest, so one digest covers them all. Signing `ima
 
 ### Signatures survive promotion because promotion preserves digests
 
-Margine's `:candidate` → `:stable` promotion (after the QEMU smoke boot, chapter 7) is a `skopeo copy --preserve-digests` — the manifest digest does not change, so the signature made against `:candidate`'s digest is automatically valid for `:stable`:
+Margine's `:candidate` → `:stable` promotion (after the QEMU smoke boot, chapter 7) is a `skopeo copy --preserve-digests` of the exact digest the gate booted — the manifest digest does not change, so the signature made against `:candidate`'s digest is automatically valid for `:stable`:
 
 ```bash
 # margine-image/.github/workflows/smoke-boot.yml — promote step
+# ${PINNED} = ${BASE}@sha256:... resolved once (the digest just booted)
 for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
   sudo skopeo copy --retry-times 3 --preserve-digests \
-    "docker://${SRC_REF}" \
+    "docker://${PINNED}" \
     "docker://${REGISTRY_IMAGE}:${promo_tag}"
 done
 ```
 
-Sign-by-digest plus copy-by-digest means the chapter-7 promotion gate adds zero signing work: the bytes that were smoke-booted are the bytes that were signed are the bytes users pull.
+Sign-by-digest plus copy-by-digest means the chapter-7 promotion gate adds zero signing work: the bytes that were smoke-booted are the bytes that were signed are the bytes users pull. (Promoting `${PINNED}` rather than re-resolving `:candidate` also closed a void-gate bug — see chapter 9 §9.5.)
 
 ## 8.3 SBOM as a signed OCI referrer
 
@@ -2965,19 +2962,19 @@ Putting `ostree-image-signed:` in the user-facing docs means the deployment orig
 
 ## 8.5 SHA-pinning actions and base images
 
-Every third-party action in Margine's workflows is pinned to a full 40-character commit SHA, with the human-readable version kept as a comment so Dependabot can bump both in lockstep:
+Every third-party action in Margine's workflows is pinned to a full 40-character commit SHA, with the human-readable version kept as a comment so Renovate can bump both in lockstep (Margine retired `dependabot.yml` for a `renovate.json5`):
 
 ```yaml
 # margine-image/.github/workflows/build.yml
 - name: Checkout
   # SHA-pinned for supply-chain safety. Comment is the human-readable
-  # version Dependabot uses to bump both fields in lockstep. See the
-  # tj-actions/changed-files incident (2025-03) for why @vN alone
+  # version the bump bot (Renovate) uses to bump both fields in lockstep.
+  # See the tj-actions/changed-files incident (2025-03) for why @vN alone
   # is unsafe.
   uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 ```
 
-A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-files compromise (March 2025) retroactively poisoned the floating tags of an action used by ~23k repos, exfiltrating CI secrets. A SHA cannot be moved. The same pattern covers `docker/metadata-action`, `anchore/sbom-action`, `actions/upload-artifact`/`download-artifact`, `oras-project/setup-oras`, `ublue-os/remove-unwanted-software`, `osbuild/bootc-image-builder-action`, and `ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4` in the disk/ISO workflows.
+A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-files compromise (March 2025) retroactively poisoned the floating tags of an action used by ~23k repos, exfiltrating CI secrets. A SHA cannot be moved. The same pattern covers `docker/metadata-action`, `anchore/sbom-action`, `actions/upload-artifact`/`download-artifact`, `oras-project/setup-oras`, `ublue-os/remove-unwanted-software`, `osbuild/bootc-image-builder-action`, and `daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392` (a personal fork carrying upstream PR #147's mksquashfs fix, set via the `TITANOBOA_REF` env in `build-disk.yml`) in the disk/ISO workflows.
 
 > **Lesson: a floating action tag is also a floating tool version (CVE-2026-39395)**
 > **Symptom:** audit §6.2 flagged `sigstore/cosign-installer@v3` (floating) in both build workflows as CRITICAL.
@@ -2988,25 +2985,32 @@ A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-
 > ```
 > v3.10.1 of the installer pulls cosign v3.0.6. Pinning the action SHA pins the toolchain version transitively.
 
-Two deliberate exceptions, worth stating because pinning is a policy, not a reflex:
+One deliberate exception, worth stating because pinning is a policy, not a reflex (a former second one — `hhd-dev/rechunk`, once tag-pinned at `@v1.2.4` — is now closed: it is SHA-pinned `hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2 # v1.2.4` like every other action):
 
-- **`hhd-dev/rechunk@v1.2.4`** is tag-pinned, not SHA-pinned — a residual gap (a release tag is mutable in principle), mitigated by being a versioned tag rather than a floating major.
 - **`FROM ghcr.io/ublue-os/bluefin-dx:stable`** in the Containerfile floats on purpose. Margine *wants* upstream drift: the weekly cron (`schedule: '0 4 * * 0'` in `build.yml`) rebuilds against whatever Bluefin DX currently is, and the QEMU smoke gate (chapter 7) catches breakage before `:stable` moves. Digest-pinning the base would trade silent drift for a Renovate-style bump treadmill; the gate makes the float survivable. If you have no boot gate, pin the FROM digest.
 
-A third, subtler pinning move: the spec repo (`margine-fedora-atomic`) is fetched at build time by ref name, so `build.yml` resolves the ref to a commit SHA at build start and stamps it into the image as an OCI label — provenance for audits:
+A third, subtler pinning move: the spec repo (`margine-fedora-atomic`) is fetched at build time, and to keep that fetch reproducible `build.yml` resolves the ref to a commit SHA at build start, *passes it into the build* as `--build-arg MARGINE_REF=<sha>`, and also stamps it as an OCI label:
 
 ```yaml
-# margine-image/.github/workflows/build.yml — specref step + label
+# margine-image/.github/workflows/build.yml — specref step + build-arg + label
 SHA="$(gh api repos/${{ github.repository_owner }}/margine-fedora-atomic/commits/${REF} --jq .sha)"
 ...
+buildah build --build-arg "MARGINE_REF=${{ steps.specref.outputs.sha }}" ...
 place.the-empty.margine.spec-ref=${{ steps.specref.outputs.sha }}
 ```
 
-Any published image can be traced back to the exact spec-repo commit that produced its scripts and branding, even though the build fetched "main".
+The Containerfile declares `ARG MARGINE_REF=main`, which the fetch scripts consume — so the image pulls scripts/branding/declarations from the exact pinned SHA, not from a moving `main` that could change between the SHA resolution and the fetch. (This closed an earlier TOCTOU caveat: the ref was *recorded* as a SHA in the label but the fetch still followed `main`.) Any published image can be traced back to — and is byte-reproducible from — the exact spec-repo commit that produced it.
+
+### Linting the pipeline itself, and automating the bumps
+
+Pinning is only half a policy; the other half is keeping the pins fresh and the glue scripts honest. Two pieces close that loop:
+
+- **`lint.yml`** in each repo runs `actionlint` (workflow schema + shellcheck over every `run:` block), a **shebang-aware** `shellcheck` pass (tracked `*.sh` *plus* the extensionless `system_files` payloads discovered by their `#!` line — the GUI probe and the seed scripts would otherwise be invisible to shellcheck), and `ruff` over the Python build helpers. This is why the inline heredocs got extracted into real files: a script shellcheck can't see is a script nobody is checking.
+- **Renovate** replaced Dependabot: `dependabot.yml` was retired for a `renovate.json5` that bumps the SHA pins (and their version comments) in lockstep, including the `# Renovate disabled` carve-out for the personal Titanoboa fork that must not be auto-bumped.
 
 ## 8.6 Secrets handling in GHA
 
-Margine's CI holds four secrets: `MOK_KEY`, `MOK_CERT`, `MOK_PASSWORD` (kernel signing) and `COSIGN_PRIVATE_KEY`. Handling rules visible in the workflow:
+Margine's CI holds three secrets: `MOK_KEY`, `MOK_CERT` (kernel signing) and `COSIGN_PRIVATE_KEY`. (The mokutil enrollment passphrase is *not* a secret — it's a hardcoded constant `MOK_PASSWORD="margine-os"` in `custom-kernel/install.sh`, public by design; §4.6.) Handling rules visible in the workflow:
 
 ```yaml
 # margine-image/.github/workflows/build.yml
@@ -3014,7 +3018,6 @@ Margine's CI holds four secrets: `MOK_KEY`, `MOK_CERT`, `MOK_PASSWORD` (kernel s
   env:
     MOK_KEY:      ${{ secrets.MOK_KEY }}
     MOK_CERT:     ${{ secrets.MOK_CERT }}
-    MOK_PASSWORD: ${{ secrets.MOK_PASSWORD }}
   run: |
     mkdir -p /tmp/margine-secrets
     chmod 700 /tmp/margine-secrets
@@ -3035,7 +3038,6 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     ...
     --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
-    --mount=type=secret,id=mok-password,target=/tmp/certs/mok-password \
     /ctx/custom-kernel/install.sh
 ```
 
@@ -3079,7 +3081,7 @@ An atomic distro's "release engineering" is a container pipeline. Margine ships 
 |---|---|---|
 | `build.yml` (672 lines) | `build_push` → `sign` → `notify` | OCI image → GHCR `:candidate` |
 | `smoke-boot.yml` (271 lines) | `smoke_boot` (auto after build) | promotion `:candidate` → `:stable` |
-| `build-disk.yml` (901 lines) | `build_disk` (matrix) → `publish_ia` → `bump_site` → `notify` | qcow2 + Anaconda ISO → Internet Archive |
+| `build-disk.yml` (901 lines) | `build_disk` (qcow2) + `build_iso_titanoboa` → `publish_ia` → `bump_site` → `notify` | qcow2 + Titanoboa live ISO → Internet Archive |
 
 Everything runs on GitHub-hosted `ubuntu-24.04`. That was not the first choice.
 
@@ -3172,7 +3174,6 @@ sudo -E buildah build \
   --layers \
   --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
   --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
-  --secret id=mok-password,src=/tmp/margine-secrets/mok-password \
   "${TAG_ARGS[@]}" \
   "${LABEL_ARGS[@]}" \
   .
@@ -3181,7 +3182,7 @@ sudo -E buildah build \
 
 Margine dropped `redhat-actions/buildah-build` for a direct shell call (the pattern Bazzite uses): no Node-runtime deprecation warnings, no waiting on the action repo for fixes, and the exact same command works on a laptop. Two side effects worth copying: `sudo buildah` writes to root storage (`/var/lib/containers`), which is where rechunk's `podman create` looks — the old rootless action needed an extra oci-archive bounce; and BuildKit `--secret` mounts keep the MOK private key out of every layer (chapter 4). The secrets are staged to `/tmp/margine-secrets` from GitHub Actions secrets and wiped in an `if: always()` step.
 
-One more reproducibility trick: build scripts fetch validators and branding from the spec repo at `main`, so the workflow resolves that ref to a commit SHA at build start and stamps it as an OCI label (`place.the-empty.margine.spec-ref`) — any image can be traced back to the exact spec-repo state that produced it.
+One more reproducibility trick: build scripts fetch validators and branding from the spec repo, so the workflow resolves that ref to a commit SHA at build start, passes it in as `--build-arg MARGINE_REF=<sha>` (the Containerfile's `ARG MARGINE_REF=main` is consumed by the fetch scripts), and stamps it as an OCI label (`place.the-empty.margine.spec-ref`) — so the fetch hits the exact pinned SHA, and any image can be traced back to (and rebuilt from) the exact spec-repo state that produced it.
 
 ## 9.3 Validators as gates inside the build
 
@@ -3227,6 +3228,20 @@ grep -qE "^border-radius=7" "$DCONF_DIR/02-margine-search-light" || ...
 *`margine-image/.github/workflows/build.yml:384-388`*
 
 Takeaway: sentinel gates are worth the duplication (they catch silent file truncation and staging-order bugs that existence checks miss), but treat the sentinel as part of the change — "update default" PRs must touch the validator in the same commit, or generate the assertion from the keyfile itself.
+
+### Validators as the single source of truth, run in-container
+
+The "generate the assertion from the keyfile itself" half of that takeaway is where the chapter's own sentinel-duplication Lesson is finally retired. The grep sentinels were duplicated *constants* — the keyfile said one thing, the CI step asserted another, and they drifted. The fix is to stop duplicating the check and instead **run the real validator against the built image**, the same binary the OS ships:
+
+```yaml
+- name: Run image validators (single source of truth)
+  run: |
+    for v in margine-validate-margine-system margine-validate-branding; do
+      sudo podman run --rm -e MARGINE_VALIDATE_CONTEXT=image \
+        "localhost/${IMAGE_NAME}:${VERSION}" "$v"
+    done
+```
+*`margine-image/.github/workflows/build.yml` (Layer A validator step).* `MARGINE_VALIDATE_CONTEXT=image` tells the validator it is inspecting a built rootfs rather than a running system (so it skips checks that need a live session). The decisive property: **one** validator now runs in three places — here in CI (Layer A), inside the Layer C GUI probe (below), and on a user's machine via `ujust margine-doctor` (which iterates every `/usr/bin/margine-validate-*`). There is no second copy of the assertion to drift from the default; if the keyfile and the check disagree, it is one bug in one file.
 
 ## 9.4 Push to GHCR and the job split
 
@@ -3296,44 +3311,73 @@ The budget is 20 minutes, not 30 seconds: first boot pulls 2–3 GB of Flatpaks 
 
 ### Promotion: same bytes, new name
 
+A "Resolve image ref to digest" step runs first and pins the candidate to an immutable digest *once*, and every later step (the qcow2 build, the boot, the promotion) consumes that one `${PINNED}` value:
+
 ```yaml
+- name: Resolve image ref to digest
+  id: ref
+  run: |
+    DIGEST="$(sudo skopeo inspect --no-tags --format '{{.Digest}}' "docker://$REF")"
+    echo "pinned=${BASE}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
 - name: Promote candidate → stable (only if boot passed)
   if: success() && steps.boot.outputs.passed == 'true'
   run: |
     for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
       sudo skopeo copy --retry-times 3 --preserve-digests \
-        "docker://${SRC_REF}" \
+        "docker://${PINNED}" \
         "docker://${REGISTRY_IMAGE}:${promo_tag}"
     done
 ```
-*`margine-image/.github/workflows/smoke-boot.yml:252-270` (trimmed)*
+*`margine-image/.github/workflows/smoke-boot.yml` (resolve + promote steps).*
 
 `skopeo copy --preserve-digests` is a registry-side tag move: no rebuild, no re-rechunk — the digest promoted to `:stable` is byte-identical to the manifest that just booted, and the cosign signature made by digest stays valid. `:stable.YYYYMMDD` and `:YYYYMMDD` give users pinnable rollback targets. Policy in one sentence: **no image reaches `:stable` without having booted in QEMU.**
 
-One footgun visible in this file: the qcow2-build step and the promotion step both compute a fallback ref for the `workflow_run` (no-inputs) case — and they hardcode *different* defaults (`:stable` at line 88 vs `:candidate` at line 260). Duplicated fallback literals across steps drift just like validator sentinels do; hoist them into a single `env:` value.
+This closed a previously-void gate. The earlier version resolved `:candidate` independently in the qcow2-build step and again in the promotion step — so if a *new* build finished mid-smoke, the gate booted one digest and `skopeo copy` promoted whatever `:candidate` pointed at by then (a different, never-tested digest). Resolving to `${PINNED}` once makes "booted" and "promoted" provably the same bytes (code-quality review finding A1; the per-tag re-resolve was A2). A guard was also added so the three stable tags can't split across two digests: this is the only workflow that mutates `:stable`, so it carries `concurrency: { group: smoke-boot, cancel-in-progress: false }` — concurrent promotions queue instead of racing, and a run is never cancelled mid-`skopeo copy`.
+
+### Layer C: a GUI smoke probe
+
+Layer B answers "did userspace come up" — it greps the serial log for `gdm.service`/`graphical.target`. But a GNOME session can *reach* `graphical.target` with a gnome-shell that immediately crashes on a bad extension: the login screen appears, the user's session never does. To catch that class, a third layer boots the qcow2 with a throwaway autologin user and a root oneshot that interrogates the live session, printing its verdict to the same serial console the watcher already reads:
+
+```bash
+# .github/smoke/gui-probe.sh (run as margine-gui-smoke.service in the VM)
+pgrep -u smoke -x gnome-shell >/dev/null || fail "gnome-shell never started"
+sleep 30   # let extensions load
+EXT=$(runuser -u smoke -- gnome-extensions list --enabled | wc -l)
+[[ "$EXT" -ge 6 ]] || fail "only $EXT extensions enabled (expected >=6)"
+pgrep -u smoke -x gnome-shell >/dev/null || fail "gnome-shell died during the probe"
+coredumpctl -q list 2>/dev/null | grep -q gnome-shell && fail "gnome-shell dumped core"
+out "MARGINE-GUI-SMOKE: PASS ext=$EXT"
+```
+*`margine-image/.github/smoke/gui-probe.sh` + `margine-gui-smoke.service`, injected offline into the qcow2 by `.github/scripts/inject-gui-probe.sh` (GDM autologin + the oneshot + a permissive-SELinux karg for this one boot).* Injection runs `continue-on-error` so a failed injection can never block the Layer B gate, and the unit is `After=graphical.target` with its wants-symlink in `graphical.target.wants` (the first deployment hooked it into `multi-user.target.wants`, creating an ordering cycle that made systemd silently skip it — a "no verdict" non-result). The verdict is **warn-only** until two consecutive green runs prove it isn't flaky (both achieved 2026-06-13); then it becomes gating.
+
+> **Lesson — "reached graphical.target" is not "the desktop works".**
+> *Symptom:* a candidate passed Layer B (login screen reached) but the autologin session showed a black screen; gnome-shell was respawning.
+> *Root cause:* a crashing GNOME extension took down the shell *after* `graphical.target` was reached. Layer B's grep can't see past the target; it never logs into a session.
+> *Fix:* Layer C logs in as a disposable user and checks the things a human would notice — shell alive, ≥6 extensions enabled, no `gnome-shell` coredump, no Clutter `Bail out!` in the journal — and prints `MARGINE-GUI-SMOKE: PASS/FAIL` to serial. Catching a crashing-extension regression that Layer B passes is exactly the gap it exists to close.
 
 ## 9.6 Disk images and ISOs: build-disk.yml
 
-The OCI image updates installed systems; the ISO/qcow2 pipeline creates new ones. It is manual-trigger only (`workflow_dispatch`, plus PR runs on `disk_config/`/`live-env/` path changes) — ISOs are ~5–9 GB, built per release event, not per push. A matrix covers both consumables from `:stable`:
+The OCI image updates installed systems; the ISO/qcow2 pipeline creates new ones. It is manual-trigger only (`workflow_dispatch`, plus PR runs on `disk_config/`/`live-env/` path changes) — ISOs are ~5–9 GB, built per release event, not per push. The ISO is built by a separate Titanoboa job (§10.2); the BIB-driven `build_disk` job now produces only the smoke-gate `qcow2` (the `anaconda-iso` matrix entry was removed in ADR-0008 Phase 5/7):
 
 ```yaml
 matrix:
   image: ["margine"]
-  disk-type: ["qcow2", "anaconda-iso"]
+  disk-type: ["qcow2"]
 ```
-*`margine-image/.github/workflows/build-disk.yml:91-92`*
+*`margine-image/.github/workflows/build-disk.yml` (`build_disk` matrix).*
 
-Notables in the `build_disk` job:
+Notables in the `build_disk` job (and the retired `anaconda-iso` path it once carried):
 
 - **BIB pinned by digest** (`quay.io/centos-bootc/bootc-image-builder@sha256:7ae88…`) and pre-pulled with 8-attempt exponential backoff, because quay.io 5xx brownouts otherwise surface as a single opaque failed pull inside the action.
 - **`rootfs: btrfs` is mandatory**: Bluefin DX doesn't set the `containers.bootc.rootfs` OCI label, so BIB errors with "DefaultRootFs missing" without it.
-- **Installer-image pattern (Bazzite)**: for `anaconda-iso` only, a transient `margine-installer:run-<run_id>` image is built first — base image + ~29 Flatpaks baked into `/var/lib/flatpak` — and *that* is fed to BIB, so the kickstart only rsyncs Flatpaks instead of downloading them in the installer environment (which OOM'd `/tmp` and failed silently; chapter 8). The build needs `--cap-add sys_admin --security-opt label=disable` because `flatpak install` uses bwrap user namespaces inside the container.
-- **GHCR garbage collection**: each run pushes a new `run-<id>` installer tag and GHCR keeps everything forever, so an `always()` step prunes the package via `gh api`, keeping the newest 3 versions.
-- **Checksums with relative paths**: `SHA256SUMS` is written with paths relative to the output dir (`bootiso/install.iso`), because absolute build-side paths broke `sha256sum -c` after the artifact was re-unpacked in the publish job at a different root (run #26789024483).
+- **Installer-image pattern (Bazzite)** *(historical — only the retired `anaconda-iso` path used it)*: a transient `margine-installer:run-<run_id>` image was built first — base image + ~29 Flatpaks baked into `/var/lib/flatpak` — and *that* fed to BIB, so the kickstart only rsynced Flatpaks instead of downloading them in the installer environment (which OOM'd `/tmp` and failed silently; chapter 8). The build needed `--cap-add sys_admin --security-opt label=disable` because `flatpak install` uses bwrap user namespaces inside the container. The Titanoboa path keeps the same trick in `live-env` (§10.2).
+- **GHCR garbage collection**: each ISO run pushes a new run-scoped tag and GHCR keeps everything forever, so an `always()` step prunes the package via `gh api`, keeping the newest 3 versions.
+- **Checksums with relative paths**: `SHA256SUMS` is written with paths relative to the output dir, because absolute build-side paths broke `sha256sum -c` after the artifact was re-unpacked in the publish job at a different root (run #26789024483).
 
 ### BTRFS loopback: buying disk with compression
 
-The parallel Titanoboa live-ISO job (ADR-0008, `continue-on-error: true` until cutover) squashes a ~14 GB rootfs at zstd-19 while also holding the base image — past what `remove-unwanted-software` can free on `/`. The fix, mirrored from Bazzite's workflow, is to back podman's storage with a compressed BTRFS loopback on the runner's ~70 GB ephemeral `/mnt` SSD:
+The Titanoboa live-ISO job (ADR-0008, now the default ISO build) squashes a ~14 GB rootfs at zstd-19 while also holding the base image — past what `remove-unwanted-software` can free on `/`. The fix, mirrored from Bazzite's workflow, is to back podman's storage with a compressed BTRFS loopback on the runner's ~70 GB ephemeral `/mnt` SSD:
 
 ```yaml
 - name: Mount container storage on a BTRFS loopback
@@ -3410,16 +3454,18 @@ Two satellites complete the release loop:
 
 # 10. Getting the image onto metal: installers and ISOs
 
-A bootc image is an OCI artifact. Registries deliver upgrades; they do not deliver the *first* install. Something has to partition a disk, lay down an ostree deployment from the container, and wire the bootloader. Margine runs two ISO pipelines in parallel:
+A bootc image is an OCI artifact. Registries deliver upgrades; they do not deliver the *first* install. Something has to partition a disk, lay down an ostree deployment from the container, and wire the bootloader. Margine's ISO history runs through two pipelines:
 
-- **Path A — bootc-image-builder (BIB) `anaconda-iso`**: the published ISO today. The image is embedded in the ISO; Anaconda installs it offline; a kickstart `%post` stack repoints the origin, tunes the filesystem, stages MOK enrollment, and rsyncs baked Flatpaks.
-- **Path B — Titanoboa live ISO** (ADR-0008, running as a `continue-on-error` side job until cutover): a real live GNOME session whose squashfs *is* a `margine-live` OCI layer, with Anaconda WebUI installing `margine:stable` from the registry.
+- **Path A — bootc-image-builder (BIB) `anaconda-iso`** *(retired, ADR-0008 Phase 5/7)*: the image is embedded in the ISO; Anaconda installs it offline; a kickstart `%post` stack repoints the origin, tunes the filesystem, stages MOK enrollment, and rsyncs baked Flatpaks. This was the published ISO until June 2026; it is documented below as history. BIB itself is still used — but only to emit the `qcow2` the QEMU smoke gate boots (chapter 9), never an ISO.
+- **Path B — Titanoboa live ISO** (ADR-0008): the official and only published ISO. A real live GNOME session whose squashfs *is* a `margine-live` OCI layer, with Anaconda WebUI installing `margine:stable` from the registry.
 
-Both must satisfy the same invariants: registry origin = `ghcr.io/.../margine:stable`, btrfs + `compress=zstd:1`, two-tier MOK enrollment, ~38 BAKE Flatpaks present at first login.
+Both satisfy the same install-time invariants: registry origin = `ghcr.io/.../margine:stable`, btrfs + `compress=zstd:1`, two-tier MOK enrollment, ~38 BAKE Flatpaks present at first login.
 
-## 10.1 Path A — bootc-image-builder Anaconda ISO
+## 10.1 Path A — bootc-image-builder Anaconda ISO (retired / historical)
 
-BIB consumes a bootc image plus a TOML config and emits `qcow2`, `raw`, `vmdk`, or `anaconda-iso`. The qcow2 path (used by the QEMU smoke gate, chapter 9) needs almost nothing:
+> **Status:** the Anaconda-ISO path was retired per ADR-0008 (Phase 5 made Titanoboa the default, Phase 7 removed BIB's ISO matrix). It no longer produces a published artifact; BIB now emits only the `qcow2` used by the smoke gate. This section is kept as a record of *how it used to work* — the kickstart logic it pioneered was ported nearly verbatim into the Titanoboa path (§10.2).
+
+BIB consumes a bootc image plus a TOML config and emits `qcow2`, `raw`, `vmdk`, or `anaconda-iso`. The qcow2 path (the one still in use — it feeds the QEMU smoke gate, chapter 9) needs almost nothing:
 
 ```toml
 [[customizations.filesystem]]
@@ -3468,7 +3514,7 @@ part /boot/efi --fstype=efi --size=4096 --label=ESP
 part / --fstype=btrfs --grow --label=margine_root
 bootloader --timeout=1
 ```
-*`margine-image/disk_config/iso-gnome.toml:65-70`.* A `%pre` script (lines 34-63) enumerates `/sys/block/*`, filters out `loop*|ram*|zram*|sr*|fd*|md*|dm-*`, read-only, and removable devices, and — if exactly one candidate remains — writes `ignoredisk --only-use=<dev>` into `/tmp/part-include.ks`. Single-disk machines install without a disk-selection click; multi-disk machines fall back to explicit Anaconda selection. The 4 GiB ESP is deliberate headroom for future UKI/sealed-boot work (ADR-0007).
+*Historical: this lived in the deleted `disk_config/iso-gnome.toml`; the `%pre` autodetect survives in `live-env/src/anaconda/interactive-defaults.ks` (the WebUI path drops the explicit `clearpart`/`part`).* A `%pre` script enumerates `/sys/block/*`, filters out `loop*|ram*|zram*|sr*|fd*|md*|dm-*`, read-only, and removable devices, and — if exactly one candidate remains — writes `ignoredisk --only-use=<dev>` into `/tmp/part-include.ks`. Single-disk machines install without a disk-selection click; multi-disk machines fall back to explicit Anaconda selection. The 4 GiB ESP is deliberate headroom for future UKI/sealed-boot work (ADR-0007).
 
 ### %post stack — the four jobs
 
@@ -3479,7 +3525,7 @@ bootloader --timeout=1
 bootc switch --mutate-in-place --transport registry ghcr.io/daniel-g-carrasco/margine:stable
 %end
 ```
-*`margine-image/disk_config/iso-gnome.toml:72-78` (comment trimmed).* `--mutate-in-place` edits the just-installed deployment's origin file instead of staging a new deployment. This is the only `%post` allowed to fail the install — a wrong upgrade origin is a real defect.
+*Historical (deleted `iso-gnome.toml`); now `live-env/src/anaconda/post-scripts/bootc-switch.ks`.* `--mutate-in-place` edits the just-installed deployment's origin file instead of staging a new deployment. This is the only `%post` allowed to fail the install — a wrong upgrade origin is a real defect.
 
 **2. Stage MOK enrollment before the first reboot (`--nochroot`).** Margine ships a CachyOS kernel signed with its own MOK (chapter 5); `mokutil --import` writes a pending request into EFI variables so shim opens MokManager on the very first post-install reboot:
 
@@ -3494,7 +3540,7 @@ else
   log "WARN: mokutil import failed — first-boot mok-enroll.service remains fallback"
 fi
 ```
-*`margine-image/disk_config/iso-gnome.toml:128-136`.* `--timeout -1` disables shim's 10 s auto-continue. The cert is located inside the target deployment (`/mnt/sysimage/ostree/deploy/default/deploy/*.0/usr/share/cert/MOK.der`). Every exit path is soft: `mok-enroll.service` in the image re-stages the request at first boot if the user misses MokManager (two-tier enrollment, PR #88).
+*Historical (deleted `iso-gnome.toml`); now `live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks`.* `--timeout -1` disables shim's 10 s auto-continue. The cert is located inside the target deployment (`/mnt/sysimage/ostree/deploy/default/deploy/*.0/usr/share/cert/MOK.der`). Every exit path is soft: `mok-enroll.service` in the image re-stages the request at first boot if the user misses MokManager (two-tier enrollment, PR #88).
 
 **3. zstd compression.** Anaconda's btrfs default has *no* compression. Two layers because they cover different windows: `btrfs property set / compression zstd` affects all new writes immediately; a python3 inline patch appends `compress=zstd:1` to the `/` btrfs line in `/etc/fstab` for durability (python3 instead of sed — backslash escaping inside TOML triple-quoted strings is misery). Already-installed `/usr` content is not recompressed; the win is `/var` and `/home` growth (lines 139-218, not `--erroronfail`: QoL, not install-critical).
 
@@ -3505,12 +3551,12 @@ DEPLOY_DIR=$(ls -d /mnt/sysimage/ostree/deploy/default/deploy/*.0 2>/dev/null | 
 ...
 rsync -aAXUHK --open-noatime /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
 ```
-*`margine-image/disk_config/iso-gnome.toml:258-271` (trimmed).* Belt-and-suspenders: every BAKE app is also listed in `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`, so a silent rsync failure degrades to a first-boot download via `flatpak-preinstall.service`, not missing apps.
+*Historical (deleted `iso-gnome.toml`); now `live-env/src/anaconda/post-scripts/install-flatpaks.ks`.* Belt-and-suspenders: every BAKE app is also listed in `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`, so a silent rsync failure degrades to a first-boot download via `flatpak-preinstall.service`, not missing apps.
 
 > **Lesson — install-time `flatpak install` silently OOMs.**
 > *Symptom:* the 2026-06-04 fresh install completed "successfully" but first boot had no Flatpaks.
 > *Root cause:* the earlier `%post --nochroot` did `flatpak install --system` of the ~5 GB BAKE set *at install time*, inside the installer environment's small tmpfs `/tmp` — it died quietly (`--noninteractive` returns 0 on partial failure).
-> *Fix:* the Bazzite installer-image pattern (2026-06-05): downloads move to OCI build time on a CI runner with real disk; install time is reduced to an rsync. `iso-gnome.toml:235-241` documents the post-mortem inline.
+> *Fix:* the Bazzite installer-image pattern (2026-06-05): downloads move to OCI build time on a CI runner with real disk; install time is reduced to an rsync. The post-mortem was documented inline in the BIB kickstart (since deleted); the live-ISO path keeps the same build-time-bake / install-time-rsync split in `live-env`.
 
 ### Trimming Anaconda modules
 
@@ -3529,27 +3575,30 @@ disable = [
   "org.fedoraproject.Anaconda.Modules.Timezone"
 ]
 ```
-*`margine-image/disk_config/iso-gnome.toml:291-303`.* Users/timezone/services come from Margine's own first-login bootstrap (`ujust margine-bootstrap`), so their installer spokes are dead weight. Network stays enabled: on a laptop the user needs the Wi-Fi picker (wired DHCP auto-configures without it).
+*Historical (deleted `iso-gnome.toml`): a BIB-only `[customizations.installer.modules]` block with no direct Titanoboa equivalent — the live ISO trims spokes through Anaconda's profile instead (§10.2).* Users/timezone/services come from Margine's own first-login bootstrap (`ujust margine-bootstrap`), so their installer spokes are dead weight. Network stays enabled: on a laptop the user needs the Wi-Fi picker (wired DHCP auto-configures without it).
 
-### CI invocation
+### CI invocation (historical)
+
+This was the matrix-conditional BIB invocation while the `anaconda-iso` entry still existed; today the `build_disk` job only runs the `qcow2` branch, so it passes `./disk_config/disk.toml` unconditionally:
 
 ```yaml
 - name: Build disk image
   uses: osbuild/bootc-image-builder-action@019bb59c5100ecec4e78c9e94e18a840110f7a0b  # v0.0.2
   with:
     builder-image: ${{ env.BIB_IMAGE }}
-    config-file: ${{ matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || './disk_config/disk.toml' }}
-    image: ${{ matrix.disk-type == 'anaconda-iso' && steps.installer.outputs.installer_tag || format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
+    # was: matrix.disk-type == 'anaconda-iso' && './disk_config/iso-gnome.toml' || ...
+    config-file: './disk_config/disk.toml'
+    image: ${{ format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
     rootfs: btrfs
     types: ${{ matrix.disk-type }}
 ```
-*`margine-image/.github/workflows/build-disk.yml:209-229` (trimmed).* Two traps encoded here: the ISO build consumes the *installer* tag, not `:stable`; and `rootfs: btrfs` is mandatory because Bluefin DX doesn't set the `containers.bootc.rootfs` OCI label — without it BIB dies with `DefaultRootFs missing`.
+*`margine-image/.github/workflows/build-disk.yml` (`build_disk` job).* One trap still encoded here: `rootfs: btrfs` is mandatory because Bluefin DX doesn't set the `containers.bootc.rootfs` OCI label — without it BIB dies with `DefaultRootFs missing`. (In the retired ISO branch, the build also consumed the *installer* tag, not `:stable`.)
 
-### Why Path A is being replaced
+### Why Path A was replaced
 
-`iso-gnome.toml` hit BIB's architectural ceiling: 300+ lines of kickstart inside a TOML string, BIB upstream in maintenance mode (Universal Blue retired it in March 2025, ublue-os/main#468), no live "try before install" session, the Anaconda GTK spoke not pre-selecting single disks, and a MokManager that never appeared on a Framework 13 where Bluefin's ISO showed it. Hence ADR-0008.
+The `iso-gnome.toml` kickstart hit BIB's architectural ceiling: 300+ lines of kickstart inside a TOML string, BIB upstream in maintenance mode (Universal Blue retired it in March 2025, ublue-os/main#468), no live "try before install" session, the Anaconda GTK spoke not pre-selecting single disks, and a MokManager that never appeared on a Framework 13 where Bluefin's ISO showed it. Hence ADR-0008 — and `iso-gnome.toml` was subsequently deleted; its four kickstart jobs now live as the `.ks` fragments described in §10.2.
 
-## 10.2 Path B — Titanoboa live ISO
+## 10.2 Path B — Titanoboa live ISO (the published ISO)
 
 Titanoboa (`ublue-os/titanoboa`) is a ~150-line bash ISO assembler implementing the Container-native ISO contract v0.1.0 (`ondrejbudai/bootc-isos`). It does almost nothing: `mksquashfs /rootfs → /LiveOS/squashfs.img`, copy `/rootfs/usr/lib/modules/*/{vmlinuz,initramfs.img}` to `/images/pxeboot/`, copy the EFI tree, generate `grub.cfg` from `/usr/lib/bootc-image-builder/iso.yaml` (hard-required — exits 1 if absent), build a FAT32 `uefi.img`, `xorriso -as mkisofs`. **All** customization must already be inside the input image.
 
@@ -3560,12 +3609,13 @@ Since PR #138 (2026-05-19, "Only use container images as the only source of trut
 ```yaml
 - name: Build Live ISO (Titanoboa)
   id: titanoboa
-  uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4
+  # Pinned to env.TITANOBOA_REF (a personal margine-pins fork).
+  uses: daniel-g-carrasco/titanoboa@ace7ea9b57385fb309ab7f40dc5bd5433e6ef392
   with:
     image-ref: ${{ steps.live.outputs.live_tag }}
     iso-dest: ${{ github.workspace }}/margine-live.iso
 ```
-*`margine-image/.github/workflows/build-disk.yml:418-425`.* `image-ref` is a transient `margine-live:ci-run-<run_id>` tag pushed just before — Titanoboa issue #141 (open) hardcodes `podman pull` of the ref, so a local-only tag is not enough. Pin bumps require an explicit follow-up ADR.
+*`margine-image/.github/workflows/build-disk.yml` (`build_iso_titanoboa` job).* The pin is a personal fork, `daniel-g-carrasco/titanoboa@ace7ea9b…`, set via the `TITANOBOA_REF` env: upstream's post-#138 HEAD plus exactly upstream PR #147's `mksquashfs -e` ordering fix (the gzip-fallback Lesson below). `image-ref` is a transient `margine-live:ci-run-<run_id>` tag pushed just before — Titanoboa issue #141 (open) hardcodes `podman pull` of the ref, so a local-only tag is not enough. Pin bumps require an explicit follow-up ADR.
 
 ### iso.yaml — label, kargs, and the initrd rename
 
@@ -3635,7 +3685,7 @@ cp -v /boot/efi/EFI/fedora/grubx64.efi /boot/efi/EFI/BOOT/fbx64.efi
 > **Lesson — mksquashfs silently falls back to gzip.**
 > *Symptom:* the squashfs was larger and faster-built than zstd-19 should produce; the requested compression never applied.
 > *Root cause:* in Titanoboa, `-comp zstd -Xcompression-level 19` is placed *after* `-e` on the mksquashfs command line — mksquashfs swallows everything after `-e` as exclude names and silently falls back to its gzip default. Same 2026-06-09 build-log scan; this class of bug is invisible unless you read the tool's own banner output.
-> *Fix:* upstream — PR filed against `ublue-os/titanoboa`; Margine picks it up at the next deliberate pin bump (commit `379cbbf`). Until then the ISO ships gzip-compressed and the size budget accounts for it.
+> *Fix:* upstream PR `ublue-os/titanoboa#147` reorders the flags; Margine carries it directly by pinning `TITANOBOA_REF` at the personal fork `daniel-g-carrasco/titanoboa@ace7ea9b…`, which is upstream HEAD plus exactly that patch — so the shipped ISO is zstd-compressed, not gzip.
 
 **Phase 2 — BAKE Flatpaks.** Same bwrap prep and comment-stripping as `installer/build.sh`, then `flatpak install --system --noninteractive --or-update flathub $APPS` from `live-env/src/flatpaks` (lines 145-171). Then the live session is defended against the user:
 
@@ -3693,13 +3743,13 @@ ostreecontainer --url=ghcr.io/daniel-g-carrasco/margine:stable --transport=regis
 %include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
 ```
-*`margine-image/live-env/src/anaconda/interactive-defaults.ks:64-84` (comments trimmed).* `ostreecontainer --transport=registry` pulls `margine:stable` from GHCR at install time — chosen over pre-pulling into the ISO's containers-storage (`--transport=containers-storage`), which would add ~5-6 GB and break the 10 GB ISO budget. Consequence: Path B installs need network (Path A is offline-capable); flagged as the #1 revisit item. The 300-line TOML monolith of Path A becomes four self-documenting `.ks` fragments — same four jobs, ported nearly verbatim. Order matters: switch origin, tune fs, stage MOK, bake apps.
+*`margine-image/live-env/src/anaconda/interactive-defaults.ks:64-84` (comments trimmed).* `ostreecontainer --transport=registry` pulls `margine:stable` from GHCR at install time — chosen over pre-pulling into the ISO's containers-storage (`--transport=containers-storage`), which would add ~5-6 GB and break the 10 GB ISO budget. Consequence: installs now need network (the retired Path A was offline-capable) — the standing #1 revisit item since cutover. The 300-line TOML monolith of the old Path A became four self-documenting `.ks` fragments — same four jobs, ported nearly verbatim. Order matters: switch origin, tune fs, stage MOK, bake apps.
 
 One deliberate delta in the Flatpak rsync: Path B uses Bluefin's production incantation `rsync -aAXUHKP --filter='-x security.selinux'` (`post-scripts/install-flatpaks.ks:39`) — preserve POSIX xattrs/ACLs, strip SELinux labels and let ostree-finalize relabel. Wrong labels mean baked Flatpaks fail to launch with AVC denials.
 
 ### CI wiring for Path B
 
-The Titanoboa job (`build-disk.yml:346-479`) runs parallel to BIB with `continue-on-error: true` until Phase 5 cutover. Notable plumbing: ubuntu-24.04 runners have ~14 GB free on `/`, but the zstd squashfs of a ~14 GB rootfs + the base image in storage + the ISO need far more — so rootful podman storage is remounted onto an 80 GB btrfs loopback on the ephemeral `/mnt` SSD with `compress-force=zstd:2` (lines 371-384, mirroring Bazzite). After the build, a prune step keeps only the newest 3 `margine-live` GHCR tags. Test ISOs are pushed to the Internet Archive's auto-expiring `test_collection` (`publish-titanoboa-test-iso.yml`) because GHA artifact egress to residential connections crawls at ~1-1.5 MB/s — 2-4 h for an 8 GB ISO.
+The Titanoboa job (`build_iso_titanoboa` in `build-disk.yml`) is the ISO build since the Phase 5 cutover (2026-06-11); the old BIB `anaconda-iso` matrix entry is gone. Notable plumbing: ubuntu-24.04 runners have ~14 GB free on `/`, but the zstd squashfs of a ~14 GB rootfs + the base image in storage + the ISO need far more — so rootful podman storage is remounted onto an 80 GB btrfs loopback on the ephemeral `/mnt` SSD with `compress-force=zstd:2` (lines 371-384, mirroring Bazzite). After the build, a prune step keeps only the newest 3 `margine-live` GHCR tags. Test ISOs are pushed to the Internet Archive's auto-expiring `test_collection` (`publish-titanoboa-test-iso.yml`) because GHA artifact egress to residential connections crawls at ~1-1.5 MB/s — 2-4 h for an 8 GB ISO.
 
 ## 10.3 Escape hatch: plain `bootc install to-disk`
 
@@ -3716,8 +3766,8 @@ The image installs *itself* — bootc ships the installer logic in every image. 
 
 ## 10.4 Alternatives & other distros
 
-- **Titanoboa** — Universal Blue's direction. **Bazzite**: only production-grade post-#138 consumer, but pins `Zeglius/titanoboa@revamp-pr` (the #138 author's fork). **Bluefin** (`projectbluefin/iso`): pins `@main` while still passing pre-#138 inputs — red since 2026-05-19; reference for content, not workflow. **Aurora** (`get-aurora-dev/iso`): green, but pinned *pre*-#138 (`840217d9`, 2026-01-04) — old 12-input API. Margine: canonical upstream pinned post-#138 by SHA. Trade-off across all: minimal assembler, everything lives in your image; you inherit its bugs until your next pin bump.
-- **bootc-image-builder `anaconda-iso`** — Fedora/CentOS bootc's documented path; works today (Margine's published ISO), but maintenance-mode upstream and no live session; kickstart-in-TOML scales badly.
+- **Titanoboa** — Universal Blue's direction. **Bazzite**: only production-grade post-#138 consumer, but pins `Zeglius/titanoboa@revamp-pr` (the #138 author's fork). **Bluefin** (`projectbluefin/iso`): pins `@main` while still passing pre-#138 inputs — red since 2026-05-19; reference for content, not workflow. **Aurora** (`get-aurora-dev/iso`): green, but pinned *pre*-#138 (`840217d9`, 2026-01-04) — old 12-input API. Margine: a personal post-#138 fork (`daniel-g-carrasco/titanoboa`) pinned by SHA, upstream HEAD plus PR #147 — Margine's official ISO path. Trade-off across all: minimal assembler, everything lives in your image; you inherit its bugs until your next pin bump.
+- **bootc-image-builder `anaconda-iso`** — Fedora/CentOS bootc's documented path; Margine's *former* published ISO (retired per ADR-0008 — maintenance-mode upstream, no live session, kickstart-in-TOML scales badly). BIB is still used to emit the smoke-gate qcow2, just not an ISO.
 - **lorax / livemedia-creator** — how Fedora builds official **Silverblue/Kinoite** ISOs (Anaconda + ostree remote); full Fedora release engineering machinery, heavyweight to self-host.
 - **Anaconda `bootc` kickstart verb** (Fedora, Dec 2025) — the long-term BIB successor; too new for Margine v1, new partitioning model to learn.
 - **kiwi** — **openSUSE MicroOS/Aeon** image/ISO builder; mature multi-format, XML descriptions, not container-native (their atomic model is btrfs-snapshot, not OCI).
@@ -3782,7 +3832,7 @@ echo "image_ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
 ### Promotion: digest-preserving copy, gated on a real boot
 
-`smoke-boot.yml` boots a qcow2 built from `:candidate` in QEMU (chapter 9) and only then runs:
+`smoke-boot.yml` resolves `:candidate` to an immutable digest once (the "Resolve image ref to digest" step → `${PINNED}`), boots *that* qcow2 in QEMU (chapter 9), and only then promotes the exact digest it booted:
 
 ```yaml
 # margine-image/.github/workflows/smoke-boot.yml — "Promote candidate → stable"
@@ -3792,12 +3842,12 @@ echo "image_ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
     DATE_TAG="$(date -u +%Y%m%d)"
     for promo_tag in stable "stable.${DATE_TAG}" "${DATE_TAG}"; do
       sudo skopeo copy --retry-times 3 --preserve-digests \
-        "docker://${SRC_REF}" \
+        "docker://${PINNED}" \
         "docker://${REGISTRY_IMAGE}:${promo_tag}"
     done
 ```
 
-`--preserve-digests` guarantees `:stable` is bit-identical to the manifest that actually booted — no rebuild, no re-rechunk between test and release. The promotion is a registry-side pointer move.
+`--preserve-digests` guarantees `:stable` is bit-identical to the manifest that actually booted — no rebuild, no re-rechunk between test and release. The promotion is a registry-side pointer move. Pinning to `${PINNED}` (rather than re-resolving the moving `:candidate` tag) closed a void-gate window where a build finishing mid-smoke could get the never-booted digest promoted; a `concurrency: group: smoke-boot` (queue, don't cancel) keeps two promotions from splitting the stable tags across digests.
 
 ### Digest pins on the client
 
@@ -3811,7 +3861,7 @@ sudo bootc switch ghcr.io/daniel-g-carrasco/margine@sha256:<digest>   # hard pin
 A hard digest pin disables `bootc upgrade` progress by definition (the ref never changes); dated aliases are the practical middle ground. Margine also ships a client-side watchdog so a *silent* pipeline failure doesn't leave users unknowingly frozen:
 
 ```python
-# margine-image/build_files/70-passwd-seed-boot/install.sh — /usr/libexec/margine-staleness-check
+# margine-image/build_files/system_files/usr/libexec/margine-staleness-check
 r = run(["skopeo", "inspect", "--no-tags", f"docker://{image_ref}"])
 created = json.loads(r.stdout)["Created"]  # ISO 8601
 age_days = (time.time() - created_ts) / 86400
@@ -3986,7 +4036,7 @@ That "local wins forever" rule is the main day-2 footgun: a stale local edit can
 > *Root cause:* rechunk re-commits the image as an ostree-canonical tree and strips `/etc/passwd` + `/etc/group` from `/usr/etc` — so the factory side of the 3-way merge is empty on first deploy. The image you tested in CI is not byte-for-byte the tree the client checks out.
 > *Fix:* a boot-time idempotent seed that merges `/usr/lib/passwd` (the systemd factory copy, which rechunk does preserve) into `/etc`, gated on the stripped state:
 > ```bash
-> # margine-image/build_files/70-passwd-seed-boot/install.sh
+> # margine-image/build_files/system_files/usr/libexec/margine-seed-etc-passwd
 > # Runs only if /etc/passwd has fewer than 20 entries (the post-rebase stripped state).
 > factory = by_name(load(f"/usr/lib/{kind}"))
 > merged = dict(factory); merged.update(local)   # local entries win
@@ -4294,11 +4344,11 @@ Every entry below is a real Margine incident with the fix in-tree. The generaliz
 
 > **Symptom:** BAKE Flatpaks present on disk after install but fail to launch — AVC denials in the journal.
 > **Root cause:** ostree/bootc reset `/var` per deployment, so baked Flatpaks must be rsync'd from the installer rootfs into the target (`%post --nochroot`). A naive `rsync -a` drops POSIX xattrs; copying SELinux labels verbatim from the installer context is also wrong, because the target's labels belong to `ostree-finalize`.
-> **Fix:** Margine's BIB kickstart preserves xattrs/ACLs/hardlinks:
+> **Fix:** the original BIB kickstart preserved xattrs/ACLs/hardlinks:
 > ```bash
 > rsync -aAXUHK --open-noatime /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
 > ```
-> *`margine-image/disk_config/iso-gnome.toml:271`* — and the Titanoboa migration pins the production-verified refinement as an invariant: `rsync -aAXUHKP --filter='-x security.selinux'` — "preserves POSIX xattrs but strips SELinux labels which ostree-finalize restores. Flatpak directories have `system_data_t`/`flatpak_t` labels; if dropped or wrong, Flatpaks fail to launch with AVC denials" (*ADR-0008 §4*). Belt-and-suspenders: every BAKE app is also in `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`, so a silently failed rsync still self-heals at first boot.
+> (That BIB kickstart, `iso-gnome.toml`, has since been deleted.) The Titanoboa migration then pinned the production-verified refinement as the standing invariant in `live-env/src/anaconda/post-scripts/install-flatpaks.ks`: `rsync -aAXUHKP --filter='-x security.selinux'` — "preserves POSIX xattrs but strips SELinux labels which ostree-finalize restores. Flatpak directories have `system_data_t`/`flatpak_t` labels; if dropped or wrong, Flatpaks fail to launch with AVC denials" (*ADR-0008 §4*). Belt-and-suspenders: every BAKE app is also in `/usr/share/flatpak/preinstall.d/margine-defaults.preinstall`, so a silently failed rsync still self-heals at first boot.
 > **Rule:** On SELinux systems "copied the bytes" ≠ "copied the file". Decide explicitly, per metadata class, whether to preserve or strip — and let the component that owns labeling (ostree-finalize, `restorecon`) do its job. Always pair an install-time copy with a first-boot fallback.
 
 ### Lesson 5 — Clutter 18 unrealize assert: hide before detach

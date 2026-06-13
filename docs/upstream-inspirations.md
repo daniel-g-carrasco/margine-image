@@ -19,7 +19,7 @@ go stale silently.
 | [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-06-07 |
 | [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-06-07 |
 | [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the tool Bluefin uses internally | **GH Action consumer** (we use their `@v1.2.4` action) | step `ReChunk image` in `margine-image/.github/workflows/build.yml` | 2026-06-07 |
-| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `99-margine.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-06-07 |
+| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-06-07 |
 
 ---
 
@@ -140,7 +140,7 @@ Specific patterns we follow:
   reconciling system-wide Flatpak installs at first boot. We append
   our Margine defaults to it instead of inventing a new system.
 - `/usr/share/ublue-os/just/*.just` — Bluefin's mechanism for
-  contributing `ujust` recipes. Our `99-margine.just` is dropped
+  contributing `ujust` recipes. Our `60-custom.just` is dropped
   there.
 - `uupd.timer` — Bluefin's update orchestrator. Margine inherits it
   unchanged (we explicitly do NOT ship our own — see ADR 0005 and the
@@ -171,7 +171,7 @@ Action wrapper.
 **License:** Apache-2.0. **Role:** comparison target only. Margine's
 opt-in `ujust margine-gaming` ships a **curated subset** of what
 Bazzite bakes into their image (Steam + Lutris + Heroic + Bottles +
-Protontricks + ProtonUp-Qt as Flatpaks; gamescope + mangohud +
+Protontricks + ProtonPlus as Flatpaks; gamescope + mangohud +
 vkBasalt + gamemode + goverlay + steam-devices as rpm-ostree layers).
 
 We chose a subset because:

@@ -51,7 +51,7 @@ The "Margine-specific" decisions reduce to five:
 | ~~`kitty` as default terminal~~ | ~~Margine replaces~~ — **dropped 2026-05-26**; Margine keeps Bluefin's Ptyxis. (Original delta is preserved here for traceability; the image, YAML keybindings, and adapter scripts no longer reference kitty.) |
 | LogoMenu (`logomenu@aryan_k`) | Margine **disables** (replaces "Activities" with a distro-logo dropdown; pure branding). Bazaar Integration and Gradia Integration were originally listed as branding too but were re-enabled 2026-05-26 — they're functional tools (Flathub app store + screenshot beautifier), not branding. |
 | Hyprland-style keybindings (workspace binds, custom launchers, o-tiling binds, default applications) | Margine **adds** via `configure-gnome-keybindings` and `configure-gnome-{appearance,extensions,app-folders,default-applications}` |
-| **margine-gaming OCI variant** | Margine **adds** (2026-06-02) — separate signed image at `ghcr.io/danielgrasso/margine-gaming:stable` with gamescope/MangoHud/vkBasalt/etc. baked in, switched via `bootc switch`. The ostree-canonical alternative to the per-machine `ujust margine-gaming` overlay. |
+| ~~**margine-gaming OCI variant**~~ | ~~Margine **adds** (2026-06-02) — separate signed image at `ghcr.io/danielgrasso/margine-gaming:stable`, switched via `bootc switch`.~~ **Retired 2026-06-06**: the separate gaming OCI image (and its ISO) were dropped in favour of one base image + the opt-in `ujust margine-gaming` / `ujust margine-gaming-native` overlays — fewer ISO builds, one less branding/asset-drift surface. |
 
 Maintaining a hand-rolled clone of 130 packages and 70 settings for the
 sake of five real differences is a maintenance burden out of proportion

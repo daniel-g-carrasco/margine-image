@@ -5,6 +5,20 @@ The user-visible takeaway is that `:stable` no longer means "the last
 build that compiled"; it means "the last build that booted to a
 usable state inside QEMU".
 
+> **Corrected 2026-06-12.** Act 2 below describes the candidate→stable
+> promotion as already copying the *booted* digest. In practice the gate
+> was **void** on the automatic path: it built+booted the previous
+> `:stable` but promoted the never-tested `:candidate` (the two fallbacks
+> disagreed). Fixed in the code-quality pass (margine-image#113): the ref
+> is resolved to an immutable digest once, and smoke-boot **boots and
+> promotes that same digest** — see `smoke-boot.yml` ("Resolve image ref
+> to digest" + the promote step keyed on `steps.ref.outputs.pinned`). A
+> `concurrency: group: smoke-boot` was also added so two builds can't race
+> their promotions. A Layer C GUI probe (autologin → gnome-shell/extensions/
+> coredump check → `MARGINE-GUI-SMOKE: PASS/FAIL`) now also runs, so the
+> gate sees graphical-session regressions, not just multi-user.target. The
+> Act-2 narrative below is kept as history.
+
 ## Act 1 — the ordering-cycle that pushed a boot into emergency.target
 
 ### Symptoms

@@ -3,26 +3,26 @@
 ## The model
 
 ```
-GHA workflow build-disk.yml (on the self-hosted runner margine-builder)
+GHA workflow build-disk.yml (GitHub-hosted ubuntu-24.04 runner)
   │
-  │   bootc-image-builder pulls ghcr/margine:stable
-  │   ↓ produces ISO (Anaconda) + qcow2 (raw VM disk)
+  │   Two producers, since the Titanoboa cutover (ADR-0008 Phase 5):
+  │     • bootc-image-builder  → qcow2 (raw VM disk, for QEMU/virt-manager)
+  │     • Titanoboa            → margine-live.iso (the official, only ISO)
+  │       (the old BIB Anaconda-ISO path was retired in Phase 7, 2026-06-12)
   │
-  ├──▶ Internet Archive (`ia upload`)
-  │        ↓ IA derives torrent + 3 HTTP mirrors, seeds forever
-  │
-  └──▶ rsync to edge VM 110 (the-empty.place webserver)
-           ↓ /var/www/files-margine/
-           ↓ Caddy serves files.the-empty.place
-           ↓   index.html (with magnet + IA mirror links)
-           ↓   SHA256SUMS
-           ↓   ISO + qcow2 (7-day local fallback)
+  └──▶ Internet Archive (`ia upload`), ISO only
+           ↓ IA derives torrent + HTTP mirrors, seeds forever
+           ↓ item id: margine-live-iso-YYYYMMDD
+           ↓ then build-disk auto-opens a PR on the site bumping
+             LATEST_ISO_DATE so the Download button tracks the new ISO
 ```
 
-`https://files.the-empty.place/` shows the index page. The big
-binaries' authoritative copy lives at Internet Archive; the local
-copy on edge is just a faster-near-by-network mirror for the first
-few days after a release.
+The self-hosted PVE builder VM (margine-builder, VM 170) was
+decommissioned 2026-06-01 after two host freezes; builds run on
+GitHub-hosted runners now (see the build-disk.yml header). The ISO's
+authoritative copy lives at Internet Archive; the site links straight
+to the `.iso` for an immediate download, with torrent + the IA item
+("all mirrors") one click away.
 
 ## Why this shape
 

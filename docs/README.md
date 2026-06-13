@@ -69,6 +69,15 @@ Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base 
 | [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why the base-OS update step owns pre/post validation, reboot judgment, and rollback (superseded — implementation moved to Bluefin `uupd`) |
 | [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deploys as Bluefin DX rebase + 5 diffs, not as stock Silverblue + layer |
 | [adr/0006-kernel-cachyos-decision.md](adr/0006-kernel-cachyos-decision.md) | Why Margine stays on `kernel-cachyos` (bieszczaders COPR), not OGC, not ublue-akmods — BORE + ThinLTO + HZ=1000 + creator-first identity |
+| [adr/0007-sealed-bootable-images-tracker.md](adr/0007-sealed-bootable-images-tracker.md) | Watchlist for upstream "sealed/UKI" bootable-image work; what Margine adopts when it matures |
+| [adr/0008-titanoboa-migration-plan.md](adr/0008-titanoboa-migration-plan.md) | Why the ISO moved from BIB Anaconda-ISO to Titanoboa, and the phased cutover (Phases 0–7 done) |
+
+## Handbook
+
+| Document | What it covers |
+| --- | --- |
+| [atomic-distro-handbook.md](atomic-distro-handbook.md) | The full "how Margine is built" handbook (12 chapters) — also a generic guide to building an atomic distro; authored here, vendored per-chapter to the website |
+| [code-quality-review-2026-06-12.md](code-quality-review-2026-06-12.md) | Five-area code-quality review + the phased rewrite plan executed 2026-06-12/13 |
 
 ## Reference
 
@@ -87,4 +96,5 @@ Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base 
 | Document | What it covers |
 | --- | --- |
 | [lessons-learned/2026-05-28-initramfs-and-bootc-labels.md](lessons-learned/2026-05-28-initramfs-and-bootc-labels.md) | First bring-up of the bootc image: initramfs path, ostree labels, why we rechunk |
-| [lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md) | Emergency-mode boot from an `After=local-fs.target` ordering cycle; introduction of the `:candidate → :stable` smoke-boot-gated promotion model |
+| [lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md) | Emergency-mode boot from an `After=local-fs.target` ordering cycle; introduction of the `:candidate → :stable` smoke-boot-gated promotion model (with a 2026-06-12 correction: the gate was void until digest-locked) |
+| [lessons-learned/2026-06-03-rechunk-and-fixb.md](lessons-learned/2026-06-03-rechunk-and-fixb.md) | Rechunk wind-down of the Fix-A/Fix-B passwd-seeding workarounds |

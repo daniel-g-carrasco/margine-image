@@ -5,8 +5,18 @@ Fedora Silverblue. The plan changed (see [ADR
 0005](adr/0005-base-on-bluefin-dx.md)): Margine ships as a real
 bootc image derived from Bluefin DX, with a CI pipeline that gates
 `:stable` on a QEMU smoke-boot test. This page now records the **status
-as of 2026-06-01**, what we delivered against each original milestone,
+as of 2026-06-13**, what we delivered against each original milestone,
 and what's still pending.
+
+> Since the 2026-06-01 snapshot: the ISO moved to **Titanoboa** (ADR
+> 0008 — the BIB Anaconda-ISO path was retired; BIB now builds only the
+> qcow2), the smoke-boot promotion gate was hardened to boot+promote the
+> same digest and gained a **Layer C GUI probe**, and a 2026-06-12
+> code-quality pass added lint CI + Renovate + supply-chain pinning
+> (`MARGINE_REF` reproducible fetches, SHA-pinned actions) across the
+> repos. Encryption is offered as a one-checkbox LUKS2 option in the
+> installer (not default; default-on is blocked on anaconda-webui ≥ 69,
+> same as the deferred 4 GiB ESP).
 
 ## Phase 1 — Validate the Atomic model
 
@@ -94,14 +104,21 @@ Still **TODO**:
 **Delivered:**
 
 - ✅ `margine-image` repo builds a bootc image (Bluefin DX +
-  CachyOS signed kernel + Margine deltas) via GH Actions on a
-  self-hosted runner
-- ✅ Layer A guardrails (image internals check before push)
-- ✅ `:candidate → :stable` promotion model with QEMU smoke-boot
-  test on every build (see [lessons-learned 2026-06-01](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md))
-- ✅ Cosign signature on the published image
-- ✅ ISO + qcow2 publishing via Internet Archive (torrent + 3 HTTP
-  mirrors) + HTML index on `files.the-empty.place` (see
+  CachyOS signed kernel + Margine deltas) via GH Actions on
+  GitHub-hosted runners (the self-hosted PVE runner was
+  decommissioned 2026-06-01)
+- ✅ Layer A guardrails (image internals check before push), now
+  backed by the shipped validators run **in-container** in CI
+  (`MARGINE_VALIDATE_CONTEXT=image`)
+- ✅ `:candidate → :stable` digest-locked promotion with QEMU
+  smoke-boot — Layer B (multi-user) + Layer C (GUI probe) — on
+  every build (see [lessons-learned 2026-06-01](lessons-learned/2026-06-01-systemd-ordering-cycle-and-rechunk-storage.md))
+- ✅ Cosign signature on the published image; lint CI + Renovate +
+  supply-chain pinning (`MARGINE_REF`, SHA-pinned actions) added
+  2026-06-12
+- ✅ ISO (Titanoboa) + qcow2 (BIB) publishing via Internet Archive
+  (torrent + HTTP mirrors), with an auto-bump PR pointing the site's
+  Download button at each new ISO (see
   [19-iso-distribution.md](19-iso-distribution.md))
 - ✅ Observability via ntfy push (build / smoke-boot / disk-build
   outcomes) + client-side `margine-staleness.timer` +
@@ -113,9 +130,9 @@ Still **TODO**:
   the user side (today `bootc` trusts the registry; we could
   configure rpm-ostree's `verify-by-key` to enforce cosign at the
   client). Defense in depth.
-- ⏳ Build cadence: today builds run on push to main + on demand.
-  A nightly cron is documented but not wired (would catch upstream
-  drift in Bluefin DX even on quiet days).
+- ✅ Build cadence: push to main + on-demand **+ a weekly cron**
+  (`schedule: '0 4 * * 0'`) that catches upstream Bluefin DX drift
+  even on quiet days. (Done — was the last Phase-4 TODO.)
 
 ## Beyond the original phases
 

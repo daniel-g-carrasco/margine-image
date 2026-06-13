@@ -331,7 +331,7 @@ What fits:
 - a real gaming runtime in the target profile;
 - separation between runtime compatibility and launcher/overlay tools;
 - Steam as the primary runtime entry point;
-- Protontricks/ProtonUp-Qt for Proton helper workflows;
+- Protontricks/ProtonPlus for Proton helper workflows;
 - Gamescope, MangoHud, vkBasalt, and GameMode as explicit runtime helpers;
 - validation of Vulkan layer visibility and split-lock policy;
 - Bazzite as a Fedora Atomic reference for a future image-based gaming profile.
@@ -347,7 +347,7 @@ What must change:
 
 Initial Fedora Atomic shape:
 
-- Flatpak apps: Steam, Lutris, Heroic, Bottles, Protontricks, ProtonUp-Qt;
+- Flatpak apps: Steam, Lutris, Heroic, Bottles, Protontricks, ProtonPlus;
 - optional Flatpak apps: RetroArch, RetroDECK, Cartridges;
 - host helper candidates after hardware validation: `gamescope`, `mangohud`,
   `vkBasalt`, `gamemode`, `goverlay`, `steam-devices`;
@@ -434,7 +434,7 @@ Confirmed Flathub candidates during this review:
 | Heroic | `com.heroicgameslauncher.hgl` |
 | Bottles | `com.usebottles.bottles` |
 | Protontricks | `com.github.Matoking.protontricks` |
-| ProtonUp-Qt | `net.davidotek.pupgui2` |
+| ProtonPlus | `com.vysp3r.ProtonPlus` |
 | RetroArch | `org.libretro.RetroArch` |
 | RetroDECK | `net.retrodeck.retrodeck` |
 | Cartridges | `page.kramo.Cartridges` |
@@ -447,7 +447,7 @@ Initial recommendation:
 - photography optional Flatpaks: darktable;
 - media optional Flatpaks: Audacity, OBS Studio, Easy Effects, Reaper;
 - gaming optional Flatpaks: Steam, Lutris, Heroic, Bottles, Protontricks,
-  ProtonUp-Qt, RetroArch, RetroDECK, Cartridges.
+  ProtonPlus, RetroArch, RetroDECK, Cartridges.
 
 Color calibration tooling (DisplayCAL, ArgyllCMS) is not in the default
 optional set: GNOME → Settings → Colour assigns pre-computed ICC profiles

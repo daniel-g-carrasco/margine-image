@@ -124,6 +124,8 @@ grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tilin
 SL_EXT="$ROOTFS/usr/share/gnome-shell/extensions/search-light@icedman.github.com/extension.js"
 grep -q 'margine: unmap before detach' "$SL_EXT" \
   || { echo "::error::A.3.ter search-light unrealize mitigation NOT present in the image"; fail=1; }
+grep -q 'margine: defer the toggle out of the' "$SL_EXT" \
+  || { echo "::error::A.3.ter search-light press-gesture mitigation NOT present in the image"; fail=1; }
 test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/margine-logo.svg" \
   || { echo "::error::A.3.ter margine-logo.svg missing from hicolor"; fail=1; }
 test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg" \

@@ -22,6 +22,13 @@ set -euo pipefail
 log "Installing Margine ujust recipes"
 install -Dm0644 /ctx/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
+# Single source of truth for the native gaming RPM set. Both the
+# margine-gaming-native recipe (above) and the smoke-boot dry-run check
+# (.github/smoke/gui-probe.sh) read this exact file, so the CI guard can
+# never drift from what `ujust margine-gaming-native` installs.
+install -Dm0644 /ctx/60-ujust-services/gaming-native-packages.txt \
+  /usr/share/margine/gaming-native-packages.txt
+
 # ---------------------------------------------------------------------------
 # 5b. First-login auto-bootstrap (XDG autostart)
 # ---------------------------------------------------------------------------

@@ -12,6 +12,35 @@ set -u
 out() { echo "$@" > /dev/console; }
 fail() { out "MARGINE-GUI-SMOKE: FAIL $*"; sleep 2; systemctl poweroff; exit 0; }
 
+# ---- Gaming-native layer resolvability (independent of the GUI) ------------
+# `ujust margine-gaming-native` layers a multilib RPM set whose fragile
+# edge is steam's 32-bit graphics deps (i686 mesa/llvm must version-match
+# the baked x86_64). A dry-run resolves that exact transaction the way the
+# recipe would, WITHOUT applying it — so a depsolve failure here is the
+# i686/x86_64 skew that broke `margine-gaming-native` for real. Package
+# set is read from the same file the recipe installs from (no drift).
+# Verdict is WARN-ONLY for now (parsed by qemu-boot-wait.sh); run first so
+# it produces a verdict even when the GUI checks below bail out early.
+gaming_check() {
+  local list=/usr/share/margine/gaming-native-packages.txt
+  if [[ ! -r "$list" ]]; then
+    out "MARGINE-GAMING-NATIVE: SKIP (package list not found)"
+    return
+  fi
+  local pkgs
+  mapfile -t pkgs < <(grep -vE '^[[:space:]]*(#|$)' "$list")
+  if [[ "${#pkgs[@]}" -eq 0 ]]; then
+    out "MARGINE-GAMING-NATIVE: SKIP (empty package list)"
+    return
+  fi
+  if timeout 240 rpm-ostree install --dry-run "${pkgs[@]}" >/tmp/gaming.out 2>&1; then
+    out "MARGINE-GAMING-NATIVE: PASS (${#pkgs[@]} pkgs resolve)"
+  else
+    out "MARGINE-GAMING-NATIVE: FAIL $(grep -iE 'cannot install|conflict|requires|nothing provides|depsolve' /tmp/gaming.out | head -2 | tr '\n' ' ' | tr -s ' ')"
+  fi
+}
+gaming_check
+
 # Wait for the autologin session's gnome-shell (first boot is slow:
 # flatpak preinstall etc. competes for I/O).
 for _ in $(seq 1 60); do

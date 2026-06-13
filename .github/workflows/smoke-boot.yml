@@ -215,6 +215,13 @@ jobs:
               fail) MSG="Boot OK but GUI probe FAILED (warn-only) — check the serial log before trusting this stable." ; PRIO="high"; TAGS="warning" ;;
               *)    MSG="Candidate healthy. GUI probe: no verdict (${GUI:-n/a})." ;;
             esac
+            GAMING="${{ steps.boot.outputs.gaming }}"
+            case "$GAMING" in
+              pass) MSG="${MSG} Gaming-native: resolves." ;;
+              fail) MSG="${MSG} Gaming-native: WON'T resolve (warn-only) — ujust margine-gaming-native would break." ; PRIO="high"; TAGS="warning" ;;
+              skip) : ;;
+              *)    MSG="${MSG} Gaming-native: no verdict." ;;
+            esac
           else
             TITLE="QEMU boot FAILED — :stable NOT advanced"
             PRIO="high"
@@ -258,4 +265,5 @@ jobs:
             echo "- digest: \`${PINNED}\`"
             echo "- tags: \`stable\`, \`stable.${DATE_TAG}\`, \`${DATE_TAG}\`"
             echo "- Layer C GUI probe: \`${{ steps.boot.outputs.gui || 'n/a' }}\`"
+            echo "- Gaming-native dry-run: \`${{ steps.boot.outputs.gaming || 'n/a' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

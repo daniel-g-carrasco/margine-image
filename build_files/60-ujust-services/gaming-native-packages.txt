@@ -1,0 +1,16 @@
+# Native gaming layer — RPMs that `ujust margine-gaming-native` layers
+# via rpm-ostree. SINGLE SOURCE OF TRUTH: the recipe (60-custom.just)
+# and the smoke-boot dry-run check (.github/smoke/gui-probe.sh, via
+# /usr/share/margine/gaming-native-packages.txt in the image) both read
+# this exact list, so the CI check can never drift from what users get.
+#
+# Lines starting with # and blank lines are ignored. One package per line.
+#
+# steam pulls the 32-bit (i686) graphics stack — that multilib edge is
+# the fragile one (i686 mesa/llvm must version-match the baked x86_64),
+# which is exactly what the smoke-boot dry-run guards on each build.
+steam
+lutris
+retroarch
+gamescope
+vkBasalt

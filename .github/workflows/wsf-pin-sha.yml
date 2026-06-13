@@ -42,7 +42,9 @@ jobs:
           ver="$(grep -oP '^WSF_VERSION=\K[0-9]+\.[0-9]+\.[0-9]+' "$f")"
           cur="$(grep -oP '^WSF_SHA256=\K[0-9a-f]+' "$f")"
           [ -n "$ver" ] || { echo "::error::could not read WSF_VERSION"; exit 1; }
-          url="https://github.com/daniel-g-carrasco/wayland-scroll-factor/archive/refs/tags/v${ver}.tar.gz"
+          # Match the release-RPM URL the build pins (see 45-wsf/install.sh).
+          rpm="wayland-scroll-factor-${ver}-1.fc44.x86_64.rpm"
+          url="https://github.com/daniel-g-carrasco/wayland-scroll-factor/releases/download/v${ver}/${rpm}"
           echo "Hashing $url"
           new="$(curl -fsSL --retry 3 "$url" | sha256sum | cut -d' ' -f1)"
           [ -n "$new" ] || { echo "::error::failed to hash tarball"; exit 1; }

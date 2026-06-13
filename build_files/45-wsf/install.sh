@@ -13,45 +13,35 @@
 # user runs `wsf set ...` or wsf-gui — and then changes apply live on
 # the next gesture, no logout (the logout requirement upstream is only
 # for loading/unloading the preload itself, which the image pre-bakes).
+#
+# WSF is installed from its official release RPM (not built from source).
+# That makes it a real rpmdb package — so a host can `rpm-ostree override
+# replace` a test build over it — and drops meson/ninja from the image
+# build. Pinned by version + sha256 for reproducibility; Renovate
+# (.github/renovate.json5) + .github/workflows/wsf-pin-sha.yml keep both
+# current on each upstream release. The fc tag tracks the base Fedora
+# release (the WSF release builds its RPM on the same Fedora).
 set -euo pipefail
 . /ctx/00-common.sh
 
 WSF_VERSION=0.3.5
-WSF_SHA256=59d49cf6e1ebbb5434db0c8f629e50830d33d09a6e6280458b9187f722f7f983
-WSF_URL="https://github.com/daniel-g-carrasco/wayland-scroll-factor/archive/refs/tags/v${WSF_VERSION}.tar.gz"
+WSF_SHA256=fca3070e3df55795f201bb9c7e42013f31215963f2117ff90809117dba4722fe
+WSF_RPM="wayland-scroll-factor-${WSF_VERSION}-1.fc44.x86_64.rpm"
+WSF_URL="https://github.com/daniel-g-carrasco/wayland-scroll-factor/releases/download/v${WSF_VERSION}/${WSF_RPM}"
 
-log "Building wayland-scroll-factor v${WSF_VERSION}"
+log "Installing wayland-scroll-factor v${WSF_VERSION} (release RPM)"
 
-# Build deps: gcc + pkgconf are already in the bluefin-dx base; only
-# meson/ninja are missing. Removed again below to keep the image lean.
-dnf -y install meson ninja-build
+workdir="$(mktemp -d /tmp/wsf-rpm.XXXXXX)"
+retry_curl_strict "$WSF_URL" "${workdir}/${WSF_RPM}"
+echo "${WSF_SHA256}  ${workdir}/${WSF_RPM}" | sha256sum -c -
 
-workdir="$(mktemp -d /tmp/wsf-build.XXXXXX)"
-retry_curl_strict "$WSF_URL" "${workdir}/wsf.tar.gz"
-echo "${WSF_SHA256}  ${workdir}/wsf.tar.gz" | sha256sum -c -
-
-tar -xzf "${workdir}/wsf.tar.gz" -C "$workdir"
-pushd "${workdir}/wayland-scroll-factor-${WSF_VERSION}" >/dev/null
-
-# Margine's PATH puts /usr/lib64/ccache first; in the build container
-# ccache's cache dir isn't writable and every compile dies with
-# "ccache: error: File exists" (caught by a local container test of
-# this section). Compile without it — a one-shot build gains nothing
-# from a compiler cache anyway.
-export CCACHE_DISABLE=1
-
-# --libdir=lib64 is meson's Fedora default, but pin it explicitly: the
-# path is compiled into the wsf CLI as WSF_LIBDIR and referenced by
-# the systemd drop-in below — they must agree.
-meson setup build --prefix=/usr --libdir=lib64 --buildtype=release
-ninja -C build
-meson install -C build
-install -Dm0644 LICENSE /usr/share/licenses/wayland-scroll-factor/LICENSE
-popd >/dev/null
+# Local-file install: dnf resolves the runtime deps (gtk4, libadwaita,
+# python3-gobject) from the base repos. No weak deps — keep it lean.
+dnf -y install --setopt=install_weak_deps=False "${workdir}/${WSF_RPM}"
 rm -rf "$workdir"
 
 # Margine is GNOME-only: drop the "Hyprland (WSF gestures)" wayland
-# session. Its TryExec (wsf-start-hyprland) exists after install, so
+# session the package ships. Its TryExec (wsf-start-hyprland) exists, so
 # GDM would otherwise list a session that cannot start (no Hyprland).
 rm -f /usr/share/wayland-sessions/wayland-scroll-factor-hyprland.desktop
 
@@ -66,11 +56,10 @@ install -Dm0644 /ctx/45-wsf/margine-wsf-preload.conf \
   /usr/lib/systemd/user/org.gnome.Shell@.service.d/50-margine-wsf.conf
 
 # Refresh caches for the new .desktop + hicolor icons (mirrors the
-# AUR package's post_install hooks).
+# package's post_install hooks).
 update-desktop-database -q /usr/share/applications || true
 gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
 
-dnf -y remove meson ninja-build
 dnf -y clean packages metadata
 
-log "wayland-scroll-factor installed (preload baked for gnome-shell)"
+log "wayland-scroll-factor installed from RPM (preload baked for gnome-shell)"

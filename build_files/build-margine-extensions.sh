@@ -364,3 +364,71 @@ else
   log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Downstream patch #3: search-light hide() re-entrancy SIGABRT (2026-06-13).
+#
+# Pressing the search shortcut (e.g. Super+Space) crashes the whole shell:
+#   clutter_actor_set_mapped: assertion '!CLUTTER_ACTOR_IN_MAP_UNMAP' failed
+#   Clutter:ERROR clutter-actor.c:1989:clutter_actor_real_unrealize:
+#     assertion failed: (!clutter_actor_is_mapped (self))
+#   JS: _release_ui -> hide -> _release_ui (re-entrant)
+# Root cause (coredump JS stack, 2026-06-13 19:00): hide() -> _release_ui()
+# -> this._entry.hide() (added by patch #1) flips the stage key-focus, which
+# fires _onKeyFocusChanged -> this.hide() AGAIN, re-entering _release_ui()
+# while the first teardown is still mid-unmap -> remove_child on an actor in
+# the MAP_UNMAP state aborts. This is a DISTINCT crash from #1 (detach order)
+# and #2 (press gesture); it is reached from the keyboard accelerator path,
+# which #2's button-press deferral does not cover.
+#
+# Fix: a re-entrancy guard on hide() so the recursive hide() (from the
+# focus change during _release_ui) is a no-op and teardown runs exactly
+# once. The guard is cleared right after the synchronous teardown so a
+# later real hide() still works and an exception in the async fade can't
+# wedge it. Load-bearing (the crash ends the session) -> hard-fail if the
+# upstream shape changed; Layer A asserts the marker on the final image.
+if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
+  if grep -q 'margine: re-entrancy guard' "$SEARCH_LIGHT_EXT"; then
+    log "search-light hide() re-entrancy guard already present"
+  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """  hide() {
+    if (this._isDraggingIcon()) {
+      return;
+    }
+
+    this._release_ui();
+    this._remove_events();"""
+new = """  hide() {
+    if (this._isDraggingIcon()) {
+      return;
+    }
+    // margine: re-entrancy guard. _release_ui() hides the entry, which
+    // flips stage key-focus -> _onKeyFocusChanged -> hide() again, re-
+    // entering teardown mid-unmap -> Clutter unrealize-while-mapped
+    // SIGABRT (clutter_actor_real_unrealize). Make the re-entrant hide()
+    // a no-op so teardown runs exactly once.
+    if (this._hiding) {
+      return;
+    }
+    this._hiding = true;
+
+    this._release_ui();
+    this._remove_events();
+    this._hiding = false;"""
+if old not in s:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "search-light: applied hide() re-entrancy guard"
+  else
+    log "ERROR: search-light hide() pattern not found (upstream changed?) — refusing to ship unpatched"
+    exit 1
+  fi
+else
+  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
+  exit 1
+fi

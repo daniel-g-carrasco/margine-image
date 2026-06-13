@@ -16,16 +16,28 @@
 # enforcing=0 runs the LIVE session SELinux-permissive (installer
 # convenience only — the INSTALLED system is fully enforcing; the
 # install kickstart relabels the target).
+#
+# console=tty0 console=ttyS0,115200n8 + systemd.show_status=1: tty0 stays
+# the user's primary graphical console (plymouth/rhgb splash unchanged on
+# real hardware; a machine with no serial port simply ignores ttyS0),
+# while the kernel and systemd ALSO mirror to the serial port. The CI ISO
+# boot-test (build-disk.yml -> qemu-boot-wait.sh) wires QEMU ttyS0 to a
+# file and waits for the graphical-target/gdm markers — without a serial
+# console it sees only GRUB then silence and times out at 900s on a
+# perfectly healthy ISO (run 27453088479). show_status=1 forces systemd
+# to print "Reached target …/Started …" even though `quiet` is set. The
+# installed system already carries these consoles from the bootc base,
+# which is why the qcow2 smoke-boot has always been observable.
 label: "Margine-Live"
 grub2:
   default: 0
   timeout: 5
   entries:
     - name: "Install Margine"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image"
       initrd: "/images/pxeboot/initrd.img"
     - name: "Install Margine (Basic Graphics Mode)"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image nomodeset"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image nomodeset"
       initrd: "/images/pxeboot/initrd.img"
   # Raw fragment appended after the generated entries (margine-pins /
   # upstream PR: grub2.extra_cfg). With Secure Boot ON the live CachyOS

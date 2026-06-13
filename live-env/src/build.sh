@@ -169,46 +169,8 @@ X-GNOME-Autostart-Delay=20
 NoDisplay=true
 SBDESK
 
-# Rebrand the anaconda-live welcome screen ("Welcome to Fedora" → "Welcome
-# to Margine"). anaconda-live has moved/renamed these assets across
-# releases — the visible title lives in the `fedora-welcome` GJS app, with
-# a separate autostart .desktop — so patch whatever is present instead of
-# asserting one hardcoded path (a single hardcoded path broke the ISO
-# build on 2026-06-13 when org.fedoraproject.welcome-screen.desktop
-# disappeared). This is COSMETIC: warn but do NOT block the ISO if
-# anaconda-live restructured again. Same tolerant approach Bluefin uses.
-WELCOME_PATCHED=0
-# (a) The GJS welcome app carries the visible dialog title.
-for _w in /usr/share/anaconda/gnome/fedora-welcome \
-          /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen; do
-	if [ -f "$_w" ]; then
-		sed -i 's/Welcome to Fedora/Welcome to Margine/g' "$_w"
-		WELCOME_PATCHED=1
-	fi
-done
-# (b) The autostart .desktop Name= (separate file, when present).
-for _w in /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop \
-          /usr/share/anaconda/gnome/fedora-welcome.desktop \
-          /etc/xdg/autostart/org.fedoraproject.welcome-screen.desktop; do
-	if [ -f "$_w" ]; then
-		sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' "$_w"
-		WELCOME_PATCHED=1
-	fi
-done
-# (c) Last resort: any anaconda asset still carrying the Fedora welcome
-#     string (catches a future rename without re-breaking the build).
-if [ "$WELCOME_PATCHED" -eq 0 ]; then
-	while IFS= read -r _w; do
-		[ -n "$_w" ] || continue
-		sed -i 's/Welcome to Fedora/Welcome to Margine/g' "$_w"
-		WELCOME_PATCHED=1
-	done <<EOF
-$(grep -rl 'Welcome to Fedora' /usr/share/anaconda /etc/xdg/autostart 2>/dev/null || true)
-EOF
-fi
-if [ "$WELCOME_PATCHED" -eq 0 ]; then
-	echo "WARNING: live welcome rebrand skipped — no anaconda-live asset carrying 'Welcome to Fedora' found (anaconda-live restructured?). Cosmetic; ISO build continues." >&2
-fi
+# (The welcome-screen rebrand happens in Phase 3, AFTER anaconda-live
+# is installed — it patches files that package ships.)
 
 # / in a booted live ISO is an overlayfs whose upperdir is under /run
 # (a small tmpfs). Anaconda's ostree install needs lots of scratch in
@@ -316,6 +278,47 @@ cp "$SRC_DIR"/anaconda/post-scripts/*.ks /usr/share/anaconda/post-scripts/
 # interactive-defaults.ks anaconda-live ships (preserve the base).
 cat "$SRC_DIR/anaconda/interactive-defaults.ks" \
   >> /usr/share/anaconda/interactive-defaults.ks
+
+# Rebrand the anaconda-live welcome screen ("Welcome to Fedora" → "Welcome
+# to Margine"). MUST run after the anaconda-live install above — the
+# original block (#109) ran in Phase 2, before the package existed, so its
+# hard assert killed the first 2026-06-13 ISO build and the files were
+# never actually patched. The visible dialog title lives in the
+# `fedora-welcome` GJS app; the alt-tab/overview name in its autostart
+# .desktop. Patch whatever is present (paths have moved across anaconda
+# releases); COSMETIC — warn but do not block the ISO if none match.
+WELCOME_PATCHED=0
+# (a) The GJS welcome app carries the visible dialog title.
+for _w in /usr/share/anaconda/gnome/fedora-welcome \
+          /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen; do
+	if [ -f "$_w" ]; then
+		sed -i 's/Welcome to Fedora/Welcome to Margine/g' "$_w"
+		WELCOME_PATCHED=1
+	fi
+done
+# (b) The autostart .desktop Name= (separate file, when present).
+for _w in /usr/share/anaconda/gnome/org.fedoraproject.welcome-screen.desktop \
+          /usr/share/anaconda/gnome/fedora-welcome.desktop \
+          /etc/xdg/autostart/org.fedoraproject.welcome-screen.desktop; do
+	if [ -f "$_w" ]; then
+		sed -i 's/^Name=Welcome to Fedora$/Name=Welcome to Margine/' "$_w"
+		WELCOME_PATCHED=1
+	fi
+done
+# (c) Last resort: any anaconda asset still carrying the Fedora welcome
+#     string (catches a future rename without re-breaking the build).
+if [ "$WELCOME_PATCHED" -eq 0 ]; then
+	while IFS= read -r _w; do
+		[ -n "$_w" ] || continue
+		sed -i 's/Welcome to Fedora/Welcome to Margine/g' "$_w"
+		WELCOME_PATCHED=1
+	done <<EOF
+$(grep -rl 'Welcome to Fedora' /usr/share/anaconda /etc/xdg/autostart 2>/dev/null || true)
+EOF
+fi
+if [ "$WELCOME_PATCHED" -eq 0 ]; then
+	echo "WARNING: live welcome rebrand skipped — no anaconda-live asset carrying 'Welcome to Fedora' found (anaconda-live restructured?). Cosmetic; ISO build continues." >&2
+fi
 
 # Recompile schemas in case the profile/installer added overrides.
 glib-compile-schemas /usr/share/glib-2.0/schemas || true

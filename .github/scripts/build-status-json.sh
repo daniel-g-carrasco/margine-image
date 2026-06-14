@@ -37,17 +37,21 @@ trap 'rm -f "$BLU_F" "$MAR_F"' EXIT
 skopeo inspect --no-tags "docker://$BLUEFIN_IMAGE" > "$BLU_F" 2>/dev/null || echo '{}' > "$BLU_F"
 skopeo inspect --no-tags "docker://$MARGINE_IMAGE" > "$MAR_F" 2>/dev/null || echo '{}' > "$MAR_F"
 
-# Latest *completed* run conclusion + date for a workflow file.
-gh_field() {
-  gh api "repos/$REPO/actions/workflows/$1/runs?per_page=1&status=completed" \
-    --jq ".workflow_runs[0].$2 // \"\"" 2>/dev/null || echo ""
+# Latest run with a *meaningful* conclusion (success / failure / timed_out),
+# skipping the cancelled + skipped noise that build.yml's cancel-in-progress
+# concurrency produces. Without this, the most recent "completed" build is
+# usually a cancelled superseded run, so the page reads UNKNOWN right after a
+# green build (and smoke-boot reports "skipped"). Emits "<conclusion>\t<date>".
+gh_health() {
+  gh api "repos/$REPO/actions/workflows/$1/runs?per_page=30&status=completed" \
+    --jq 'first(.workflow_runs[]
+            | select(.conclusion=="success" or .conclusion=="failure" or .conclusion=="timed_out"))
+          | "\(.conclusion)\t\(.updated_at[0:10])"' 2>/dev/null || true
 }
-BUILD_C="$(gh_field build.yml conclusion)";      BUILD_C="${BUILD_C:-unknown}"
-BUILD_D="$(gh_field build.yml updated_at)";       BUILD_D="${BUILD_D:0:10}"
-SMOKE_C="$(gh_field smoke-boot.yml conclusion)";  SMOKE_C="${SMOKE_C:-unknown}"
-SMOKE_D="$(gh_field smoke-boot.yml updated_at)";   SMOKE_D="${SMOKE_D:0:10}"
-ISO_C="$(gh_field build-disk.yml conclusion)";    ISO_C="${ISO_C:-unknown}"
-ISO_D="$(gh_field build-disk.yml updated_at)";      ISO_D="${ISO_D:0:10}"
+IFS=$'\t' read -r BUILD_C BUILD_D <<<"$(gh_health build.yml)"
+IFS=$'\t' read -r SMOKE_C SMOKE_D <<<"$(gh_health smoke-boot.yml)"
+IFS=$'\t' read -r ISO_C ISO_D <<<"$(gh_health build-disk.yml)"
+BUILD_C="${BUILD_C:-unknown}"; SMOKE_C="${SMOKE_C:-unknown}"; ISO_C="${ISO_C:-unknown}"
 
 export BLU_F MAR_F BUILD_C BUILD_D SMOKE_C SMOKE_D ISO_C ISO_D
 

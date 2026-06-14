@@ -43,7 +43,7 @@
 #     gradia-integration / gsconnect / caffeine — all baked by Bluefin.
 #
 # Enablement: zz1-margine.gschema.override (in build.sh) already lists
-# all 10 UUIDs in [org.gnome.shell] enabled-extensions, so once the
+# all 11 UUIDs in [org.gnome.shell] enabled-extensions, so once the
 # files land here the extensions are active on first GDM login. No
 # per-user install, no autostart, no race.
 set -euo pipefail
@@ -68,6 +68,18 @@ OTILING_SHA256="6b0a242a61b269995e1f6166f8995aac1931147784ec5a712abf49536b87322e
 HIDECURSOR_UUID="hide-cursor@elcste.com"
 HIDECURSOR_VERSION_TAG="69559"   # GNOME 50; resolved 2026-06-12
 HIDECURSOR_SHA256="2fd9ffdaf176d2fba6f998c453ce91908d7e134b841a8e25d35389b60c7b1379"
+
+# Smile's companion GNOME Shell extension — the piece that makes the Smile
+# emoji picker (the it.mijorus.smile Flatpak, already preinstalled and bound to
+# <Super>period) auto-INSERT the chosen emoji into the focused field on Wayland
+# (Windows Win+. behaviour). On Wayland the Flatpak signals this extension over
+# D-Bus and the extension synthesises Ctrl+V via a Clutter virtual keyboard —
+# no ydotool/uinput, no extra socket. Hosted only on EGO; version_tag pinned
+# for GNOME 50 (the metadata shell-version guard below fails the build on a
+# GNOME bump instead of shipping an incompatible extension).
+SMILE_EXT_UUID="smile-extension@mijorus.it"
+SMILE_EXT_VERSION_TAG="70078"   # EGO v13, GNOME 50; resolved 2026-06-14
+SMILE_EXT_SHA256="e23cf17f1216c099215c6b458e96913f277a371bc770759ca56b858d98651b42"
 
 # NO transient dnf installs. Lesson learned the hard way 2026-06-04
 # (build #26918323253 + #26913265617):
@@ -212,8 +224,32 @@ install_legacy_icon_shims() {
   gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 }
 
+install_smile_ext() {
+  local target="${EXT_DIR}/${SMILE_EXT_UUID}"
+  log "smile complementary extension (pinned version_tag ${SMILE_EXT_VERSION_TAG}) for shell ${GNOME_SHELL_MAJOR} → ${target}"
+
+  rm -rf "${target}"
+  mkdir -p "${target}"
+  curl -fL --retry 5 --retry-delay 10 \
+    -o /tmp/smile-ext.zip \
+    "https://extensions.gnome.org/download-extension/${SMILE_EXT_UUID}.shell-extension.zip?version_tag=${SMILE_EXT_VERSION_TAG}"
+  verify_sha256 /tmp/smile-ext.zip "${SMILE_EXT_SHA256}"
+  extract_zip /tmp/smile-ext.zip "${target}"
+  rm -f /tmp/smile-ext.zip
+  if [[ ! -f "${target}/metadata.json" ]]; then
+    log "ERROR: ${target}/metadata.json missing after extraction"
+    ls -la "${target}"
+    exit 1
+  fi
+  assert_shell_compat "${target}"
+  if [[ -d "${target}/schemas" ]] && compgen -G "${target}/schemas/*.xml" > /dev/null; then
+    glib-compile-schemas --strict "${target}/schemas"
+  fi
+}
+
 install_otiling
 install_hidecursor
+install_smile_ext
 install_legacy_icon_shims
 
 log "Recompiling /usr/share/glib-2.0/schemas to pick up new extension schemas"
@@ -222,8 +258,8 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 log "Final extension inventory under ${EXT_DIR}:"
 for d in "${EXT_DIR}"/*/; do echo "  $(basename "$d")"; done | sort
 
-log "metadata.json for the two we just added:"
-for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com; do
+log "metadata.json for the three we just added:"
+for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it; do
   if [[ -f "${EXT_DIR}/${uuid}/metadata.json" ]]; then
     printf '  %s: ' "${uuid}"
     python3 -c "

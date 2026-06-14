@@ -48,7 +48,7 @@ if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/s
   echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
 fi
 
-# A.3 — All 10 enabled-extensions UUIDs installed system-wide
+# A.3 — All 11 enabled-extensions UUIDs installed system-wide
 for uuid in \
   appindicatorsupport@rgcjonas.gmail.com \
   bazaar-integration@kolunmi.github.io \
@@ -59,7 +59,8 @@ for uuid in \
   search-light@icedman.github.com \
   o-tiling@oliwebd.github.com \
   hide-cursor@elcste.com \
-  caffeine@patapon.info; do
+  caffeine@patapon.info \
+  smile-extension@mijorus.it; do
   check_dir "usr/share/gnome-shell/extensions/$uuid" "A.3"
 done
 

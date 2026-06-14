@@ -6,8 +6,8 @@
 #
 #   FROM ghcr.io/ublue-os/bluefin-dx:stable   (Universal Blue Bluefin DX)
 #   + custom kernel from CachyOS COPR (signed with our MOK)
-#   + Margine deltas (kitty Flatpak, branding extensions off, Tiling Shell,
-#     curated GNOME settings)
+#   + Margine deltas (o-tiling default tiler, Smile emoji picker, branding
+#     extensions off, curated GNOME settings)
 #
 # Built by GitHub Actions on every push, pushed to:
 #   ghcr.io/daniel-g-carrasco/margine:stable
@@ -50,7 +50,7 @@ RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
     /ctx/custom-kernel/install.sh
 
-# ----- Margine modifications (kitty Flatpak, GNOME settings, etc.) -----
+# ----- Margine modifications (GNOME settings, branding, flatpaks, etc.) -----
 # MARGINE_REF pins every spec-repo fetch (scripts, declarations,
 # branding) done by build.sh and friends. CI passes the commit SHA it
 # resolves at build start (build.yml `specref` step), so the image can

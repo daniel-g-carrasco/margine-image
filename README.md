@@ -65,11 +65,11 @@ operations.
 | 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
 | ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; ISO installs stage the public key in Anaconda before the first post-install reboot, while rebases use a one-shot service fallback. Secure Boot remains enabled once the MOK is enrolled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
-| 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+1..0` for workspaces, `Super+Arrow` to move the focused window, `Super+Shift+Arrow` to move focus, `Super+Return` for the terminal, `Super+E` for Files. Hide Cursor, Caffeine, and Search Light are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
+| 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+H/J/K/L` to move focus, `Super+Return` for the terminal, `Super+E` for Files, `Super+period` for the emoji picker, and `Super+number` for workspaces (the full, conflict-resolved set lives in the keyboard reference). Hide Cursor, Caffeine, Search Light, and the Smile emoji-picker companion are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
 | 🛠 **Creator-tier system tools** | The base image also ships **mangohud** (Vulkan/OpenGL overlay for monitoring CPU/GPU/RAM during DaVinci/Blender renders, OBS recording, ffmpeg encoding), **goverlay** (Qt GUI to configure MangoHud), and **steam-devices** (udev rules for USB game controllers — useful for any creator using a controller as jog wheel / foot pedal). Plus the upstream Bluefin DX set: GameMode, input-remapper, tuned, tuned-ppd. |
 | ⚙️ **Opt-in CPU scheduler picker** | Activities -> **"Margine CPU Scheduler"** opens a Zenity picker populated from `scxctl list`, including an Off entry that stops `scx_loader` and returns to kernel BORE. Right-click quick actions cover shipped schedulers such as `scx_lavd`, `scx_bpfland`, `scx_rusty`, `scx_flash`, `scx_cosmos`, and `scx_rustland`. CLI equivalent: `ujust margine-scheduler <name>`. |
-| 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonUp-Qt**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per `bootc upgrade`. `ujust margine-gaming{,-native}-remove` rolls either variant back. |
+| 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonPlus**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per `bootc upgrade`. `ujust margine-gaming{,-native}-remove` rolls either variant back. |
 | 🤖 **Optional AI workflow** | `ujust margine-ai` installs [**Alpaca**](https://flathub.org/apps/com.jeffser.Alpaca) — a Flatpak GUI for local LLMs that bundles its own Ollama backend, no host install or daemon-running required. Pick a model from inside Alpaca on first launch (recommended starters: `llama3.1:8b` for general use, `qwen2.5-coder:7b` for code, `phi3.5:3.8b` for CPU-only). Power users who want the [RamaLama](https://github.com/containers/ramalama) CLI in a sandbox get instructions printed by the recipe. `ujust margine-ai-remove` undoes it. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
@@ -100,7 +100,7 @@ Bluefin DX remains fully supported as the alternative. Current status:
 
 Gaming is a one-command layer on top — `ujust margine-gaming` after
 first boot installs gamescope + vkBasalt and the seven gaming Flatpaks
-(Steam / Lutris / Heroic / Bottles / Protontricks / ProtonUp-Qt /
+(Steam / Lutris / Heroic / Bottles / Protontricks / ProtonPlus /
 RetroArch). The previous separate Margine Gaming ISO + OCI image were
 retired 2026-06-06 to cut maintenance — same gaming stack, fewer moving
 parts.
@@ -175,7 +175,7 @@ how seriously you game.
 ```sh
 ujust margine-gaming            # gamescope + vkBasalt as RPMs + every
                                 # launcher (Steam, Lutris, Heroic,
-                                # Bottles, Protontricks, ProtonUp-Qt,
+                                # Bottles, Protontricks, ProtonPlus,
                                 # RetroArch) as Flatpak. Asks before
                                 # touching anything.
 systemctl reboot                # required to activate the rpm-ostree
@@ -190,7 +190,7 @@ some anti-cheat / VR / Mesa-version-matching scenarios).
 ```sh
 ujust margine-gaming-native     # Steam + Lutris + RetroArch as native
                                 # RPMs (RPM Fusion). Heroic, Bottles,
-                                # Protontricks, ProtonUp-Qt stay
+                                # Protontricks, ProtonPlus stay
                                 # Flatpak (no official RPM).
 systemctl reboot
 ```
@@ -273,12 +273,12 @@ Pin: `ublue-os/titanoboa@5c457c3d`.
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
 Blur My Shell, Dash to Dock, Gradia Integration, GSConnect (all from
-Bluefin); Search Light, o-tiling, Hide Cursor, Caffeine (added by
-Margine).
+Bluefin); Search Light, o-tiling, Hide Cursor, Caffeine, and the Smile
+emoji-picker companion (added by Margine).
 
 **Preinstalled Flatpak apps**: Zen Browser, Bitwarden, LibreOffice,
-Gapless, GIMP, Inkscape, darktable, Audacity, OBS Studio,
-EasyEffects, Reaper, Apostrophe.
+g4music, Smile (emoji picker), GIMP, Inkscape, darktable, Audacity, OBS
+Studio, EasyEffects, Reaper, Apostrophe.
 
 **Security**: Secure Boot via the Margine MOK; LUKS2 disk encryption;
 optional TPM2 auto-unlock via `systemd-cryptenroll`; `cosign`

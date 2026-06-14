@@ -1,0 +1,25 @@
+[Unit]
+Description=Margine USER-SMOKE probe (soft identity gate)
+# MUST be wanted by graphical.target (the wants-symlink lives in
+# graphical.target.wants), matching After= here. Hooking a
+# After=graphical.target unit into multi-user.target.wants creates an
+# ordering cycle and systemd SKIPS the unit — the silent no-verdict
+# failure that bit margine-gui-smoke.service (run 27438544775). Do not
+# move the symlink to multi-user.target.wants.
+After=graphical.target
+# Soft, read-only identity checks — independent of the Layer C GUI
+# health probe. Wants (not Requires) so a missing gui unit never blocks
+# this one, and vice-versa. Both verdicts share the boot window.
+Wants=margine-gui-smoke.service
+
+[Service]
+Type=oneshot
+# Shorter settle than margine-gui-smoke.service's 150s: the user-smoke
+# checks are read-only and must land their verdict on the serial console
+# BEFORE gui-probe.sh issues `systemctl poweroff`. 90s lets the
+# autologin user bus + distro dconf settle without racing the poweroff.
+ExecStartPre=/bin/sleep 90
+ExecStart=/etc/margine-smoke/user-smoke-probe.sh
+# Soft gate: the probe always exits 0, but belt-and-braces so a probe
+# crash can never propagate a unit failure into the boot watcher.
+SuccessExitStatus=0 1

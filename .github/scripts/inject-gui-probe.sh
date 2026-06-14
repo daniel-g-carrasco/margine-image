@@ -154,6 +154,20 @@ install -m 0755 "$SMOKE_DIR/gui-probe.sh" "$ETC/margine-smoke/gui-probe.sh"
 install -m 0644 "$SMOKE_DIR/margine-gui-smoke.service" "$ETC/systemd/system/margine-gui-smoke.service"
 ln -sf ../margine-gui-smoke.service "$ETC/systemd/system/graphical.target.wants/margine-gui-smoke.service"
 
+# 3b. User-smoke SOFT identity probe (warn-only, promotion never blocked).
+#     Guarded: if its payloads are absent, warn and skip — the Layer C GUI
+#     injection above is unaffected. The wants-symlink goes in
+#     graphical.target.wants too (same After=graphical.target ordering rule;
+#     multi-user.target.wants would re-create the ordering-cycle skip bug).
+if [[ -f "$SMOKE_DIR/user-smoke-probe.sh" && -f "$SMOKE_DIR/margine-user-smoke.service" ]]; then
+  install -m 0755 "$SMOKE_DIR/user-smoke-probe.sh" "$ETC/margine-smoke/user-smoke-probe.sh"
+  install -m 0644 "$SMOKE_DIR/margine-user-smoke.service" "$ETC/systemd/system/margine-user-smoke.service"
+  ln -sf ../margine-user-smoke.service "$ETC/systemd/system/graphical.target.wants/margine-user-smoke.service"
+  echo "Layer C: user-smoke soft-gate probe injected"
+else
+  echo "::warning::Layer C: user-smoke payloads missing under $SMOKE_DIR — soft gate skipped (GUI probe unaffected)"
+fi
+
 # 4. Injected files carry no SELinux labels — run this boot permissive
 #    (test VM only; the gating Layer B boot semantics are unaffected).
 #    BLS entries live on the separate /boot partition, mounted on its

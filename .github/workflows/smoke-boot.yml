@@ -189,6 +189,42 @@ jobs:
             --timeout 1800 \
             --gui-watch
 
+      # User-smoke SOFT gate (2026-06-14): summarize the warn-only
+      # MARGINE-USER-SMOKE identity markers the injected probe wrote to
+      # serial.log. ANNOTATE ONLY — never fails the job, never gates
+      # promotion (which keys solely on steps.boot.outputs.passed). Three
+      # guards keep it non-blocking: if:always() + continue-on-error +
+      # the trailing || true. No actions used → nothing to SHA-pin.
+      - name: User-smoke soft gate (warn-only summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo "### User-smoke (soft gate — annotation only, promotion NOT blocked)"
+            if [[ ! -f serial.log ]]; then
+              echo "- no serial.log (boot step did not run)"; exit 0
+            fi
+            if ! grep -q 'MARGINE-USER-SMOKE:' serial.log; then
+              echo "- :grey_question: no MARGINE-USER-SMOKE markers — probe injection skipped or unit did not run (see inject step + serial-log artifact)"
+              echo "::warning::User-smoke soft gate produced no verdict (probe not injected or did not run) — see serial log."
+              exit 0
+            fi
+            echo ""
+            echo "| Check | Result | Detail |"
+            echo "|-------|--------|--------|"
+            grep -E 'MARGINE-USER-SMOKE: [A-Z_]+ (PASS|WARN)' serial.log \
+              | sed -E 's/.*MARGINE-USER-SMOKE: ([A-Z_]+) (PASS|WARN) ?(.*)/\1|\2|\3/' \
+              | awk -F'|' '{ icon=($2=="PASS")?":white_check_mark:":":warning:"; gsub(/\|/,"\\|",$3); print "| `"$1"` | "icon" "$2" | "$3" |" }'
+            SUMMARY="$(grep -oE 'MARGINE-USER-SMOKE: SUMMARY .*' serial.log | tail -1)"
+            VERDICT="$(grep -oE 'MARGINE-USER-SMOKE: VERDICT .*' serial.log | tail -1)"
+            echo ""
+            echo "- ${SUMMARY:-SUMMARY: n/a}"
+            echo "- ${VERDICT:-VERDICT: n/a}"
+            if grep -qE 'MARGINE-USER-SMOKE: [A-Z_]+ WARN' serial.log; then
+              echo "::warning::User-smoke soft gate: one or more identity checks WARNed (kernel/o-tiling/keybindings/search-light/gaming-ujust/gschema/gdm). Soft gate — promotion NOT blocked. See the step summary + serial-log artifact."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
       - name: Upload serial log
         # Always: the Layer C warn-only verdict is judged from this log.
         if: always()

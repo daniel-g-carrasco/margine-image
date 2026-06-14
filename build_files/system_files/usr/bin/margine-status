@@ -1,0 +1,62 @@
+#!/usr/bin/bash
+# margine-status — is this machine following the Margine flow?
+#
+# Shows your booted deployment vs the latest published :stable, plus the
+# Fedora → Bluefin → Margine lineage and the running kernel. Read-only; makes
+# no changes. Mirrors the website's /status page from the machine's POV.
+set -uo pipefail
+
+IMAGE="ghcr.io/daniel-g-carrasco/margine:stable"
+BLUEFIN="ghcr.io/ublue-os/bluefin-dx:stable"
+SITE="https://margine.the-empty.place/status"
+
+if [ -t 1 ]; then
+  c_reset=$'\e[0m'; c_dim=$'\e[2m'; c_grn=$'\e[32m'; c_ylw=$'\e[33m'; c_ember=$'\e[38;5;208m'
+else
+  c_reset=; c_dim=; c_grn=; c_ylw=; c_ember=
+fi
+
+label() { skopeo inspect --no-tags "docker://$1" --format "{{ index .Labels \"$2\" }}" 2>/dev/null || true; }
+digest() { skopeo inspect --no-tags "docker://$1" --format '{{.Digest}}' 2>/dev/null || true; }
+
+# --- booted deployment ---
+booted_ver=""; booted_digest=""
+if command -v bootc >/dev/null 2>&1; then
+  st="$(bootc status --format json 2>/dev/null || echo '{}')"
+  booted_digest="$(printf '%s' "$st" | jq -r '.status.booted.image.imageDigest // ""' 2>/dev/null)"
+  booted_ver="$(printf '%s' "$st" | jq -r '.status.booted.image.version // ""' 2>/dev/null)"
+fi
+if [ -z "$booted_ver" ]; then
+  booted_ver="$(rpm-ostree status --json 2>/dev/null | jq -r '.deployments[0].version // "unknown"' 2>/dev/null || echo unknown)"
+fi
+kernel="$(uname -r)"
+
+# --- latest published :stable + lineage ---
+latest_ver="$(label "$IMAGE" org.opencontainers.image.version)"; latest_ver="${latest_ver:-unknown}"
+latest_digest="$(digest "$IMAGE")"
+blu_ver="$(label "$BLUEFIN" org.opencontainers.image.version)"; blu_ver="${blu_ver:-unknown}"
+fedora_ver="${blu_ver%%.*}"; [ "$fedora_ver" = "$blu_ver" ] && fedora_ver="44"
+
+# --- verdict ---
+if [ -n "$booted_digest" ] && [ -n "$latest_digest" ]; then
+  if [ "$booted_digest" = "$latest_digest" ]; then
+    verdict="${c_grn}✓ up to date${c_reset}"; state=current
+  else
+    verdict="${c_ylw}↑ update available${c_reset}"; state=behind
+  fi
+else
+  verdict="${c_dim}? could not compare${c_reset}"; state=unknown
+fi
+
+printf '\n'
+printf '  %-15s %s%s%s   %s← your deployment%s\n' "Margine OS"     "$c_ember" "$booted_ver" "$c_reset" "$c_dim" "$c_reset"
+printf '  %-15s %s   %s\n'                          "Latest :stable" "$latest_ver" "$verdict"
+printf '  %-15s Fedora %s → Bluefin %s → Margine\n' "Chain"          "$fedora_ver" "$blu_ver"
+printf '  %-15s %s  %s(CachyOS / BORE)%s\n'         "Kernel"         "$kernel" "$c_dim" "$c_reset"
+printf '\n'
+case "$state" in
+  current) printf "  You're current — nothing to do.\n" ;;
+  behind)  printf "  Run %sujust margine-update%s to stage the latest for next boot.\n" "$c_ember" "$c_reset" ;;
+  *)       printf "  Couldn't reach the registry to compare — check your network.\n" ;;
+esac
+printf '  %sFull flow: %s%s\n\n' "$c_dim" "$SITE" "$c_reset"

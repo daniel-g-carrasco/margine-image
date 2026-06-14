@@ -609,3 +609,25 @@ margine-doctor:
       echo "margine-doctor: something is off — see the FAIL logs in $outdir"
     fi
     exit $overall
+
+# Show this machine's Margine deployment vs the latest published :stable, plus the Fedora → Bluefin → Margine lineage and running kernel. Read-only.
+[group('Margine')]
+margine-status:
+    @/usr/bin/margine-status
+
+# Pull the latest Margine :stable and stage it for the next reboot.
+[group('Margine')]
+margine-update:
+    #!/usr/bin/bash
+    set -euo pipefail
+    /usr/bin/margine-status || true
+    echo
+    if command -v bootc >/dev/null 2>&1; then
+      echo "Staging the latest Margine :stable (bootc upgrade)…"
+      sudo bootc upgrade
+    else
+      echo "Staging the latest Margine :stable (rpm-ostree upgrade)…"
+      sudo rpm-ostree upgrade
+    fi
+    echo
+    echo "Staged. Reboot to switch into it:  systemctl reboot"

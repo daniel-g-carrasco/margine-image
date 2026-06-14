@@ -1,0 +1,77 @@
+name: Refresh status.json
+
+# Regenerates the website's /status flow document and pushes it to the site
+# repo. Triggers:
+#   - after every image build, smoke-promotion, or ISO (workflow_run) so the
+#     page reflects Margine's own state changes promptly;
+#   - daily on a schedule so upstream Bluefin drift (baseDigestMatchesBluefin)
+#     surfaces even when Margine itself didn't change;
+#   - manually (workflow_dispatch).
+#
+# workflow_run only fires for the copy of this file on the default branch.
+
+on:
+  workflow_run:
+    workflows:
+      - "Build Margine image"
+      - "Smoke-boot published image"
+      - "Build disk images"
+    types: [completed]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: status-json
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout margine-image (producer scripts)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Ensure skopeo + jq
+        run: |
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          command -v jq >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; }
+
+      - name: Generate status.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          .github/scripts/build-status-json.sh > /tmp/status.json
+          echo "--- generated status.json ---"
+          cat /tmp/status.json
+
+      - name: Check SITE_BUMP_TOKEN
+        id: tok
+        env:
+          T: ${{ secrets.SITE_BUMP_TOKEN }}
+        run: |
+          if [ -z "$T" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::SITE_BUMP_TOKEN not set — generated status.json but cannot publish it."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout website repo
+        if: steps.tok.outputs.skip != 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: daniel-g-carrasco/margine-os-1084ca72
+          token: ${{ secrets.SITE_BUMP_TOKEN }}
+          path: site
+          fetch-depth: 1
+
+      - name: Publish status.json to the site
+        if: steps.tok.outputs.skip != 'true'
+        working-directory: site
+        run: ../.github/scripts/publish-status-json.sh /tmp/status.json

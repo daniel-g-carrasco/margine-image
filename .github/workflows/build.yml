@@ -123,6 +123,22 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
+      - name: Resolve base image digest (best-effort)
+        # Stamp the bluefin-dx:stable digest this image is built FROM as the
+        # standard OCI base.digest label. The status.json producer compares
+        # it against the *current* bluefin-dx:stable digest to tell whether
+        # Margine is on the latest upstream (baseDigestMatchesBluefin on the
+        # /status page). Best-effort: continue-on-error keeps a skopeo/network
+        # hiccup from ever failing the critical build path — the label just
+        # ends up empty and the page shows "unknown".
+        id: basedigest
+        continue-on-error: true
+        run: |
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          DIGEST="$(skopeo inspect --no-tags docker://ghcr.io/ublue-os/bluefin-dx:stable --format '{{.Digest}}' 2>/dev/null || echo '')"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "base (bluefin-dx:stable) digest: ${DIGEST:-<unresolved>}"
+
       - name: Stage MOK secrets for BuildKit
         # Key + cert only. The enrollment PASSPHRASE is public by design
         # (printed in the live-ISO dialog and the install docs) and is a
@@ -196,6 +212,8 @@ jobs:
             containers.bootc=1
             place.the-empty.margine.spec-ref=${{ steps.specref.outputs.sha }}
             place.the-empty.margine.spec-ref-name=${{ steps.specref.outputs.ref }}
+            org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
+            org.opencontainers.image.base.name=ghcr.io/ublue-os/bluefin-dx:stable
           sep-tags: " "
           sep-annotations: " "
 

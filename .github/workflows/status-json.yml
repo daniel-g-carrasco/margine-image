@@ -42,6 +42,11 @@ jobs:
           command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
           command -v jq >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq jq; }
 
+      - name: Login to GHCR
+        # Authenticated skopeo inspect (5000 req/h vs 100 anonymous) so the
+        # daily + per-event refreshes don't trip the anonymous GHCR limit.
+        run: skopeo login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+
       - name: Generate status.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

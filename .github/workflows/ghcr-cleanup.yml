@@ -1,0 +1,59 @@
+name: GHCR cleanup (margine)
+
+# The margine OS image package accumulates orphaned UNTAGGED digests: every
+# day build.yml + smoke-boot move :candidate / :stable / :stable.DATE / :DATE
+# onto a fresh ~14 GB digest, orphaning the previous manifest. Nothing pruned
+# them (only margine-live is pruned, inside build-disk.yml), so they piled up
+# — build.yml's "expected to be GC'd by the stale-tag cleanup" comment refers
+# to this workflow, which until now did not exist.
+#
+# Conservative v1: delete only the untagged orphans. Every current tag is
+# protected (named tags, the dated release pins, and the transient
+# candidate.* / pr-*). The action is cosign / OCI-1.1 referrer aware, so the
+# .sig and SBOM-attestation sidecars of kept images are preserved and the
+# sidecars of deleted orphans go with them.
+#
+# IMPORTANT: before trusting the schedule, run it once manually
+# (workflow_dispatch, dry_run=true) and read the "would delete" log.
+
+on:
+  schedule:
+    - cron: "17 4 * * *" # daily 04:17 UTC, after the nightly build/promote
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Plan only — list what would be deleted, delete nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write # required to delete GHCR package versions
+
+concurrency:
+  group: ghcr-cleanup-margine
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Prune orphaned margine GHCR versions
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: daniel-g-carrasco
+          packages: margine
+          # Never delete any current tag: named tags, the dated release pins
+          # (stable.YYYYMMDD + the plain YYYYMMDD alias, all start with 2),
+          # and the transient candidate.* / pr-*. To also age those out
+          # later, move 'candidate.*,pr-*' to delete-tags + set keep-n-tagged.
+          exclude-tags: "stable,latest,candidate,stable.*,candidate.*,pr-*,2*"
+          # The win: drop the untagged orphans left by the daily tag-moves.
+          # Keep a small recent buffer; cosign/SBOM sidecars of kept images
+          # are preserved automatically (referrer-aware).
+          delete-untagged: true
+          keep-n-untagged: 3
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

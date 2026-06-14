@@ -48,7 +48,10 @@ if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/s
   echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
 fi
 
-# A.3 — All 11 enabled-extensions UUIDs installed system-wide
+# A.3 — All 10 enabled-extensions UUIDs installed system-wide.
+# (search-light is NOT enabled by Margine — GNOME-native search replaces it —
+# but it stays installed by Bluefin and patched by us; its presence + crash
+# patches are still asserted by A.3.ter below.)
 for uuid in \
   appindicatorsupport@rgcjonas.gmail.com \
   bazaar-integration@kolunmi.github.io \
@@ -56,7 +59,6 @@ for uuid in \
   dash-to-dock@micxgx.gmail.com \
   gradia-integration@alexandervanhee.github.io \
   gsconnect@andyholmes.github.io \
-  search-light@icedman.github.com \
   o-tiling@oliwebd.github.com \
   hide-cursor@elcste.com \
   caffeine@patapon.info \

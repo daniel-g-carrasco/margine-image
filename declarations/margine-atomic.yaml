@@ -731,7 +731,10 @@ gnome:
       - dash-to-dock@micxgx.gmail.com
       - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
-      - search-light@icedman.github.com
+      # search-light intentionally NOT enabled (2026-06-14) — GNOME-native
+      # search replaces it (Super = overview, Super+Space = app-grid). Bluefin's
+      # copy stays installed (and Margine keeps patching it) so it can be
+      # re-enabled, but it doesn't auto-load and carries the GNOME-50 crash class.
       # Tiling Shell removed entirely (2026-06-02). o-tiling is the
       # Margine default tiling engine. To A/B compare Tiling Shell,
       # install it from Extensions Manager (EGO ID 7065).
@@ -906,7 +909,10 @@ gnome:
       # minimize action moves to a free chord.
       minimize:           '<Super>m'
     shell:
-      toggle_application_view: ['<Super>r']
+      # Super+Space opens GNOME's native searchable app-grid (it used to be
+      # search-light's chord; search-light is no longer enabled). Super alone
+      # = overview (native overlay-key), which also searches.
+      toggle_application_view: ['<Super>space', '<Super>r']
       toggle_overview:    '<Super><Shift>space'
       toggle_message_tray: '<Super>n'
       show_screenshot_ui: 'Print'

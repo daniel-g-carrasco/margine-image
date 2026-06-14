@@ -269,7 +269,7 @@ The phase 1 GNOME extension set:
 | `dash-to-dock@micxgx.gmail.com` | Fedora (`gnome-shell-extension-dash-to-dock`) | fixed semi-transparent dock with running-app dots |
 | `gradia-integration@alexandervanhee.github.io` | inherited from Bluefin DX | screenshot-edit tool integration |
 | `gsconnect@andyholmes.github.io` | Fedora (`gnome-shell-extension-gsconnect`) | KDE Connect for GNOME |
-| `search-light@icedman.github.com` | user-install (git, upstream master) | Spotlight-style search popup (Super+Space) |
+| `search-light@icedman.github.com` | Bluefin-baked; **not enabled by Margine** | superseded by GNOME-native search (Super = overview, Super+Space = app-grid); stays installed + patched so it can be re-enabled |
 | `o-tiling@oliwebd.github.com` | user-install (pinned release zip) | binary-tree auto-split tiling (replaces Tiling Shell as of 2026-06-02) |
 | `hide-cursor@elcste.com` | user-install from extensions.gnome.org | Wayland-native cursor auto-hide on inactivity |
 | `caffeine@patapon.info` | user-install from extensions.gnome.org | keep-screen-awake toggle |
@@ -277,7 +277,7 @@ The phase 1 GNOME extension set:
 Apply the full set:
 
 ```sh
-scripts/install-user-extensions --apply       # downloads o-tiling, search-light, hide-cursor, caffeine; prunes anything in removed_user_install
+scripts/install-user-extensions --apply       # downloads o-tiling, hide-cursor, caffeine; prunes anything in removed_user_install
 scripts/configure-gnome-extensions --apply    # enables all listed
 scripts/configure-gnome-keybindings --apply   # workspace + tiling binds
 scripts/configure-gnome-appearance --apply    # dconf settings + ext-specific tweaks

@@ -901,6 +901,10 @@ gnome:
       close:              '<Super>w'
       toggle_fullscreen:  '<Super>f'
       always_on_top:      '<Super>o'
+      # GNOME's default minimize chord <Super>h is taken by o-tiling
+      # focus-left, and <Super>Down is unmaximize (not minimize), so the
+      # minimize action moves to a free chord.
+      minimize:           '<Super>m'
     shell:
       toggle_application_view: ['<Super>r']
       toggle_overview:    '<Super><Shift>space'
@@ -940,34 +944,35 @@ gnome:
         command: 'flatpak run it.mijorus.smile'
     o_tiling:
       # o-tiling keybindings (org.gnome.shell.extensions.o-tiling).
-      # Binary-tree auto-split engine (Hyprland/i3-style). Mapping:
-      #   SUPER+ARROW           → MOVE the focused window in direction
-      #                           (tile-move-{dir}-global; defaults
-      #                           are empty so we don't collide)
-      #   SUPER+SHIFT+ARROW     → FOCUS neighbour in direction
-      #                           (overrides default Super+Alt+arrow /
-      #                           Super+hjkl)
-      #   SUPER+T               → toggle auto-tiling on/off (engine
-      #                           soft-disable, lets you float
-      #                           temporarily without losing settings)
-      # Conflicts resolved by clearing o-tiling defaults that overlap:
-      #   - toggle-floating default <Super>f conflicts with Margine
-      #     wm.toggle-fullscreen → cleared.
-      #   - tile-enter default <Super>Return conflicts with Margine
-      #     custom terminal keybinding → cleared.
-      tile-move-right-global:  '<Super>Right'
-      tile-move-left-global:   '<Super>Left'
-      tile-move-up-global:     '<Super>Up'
-      tile-move-down-global:   '<Super>Down'
-      focus-right:             '<Super><Shift>Right'
-      focus-left:              '<Super><Shift>Left'
-      focus-up:                '<Super><Shift>Up'
-      focus-down:              '<Super><Shift>Down'
-      # toggle-tiling kept at upstream default <Super>t. Margine
-      # doesn't use that chord for anything else.
-      # Explicit clears for upstream defaults that collide:
-      toggle-floating:         ''
-      tile-enter:              ''
+      # Binary-tree auto-split engine (Hyprland/i3-style).
+      #
+      # MUST stay in sync with margine-image's
+      # build_files/30-gnome-defaults/dconf/03-margine-o-tiling: that dconf
+      # file sets these as system DEFAULTS (every boot, unconditional) and
+      # this block re-applies them to USER dconf at `ujust margine-bootstrap`.
+      # If the two disagree, bootstrap silently RE-BREAKS the keybindings.
+      #
+      # o-tiling's UPSTREAM defaults shadow GNOME-native + Margine custom
+      # shortcuts; the binding state of an installed system is exactly what
+      # these set. GNOME/Margine win; o-tiling keeps every feature on a
+      # collision-free chord:
+      #   Super+hjkl         focus neighbour (Hyprland parity)
+      #   Super+Ctrl+arrows  swap with neighbour (o-tiling default, free)
+      #   Super+Ctrl+Return  adjustment mode  (was Super+Return = terminal)
+      #   Super+Shift+t      toggle auto-tiling (was Super+t; accidental
+      #                      whole-session toggle, user-reported)
+      #   Super+Shift+f      float window     (was Super+f = fullscreen)
+      #   Super+Shift+s      stacking         (was Super+s = quick-settings)
+      # Dropped the duplicate Super+Alt+arrows from focus-* so they no longer
+      # shadow wm.switch-to-workspace-left/right + shell.shift-overview-up/down.
+      focus-left:              '<Super>h'
+      focus-right:             '<Super>l'
+      focus-up:                '<Super>k'
+      focus-down:              '<Super>j'
+      tile-enter:              ['<Super><Ctrl>Return', '<Super><Ctrl>KP_Enter']
+      toggle-tiling:           '<Super><Shift>t'
+      toggle-floating:         '<Super><Shift>f'
+      toggle-stacking-global:  '<Super><Shift>s'
   app_folders:
     naming_note: >
       App folders in the GNOME Activities grid. Margine takes a

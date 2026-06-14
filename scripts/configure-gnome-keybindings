@@ -63,6 +63,7 @@ WM_KEYS = {
     "close": "close",
     "toggle_fullscreen": "toggle-fullscreen",
     "always_on_top": "always-on-top",
+    "minimize": "minimize",
 }
 
 SHELL_KEYS = {

@@ -21,7 +21,7 @@ GNOME distinguishes five surfaces, each with its own gsettings schema:
 | Shell | `org.gnome.shell.keybindings` | overview, application view, screenshot UI, message tray |
 | Media keys | `org.gnome.settings-daemon.plugins.media-keys` | lock screen, audio/brightness hardware keys |
 | Custom slots | `...media-keys.custom-keybinding:/path/` | arbitrary `command + binding` pairs (app launchers) |
-| Extension | `org.gnome.shell.extensions.forge.keybindings` | Forge tiling actions |
+| Extension | `org.gnome.shell.extensions.o-tiling` | o-tiling tiling actions (keys live directly under the schema, not a `.keybindings` sub-path) |
 
 A 6th surface — `org.gnome.mutter` + `org.gnome.desktop.wm.preferences` —
 controls the workspace model (`dynamic-workspaces=true`) and workspace names.
@@ -45,7 +45,7 @@ native bindings instead of replacing them with a custom extension.
 
 The full set, grouped by purpose. Source: `60-binds.conf`. Destination
 schema in the legend column (W = WM, S = Shell, M = media-keys, C = custom,
-F = Forge).
+T = o-tiling).
 
 ### Launcher / overview
 
@@ -65,6 +65,7 @@ F = Forge).
 | `SUPER CTRL+T` | `ptyxis -- btop` | btop lives in the toolbox; runs inside Ptyxis |
 | `SUPER+ESCAPE` | `gnome-session-quit --logout` | replaces the `open-session-actions-menu` helper |
 | `SHIFT+Print` | `gnome-screenshot -ac` | takes a region screenshot to clipboard (GNOME shell handles SUPER+Print and bare Print as full UIs) |
+| `SUPER+PERIOD` | `flatpak run it.mijorus.smile` | Smile emoji picker. **IBus's emoji panel also defaults to `<Super>period`** and grabs it at the input-method layer (you get emoji-input "special characters" instead of Smile), so Margine clears `org.freedesktop.ibus.panel.emoji hotkey` in `07-margine-custom-keybindings` |
 
 ### Workspace navigation (W)
 
@@ -83,6 +84,11 @@ F = Forge).
 | `SUPER+W` | `close` |
 | `SUPER+F` | `toggle-fullscreen` |
 | `SUPER+O` | `always-on-top` |
+| `SUPER+M` | `minimize` |
+
+> `minimize` lives on `SUPER+M` because GNOME's default `<Super>h` is claimed
+> by o-tiling `focus-left` (Hyprland parity) and `<Super>Down` is `unmaximize`,
+> not minimize — there is no "auto-minimize" action in GNOME or o-tiling.
 
 ### Tiling actions (T — require o-tiling extension)
 
@@ -103,19 +109,33 @@ is installed user-level from a pinned upstream release zip by
 Mental model:
 
 - **Auto-split**: opening a window splits the focused tile in half
-  (binary-tree). Toggle split direction with `SUPER+G`.
+  (binary-tree), driven by `tile-by-default=true`.
 - **Focus / move** are directional and follow the tree, not screen
   geometry.
 - **Float** lifts the active window out of the tiling tree (Hyprland's
   pseudofloat).
 
-| Hyprland | o-tiling action | Notes |
-| --- | --- | --- |
-| `SUPER+arrows` (focus direction) | `focus-{left,right,up,down}` | |
-| `SUPER SHIFT+arrows` (move/swap window) | `move-{left,right,up,down}` | swaps with the neighbour in that direction |
-| `SUPER+G` (toggle split direction) | `toggle-tiling` | flips the active split horizontal ↔ vertical |
-| `SUPER+T` (untile / toggle floating) | `toggle-floating` | lifts the window out of the tree |
-| `SUPER+R` (resize mode) | n/a — use mouse | o-tiling resizes via mouse drag on the gutter |
+> **Keybinding conflict resolution.** o-tiling's *upstream* keybinding
+> defaults collide with several GNOME-native and Margine custom shortcuts
+> (`SUPER+RETURN`, `SUPER+T`, `SUPER+F`, `SUPER+S`, `SUPER+ALT+arrows`).
+> Because the binding state of an **installed** system is exactly whatever
+> the shipped dconf defaults set, those collisions reach every user. Margine
+> resolves them in `margine-image`'s
+> `build_files/30-gnome-defaults/dconf/03-margine-o-tiling` and mirrors the
+> identical values in the `o_tiling` block of `margine-atomic.yaml` (applied
+> to user dconf at `ujust margine-bootstrap`) — **the two must stay in
+> sync** or bootstrap silently re-breaks them. GNOME/Margine shortcuts win;
+> o-tiling keeps every action on a collision-free chord:
+
+| Action | o-tiling key | Margine chord | Was (upstream default) |
+| --- | --- | --- | --- |
+| Focus neighbour | `focus-{left,down,up,right}` | `SUPER+{h,j,k,l}` | also had `SUPER+ALT+arrows` — **dropped** (shadowed workspace-switch / overview-shift) |
+| Swap with neighbour | `tile-swap-*` | `SUPER+CTRL+arrows` | unchanged (no conflict) |
+| Adjustment mode | `tile-enter` | `SUPER+CTRL+RETURN` | `SUPER+RETURN` — collided with the terminal launcher |
+| Toggle auto-tiling | `toggle-tiling` | `SUPER+SHIFT+T` | `SUPER+T` — accidental whole-session toggle |
+| Float window | `toggle-floating` | `SUPER+SHIFT+F` | `SUPER+F` — collided with `toggle-fullscreen` |
+| Stacking | `toggle-stacking-global` | `SUPER+SHIFT+S` | `SUPER+S` — collided with quick-settings |
+| Resize | n/a — mouse | drag the gutter | o-tiling resizes via mouse drag |
 
 Preferences live in the GNOME Extensions Manager UI for
 `o-tiling@oliwebd.github.com`. Tiling Shell is still installable from
@@ -149,8 +169,8 @@ not mapped:
 | --- | --- |
 | `SUPER+K` (show Hyprland binds) | GNOME Settings → Keyboard has the canonical list |
 | `SUPER SHIFT+P` (restart waybar) | no waybar in GNOME |
-| `SUPER+P` (pseudotile) | Hyprland-specific layout concept; closest Forge has is per-window float, already on `SUPER+T` |
-| `SUPER+S` / `SUPER ALT+S` (scratchpad) | Forge has no built-in scratchpad workspace; workaround would be a dedicated workspace + custom keybinding, but it's out of scope here |
+| `SUPER+P` (pseudotile) | Hyprland-specific layout concept; closest o-tiling has is per-window float, on `SUPER+SHIFT+F` |
+| `SUPER+S` / `SUPER ALT+S` (scratchpad) | o-tiling has no built-in scratchpad workspace, and `SUPER+S` is reserved for GNOME quick-settings; a workaround would be a dedicated workspace + custom keybinding, but it's out of scope here |
 
 ## How to apply
 
@@ -161,10 +181,10 @@ scripts/configure-gnome-keybindings
 # Apply
 scripts/configure-gnome-keybindings --apply
 
-# After --apply, enable Forge so its schema becomes available, then re-run
-# so the Forge keybinding section actually takes effect:
-gnome-extensions enable forge@jmmaranan.com
-scripts/configure-gnome-keybindings --apply
+# o-tiling is installed system-wide by margine-image and enabled by default
+# via the zz1 gschema override, so its keybinding section applies on first
+# login with no manual enable step. (If you disabled it, re-enable with
+# `scripts/configure-gnome-extensions --apply`, then re-run this script.)
 
 # Log out / log back in for some shell-side shortcuts (toggle-overview, etc.)
 # to refresh.
@@ -185,7 +205,7 @@ gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-1   # ['<Supe
 gsettings get org.gnome.desktop.wm.keybindings close                   # ['<Super>w']
 gsettings get org.gnome.shell.keybindings toggle-application-view      # ['<Super>space', '<Super>r']
 gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
-gsettings get org.gnome.shell.extensions.forge.keybindings window-toggle-float
+gsettings get org.gnome.shell.extensions.o-tiling toggle-floating
 gsettings get org.gnome.mutter dynamic-workspaces                      # true
 gsettings get org.gnome.desktop.wm.preferences workspace-names          # ['1', ...]
 gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-4    # ['<Super>4']
@@ -210,30 +230,31 @@ To add a new app launcher, append an entry to `gnome.keybindings.custom`:
   command: 'my-command --with-args'
 ```
 
-To swap a Forge tiling key, change the value in `gnome.keybindings.forge` —
-Forge's gsettings schema accepts any GNOME-format accelerator.
+To swap a tiling key, change the value in `gnome.keybindings.o_tiling` (keep
+it in sync with margine-image's dconf `03-margine-o-tiling`, which sets the
+same keys as system defaults) — o-tiling's schema accepts any GNOME-format
+accelerator.
 
-## Forge: enabling and notes
+## o-tiling: enabling and notes
 
-Forge is shipped as `gnome-shell-extension-forge` in the host baseline
-(installed by `scripts/apply-host-layer --apply`). It is **not enabled
-automatically** — GNOME extensions are user-state, not host-state.
+o-tiling is installed **system-wide** by margine-image
+(`build_files/build-margine-extensions.sh` bakes a pinned, checksummed
+release into `/usr/share/gnome-shell/extensions/`) and is enabled by default
+through the `enabled-extensions` list in the zz1 gschema override. It is
+active on first GDM login — no per-user install, no manual enable step.
 
-After first boot:
+If you ever disable it and want it back:
 
 ```sh
 scripts/configure-gnome-extensions --apply
-gnome-extensions list --enabled | grep -E 'forge|workspace-indicator'
+gnome-extensions list --enabled | grep -E 'o-tiling|workspace-indicator'
 ```
 
-Then re-run `configure-gnome-keybindings --apply` (the Forge schema becomes
-available only after the extension is enabled).
-
-Forge has its own preferences window (`gnome-extensions prefs
-forge@jmmaranan.com`) for things outside the keybinding scope: window
-gaps, tiling mode (tabbed / stacked / split), drag-to-tile behaviour. The
-Margine declarations don't pre-configure those — pick what you like from
-the Forge GUI and they persist in user dconf.
+o-tiling has its own preferences window (`gnome-extensions prefs
+o-tiling@oliwebd.github.com`) for things outside the keybinding scope: gaps,
+the active-window hint, auto-split behaviour. Margine pre-seeds a few of
+these via the dconf `03-margine-o-tiling` keyfile; anything you change in the
+GUI persists in your user dconf.
 
 ## Source preserved
 

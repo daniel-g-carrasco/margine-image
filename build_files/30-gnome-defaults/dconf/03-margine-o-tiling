@@ -7,3 +7,29 @@ gap-outer=4
 mouse-cursor-follows-active-window=true
 skip-overview=false
 tile-by-default=true
+
+# --- Keybinding conflict resolution (2026-06-14) ---
+# o-tiling's UPSTREAM keybinding defaults collide with GNOME-native and
+# Margine custom shortcuts. Without these overrides every fresh install
+# ships broken (the binding state of an installed system == this file's
+# effect): Super+Return never reaches the terminal launcher, Super+T
+# silently toggles tiling for the whole session with no clean undo,
+# Super+F/Super+S/Super+Alt+arrows shadow fullscreen / quick-settings /
+# workspace-switch + overview-shift. GNOME and Margine bindings win;
+# o-tiling keeps every feature on a collision-free chord.
+#
+# Was ['<Super>Return','<Super>KP_Enter'] — ate the custom terminal launcher.
+tile-enter=['<Super><Ctrl>Return', '<Super><Ctrl>KP_Enter']
+# Was ['<Super>t'] — accidental whole-session tiling toggle (user-reported).
+toggle-tiling=['<Super><Shift>t']
+# Was ['<Super>f'] — shadowed wm.toggle-fullscreen.
+toggle-floating=['<Super><Shift>f']
+# Was ['<Super>s'] — shadowed shell.toggle-quick-settings.
+toggle-stacking-global=['<Super><Shift>s']
+# Focus: keep the Hyprland-parity Super+hjkl, drop the duplicate
+# <Super><Alt>arrows that shadowed wm.switch-to-workspace-left/right and
+# shell.shift-overview-up/down.
+focus-left=['<Super>h']
+focus-right=['<Super>l']
+focus-up=['<Super>k']
+focus-down=['<Super>j']

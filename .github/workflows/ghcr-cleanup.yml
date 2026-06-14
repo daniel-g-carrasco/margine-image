@@ -51,9 +51,11 @@ jobs:
           # later, move 'candidate.*,pr-*' to delete-tags + set keep-n-tagged.
           exclude-tags: "stable,latest,candidate,stable.*,candidate.*,pr-*,2*"
           # The win: drop the untagged orphans left by the daily tag-moves.
-          # Keep a small recent buffer; cosign/SBOM sidecars of kept images
-          # are preserved automatically (referrer-aware).
-          delete-untagged: true
+          # keep-n-untagged keeps the N most recent untagged and prunes the
+          # rest — a small recent buffer. delete-untagged is mutually
+          # exclusive with keep-n-untagged in this action, so we set only
+          # keep-n-untagged. cosign/SBOM sidecars of kept images are
+          # preserved automatically (referrer-aware).
           keep-n-untagged: 3
           validate: true
           dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

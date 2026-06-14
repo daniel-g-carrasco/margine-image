@@ -241,9 +241,11 @@ Do not carry over initially:
 - Waybar/Walker/Fuzzel/SwayNC theme artifacts;
 - forced Qt platform themes from the Hyprland session.
 
-GTK4/libadwaita applications should stay close to upstream GNOME behavior in
-phase 1. The only shell-extension styling we apply is through Forge's own
-gsettings schema, not through a custom GNOME Shell theme.
+GTK4/libadwaita applications stay close to upstream GNOME behavior. The only
+shell-extension configuration/styling we apply ships through the dconf
+distro.d keyfiles (`etc/dconf/db/distro.d/01..07`, e.g. `03-margine-o-tiling`)
+plus the `enabled-extensions` list in the zz1 gschema override — not a custom
+GNOME Shell theme.
 
 Apply the appearance baseline:
 
@@ -370,8 +372,8 @@ gsettings get org.gnome.mutter dynamic-workspaces
 gsettings get org.gnome.desktop.wm.preferences workspace-names
 gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-4
 gnome-extensions list --enabled | grep workspace-indicator
-gsettings get org.gnome.shell.extensions.forge focus-border-color
-gsettings get org.gnome.shell.extensions.forge window-gap-hidden-on-single
+gsettings get org.gnome.shell.extensions.o-tiling focus-left
+gsettings get org.gnome.shell.extensions.o-tiling toggle-floating
 cat ~/.config/user-dirs.dirs
 sed -n '1,120p' ~/.config/gtk-3.0/bookmarks
 sed -n '1,120p' ~/.config/gtk-4.0/bookmarks

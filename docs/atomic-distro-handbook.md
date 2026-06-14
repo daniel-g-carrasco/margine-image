@@ -2276,7 +2276,7 @@ case "$initial" in
 
 ## 6.6 On-demand: `ujust margine-gaming`
 
-The heaviest payload (Steam, Lutris, Heroic, Bottles, RetroArch + host gamescope/vkBasalt) is not preinstalled at all. A dedicated image variant existed and was retired 2026-06-06; the supported path is an interactive recipe that installs gaming Flatpaks system-wide and layers the two gaming-only RPMs via rpm-ostree:
+The heaviest payload (Steam, Lutris, Heroic, Bottles, RetroArch + host gamescope/vkBasalt) is not preinstalled at all. A dedicated image variant existed and was retired 2026-06-06; the supported path is **two** interactive recipes, each with a symmetric `-remove`. The default, `ujust margine-gaming`, installs the gaming launchers as Flatpaks system-wide and layers only the two gaming-only RPMs (gamescope + vkBasalt) via rpm-ostree. For maximum Proton/Wine compatibility (anti-cheat, VR, NVIDIA-proprietary + Mesa side-by-side), `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — the full 32-bit dependency closure is baked into the base image so the layering resolves offline. The Flatpak recipe below is the default path:
 
 ```make
 flatpak install --system -y --or-update flathub \

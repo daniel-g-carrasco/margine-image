@@ -7,8 +7,10 @@ documents and validates Fedora Atomic Desktop as a base for the same
 reproducible, recoverable, inspectable operating model that the Arch-based
 branch implements.
 
-Phase 1 is a VM lab. The repository is not yet producing an installable image
-or a distributable product. Contributions at this stage are primarily:
+Phase 1 (the Fedora-Silverblue VM lab) is complete: this repo's declarative
+spec (`declarations/margine-atomic.yaml`) plus its `configure-*` / `validate-*`
+scripts now feed the `margine-image` CI pipeline that builds the shipped
+Bluefin-DX-based image and ISO. Contributions are primarily:
 
 - corrections to documentation that misrepresents Fedora Atomic mechanics
 - improvements to validation scripts and diagnostics

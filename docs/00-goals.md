@@ -1,5 +1,13 @@
 # Goals
 
+> **Status (2026-06): superseded — read as the original phase-1 plan.** When
+> this was written the first deliverable was a Fedora-Silverblue VM lab with
+> GNOME kept stock and no image yet. Phase 1 is complete: Margine now ships as
+> a **Bluefin-DX-based bootc image + ISO** with a customized GNOME (o-tiling
+> tiling, Hyprland-style keybindings) on a signed CachyOS kernel. This page is
+> the historical goals record; for how Margine works today see the README and
+> the handbook.
+
 Margine is a versioned system definition: manifests describe intent, validators
 prove the result, and recovery paths stay part of the normal workflow. This
 repository is the Fedora Atomic branch of that project family.

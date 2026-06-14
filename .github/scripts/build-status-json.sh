@@ -37,6 +37,16 @@ trap 'rm -f "$BLU_F" "$MAR_F"' EXIT
 skopeo inspect --no-tags "docker://$BLUEFIN_IMAGE" > "$BLU_F" 2>/dev/null || echo '{}' > "$BLU_F"
 skopeo inspect --no-tags "docker://$MARGINE_IMAGE" > "$MAR_F" 2>/dev/null || echo '{}' > "$MAR_F"
 
+# Guard: if BOTH inspects came back empty (registry blip / auth failure / GC
+# race), refuse to emit a degenerate all-"—" doc that would overwrite the last
+# good one. A non-zero exit fails the generate step before publish runs, so the
+# previously-published good status.json is preserved.
+if ! jq -e 'has("Digest")' "$BLU_F" >/dev/null 2>&1 \
+   && ! jq -e 'has("Digest")' "$MAR_F" >/dev/null 2>&1; then
+  echo "::error::both skopeo inspects returned empty — refusing to emit a degenerate status.json" >&2
+  exit 1
+fi
+
 # Latest run with a *meaningful* conclusion (success / failure / timed_out),
 # skipping the cancelled + skipped noise that build.yml's cancel-in-progress
 # concurrency produces. Without this, the most recent "completed" build is
@@ -92,14 +102,21 @@ mar_base = mar_l.get("org.opencontainers.image.base.digest", "")
 base_match = (mar_base == blu_digest) if (mar_base and blu_digest) else None
 
 def health(c):
-    return {"success": "current", "failure": "failed", "cancelled": "failed"}.get(c, "unknown")
+    return {
+        "success": "current", "failure": "failed",
+        "timed_out": "failed", "cancelled": "failed",
+    }.get(c, "unknown")
 
-# A layer is "current" when its build is healthy; margine drops to "behind"
-# when it was built from an older Bluefin than what's published now.
-mar_status = "current"
-if base_match is False:
+# Margine layer status, in precedence order:
+#   - "unknown" when the image couldn't be inspected at all (registry blip /
+#     made private / GC race) — never assert green over a void;
+#   - "behind"  when built from an older Bluefin than what's published now;
+#   - "failed"  (wins) when the build OR smoke gate failed / timed out.
+mar_resolved = bool(mar.get("Digest") or mar_l)
+mar_status = "current" if mar_resolved else "unknown"
+if mar_resolved and base_match is False:
     mar_status = "behind"
-if os.environ["SMOKE_C"] == "failure":
+if os.environ["BUILD_C"] in ("failure", "timed_out") or os.environ["SMOKE_C"] in ("failure", "timed_out"):
     mar_status = "failed"
 
 doc = {
@@ -140,8 +157,8 @@ doc = {
         "stableDigest": mar_digest or "—",
         "stableCreated": mar_date,
         "baseDigestMatchesBluefin": base_match,
-        "build": {"conclusion": os.environ["BUILD_C"], "date": os.environ["BUILD_D"]},
-        "smoke": {"conclusion": os.environ["SMOKE_C"], "date": os.environ["SMOKE_D"]},
+        "build": {"conclusion": health(os.environ["BUILD_C"]), "date": os.environ["BUILD_D"]},
+        "smoke": {"conclusion": health(os.environ["SMOKE_C"]), "date": os.environ["SMOKE_D"]},
         "iso": {"status": health(os.environ["ISO_C"]), "date": os.environ["ISO_D"]},
     },
     "verify": {

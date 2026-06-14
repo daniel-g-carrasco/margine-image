@@ -41,82 +41,36 @@ sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
 
 # If a PR for the same target date already exists on the head branch
 # (re-dispatch on same UTC day), skip — don't churn.
-BRANCH="chore/bump-iso-date-$NEW_DATE"
-if gh pr list --repo "$SITE_REPO" \
-     --head "$BRANCH" --state open --json number --jq '.[0].number' \
-   | grep -q '^[0-9]'; then
-  echo "PR for branch $BRANCH already exists — leaving in place."
-  exit 0
-fi
-
+# Commit the bump straight to main and push — do NOT open a PR.
+#
+# Why direct push: the site repo is private on a free plan, so "Allow
+# auto-merge" is OFF and branch protection is unavailable. The old
+# branch+PR+auto-merge path therefore left an un-mergeable PR open after
+# EVERY release while the live site kept advertising the PREVIOUS ISO
+# (recurring failure, 2026-06-14). This is a deterministic one-line
+# constant change made by a trusted bot, so a direct push to main is the
+# robust path: it always lands, and the push triggers build-site.yml to
+# redeploy in ~2-3 min. The OLD==NEW guard above keeps it idempotent on a
+# same-day re-dispatch.
 git config user.email "noreply@margine.the-empty.place"
 git config user.name "margine-bump-bot"
-git checkout -b "$BRANCH"
 git add src/routes/index.tsx
-
 git commit -m "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}
 
-Auto-bump triggered by margine-image build-disk.yml after a
-successful IA publish.
+Auto-bump by margine-image build-disk.yml after a successful IA publish.
+Previous: ${OLD_DATE} -> New: ${NEW_DATE}
+Triggering run: ${RUN_URL}"
 
-Previous: ${OLD_DATE}
-New:      ${NEW_DATE}"
-git push -u origin "$BRANCH"
-
-PR_BODY="Auto-opened by [margine-image build-disk](${RUN_URL}).
-
-The site's hardcoded direct-link URLs point at the dated Internet
-Archive item. This PR bumps the date constant after a successful IA
-publish so the Hero CTAs and Install Option A reference the just-
-released ISO.
-
-Previous: \`${OLD_DATE}\`
-New:      \`${NEW_DATE}\`
-
-If everything looks right, squash-merge. The webhook deploy on VM 110
-picks up the change in ~2-3 min."
-
-gh pr create \
-  --repo "$SITE_REPO" \
-  --base main \
-  --head "$BRANCH" \
-  --title "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}" \
-  --body "$PR_BODY"
-
-# Merge the bump PR so the Hero buttons + Install Option A block point at
-# the just-published ISO without manual intervention. This is a critical
-# path: if it stays open, the live site keeps advertising the PREVIOUS
-# ISO.
-#
-# Prefer GitHub auto-merge (waits for the lint check). It needs the repo's
-# "Allow auto-merge" setting; when that's off, --auto errors out — so fall
-# back to a direct squash merge after the lint check goes green. The change
-# is a single date constant, so a direct merge once lint passes is safe.
-if gh pr merge --repo "$SITE_REPO" "$BRANCH" --squash --auto --delete-branch; then
-  echo "Auto-merge enabled on the bump PR."
-else
-  echo "::warning::auto-merge unavailable (repo 'Allow auto-merge' off?) — merging directly once lint is green"
-  merged=false
-  for _ in $(seq 1 30); do
-    state="$(gh pr checks "$BRANCH" --repo "$SITE_REPO" --json bucket \
-      --jq '[.[].bucket] | join(",")' 2>/dev/null || echo "")"
-    case ",$state," in
-      *,fail,*|*,cancelled,*)
-        echo "::error::bump PR checks not green ($state) — leaving it open for review"
-        break
-        ;;
-      *,pending,*|,,)
-        sleep 15
-        ;;
-      *)
-        if gh pr merge --repo "$SITE_REPO" "$BRANCH" --squash --delete-branch; then
-          merged=true
-        fi
-        break
-        ;;
-    esac
-  done
-  if [ "$merged" != true ]; then
-    echo "::warning::bump PR not merged automatically — merge ${BRANCH} manually so the site points at ${NEW_DATE}"
+# Push to main; if main advanced under us, rebase our single commit and
+# retry. First attempt succeeds in the common (no-race) case.
+for attempt in 1 2 3; do
+  if git push origin "HEAD:main"; then
+    echo "Pushed LATEST_ISO_DATE=${NEW_DATE} to ${SITE_REPO} main — site will redeploy."
+    exit 0
   fi
-fi
+  echo "::warning::push rejected (attempt ${attempt}) — rebasing on origin/main and retrying"
+  git fetch origin main || true
+  git rebase origin/main || { git rebase --abort || true; break; }
+done
+echo "::error::could not push the LATEST_ISO_DATE bump to ${SITE_REPO} main"
+exit 1

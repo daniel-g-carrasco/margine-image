@@ -68,6 +68,17 @@ check_file "etc/xdg/autostart/margine-first-boot.desktop" "A.4"
 check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
 check_exec "usr/libexec/margine-first-boot-status" "A.4"
 
+# A.4.gfx — GRUB HiDPI legibility drop-in (2026-06-14). Without it the bootc
+# static GRUB config sets no gfxmode/font, so the menu renders at the panel's
+# native resolution with a 16px font — unreadable on HiDPI. Assert the
+# configs.d fragment ships and actually sets a gfxmode + switches to gfxterm.
+GRUB_GFX="usr/lib/bootupd/grub2-static/configs.d/05_margine-gfxmode.cfg"
+check_file "$GRUB_GFX" "A.4.gfx"
+grep -q '^[[:space:]]*set gfxmode=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
+  || { echo "::error::A.4.gfx GRUB drop-in present but sets no gfxmode — menu stays tiny on HiDPI"; fail=1; }
+grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
+  || { echo "::error::A.4.gfx GRUB drop-in does not switch to gfxterm"; fail=1; }
+
 # A.4.bis — desktop launchers have high-res icons and docs fallback
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"

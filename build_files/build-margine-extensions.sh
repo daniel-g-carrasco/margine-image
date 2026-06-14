@@ -432,3 +432,63 @@ else
   log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Downstream patch #4: defer ALL show/hide triggers off input/gesture context
+# (holistic fix for the GNOME 50 / Clutter 18 session crashes, 2026-06-14).
+#
+# Patches #1/#2/#3 fixed three specific crash paths, but a FOURTH remained:
+# the keyboard shortcut (Super+Space) runs _toggle_search_light -> show()/
+# _acquire_ui() which reparents (add_child/remove_child) and grabs key focus
+# SYNCHRONOUSLY while a Clutter press gesture is in flight on the stage:
+#   clutter-gesture.c:544 set_state: assertion (new_state == POSSIBLE)
+#   clutter_press_gesture_point_began <- clutter_stage_process_event
+# Root theme across all four coredumps: search-light mutates the actor tree
+# synchronously inside event/gesture/signal handlers, from many triggers
+# (panel button [deferred by #2], the two keyboard accelerators, and the
+# notify::key-focus / Escape / in-fullscreen-changed hide handlers).
+#
+# Holistic fix: defer every EVENT-CONTEXT entry into show()/hide() by ONE
+# GLib idle tick, so the actor surgery runs off the gesture FSM and outside
+# input dispatch — neither set_state nor unrealize-while-mapped can fire.
+# show()/hide()/_toggle_search_light/_visible are left BYTE-FOR-BYTE unchanged
+# (no new state machine -> the overlay can never get stuck shown/hidden);
+# only the five callers are wrapped. Load-bearing (each crash ends the
+# session) -> hard-fail if any of the five 'old' strings is missing; Layer A
+# asserts the marker on the final image.
+if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
+  if grep -q 'margine: defer off input/gesture context' "$SEARCH_LIGHT_EXT"; then
+    log "search-light input-context deferral already present"
+  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+M = "// margine: defer off input/gesture context (Clutter 18 set_state / unrealize)"
+subs = [
+    ("      this.accel.listenFor(shortcut, this._toggle_search_light.bind(this));",
+     "      this.accel.listenFor(shortcut, () => {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this._toggle_search_light();\n          return GLib.SOURCE_REMOVE;\n        });\n      });" % M),
+    ("      this.accel2.listenFor(shortcut, this._toggle_search_light.bind(this));",
+     "      this.accel2.listenFor(shortcut, () => {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this._toggle_search_light();\n          return GLib.SOURCE_REMOVE;\n        });\n      });" % M),
+    ("        this._hidePopups();\n      }\n\n      this.hide();",
+     "        this._hidePopups();\n      }\n\n      %s\n      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n        this.hide();\n        return GLib.SOURCE_REMOVE;\n      });" % M),
+    ("      if (evt.get_key_symbol() === Clutter.KEY_Escape) {\n        this.hide();\n        return Clutter.EVENT_STOP;",
+     "      if (evt.get_key_symbol() === Clutter.KEY_Escape) {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this.hide();\n          return GLib.SOURCE_REMOVE;\n        });\n        return Clutter.EVENT_STOP;" % M),
+    ("  _onFullScreen() {\n    this.hide();\n  }",
+     "  _onFullScreen() {\n    %s\n    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n      this.hide();\n      return GLib.SOURCE_REMOVE;\n    });\n  }" % M),
+]
+for old, new in subs:
+    if old not in s:
+        sys.exit(1)
+    s = s.replace(old, new, 1)
+open(p, "w").write(s)
+PYEOF
+  then
+    log "search-light: deferred all show/hide triggers off input/gesture context"
+  else
+    log "ERROR: search-light trigger patterns not found (upstream changed?) — refusing to ship unpatched"
+    exit 1
+  fi
+else
+  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
+  exit 1
+fi

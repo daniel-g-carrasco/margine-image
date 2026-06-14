@@ -1,7 +1,11 @@
-# Watch the upstream PRs our forked Titanoboa pin carries. When one
-# merges, open (once) an issue reminding us to advance/revert
-# TITANOBOA_REF — today that lives only in human memory, which is how
-# pins rot. Weekly is plenty; upstream review moves slowly.
+# Watch the upstream PRs our forked Titanoboa pin carries AND the
+# EGO-hosted GNOME-extension version_tag pins (hide-cursor, smile) that
+# Renovate has no datasource for. When a Titanoboa PR merges, or an EGO
+# extension has a newer GNOME-50 upload, open (once) an issue — otherwise
+# these pins rot in human memory (o-tiling sat at 2.8.8 right through the
+# 2.8.11 GNOME-50 toggle fix that way). Weekly is plenty.
+# NB: o-tiling itself IS Renovate-tracked now — see renovate.json5 +
+# otiling-pin-sha.yml — so it is intentionally NOT re-checked here.
 name: Check upstream pins
 
 on:
@@ -61,6 +65,43 @@ jobs:
           BODY="The following patch(es) carried on our fork branch \`margine-pins\` have merged upstream:\n"
           for m in "${MERGED[@]}"; do BODY+="\n- ublue-os/titanoboa#${m}"; done
           BODY+="\n\nNext step: rebase \`margine-pins\` (drop the merged patch) or, if both are upstream, point \`TITANOBOA_REF\` and the \`uses:\` line in \`.github/workflows/build-disk.yml\` back at an upstream SHA. Then build + boot-test an ISO."
+          printf "%b" "$BODY" | gh issue create --repo "${{ github.repository }}" \
+            --title "$TITLE" --body-file - --label "upstream"
+          echo "Issue opened."
+
+      - name: Check EGO-hosted extension pins (hide-cursor, smile)
+        # Renovate tracks the GitHub-released o-tiling pin; the EGO-hosted
+        # extensions are pinned by version_tag, which Renovate has no
+        # datasource for. Query the EGO API weekly and open an issue when a
+        # newer GNOME-50 upload exists, so a fix can't sit unnoticed.
+        run: |
+          set -euo pipefail
+          f=build_files/build-margine-extensions.sh
+          behind=""
+          check() {
+            local uuid="$1" pinvar="$2" name="$3"
+            local pinned info url tag ver
+            pinned="$(grep -oP "^${pinvar}=\"\K[0-9]+" "$f" || true)"
+            [ -n "$pinned" ] || { echo "::warning::could not read ${pinvar}"; return; }
+            info="$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=50" 2>/dev/null || true)"
+            [ -n "$info" ] || { echo "::warning::EGO query failed for ${uuid}"; return; }
+            url="$(printf '%s' "$info" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("download_url",""))' 2>/dev/null || true)"
+            tag="$(printf '%s' "$url" | grep -oP 'version_tag=\K[0-9]+' || true)"
+            ver="$(printf '%s' "$info" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
+            echo "${name}: pinned version_tag=${pinned}, EGO latest=${tag:-?} (v${ver:-?})"
+            if [ -n "$tag" ] && [ "$tag" != "$pinned" ]; then
+              behind="${behind}\n- **${name}** (\`${uuid}\`): pinned version_tag \`${pinned}\` → EGO latest \`${tag}\` (v${ver}) for GNOME 50"
+            fi
+          }
+          check "hide-cursor@elcste.com" "HIDECURSOR_VERSION_TAG" "Hide Cursor"
+          check "smile-extension@mijorus.it" "SMILE_EXT_VERSION_TAG" "Smile extension"
+          [ -n "$behind" ] || { echo "EGO pins up to date."; exit 0; }
+
+          TITLE="EGO extension pin(s) behind upstream — bump version_tag + sha256"
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --search "in:title \"$TITLE\"" --state open --json number --jq '.[0].number // empty')
+          [ -z "$EXISTING" ] || { echo "Issue #$EXISTING already open — not duplicating."; exit 0; }
+          BODY="A newer EGO upload exists for one or more baked extensions (Renovate can't track EGO version_tags, so this weekly check does):\n${behind}\n\nTo update each: set the new \`version_tag\` in \`build_files/build-margine-extensions.sh\`, fetch \`https://extensions.gnome.org/download-extension/<uuid>.shell-extension.zip?version_tag=<tag>\`, recompute its \`sha256\`, bump the SHA pin, and PR. smoke-boot gates it before :stable."
           printf "%b" "$BODY" | gh issue create --repo "${{ github.repository }}" \
             --title "$TITLE" --body-file - --label "upstream"
           echo "Issue opened."

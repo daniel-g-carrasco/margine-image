@@ -48,5 +48,19 @@
       datasourceTemplate: 'github-releases',
       extractVersionTemplate: '^v(?<version>.+)$',
     },
+    {
+      // o-tiling (default tiler) is a sha256-pinned GitHub release. Renovate
+      // proposes the OTILING_VERSION bump; the companion workflow
+      // .github/workflows/otiling-pin-sha.yml recomputes OTILING_SHA256 on
+      // the Renovate branch (hosted Renovate can't hash a release zip).
+      // Added 2026-06-14 after o-tiling sat at 2.8.8 through the 2.8.11
+      // GNOME-50 toggle-reentrancy fix (oliwebd/o-tiling#15) — nothing was
+      // watching this pin.
+      customType: 'regex',
+      managerFilePatterns: ['/build_files/build-margine-extensions\\.sh$/'],
+      matchStrings: ['OTILING_VERSION="(?<currentValue>v\\d+\\.\\d+\\.\\d+)"'],
+      depNameTemplate: 'oliwebd/o-tiling',
+      datasourceTemplate: 'github-releases',
+    },
   ],
 }

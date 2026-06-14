@@ -49,6 +49,7 @@ on:
       - 'README.md'
       - 'CHANGELOG.md'
       - 'docs/**'
+      - 'tools/**'
   pull_request:
     # Opt-in per-PR build: only PRs explicitly labeled `vm-test` build
     # the image and publish a `:pr-N` tag, so daniel can rebase the
@@ -62,6 +63,7 @@ on:
       - 'README.md'
       - 'CHANGELOG.md'
       - 'docs/**'
+      - 'tools/**'
   schedule:
     # Weekly nightly: Sunday 04:00 UTC = 06:00 CEST. Picks up upstream
     # Bluefin DX changes even if there are no commits to this repo.

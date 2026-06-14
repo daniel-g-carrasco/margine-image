@@ -35,12 +35,20 @@ Window.SetBackgroundBottomColor (0.0, 0.0, 0.0);  // #000000
 // Logo: the source ships at full resolution (1200x300) and gets
 // scaled HERE relative to the screen — fixed-size pre-scaling looked
 // blurry/small on HiDPI panels (plymouth draws in device pixels).
-// ~22% of the screen width, never upscaled beyond the source.
+// Size to ~15% of screen HEIGHT. (Was 22% of WIDTH, which under-sizes the
+// wordmark on tall 3:2 / HiDPI panels — only ~8% of height on 2880x1920.)
+// Cap at 40% of width for ultrawides, and never upscale beyond the source.
 logo.orig = Image("watermark.png");
-logo.target_w = Math.Int(Window.GetWidth() * 0.22);
-if (logo.target_w > logo.orig.GetWidth())
+logo.target_h = Math.Int(Window.GetHeight() * 0.15);
+logo.target_w = Math.Int(logo.target_h * logo.orig.GetWidth() / logo.orig.GetHeight());
+if (logo.target_w > Window.GetWidth() * 0.40) {
+  logo.target_w = Math.Int(Window.GetWidth() * 0.40);
+  logo.target_h = Math.Int(logo.target_w * logo.orig.GetHeight() / logo.orig.GetWidth());
+}
+if (logo.target_w > logo.orig.GetWidth()) {
   logo.target_w = logo.orig.GetWidth();
-logo.target_h = Math.Int(logo.target_w * logo.orig.GetHeight() / logo.orig.GetWidth());
+  logo.target_h = logo.orig.GetHeight();
+}
 logo.image  = logo.orig.Scale(logo.target_w, logo.target_h);
 logo.sprite = Sprite(logo.image);
 logo.sprite.SetX(Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);

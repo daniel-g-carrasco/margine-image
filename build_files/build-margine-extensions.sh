@@ -57,9 +57,16 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # fails the sha256 check instead of shipping silently (review P2.4 —
 # hide-cursor used to resolve "latest from EGO" at every build, and
 # neither zip was verified).
-OTILING_VERSION="v2.8.8"
+# v2.8.8 → v2.8.17 (2026-06-14): 2.8.8 had a GNOME-50 re-entrancy bug
+# (oliwebd/o-tiling#15) where toggling auto-tiling off programmatically
+# re-fired the "Enable extension" switch callback → ext_soft_disable() →
+# stripped its own keybindings, so the toggle worked once then went dead
+# (switch moved, top-bar icon + windows frozen). Fixed in 2.8.11 via an
+# _indicator_updating guard; 2.8.17 is the current release. Schema keys
+# Margine overrides in 03-margine-o-tiling are unchanged in 2.8.17.
+OTILING_VERSION="v2.8.17"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
-OTILING_SHA256="6b0a242a61b269995e1f6166f8995aac1931147784ec5a712abf49536b87322e"
+OTILING_SHA256="03293a9dfd14a513f8f05e4efc0c7d3ac4fb863245d2d83f77c72e128c52124e"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
 # Shell major of the current base (50). When Bluefin bumps GNOME, the

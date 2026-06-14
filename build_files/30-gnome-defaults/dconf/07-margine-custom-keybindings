@@ -5,3 +5,12 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 name='Smile emoji picker'
 binding='<Super>period'
 command='flatpak run it.mijorus.smile'
+
+# IBus's emoji panel grabs <Super>period at the input-method layer, BEFORE
+# the Smile custom keybinding above can fire — so Super+period started IBus
+# emoji input ("special character" while typing) instead of opening Smile.
+# Margine ships Smile as THE emoji picker, so disable IBus's redundant emoji
+# hotkey entirely. Overridable: a user who wants the IBus panel back can
+# re-set this key in their own dconf.
+[org/freedesktop/ibus/panel/emoji]
+hotkey=@as []

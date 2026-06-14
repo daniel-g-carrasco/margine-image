@@ -163,8 +163,29 @@ grep -qE "^border-radius=7" "$DCONF_DIR/02-margine-search-light" || { echo "::er
 # dash-to-dock background customisation present (cosmetic regression sentinel)
 grep -qE "^running-indicator-style='DOTS'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
 
+# A.3.quinquies — keybinding conflict resolution (2026-06-14). o-tiling's
+# UPSTREAM keybinding defaults shadow GNOME-native + Margine custom shortcuts.
+# The binding state of an INSTALLED system is exactly what these dconf
+# defaults set, so a regression here ships broken keybindings to every user:
+# Super+Return (terminal), Super+T (whole-session tiling toggle),
+# Super+F/Super+S (fullscreen/quick-settings), Super+Alt+arrows (workspace-
+# switch/overview-shift), and Super+period (Smile, eaten by IBus emoji).
+OT_KB="$DCONF_DIR/03-margine-o-tiling"
+grep -qE "^tile-enter=\['<Super><Ctrl>Return'" "$OT_KB" \
+  || { echo "::error::A.3.quinquies o-tiling tile-enter not moved off <Super>Return — terminal launcher shadowed"; fail=1; }
+grep -qE "^toggle-tiling=\['<Super><Shift>t'\]" "$OT_KB" \
+  || { echo "::error::A.3.quinquies o-tiling toggle-tiling still on <Super>t — accidental whole-session tiling toggle"; fail=1; }
+grep -qE "^toggle-floating=\['<Super><Shift>f'\]" "$OT_KB" \
+  || { echo "::error::A.3.quinquies o-tiling toggle-floating still on <Super>f — shadows wm.toggle-fullscreen"; fail=1; }
+grep -qE "^toggle-stacking-global=\['<Super><Shift>s'\]" "$OT_KB" \
+  || { echo "::error::A.3.quinquies o-tiling toggle-stacking-global still on <Super>s — shadows shell.toggle-quick-settings"; fail=1; }
+grep -qE "^focus-left=\['<Super>h'\]" "$OT_KB" \
+  || { echo "::error::A.3.quinquies o-tiling focus-* still carries the <Super><Alt>arrows duplicates that shadow workspace-switch/overview-shift"; fail=1; }
+grep -qE '^hotkey=@as \[\]' "$DCONF_DIR/07-margine-custom-keybindings" \
+  || { echo "::error::A.3.quinquies IBus emoji hotkey not disabled — <Super>period types emoji input instead of opening Smile"; fail=1; }
+
 if (( fail != 0 )); then
   echo "::error::First-boot asset validation FAILED — blocking rechunk/push/sign."
   exit 1
 fi
-echo "✓ First-boot asset validation PASSED (6/6 sections clean)"
+echo "✓ First-boot asset + keybinding-conflict validation PASSED"

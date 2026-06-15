@@ -41,6 +41,12 @@ FROM ghcr.io/ublue-os/bluefin-dx:stable
 # branding tweak, a just recipe — invalidated this 25-minute layer's
 # cache (review P2.5). Narrow mounts keep the cache key tied to the
 # files that actually matter here.
+# NVIDIA variant toggle (ADR 0009). Default 0 = base image; the experimental
+# build-nvidia.yml passes --build-arg ENABLE_NVIDIA=1. Declared here so it is in
+# scope for the kernel RUN — the only layer where the MOK signing secret is
+# mounted, hence the only place the nvidia kmod can be built AND MOK-signed.
+ARG ENABLE_NVIDIA=0
+ARG NVIDIA_KMOD=nvidia-open
 RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
     --mount=type=bind,from=ctx,source=/00-common.sh,target=/ctx/00-common.sh \
     --mount=type=cache,dst=/var/cache \
@@ -48,7 +54,7 @@ RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
-    /ctx/custom-kernel/install.sh
+    env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" /ctx/custom-kernel/install.sh
 
 # ----- Margine modifications (GNOME settings, branding, flatpaks, etc.) -----
 # MARGINE_REF pins every spec-repo fetch (scripts, declarations,

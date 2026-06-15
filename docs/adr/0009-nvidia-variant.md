@@ -100,3 +100,30 @@ not a fork.
 3. **Real-hardware runtime validation** (an NVIDIA contributor) → only then
    promote `:stable-nvidia`, wire the matrix into the main build/smoke/ISO, and
    advertise it.
+
+## Update 2026-06-15 — precedent found (RakuOS), source revised
+
+The "no precedent / genuinely novel" framing above was **wrong** — corrected here.
+
+**[RakuOS](https://rakuos.org)** is a production distro with a near-identical
+model to Margine: Fedora-atomic + **CachyOS kernel + bootc**, custom modules
+**signed for Secure Boot** with its own key (MOK enroll on first boot, password
+`rakuos` — the exact pattern Margine uses with `margine-os`), and it ships
+**NVIDIA**. So NVIDIA-on-a-signed-CachyOS-kernel-under-bootc is *proven in the
+field*, not hypothetical. Reference to study:
+[`coreos/fedora-bootc-nvidia`](https://github.com/coreos/fedora-bootc-nvidia).
+
+**Source revision.** RakuOS pulls the **NVIDIA upstream driver** (its `.run`/DKMS
+payload) and compiles it **against the CachyOS kernel**, rather than the
+RPMFusion `akmod-nvidia` the v0 scaffold (margine-image #161) uses. This
+sidesteps the RPMFusion↔CachyOS **schedule-skew** the review flagged as the top
+fragility (and that the CachyOS COPR itself cited when it dropped prebuilt
+NVIDIA), and tracks the latest driver automatically.
+
+**Revised recommendation:** keep the architecture (compile against
+`kernel-cachyos-devel-matched`, sign with the Margine MOK via the existing loop,
+build-arg gated) but **move the source RPMFusion akmod → NVIDIA-upstream
+(DKMS / repo / `.run`)**, aligning the build block with
+`coreos/fedora-bootc-nvidia` + RakuOS. The #161 RPMFusion path stays a valid v0
+to get *a* signed module building; v1 swaps the source. MOK signing + build-arg
++ tag/CI structure are unchanged.

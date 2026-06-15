@@ -74,8 +74,12 @@ T = o-tiling).
 | `SUPER+TAB` | `switch-to-workspace-right` |
 | `SUPER SHIFT+TAB` | `switch-to-workspace-left` |
 | `SUPER CTRL+TAB` | `switch-to-workspace-last` |
-| `SUPER+1..0` | `switch-to-workspace-1` ... `switch-to-workspace-10` |
-| `SUPER SHIFT+1..0` | `move-to-workspace-1` ... `move-to-workspace-10` |
+| `SUPER+1..5` | `switch-to-workspace-1` ... `switch-to-workspace-5` |
+| `SUPER SHIFT+1..5` | `move-to-workspace-1` ... `move-to-workspace-5` |
+
+Margine ships **5 fixed workspaces** (`dynamic-workspaces=false`,
+`num-workspaces=5`). The `SUPER+6..0` / `SUPER SHIFT+6..0` bindings from the
+Hyprland chain still exist but are **inert** (there is no workspace 6–10).
 
 ### Window actions (W)
 

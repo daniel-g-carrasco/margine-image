@@ -509,9 +509,9 @@ elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   # Hyprland-style SUPER+1..0 keybinds land on stable targets. Set by
   # zz1-margine.gschema.override.
   CUR_NW=$(gsettings get org.gnome.desktop.wm.preferences num-workspaces 2>/dev/null)
-  [[ "$CUR_NW" == "10" ]] \
-    && ok "num-workspaces = 10 (Margine fixed-workspaces layout)" \
-    || bad "num-workspaces = $CUR_NW (expected 10) — zz1-margine override missing or shadowed"
+  [[ "$CUR_NW" == "5" ]] \
+    && ok "num-workspaces = 5 (Margine fixed-workspaces layout — Daniel's standing preference)" \
+    || bad "num-workspaces = $CUR_NW (expected 5) — zz1-margine override missing or shadowed"
 
   CUR_DYN=$(gsettings get org.gnome.mutter dynamic-workspaces 2>/dev/null)
   [[ "$CUR_DYN" == "false" ]] \

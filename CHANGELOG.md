@@ -7,6 +7,39 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-15)
+- **Safe TPM2-unlock + autologin helpers** — `ujust margine-tpm-unlock`
+  (status/enable/disable) and `ujust margine-autologin` (status/on/off).
+  The TPM helper is lockout-proof by construction: auto-detects the LUKS
+  device backing root, refuses to enroll unless a passphrase/recovery
+  keyslot survives, only ever wipes the tpm2 slot, confirms + post-verifies.
+  Both authored + adversarially reviewed to approval. Documented in the
+  handbook (first-boot).
+- **/status freshness dashboard producer** — `build-status-json.sh` +
+  `publish-status-json.sh` + `status-json.yml` keep the site's Fedora →
+  Bluefin → Margine version/health page current after every build / smoke /
+  ISO and daily; `org.opencontainers.image.base.digest` label added so the
+  page can flag whether Margine is built on the latest Bluefin. Plus
+  `ujust margine-status` / `margine-update` + the `/usr/bin/margine-status`
+  helper.
+- **Soft user-smoke gate** — a warn-only identity probe in the smoke-boot VM
+  (kernel is CachyOS/BORE, o-tiling enabled, keybindings present,
+  search-light absent, gaming recipe shipped, zz1 gschema applied). Annotates
+  the run; never blocks candidate→:stable promotion.
+- **AI / local-LLM layer documented + validated** — handbook page +
+  homepage card for `ujust margine-ai` (Alpaca); `validate-flatpak-refs.yml`
+  checks every recipe Flatpak app ID against Flathub on PRs + weekly.
+- **GHCR cleanup** — daily prune of untagged orphan image versions
+  (keep-n-untagged), plus host benchmark/diagnostic tools under `tools/bench/`
+  (kernel scheduler, gaming FPS, non-HiDPI check).
+
+### Changed (2026-06-15)
+- **Site ISO-date bump** now pushes straight to the website's `main`
+  (the repo is private/free, so the old PR + auto-merge path silently
+  stranded the bump and the site advertised the previous ISO).
+- **Renovate** now tracks the o-tiling release pin (no more silent staleness)
+  and the config was migrated; `actions/checkout` bumped to v6.
+
 ### Fixed (2026-06-08) — ISO MOK enrollment timing
 - **Fresh ISO installs** now submit the Margine MOK import request from
   Anaconda before the first post-install reboot, mirroring Bluefin's ISO

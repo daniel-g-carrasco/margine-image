@@ -271,58 +271,86 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# NVIDIA kmod against the CachyOS kernel (VARIANT-ONLY, hard-fail)  [ADR 0009]
+# NVIDIA driver against the CachyOS kernel — UPSTREAM via DKMS  [ADR 0009 v1]
 # ---------------------------------------------------------------------------
 # Gated by ENABLE_NVIDIA (build-arg → env, default 0): only the :*-nvidia
-# variant builds this; the base build skips the whole block. Built against
-# kernel-cachyos-devel-matched and dropped under
-# /usr/lib/modules/$KERNEL_VERSION/extra/, so the sign_kernel_modules() loop
-# below re-signs it with the SAME Margine MOK that signs vmlinuz (akmods signs
-# first with its own key; the loop's re-sign is last, so the MOK wins) — one
-# key, one enrollment, Secure Boot stays ON. NOT the prebuilt akmod-nvidia
-# from ublue/bluefin-dx-nvidia (built+signed against the FEDORA kernel + ublue
-# key: wrong kABI AND wrong signature here). EXPERIMENTAL: there is no NVIDIA
-# GPU in CI, so this is validated only as "builds + signs"; runtime driving of
-# a real NVIDIA GPU must be verified on hardware before :stable-nvidia is
-# trusted. Hard-fail: a -nvidia image with no nvidia kmod must never ship.
+# variant builds this; the base build skips the whole block. v1 (2026-06-15)
+# pulls NVIDIA's UPSTREAM driver (kmod-nvidia-open-dkms from NVIDIA's own CUDA
+# repo) and DKMS-builds it against THIS image's kernel tree — replacing the v0
+# RPMFusion akmod, whose nvidia cadence drifts from the CachyOS kernel cadence
+# (the CachyOS COPR itself dropped prebuilt nvidia over that skew). This is
+# what RakuOS runs in production + what coreos/fedora-bootc-nvidia documents.
+# DKMS drops the .ko under /usr/lib/modules/$KERNEL_VERSION/extra/ — INSIDE the
+# tree sign_kernel_modules() walks below — so the SAME Margine MOK that signs
+# vmlinuz signs the nvidia modules: one key, one enrollment, Secure Boot stays
+# ON. (coreos leaves its modules self-signed and tells you to "maintain a
+# custom signing key, enroll it with MOK" — that is exactly Margine's loop.)
+# EXPERIMENTAL: no NVIDIA GPU in CI → validated only as "builds + signs";
+# real-GPU runtime must be confirmed on hardware before :stable-nvidia. Hard-
+# fail: a -nvidia image with no nvidia kmod must never ship.
 if [[ "${ENABLE_NVIDIA:-0}" == "1" ]]; then
-  NVIDIA_KMOD="${NVIDIA_KMOD:-nvidia-open}"   # nvidia-open (Turing+/Blackwell) | nvidia (Maxwell..Ada)
-  log "NVIDIA variant: building akmod-${NVIDIA_KMOD} against $KERNEL_VERSION (hard-fail)"
-  _fedora="$(rpm -E %fedora)"
-  disable_akmodsbuild || { err "akmodsbuild patch failed"; exit 1; }
-  dnf -y install \
-    "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${_fedora}.noarch.rpm" \
-    "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${_fedora}.noarch.rpm" \
-    || { err "RPMFusion release install failed"; exit 1; }
-  # akmod + CUDA userland in ONE transaction → no kmod/userland version skew.
-  dnf -y install --setopt=install_weak_deps=False \
-    "akmod-${NVIDIA_KMOD}" xorg-x11-drv-nvidia-cuda nvidia-modprobe \
-    || { err "nvidia akmod + userland install failed"; exit 1; }
-  akmods --force --verbose --kernels "$KERNEL_VERSION" --kmod "$NVIDIA_KMOD" || true
-  # akmods always exits 0 — check for *.failed.log explicitly.
-  for _f in /var/cache/akmods/"${NVIDIA_KMOD}"/*-for-"$KERNEL_VERSION".failed.log; do
-    [[ -f "$_f" ]] && { err "nvidia akmods build FAILED ($_f):"; cat "$_f" 2>/dev/null || true; exit 1; }
-  done
-  _nv_rpm="$(find /var/cache/akmods/"${NVIDIA_KMOD}"/ -name "kmod-${NVIDIA_KMOD}-*${KERNEL_VERSION}*.rpm" -print -quit 2>/dev/null || true)"
-  [[ -n "${_nv_rpm:-}" && -f "$_nv_rpm" ]] || { err "no nvidia kmod rpm produced for $KERNEL_VERSION"; exit 1; }
-  dnf -y install "$_nv_rpm"
+  NVIDIA_KMOD="${NVIDIA_KMOD:-nvidia-open}"   # nvidia-open (Turing+/Blackwell), Margine default
+  _arch="$(uname -m)"
+  log "NVIDIA variant: DKMS-building upstream ${NVIDIA_KMOD} against $KERNEL_VERSION (hard-fail)"
+
+  # kernel-cachyos-devel-matched (TRANSIENT, already installed) provides the
+  # build tree at /usr/lib/modules/$KERNEL_VERSION/build. Add only the DKMS
+  # toolchain (build-only → TRANSIENT). No binutils-gold: deprecated/absent on
+  # F44 and nvidia-open does not need it.
+  dnf -y install --setopt=install_weak_deps=False dkms make gcc elfutils-libelf-devel \
+    || { err "DKMS toolchain install failed"; exit 1; }
+
+  # NVIDIA's own CUDA repo, keyed to the base Fedora release. kABI correctness
+  # comes from the -k flag below (not the repo's Fedora version); if NVIDIA has
+  # not published the exact %fedora repo yet, hard-fail rather than cross-grade
+  # to an older Fedora's userland (glibc/dep skew).
+  _verid="$(rpm -E %fedora)"
+  _repo_url="https://developer.download.nvidia.com/compute/cuda/repos/fedora${_verid}/${_arch}/cuda-fedora${_verid}.repo"
+  curl -fsSL --retry 5 --retry-delay 10 -o /etc/yum.repos.d/nvidia.repo "$_repo_url" \
+    || { err "no NVIDIA CUDA repo for fedora${_verid}/${_arch} (or fetch failed)"; exit 1; }
+
+  # kmod source + matching userland from the SINGLE NVIDIA repo, one
+  # transaction → no kmod/userland version skew. The RPM %post runs a dkms
+  # autoinstall against the HOST kernel that fails harmlessly (no host
+  # kernel-devel in the build); coreos relies on the same, and we rebuild
+  # explicitly with -k below. (If a future package makes that %post fatal to
+  # the dnf transaction, add --setopt=tsflags=noscripts here AND an explicit
+  # `dkms add -m nvidia -v "$DRIVER_VERSION"` before the build.)
+  dnf -y install --no-docs --best --setopt=install_weak_deps=False \
+    kmod-nvidia-open-dkms nvidia-driver nvidia-driver-libs nvidia-driver-cuda nvidia-persistenced nvidia-modprobe \
+    || { err "nvidia upstream kmod + userland install failed"; exit 1; }
+
+  DRIVER_VERSION="$(rpm -q --qf '%{VERSION}' kmod-nvidia-open-dkms 2>/dev/null)"
+  [[ -n "${DRIVER_VERSION:-}" ]] || { err "could not determine kmod-nvidia-open-dkms version"; exit 1; }
+  log "NVIDIA upstream driver version: $DRIVER_VERSION"
+
+  # -k "$KERNEL_VERSION" is load-bearing: build against
+  # /usr/lib/modules/$KERNEL_VERSION/build (the CachyOS -devel-matched tree),
+  # NOT $(uname -r) (the build-host kernel). dkms install drops the .ko under
+  # .../extra/ and runs depmod.
+  dkms build   -m nvidia -v "$DRIVER_VERSION" -k "$KERNEL_VERSION" --verbose \
+    || { err "dkms build of nvidia $DRIVER_VERSION against $KERNEL_VERSION FAILED"; exit 1; }
+  dkms install -m nvidia -v "$DRIVER_VERSION" -k "$KERNEL_VERSION" --force --verbose \
+    || { err "dkms install of nvidia $DRIVER_VERSION against $KERNEL_VERSION FAILED"; exit 1; }
+
   _nv_ko="$(find /usr/lib/modules/"$KERNEL_VERSION"/extra -name 'nvidia.ko*' -print -quit 2>/dev/null || true)"
-  [[ -n "${_nv_ko:-}" ]] || { err "nvidia kmod installed but no nvidia.ko under modules/extra"; exit 1; }
-  restore_akmodsbuild
-  dnf -y remove rpmfusion-free-release rpmfusion-nonfree-release || true
-  rm -f /etc/yum.repos.d/rpmfusion-*.repo
-  TRANSIENT+=("akmod-${NVIDIA_KMOD}")
-  # nvidia-drm modeset + blacklist nouveau (bootc applies kargs.d at deploy).
+  [[ -n "${_nv_ko:-}" ]] || { err "nvidia DKMS module not under /usr/lib/modules/$KERNEL_VERSION/extra after install"; exit 1; }
+
+  rm -f /etc/yum.repos.d/nvidia.repo       # scrub repo (image convention)
+  rm -rf /var/lib/dkms /usr/src/nvidia-*   # build-time DKMS state only; the signed .ko stays
+  TRANSIENT+=(dkms make gcc elfutils-libelf-devel)
+
+  # nvidia-drm modeset (+ fbdev for the Wayland/Plymouth handoff) + blacklist nouveau.
   mkdir -p /usr/lib/bootc/kargs.d
   cat > /usr/lib/bootc/kargs.d/30-margine-nvidia.toml <<'KARG'
-kargs = ["nvidia-drm.modeset=1", "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau"]
+kargs = ["nvidia-drm.modeset=1", "nvidia-drm.fbdev=1", "rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau"]
 KARG
-  # Pull the (about-to-be-signed) nvidia modules into the initramfs dracut
+  # Pull the (about-to-be-MOK-signed) nvidia modules into the initramfs dracut
   # regenerates later in this script (after the signing loop).
   mkdir -p /etc/dracut.conf.d
   printf 'add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "\n' \
     > /etc/dracut.conf.d/90-margine-nvidia.conf
-  log "NVIDIA variant: $NVIDIA_KMOD kmod in place ($_nv_ko) — MOK-signed by the module loop below"
+  log "NVIDIA variant: upstream ${NVIDIA_KMOD} $DRIVER_VERSION in place ($_nv_ko) — MOK-signed by the module loop below"
 fi
 
 # ---------------------------------------------------------------------------

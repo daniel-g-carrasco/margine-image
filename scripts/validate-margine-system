@@ -103,11 +103,15 @@ EXPECTED_EXTENSIONS=(
   dash-to-dock@micxgx.gmail.com
   gradia-integration@alexandervanhee.github.io
   gsconnect@andyholmes.github.io
-  search-light@icedman.github.com
   hide-cursor@elcste.com
   caffeine@patapon.info
   o-tiling@oliwebd.github.com
+  smile-extension@mijorus.it
 )
+# search-light@icedman.github.com was dropped from the default enable set
+# 2026-06-14 (GNOME-50 crash class; replaced by GNOME-native search). smile
+# was added 2026-06-13. Keep this list in lockstep with the enabled-extensions
+# line in build_files/30-gnome-defaults/install.sh (zz1-margine override).
 # NOTE: tilingshell@ferrarodomenico.com is installed but NOT in the
 # default enable list (superseded by o-tiling on 2026-05-31).
 
@@ -164,9 +168,16 @@ img = data.get("status", {}).get("booted", {}).get("image", {}).get("image", {})
 print(img)
 ' 2>/dev/null)
   info "booted image: $BOOTED_IMAGE"
-  [[ "$BOOTED_IMAGE" == ${EXPECTED_GHCR_IMAGE}* ]] \
-    && ok "booted from $EXPECTED_GHCR_IMAGE" \
-    || bad "booted from '$BOOTED_IMAGE' (expected $EXPECTED_GHCR_IMAGE*)"
+  if [[ -z "$BOOTED_IMAGE" ]]; then
+    # `bootc status` needs root and a real booted deployment. Run without
+    # privilege (or in an image/container context, e.g. ujust margine-doctor),
+    # it returns nothing — that's "can't determine", not "wrong image".
+    warn "couldn't read the booted image (need root + a booted deployment; e.g. 'sudo $0')"
+  elif [[ "$BOOTED_IMAGE" == ${EXPECTED_GHCR_IMAGE}* ]]; then
+    ok "booted from $EXPECTED_GHCR_IMAGE"
+  else
+    bad "booted from '$BOOTED_IMAGE' (expected $EXPECTED_GHCR_IMAGE*)"
+  fi
 else
   warn "bootc command not found — cannot verify booted image"
 fi
@@ -834,7 +845,7 @@ hdr "10. Failed services (regression detector)"
 if (( ! IS_LIVE )); then
   info "skipped (image context — no PID-1 systemd; an empty list here would be a vacuous pass)"
   FAILED_NOW=""
-elif FAILED_NOW=$("${SUDO[@]}" systemctl list-units --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' || true); [[ -z "$FAILED_NOW" ]]; then
+elif FAILED_NOW=$("${SUDO[@]}" systemctl list-units --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -F . | grep -v '^$' || true); [[ -z "$FAILED_NOW" ]]; then
   ok "no failed system units"
 else
   for unit in $FAILED_NOW; do

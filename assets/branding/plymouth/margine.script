@@ -38,21 +38,29 @@ Window.SetBackgroundBottomColor (0.0, 0.0, 0.0);  // #000000
 // Size to ~15% of screen HEIGHT. (Was 22% of WIDTH, which under-sizes the
 // wordmark on tall 3:2 / HiDPI panels — only ~8% of height on 2880x1920.)
 // Cap at 40% of width for ultrawides, and never upscale beyond the source.
+// Draw a centered logo on EVERY display, sized to that display. A single
+// sprite centered on window 0 lands in a corner of any second/larger
+// monitor — reported 2026-06-15: a 4K external alongside the laptop showed
+// the wordmark in the top-left, not centered. Plymouth's Window.* methods
+// take an optional window index; iterate while one exists and keep each
+// sprite referenced (global `logos` hash) so it isn't garbage-collected.
 logo.orig = Image("watermark.png");
-logo.target_h = Math.Int(Window.GetHeight() * 0.15);
-logo.target_w = Math.Int(logo.target_h * logo.orig.GetWidth() / logo.orig.GetHeight());
-if (logo.target_w > Window.GetWidth() * 0.40) {
-  logo.target_w = Math.Int(Window.GetWidth() * 0.40);
-  logo.target_h = Math.Int(logo.target_w * logo.orig.GetHeight() / logo.orig.GetWidth());
+for (i = 0; Window.GetWidth(i) > 0; i++) {
+  th = Math.Int(Window.GetHeight(i) * 0.15);
+  tw = Math.Int(th * logo.orig.GetWidth() / logo.orig.GetHeight());
+  if (tw > Window.GetWidth(i) * 0.40) {
+    tw = Math.Int(Window.GetWidth(i) * 0.40);
+    th = Math.Int(tw * logo.orig.GetHeight() / logo.orig.GetWidth());
+  }
+  if (tw > logo.orig.GetWidth()) {
+    tw = logo.orig.GetWidth();
+    th = logo.orig.GetHeight();
+  }
+  logos[i].image  = logo.orig.Scale(tw, th);
+  logos[i].sprite = Sprite(logos[i].image);
+  logos[i].sprite.SetX(Window.GetX(i) + Window.GetWidth(i)  / 2 - logos[i].image.GetWidth()  / 2);
+  logos[i].sprite.SetY(Window.GetY(i) + Window.GetHeight(i) / 2 - logos[i].image.GetHeight() / 2);
 }
-if (logo.target_w > logo.orig.GetWidth()) {
-  logo.target_w = logo.orig.GetWidth();
-  logo.target_h = logo.orig.GetHeight();
-}
-logo.image  = logo.orig.Scale(logo.target_w, logo.target_h);
-logo.sprite = Sprite(logo.image);
-logo.sprite.SetX(Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
-logo.sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
 
 // Plymouth requires a refresh function to be registered, even if no-op.
 fun refresh_callback () { }

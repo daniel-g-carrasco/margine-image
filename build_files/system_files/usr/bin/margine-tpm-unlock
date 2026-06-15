@@ -1,0 +1,790 @@
+#!/usr/bin/bash
+# margine-tpm-unlock — enroll / inspect / remove TPM2-based LUKS auto-unlock
+# for the encrypted root, SAFELY.
+#
+# This ships to EVERY Margine machine, so its prime directive is: never make
+# the TPM the sole key to the disk. A firmware update, a Secure Boot / MOK
+# change, or a flaky TPM must never be able to lock a user out. To guarantee
+# that, `enable` refuses unless a real human fallback keyslot survives — a
+# keyslot NOT claimed by any hardware-bound token (tpm2 / fido2 / pkcs11) —
+# and it post-verifies that the fallback is STILL there afterwards.
+#
+# Subcommands (first arg, default 'status'):
+#   status         read-only: TPM2 present? which LUKS device backs root? what
+#                  keyslots/tokens exist? is there a human fallback slot? a
+#                  tpm2 token? is the boot path wired? Mutates nothing.
+#   enable [PCRS]  enroll TPM2 auto-unlock (PCRS default '7') AND wire it into
+#                  /etc/crypttab so the initrd actually tries it at boot.
+#   disable        remove ONLY the tpm2 enrollment + its crypttab option.
+#
+# Detection is fully automatic and refuses on ambiguity — it never guesses a
+# device, and never accepts a LUKS volume that is NOT proven to back the
+# running root. The LUKS passphrase always remains the fallback; we do not
+# regenerate the initramfs.
+set -euo pipefail
+
+PCRS_DEFAULT="7"
+CRYPTTAB="/etc/crypttab"
+
+# ── colours (only when writing to a TTY) ──────────────────────────────────
+if [ -t 1 ]; then
+  c_reset=$'\e[0m'; c_dim=$'\e[2m'; c_bold=$'\e[1m'
+  c_grn=$'\e[32m'; c_ylw=$'\e[33m'; c_red=$'\e[31m'; c_ember=$'\e[38;5;208m'
+else
+  c_reset=; c_dim=; c_bold=; c_grn=; c_ylw=; c_red=; c_ember=
+fi
+
+info()  { printf '%s\n' "$*"; }
+warn()  { printf '%s%s%s\n' "$c_ylw" "$*" "$c_reset" >&2; }
+err()   { printf '%s%s%s\n' "$c_red" "$*" "$c_reset" >&2; }
+die()   { err "$*"; exit 1; }
+
+# ── must run as root ──────────────────────────────────────────────────────
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    die "margine-tpm-unlock must run as root (use: ujust margine-tpm-unlock …)."
+  fi
+}
+
+# ── TPM2 presence (TPM 2.0 ONLY) ──────────────────────────────────────────
+# A TPM 1.2 chip also exposes /sys/class/tpm/tpm0 and /dev/tpm0, but
+# systemd-cryptenroll --tpm2-device=auto needs TPM 2.0. Assert it explicitly:
+# prefer the kernel's tpm_version_major (==2), and otherwise require the
+# resource-manager node /dev/tpmrm0, which only exists for TPM 2.0. We never
+# accept /dev/tpm0 alone, which a 1.2 chip also provides.
+have_tpm2() {
+  [ -e /sys/class/tpm/tpm0 ] || return 1
+  local maj=""
+  if [ -r /sys/class/tpm/tpm0/tpm_version_major ]; then
+    maj="$(cat /sys/class/tpm/tpm0/tpm_version_major 2>/dev/null || true)"
+  fi
+  case "$maj" in
+    2) return 0 ;;             # kernel says TPM 2.0 — definitive
+    1) return 1 ;;             # kernel says TPM 1.2 — definitively not usable
+    *) [ -e /dev/tpmrm0 ] ;;   # unknown: trust the TPM2-only RM node
+  esac
+}
+
+# ── LUKS root auto-detection ──────────────────────────────────────────────
+# Resolve the backing crypto_LUKS partition of the running root, NEVER a
+# hardcoded path, and NEVER a LUKS volume we cannot prove backs root.
+#
+# The chain, in order of trust:
+#   1. resolve_source /sysroot (the real rootfs on bootc/composefs), then /:
+#      strip any [subvol] suffix to get the root's device handle (an LV or a
+#      luks-* mapper handle; "/" itself is "composefs" on Margine, hence the
+#      /sysroot-first order).
+#   2. If that handle is /dev/mapper/<name>:
+#        a. ask `cryptsetup status <name>` for its backing `device:` — if that
+#           backing device is crypto_LUKS, accept it (plain LUKS-on-partition);
+#        b. else (an LVM LV, whose `cryptsetup status` prints no device:, or a
+#           backing device that is not itself LUKS) walk the inverse dependency
+#           tree `lsblk -s` from the handle and require EXACTLY ONE crypto_LUKS
+#           partition among its slaves (root-on-LVM-on-LUKS).
+#   3. If the handle is a bare partition that is itself crypto_LUKS, accept it.
+#   4. Last resort: a single disk-wide crypto_LUKS partition — but ONLY if it
+#      is proven to be in the root handle's slave chain (root-relationship
+#      check). This closes the "unencrypted root + one encrypted DATA volume"
+#      trap: there the mount chain doesn't resolve to LUKS, and the lone LUKS
+#      partition does NOT back root, so we REFUSE instead of mislabelling it.
+#
+# Every accepted device additionally goes through assert_backs_root() right
+# before any mutation. On any ambiguity, non-device root, or unproven
+# candidate we REFUSE rather than guess.
+#
+# Sets globals: LUKS_DEV (backing partition), MAPPER_NAME (active luks-* map,
+# derived from the partition itself, or "" if no map is active for it).
+LUKS_DEV=""
+MAPPER_NAME=""
+
+resolve_source() {
+  # Print the mapper/device handle for a mountpoint, with any [subvol]
+  # suffix stripped. Skips non-device sources like "composefs"/"overlay".
+  local mp src
+  mp="$1"
+  src="$(findmnt -no SOURCE "$mp" 2>/dev/null || true)"
+  src="${src%%[*}"               # drop "[/subvol]" if present
+  case "$src" in
+    /dev/*) printf '%s\n' "$src" ;;
+    *)      printf '%s\n' "" ;;   # composefs, overlay, tmpfs, … = not a dev
+  esac
+}
+
+# Print the running root's device handle (mapper handle or bare partition),
+# preferring /sysroot over / (the latter is "composefs" on Margine). Empty if
+# neither resolves to a real block device (e.g. pure composefs, no lowerdir).
+root_handle() {
+  local h
+  h="$(resolve_source /sysroot)"
+  [ -n "$h" ] || h="$(resolve_source /)"
+  printf '%s\n' "$h"
+}
+
+# True if $1 (a /dev/… path) is crypto_LUKS, via lsblk FSTYPE (works
+# unprivileged, unlike `cryptsetup isLuks`, so `status` stays informative for
+# non-root callers too).
+is_luks_dev() {
+  local fst
+  fst="$(lsblk -prno FSTYPE "$1" 2>/dev/null | head -n1 || true)"
+  [ "$fst" = "crypto_LUKS" ]
+}
+
+# Print the active luks-* map name sitting directly on the crypto_LUKS
+# partition $1 (its first `crypt`-type holder), or "" if none is active.
+active_map_for() {
+  local part name
+  part="$1"
+  name="$(lsblk -prno NAME,TYPE "$part" 2>/dev/null \
+          | awk '$2=="crypt"{print $1; exit}')"
+  printf '%s\n' "${name#/dev/mapper/}"
+}
+
+# Given a /dev/mapper handle, return its backing crypt device (or "").
+mapper_backing_device() {
+  local handle name out dev
+  handle="$1"
+  name="${handle#/dev/mapper/}"
+  out="$(cryptsetup status "$name" 2>/dev/null || true)"
+  # `cryptsetup status` prints a "  device:  /dev/…" line for active LUKS.
+  dev="$(printf '%s\n' "$out" | awk '$1=="device:"{print $2; exit}')"
+  printf '%s\n' "$dev"
+}
+
+# Print the crypto_LUKS partitions in $1's inverse dependency tree (`lsblk
+# -s`), one per line. Used to walk LV → PV → luks map → partition, and to
+# prove a candidate actually backs the root.
+luks_slaves_of() {
+  lsblk -prno NAME,FSTYPE "$1" -s 2>/dev/null \
+    | awk '$2=="crypto_LUKS"{print $1}'
+}
+
+# True if $1 (a crypto_LUKS partition) is in the slave chain of the running
+# root's device handle. This is the root-relationship guarantee: we only ever
+# act on a LUKS volume proven to underlie /sysroot (or /).
+candidate_backs_root() {
+  local cand rh
+  cand="$1"
+  rh="$(root_handle)"
+  [ -n "$rh" ] || return 1
+  lsblk -prno NAME "$rh" -s 2>/dev/null | grep -qxF "$cand"
+}
+
+detect_luks() {
+  local rh dev cand
+  local -a luks_chain=() luks_all=()
+
+  rh="$(root_handle)"
+
+  if [ -n "$rh" ]; then
+    case "$rh" in
+      /dev/mapper/*)
+        # (2a) plain LUKS-on-partition: cryptsetup status gives the backing
+        # device directly.
+        dev="$(mapper_backing_device "$rh")"
+        if [ -n "$dev" ] && is_luks_dev "$dev"; then
+          LUKS_DEV="$dev"; MAPPER_NAME="$(active_map_for "$dev")"
+          return 0
+        fi
+        # (2b) LVM-on-LUKS (or any mapper whose backing dev isn't itself
+        # LUKS): walk the inverse tree and require exactly one crypto_LUKS.
+        while IFS= read -r cand; do
+          [ -n "$cand" ] && luks_chain+=("$cand")
+        done < <(luks_slaves_of "$rh")
+        if [ "${#luks_chain[@]}" -eq 1 ]; then
+          LUKS_DEV="${luks_chain[0]}"
+          MAPPER_NAME="$(active_map_for "${luks_chain[0]}")"
+          return 0
+        fi
+        if [ "${#luks_chain[@]}" -gt 1 ]; then
+          err "Detection is ambiguous: the root device sits on multiple"
+          err "crypto_LUKS partitions:"
+          printf '   %s\n' "${luks_chain[@]}" >&2
+          err "Refusing to guess. Run systemd-cryptenroll by hand on the right one."
+          return 1
+        fi
+        # zero LUKS in the chain → root is not on LUKS via this handle.
+        ;;
+      *)
+        # (3) bare partition that is itself LUKS.
+        if is_luks_dev "$rh"; then
+          LUKS_DEV="$rh"; MAPPER_NAME="$(active_map_for "$rh")"
+          return 0
+        fi
+        ;;
+    esac
+  fi
+
+  # (4) Last resort: a single disk-wide crypto_LUKS partition, accepted ONLY
+  # if it is proven to back the running root. Uniqueness alone is NOT enough —
+  # an unencrypted root beside one encrypted data/home volume would otherwise
+  # be silently mislabelled.
+  while IFS= read -r cand; do
+    [ -n "$cand" ] && luks_all+=("$cand")
+  done < <(lsblk -prno NAME,FSTYPE 2>/dev/null | awk '$2=="crypto_LUKS"{print $1}')
+
+  if [ "${#luks_all[@]}" -eq 1 ]; then
+    cand="${luks_all[0]}"
+    if [ -z "$rh" ]; then
+      err "Could not resolve the running root to a block device (root is"
+      err "composefs/overlay with no resolvable lower device), so the single"
+      err "crypto_LUKS partition ${cand} cannot be proven to back root."
+      err "Refusing to guess. Run systemd-cryptenroll by hand if ${cand} is"
+      err "really your root device."
+      return 1
+    fi
+    if candidate_backs_root "$cand"; then
+      LUKS_DEV="$cand"; MAPPER_NAME="$(active_map_for "$cand")"
+      return 0
+    fi
+    err "The only crypto_LUKS partition (${cand}) is NOT in the dependency"
+    err "chain of the running root (${rh}). It backs a different volume (e.g."
+    err "data/home or swap), not root. Refusing to touch it — enabling TPM"
+    err "unlock here would modify the wrong device and never unlock root."
+    err "Run systemd-cryptenroll by hand if you truly meant ${cand}."
+    return 1
+  fi
+
+  if [ "${#luks_all[@]}" -gt 1 ]; then
+    err "Detection is ambiguous: multiple crypto_LUKS partitions found:"
+    printf '   %s\n' "${luks_all[@]}" >&2
+    err "Refusing to guess. Run systemd-cryptenroll by hand on the right one."
+    return 1
+  fi
+
+  err "Could not auto-detect a LUKS device backing root (neither /sysroot nor"
+  err "/ resolves to a crypto_LUKS volume, and no crypto_LUKS partition exists)."
+  err "Is the disk actually encrypted? Refusing to proceed — never guessing a"
+  err "device is the whole point here."
+  return 1
+}
+
+# Hard guard run immediately before ANY mutation: re-assert that the detected
+# LUKS_DEV is still in the root's slave chain. Cheap, defensive, and catches
+# a detected-then-reconfigured race or a future detection-logic regression.
+assert_backs_root() {
+  [ -n "$LUKS_DEV" ] || die "Internal error: LUKS_DEV unset before mutation."
+  if ! candidate_backs_root "$LUKS_DEV"; then
+    die "Safety guard tripped: ${LUKS_DEV} is no longer proven to back the \
+running root. Refusing to modify it. Nothing changed."
+  fi
+}
+
+# ── keyslot / token inspection (read-only) ────────────────────────────────
+# We read the LUKS2 JSON metadata (`cryptsetup luksDump --dump-json-metadata`,
+# stable, no positional text parsing). systemd-cryptenroll labels its tokens
+# systemd-tpm2 / systemd-fido2 / systemd-pkcs11 / systemd-recovery and records
+# which keyslot(s) each token claims under tokens[].keyslots[].
+#
+# A HUMAN FALLBACK keyslot = a keyslot that NO hardware-bound token claims.
+# That is exactly what an install passphrase or a `luksAddKey` recovery key
+# looks like. Hardware-bound tokens are tpm2 (firmware/PCR state), fido2
+# (a physical security key) and pkcs11 (a smartcard) — none of those is a
+# memorable secret, so a slot they claim is NOT a fallback. systemd-recovery
+# is a printable recovery passphrase, so it IS a fallback and is deliberately
+# NOT in the excluded set (and a token-free passphrase slot is the common
+# default-install case).
+
+# Print the LUKS2 JSON metadata of the detected device (empty on failure).
+_luks_json() {
+  cryptsetup luksDump --dump-json-metadata "$LUKS_DEV" 2>/dev/null || true
+}
+
+# jq filter: keyslot numbers claimed by a hardware-bound token.
+_HW_TOKEN_FILTER='.tokens // {} | to_entries[]
+  | select(.value.type=="systemd-tpm2"
+        or .value.type=="systemd-fido2"
+        or .value.type=="systemd-pkcs11")
+  | .value.keyslots[]?'
+
+# Print the surviving human-fallback keyslot numbers (one per line), i.e.
+# every keyslot NOT claimed by any hardware-bound token.
+fallback_slots() {
+  local json claimed all
+  json="$(_luks_json)"
+  [ -n "$json" ] || return 0
+  claimed="$(printf '%s' "$json" | jq -r "$_HW_TOKEN_FILTER" 2>/dev/null \
+            | sort -u | sed '/^$/d')"
+  all="$(printf '%s' "$json" | jq -r '.keyslots // {} | keys[]' 2>/dev/null \
+            | sort -u | sed '/^$/d')"
+  comm -23 <(printf '%s\n' "$all" | sort -u | sed '/^$/d') \
+           <(printf '%s\n' "$claimed" | sort -u | sed '/^$/d')
+}
+
+# True if at least one human-usable fallback keyslot exists on $LUKS_DEV.
+has_fallback_keyslot() {
+  [ -n "$(fallback_slots)" ]
+}
+
+# Print "slot N: <type>" for every keyslot, where <type> is the claiming
+# token type, or "passphrase/recovery (no token)" for a token-free slot.
+# Used by the post-verify so the user can eyeball the real fallback(s)
+# instead of trusting a single boolean.
+slot_report() {
+  local json
+  json="$(_luks_json)"
+  [ -n "$json" ] || return 0
+  printf '%s' "$json" | jq -r '
+    (.tokens // {} | to_entries
+      | map({slot: (.value.keyslots[]? | tostring), type: .value.type})
+      | INDEX(.slot)) as $tok
+    | (.keyslots // {} | keys[])
+    | . as $s
+    | ($tok[$s].type // "passphrase/recovery (no token)") as $t
+    | "slot \($s): \($t)"
+  ' 2>/dev/null
+}
+
+# True if a systemd-tpm2 token is enrolled on $LUKS_DEV.
+has_tpm2_token() {
+  local json
+  json="$(_luks_json)"
+  [ -n "$json" ] || return 1
+  printf '%s' "$json" \
+    | jq -e '.tokens // {} | to_entries
+             | map(select(.value.type=="systemd-tpm2")) | length > 0' \
+      >/dev/null 2>&1
+}
+
+# ── crypttab wiring ───────────────────────────────────────────────────────
+# A LUKS2 tpm2 token is ONLY consulted at boot if the matching /etc/crypttab
+# line carries the `tpm2-device=auto` option (crypttab(5)). Without it the
+# enrollment is inert and the user is still prompted — so enable MUST wire it
+# and disable MUST remove it. We edit per-machine /etc only, never the
+# initramfs, and we VERIFY the edit took before claiming success. Edits target
+# the line by UUID so we never touch unrelated devices (e.g. encrypted swap).
+
+# UUID of the detected backing partition (empty on failure).
+luks_uuid() {
+  blkid -s UUID -o value "$LUKS_DEV" 2>/dev/null || true
+}
+
+# True if the crypttab line for $1=UUID already carries tpm2-device=auto.
+crypttab_has_opt() {
+  local uuid="$1"
+  [ -f "$CRYPTTAB" ] || return 1
+  awk -v u="UUID=$uuid" '
+    { ours=0; for (i=1;i<=NF;i++) if ($i==u) ours=1 }
+    ours && /(^|[, \t])tpm2-device=auto([, \t]|$)/ { found=1 }
+    END { exit(found?0:1) }
+  ' "$CRYPTTAB"
+}
+
+# True if a crypttab line references $1=UUID at all.
+crypttab_has_line() {
+  local uuid="$1"
+  [ -f "$CRYPTTAB" ] || return 1
+  awk -v u="UUID=$uuid" '
+    { for (i=1;i<=NF;i++) if ($i==u) { found=1 } }
+    END { exit(found?0:1) }
+  ' "$CRYPTTAB"
+}
+
+# Append tpm2-device=auto to the options column of the line matching $1=UUID,
+# idempotently. Writes to stdout (caller installs atomically). Other lines
+# pass through verbatim.
+crypttab_add_opt() {
+  local uuid="$1"
+  awk -v u="UUID=$uuid" '
+    {
+      ours=0
+      for (i=1;i<=NF;i++) if ($i==u) ours=1
+      if (ours && $0 !~ /(^|[, \t])tpm2-device=auto([, \t]|$)/) {
+        if (NF<4) {
+          # 3-field line: synthesize the options column.
+          print $1" "$2" "$3" tpm2-device=auto"
+        } else {
+          opts=$4",tpm2-device=auto"; rest=""
+          for (i=5;i<=NF;i++) rest=rest" "$i
+          print $1" "$2" "$3" "opts rest
+        }
+        next
+      }
+      print $0
+    }
+  ' "$CRYPTTAB"
+}
+
+# Remove tpm2-device=auto from the line matching $1=UUID. Other lines verbatim.
+crypttab_del_opt() {
+  local uuid="$1"
+  awk -v u="UUID=$uuid" '
+    {
+      ours=0
+      for (i=1;i<=NF;i++) if ($i==u) ours=1
+      if (ours) {
+        gsub(/,tpm2-device=auto/,"")
+        gsub(/tpm2-device=auto,/,"")
+        gsub(/[ \t]tpm2-device=auto([ \t]|$)/," ")
+        sub(/[ \t]+$/,"")
+      }
+      print $0
+    }
+  ' "$CRYPTTAB"
+}
+
+# Atomically replace $CRYPTTAB with stdin, backing up the original first.
+# Echoes the backup path (empty if there was no prior file). Preserves
+# mode/owner of the original.
+crypttab_install() {
+  local tmp bak dir
+  dir="$(dirname "$CRYPTTAB")"
+  tmp="$(mktemp "${dir}/.crypttab.margine.XXXXXX")"
+  cat > "$tmp"
+  if [ -f "$CRYPTTAB" ]; then
+    bak="${CRYPTTAB}.margine.bak.$(date +%Y%m%d%H%M%S)"
+    cp -a "$CRYPTTAB" "$bak"
+    chmod --reference="$CRYPTTAB" "$tmp" 2>/dev/null || true
+    chown --reference="$CRYPTTAB" "$tmp" 2>/dev/null || true
+  else
+    chmod 0600 "$tmp"
+    bak=""
+  fi
+  mv -f "$tmp" "$CRYPTTAB"
+  printf '%s\n' "$bak"
+}
+
+# True if a crypttab exists and the tpm2 boot path is wired for $LUKS_DEV.
+boot_path_wired() {
+  local uuid; uuid="$(luks_uuid)"
+  [ -n "$uuid" ] || return 1
+  crypttab_has_opt "$uuid"
+}
+
+# ── status (default) ──────────────────────────────────────────────────────
+cmd_status() {
+  printf '\n  %sMargine TPM2 LUKS auto-unlock — status%s\n\n' "$c_bold" "$c_reset"
+
+  if have_tpm2; then
+    printf '  %-26s %s✓ present (2.0)%s\n' "TPM2 device" "$c_grn" "$c_reset"
+  else
+    printf '  %-26s %s✗ not found / not 2.0%s\n' "TPM2 device" "$c_ylw" "$c_reset"
+  fi
+
+  if ! detect_luks; then
+    printf '\n'
+    die "LUKS root detection failed (see above)."
+  fi
+  printf '  %-26s %s\n' "LUKS device backing root" "$LUKS_DEV"
+  printf '  %-26s %s\n' "Active mapping" "${MAPPER_NAME:-<none active>}"
+
+  # luksDump is root-only; anyone may run status, but the keyslot/token
+  # detail simply won't show without root.
+  if [ "$(id -u)" -ne 0 ]; then
+    printf '\n  %sRun as root (ujust margine-tpm-unlock status) to list keyslots/tokens.%s\n\n' "$c_dim" "$c_reset"
+    return 0
+  fi
+
+  if has_fallback_keyslot; then
+    printf '  %-26s %s✓ present%s  %s(passphrase/recovery — your fallback)%s\n' \
+      "Fallback keyslot" "$c_grn" "$c_reset" "$c_dim" "$c_reset"
+  else
+    printf '  %-26s %s✗ NONE%s  %s(no human fallback — DANGER!)%s\n' \
+      "Fallback keyslot" "$c_red" "$c_reset" "$c_red" "$c_reset"
+  fi
+
+  if has_tpm2_token; then
+    printf '  %-26s %s✓ enrolled%s\n' "TPM2 token" "$c_grn" "$c_reset"
+  else
+    printf '  %-26s %s— not enrolled%s\n' "TPM2 token" "$c_dim" "$c_reset"
+  fi
+
+  if boot_path_wired; then
+    printf '  %-26s %s✓ tpm2-device=auto%s  %s(wired; verify with a real reboot)%s\n' \
+      "Boot path (crypttab)" "$c_grn" "$c_reset" "$c_dim" "$c_reset"
+  else
+    printf '  %-26s %s— not wired%s  %s(no tpm2-device=auto)%s\n' \
+      "Boot path (crypttab)" "$c_dim" "$c_reset" "$c_dim" "$c_reset"
+  fi
+
+  printf '\n  Keyslots / tokens (by type):\n'
+  slot_report | sed 's/^/    /'
+  printf '\n'
+
+  if has_tpm2_token && boot_path_wired; then
+    printf '  %sAuto-unlock is enrolled AND wired.%s Run %sujust margine-tpm-unlock disable%s to remove it.\n\n' \
+      "$c_grn" "$c_reset" "$c_ember" "$c_reset"
+  elif has_tpm2_token; then
+    printf '  %sToken enrolled but the boot path is NOT wired%s — the initrd will still\n' "$c_ylw" "$c_reset"
+    printf '  prompt for the passphrase. Run %sujust margine-tpm-unlock enable%s to wire it.\n\n' "$c_ember" "$c_reset"
+  else
+    printf '  Run %sujust margine-tpm-unlock enable%s to set up auto-unlock.\n\n' "$c_ember" "$c_reset"
+  fi
+}
+
+# ── interactive confirmation (CONFIRM=yes skips) ──────────────────────────
+# Fail-closed: only the exact string 'yes' (or CONFIRM=yes) proceeds; an
+# uppercase YES, 'y', empty input, EOF (non-TTY) all abort.
+confirm() {
+  local prompt ans
+  prompt="$1"
+  if [ "${CONFIRM:-}" = "yes" ]; then
+    info "${prompt}  ${c_dim}(CONFIRM=yes — proceeding)${c_reset}"
+    return 0
+  fi
+  printf '%s\n' "$prompt"
+  read -rp "Type 'yes' to proceed: " ans || die "Aborted — nothing changed."
+  [ "$ans" = "yes" ] || die "Aborted — nothing changed."
+}
+
+# Print the fallback survivor report block used by both post-verifies.
+print_survivors() {
+  local n
+  n="$(fallback_slots | grep -c . || true)"
+  info "${c_grn}✓ ${n} human fallback keyslot(s) survive (passphrase/recovery):${c_reset}"
+  slot_report | grep 'no token' | sed 's/^/    /' || true
+}
+
+# ── enable ────────────────────────────────────────────────────────────────
+cmd_enable() {
+  local pcrs="$1" uuid bak wired
+
+  have_tpm2 || die "No usable TPM 2.0 device (need /sys/class/tpm/tpm0 with \
+tpm_version_major=2, or the TPM2-only /dev/tpmrm0 node). Cannot enroll — the \
+LUKS passphrase remains your only unlock and nothing changed."
+
+  detect_luks || die "LUKS root detection failed — refusing to enroll."
+
+  # CRITICAL pre-flight: there MUST be a surviving HUMAN fallback slot (one
+  # claimed by no tpm2/fido2/pkcs11 token), so the TPM can never become the
+  # sole key. fido2/pkcs11 keys are hardware-bound and do NOT count. Checked
+  # BEFORE touching the device.
+  if ! has_fallback_keyslot; then
+    err "REFUSING: no human fallback keyslot (passphrase/recovery) on $LUKS_DEV."
+    err "Existing keyslots, by type:"
+    slot_report | sed 's/^/    /' >&2 || true
+    err "A fido2/pkcs11 (hardware-bound) slot does NOT count as a fallback —"
+    err "enrolling the TPM now could leave you with only hardware keys, and a"
+    err "TPM/firmware change plus a lost key would lock you out permanently."
+    die "Add a memorable secret first:  cryptsetup luksAddKey $LUKS_DEV"
+  fi
+
+  uuid="$(luks_uuid)"
+  [ -n "$uuid" ] || die "Could not read the LUKS UUID of $LUKS_DEV — refusing \
+to wire crypttab blind. Nothing changed."
+
+  printf '\n'
+  info "${c_bold}About to enable TPM2 auto-unlock:${c_reset}"
+  info "  Device  : ${LUKS_DEV}  (UUID=${uuid})"
+  info "  Action  : enroll a TPM2 key (PCRs ${pcrs}) AND add tpm2-device=auto"
+  info "            to its ${CRYPTTAB} line so the initrd tries it at boot."
+  info "  Safety  : your existing passphrase/recovery keyslot is kept untouched."
+  if has_tpm2_token; then
+    info "  Note    : a TPM2 token already exists — only the tpm2 slot is"
+    info "            re-enrolled atomically; password slots are NOT touched."
+  fi
+  printf '\n'
+  confirm "This re-enrolls ONLY the tpm2 slot on ${LUKS_DEV} and edits ${CRYPTTAB}."
+
+  # Final hard guard immediately before any mutation: prove again that the
+  # detected device truly backs root. (Detection already proved it, but this
+  # catches any race or future regression — fail-closed by design.)
+  assert_backs_root
+
+  # Enroll the tpm2 slot. Idempotent and ATOMIC: when a tpm2 token already
+  # exists we wipe-and-re-enroll in a SINGLE systemd-cryptenroll call (the
+  # documented idempotent-replace form), so a failed/aborted re-enroll leaves
+  # the prior working tpm2 slot intact rather than landing in a working→broken
+  # half-state. We NEVER use --wipe-slot=all and NEVER wipe a password/
+  # recovery slot — only --wipe-slot=tpm2.
+  info "Enrolling TPM2 (PCRs ${pcrs}) — you may be prompted for the current LUKS passphrase…"
+  if has_tpm2_token; then
+    info "A tpm2 slot already exists — re-enrolling it atomically (passphrase/recovery slots untouched)…"
+    if ! systemd-cryptenroll --wipe-slot=tpm2 \
+           --tpm2-device=auto --tpm2-pcrs="$pcrs" "$LUKS_DEV"; then
+      err "Re-enroll failed. systemd applies the wipe and enroll as ONE"
+      err "operation, so your PREVIOUS tpm2 enrollment is left intact and"
+      die "your LUKS passphrase still unlocks the disk. Nothing was lost."
+    fi
+  else
+    if ! systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs="$pcrs" "$LUKS_DEV"; then
+      err "systemd-cryptenroll failed. No tpm2 enrollment was added."
+      die "Your LUKS passphrase is unaffected and still unlocks the disk."
+    fi
+  fi
+
+  # POST-VERIFY (token): a tpm2 token must now exist AND a human fallback
+  # must STILL exist. If the fallback vanished, shout — never let the user
+  # reboot into a possible lockout, and leave crypttab untouched.
+  if ! has_fallback_keyslot; then
+    printf '\n'
+    err "╔══════════════════════════════════════════════════════════════════╗"
+    err "║  DANGER: no human fallback keyslot is visible after enrollment!   ║"
+    err "╚══════════════════════════════════════════════════════════════════╝"
+    err "Your LUKS passphrase MUST still be one of the keyslots. DO NOT REBOOT"
+    err "until you have verified it. Inspect:"
+    err "    sudo cryptsetup luksDump ${LUKS_DEV}"
+    err "and confirm a keyslot with NO token (a passphrase) is present. If"
+    err "unsure, add one now:"
+    err "    sudo cryptsetup luksAddKey ${LUKS_DEV}"
+    err "and only then reboot. (This should not happen — report it.)"
+    err "Leaving ${CRYPTTAB} unchanged so boot behaviour is unaltered."
+    exit 1
+  fi
+  if ! has_tpm2_token; then
+    die "Enrollment reported success but no systemd-tpm2 token is present. \
+Nothing was changed for your passphrase or ${CRYPTTAB}; investigate before \
+relying on auto-unlock."
+  fi
+
+  # Wire the boot path: append tpm2-device=auto to the UUID's crypttab line,
+  # then VERIFY it took. The token is already safe; if wiring fails we say so
+  # honestly rather than claim a working feature.
+  wired=0
+  if crypttab_has_opt "$uuid"; then
+    wired=1   # already wired (re-run) — nothing to do
+  elif crypttab_has_line "$uuid"; then
+    bak="$(crypttab_add_opt "$uuid" | crypttab_install)"
+    if crypttab_has_opt "$uuid"; then
+      wired=1
+      [ -n "$bak" ] && info "${c_dim}(backed up previous crypttab to ${bak})${c_reset}"
+    else
+      wired=0
+      err "WARNING: edited ${CRYPTTAB} but tpm2-device=auto did not stick"
+      err "(unexpected line layout). Restoring the original from ${bak:-backup}."
+      [ -n "$bak" ] && [ -f "$bak" ] && cp -a "$bak" "$CRYPTTAB"
+    fi
+  else
+    # No crypttab line for our UUID (e.g. the image ships none — the
+    # Anaconda-generated line is created per-machine at install). We do NOT
+    # fabricate a whole crypttab line blind; that is the user's boot config.
+    wired=0
+  fi
+
+  printf '\n'
+  if [ "$wired" -eq 1 ]; then
+    info "${c_grn}✓ TPM2 token enrolled on ${LUKS_DEV} (PCRs ${pcrs}); ${CRYPTTAB} wired with tpm2-device=auto.${c_reset}"
+    info "${c_ylw}  NOT proven active yet: whether the initramfs actually auto-unlocks${c_reset}"
+    info "${c_ylw}  MUST be confirmed by a real reboot — Margine's initramfs is generic and${c_reset}"
+    info "${c_ylw}  may not consume the host crypttab, so do NOT assume it works until you${c_reset}"
+    info "${c_ylw}  have seen one unattended boot (with console access).${c_reset}"
+  else
+    info "${c_ylw}✓ TPM2 key ENROLLED (token added) on ${LUKS_DEV} (PCRs ${pcrs}).${c_reset}"
+    info "${c_ylw}⚠ Auto-unlock is NOT active yet: the boot path is not wired.${c_reset}"
+    info "  The initrd will still prompt until ${CRYPTTAB} carries"
+    info "  'tpm2-device=auto' on the line for UUID=${uuid}. Either:"
+    info "    • add that crypttab line, then re-run 'enable' to wire it, or"
+    info "    • append ',tpm2-device=auto' to its options column by hand,"
+    info "  then reboot to test. Your passphrase still works meanwhile."
+  fi
+  print_survivors
+  printf '\n'
+  info "${c_bold}Next steps & caveats${c_reset}"
+  info "  • Reboot to test:  systemctl reboot"
+  info "  • ${c_ylw}REMOTE/SSH: do NOT rely on this for an unattended reboot until you${c_reset}"
+  info "    ${c_ylw}have verified one TPM auto-unlock WITH console access. If the TPM${c_reset}"
+  info "    ${c_ylw}does not engage, boot stops at the passphrase prompt — unreachable${c_reset}"
+  info "    ${c_ylw}over SSH (the network is not up in the initramfs).${c_reset}"
+  info "  • Your LUKS passphrase ALWAYS remains valid as the fallback — keep it."
+  info "  • PCR 7 binds to the Secure Boot policy state. Margine ships a"
+  info "    MOK-signed CachyOS kernel, so a MOK / Secure Boot change can"
+  info "    invalidate PCR 7 — just re-run 'enable' afterwards (the passphrase"
+  info "    keeps working in the meantime)."
+  info "  • If it still prompts after reboot WITH crypttab wired, the initramfs"
+  info "    may lack tpm2 support and need a regen — this helper will NEVER do"
+  info "    that for you. Recheck with 'status' first; your passphrase still works."
+  printf '\n'
+}
+
+# ── disable ───────────────────────────────────────────────────────────────
+cmd_disable() {
+  local uuid bak
+
+  detect_luks || die "LUKS root detection failed — refusing to touch any device."
+  uuid="$(luks_uuid)"
+
+  if ! has_tpm2_token && ! { [ -n "$uuid" ] && crypttab_has_opt "$uuid"; }; then
+    info "No TPM2 enrollment or crypttab wiring found on ${LUKS_DEV} — nothing to disable."
+    return 0
+  fi
+
+  printf '\n'
+  info "${c_bold}About to remove TPM2 auto-unlock:${c_reset}"
+  info "  Device : ${LUKS_DEV}"
+  info "  Action : wipe ONLY the tpm2 slot and drop tpm2-device=auto from"
+  info "           ${CRYPTTAB}; passphrase/recovery slots untouched."
+  printf '\n'
+  confirm "This removes ONLY the tpm2 slot on ${LUKS_DEV} and its crypttab option."
+
+  # Final hard guard immediately before any mutation.
+  assert_backs_root
+
+  # Remove the crypttab option first (cheap, reversible) so a wiped token is
+  # never left referenced by a still-wired boot line.
+  if [ -n "$uuid" ] && crypttab_has_opt "$uuid"; then
+    bak="$(crypttab_del_opt "$uuid" | crypttab_install)"
+    if crypttab_has_opt "$uuid"; then
+      warn "Could not remove tpm2-device=auto from ${CRYPTTAB} cleanly; please"
+      warn "edit the line for UUID=${uuid} by hand. Continuing with slot removal."
+    else
+      [ -n "$bak" ] && info "${c_dim}(backed up previous crypttab to ${bak})${c_reset}"
+    fi
+  fi
+
+  if has_tpm2_token; then
+    systemd-cryptenroll --wipe-slot=tpm2 "$LUKS_DEV" \
+      || die "Failed to remove the tpm2 slot. The crypttab option (if any) was \
+already dropped; your passphrase still works."
+  fi
+
+  # Post-verify the human fallback survived the wipe.
+  if ! has_fallback_keyslot; then
+    printf '\n'
+    err "WARNING: no human fallback keyslot is visible after removing the tpm2 slot!"
+    err "DO NOT REBOOT until you verify with:  sudo cryptsetup luksDump ${LUKS_DEV}"
+    err "and add one if needed:  sudo cryptsetup luksAddKey ${LUKS_DEV}"
+    exit 1
+  fi
+
+  printf '\n'
+  info "${c_grn}✓ TPM2 enrollment removed from ${LUKS_DEV}.${c_reset}"
+  info "${c_grn}✓ ${CRYPTTAB} no longer carries tpm2-device=auto.${c_reset}"
+  print_survivors
+  info "The passphrase prompt returns at next boot. (Initramfs untouched.)"
+  printf '\n'
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────
+main() {
+  local action pcrs
+  action="${1:-status}"
+  pcrs="${2:-$PCRS_DEFAULT}"
+  [ -n "$pcrs" ] || pcrs="$PCRS_DEFAULT"   # tolerate an empty PCRS arg from just
+
+  case "$action" in
+    status|"")
+      cmd_status
+      ;;
+    enable)
+      require_root
+      cmd_enable "$pcrs"
+      ;;
+    disable)
+      require_root
+      cmd_disable
+      ;;
+    -h|--help|help)
+      cat <<EOF
+Usage: margine-tpm-unlock [status|enable [PCRS]|disable]
+
+  status         (default) read-only report: TPM2 present, detected LUKS
+                 device backing root, keyslots/tokens by type, whether a
+                 human fallback slot and a tpm2 token exist, and whether the
+                 boot path (crypttab tpm2-device=auto) is wired. Changes nothing.
+  enable [PCRS]  enroll TPM2 auto-unlock (PCRS default '${PCRS_DEFAULT}') AND wire
+                 tpm2-device=auto into ${CRYPTTAB}. Refuses unless a TPM 2.0
+                 exists, the device is detected AND proven to back root, and a
+                 human fallback keyslot (passphrase/recovery — NOT a fido2/
+                 pkcs11 hardware key) survives. Idempotent (atomic re-enroll).
+  disable        remove ONLY the tpm2 slot and its crypttab option; the
+                 fallback keyslot is kept.
+
+Env: CONFIRM=yes  skip the interactive 'yes' confirmation (enable/disable).
+EOF
+      ;;
+    *)
+      die "Unknown action '$action'. Try: status | enable [PCRS] | disable"
+      ;;
+  esac
+}
+
+main "$@"

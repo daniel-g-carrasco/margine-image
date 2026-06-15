@@ -631,3 +631,13 @@ margine-update:
     fi
     echo
     echo "Staged. Reboot to switch into it:  systemctl reboot"
+
+# Enable/disable/inspect GDM (GNOME) autologin from the CLI. Default ACTION=status is read-only (no sudo). `on [USER]` enables, `off` disables — both self-escalate via sudo and back up /etc/gdm/custom.conf first. SECURITY: autologin boots straight to the desktop with no password.
+[group('Margine')]
+margine-autologin ACTION="status" USER="":
+    @/usr/bin/margine-autologin "{{ ACTION }}" "{{ USER }}"
+
+# TPM2 LUKS auto-unlock for the encrypted root, SAFELY: `status` (default) inspects; `enable [PCRS]` enrolls the TPM2 AND wires tpm2-device=auto into /etc/crypttab (refuses unless a passphrase/recovery keyslot survives — never the sole key, and the device must be proven to back root); `disable` removes only the tpm2 slot + its crypttab option. The LUKS passphrase always stays as fallback.
+[group('Margine')]
+margine-tpm-unlock ACTION="status" PCRS="7":
+    sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}

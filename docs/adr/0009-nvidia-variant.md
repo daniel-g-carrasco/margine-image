@@ -127,3 +127,34 @@ build-arg gated) but **move the source RPMFusion akmod → NVIDIA-upstream
 `coreos/fedora-bootc-nvidia` + RakuOS. The #161 RPMFusion path stays a valid v0
 to get *a* signed module building; v1 swaps the source. MOK signing + build-arg
 + tag/CI structure are unchanged.
+
+## Update 2026-06-15 — v1 landed (NVIDIA-upstream / DKMS)
+
+The source revision above is **implemented** in margine-image
+(PR #164): the `ENABLE_NVIDIA`-gated block in `build_files/custom-kernel/
+install.sh` now pulls `kmod-nvidia-open-dkms` from NVIDIA's own CUDA repo and
+**DKMS-builds it against this image's CachyOS kernel tree**
+(`dkms build/install -m nvidia -k "$KERNEL_VERSION"`, where `$KERNEL_VERSION`
+is the `kernel-cachyos-devel-matched` build tree, **not** the build-host
+kernel). The `.ko` lands under `/usr/lib/modules/$KVER/extra/`, so the existing
+`sign_kernel_modules()` loop signs it with the same Margine MOK — unchanged.
+
+Adversarial-review fixes baked into v1:
+
+- **No `binutils-gold`** — deprecated/absent on F44, would abort the
+  transaction; `nvidia-open` does not need it.
+- **Exact `%fedora` CUDA repo, hard-fail if absent** — no Fedora 42/41
+  cross-grade fallback (glibc/userland skew). kABI correctness comes from the
+  `-k` flag, not the repo's Fedora version.
+- **`nvidia-drm.fbdev=1`** added to the kargs (Wayland/Plymouth handoff).
+- Contingency documented in-code: if a future RPM makes the host-kernel
+  `%post` dkms-autoinstall fatal to the dnf transaction, add
+  `--setopt=tsflags=noscripts` + an explicit `dkms add` before the build.
+
+The two `## Mandatory fixes` bullets that referenced the v0 akmod flow
+(`akmod-$NVIDIA_KMOD` + `xorg-x11-drv-nvidia-cuda` in one dnf transaction;
+the `modinfo -F signer` CN-match warning) are **superseded** by v1: userland
++ kmod now come from the single NVIDIA repo in one transaction, and signing is
+left entirely to the existing loop (no CN gate). Status stays **experimental**
+— rollout steps 2 (build green in CI) and 3 (real-hardware runtime validation)
+are unchanged and still gate `:stable-nvidia`.

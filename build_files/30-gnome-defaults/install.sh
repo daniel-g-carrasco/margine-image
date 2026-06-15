@@ -6,6 +6,16 @@
 set -euo pipefail
 . /ctx/00-common.sh
 
+# Seahorse — the GNOME keyring/password-manager GUI. Baked so
+# `ujust margine-keyring blank` (see /usr/bin/margine-keyring) has a reliable
+# way to set the login keyring's master password to empty — the fix for the
+# "unlock Login keyring" prompt that fingerprint login / autologin trigger
+# (PAM never hands gnome-keyring the password that encrypts the keyring).
+# There is no headless API for it; Seahorse provides the change-password
+# dialog. Small, and a generally useful desktop tool.
+log "Installing seahorse (keyring GUI backing ujust margine-keyring)"
+dnf -y install --setopt=install_weak_deps=False seahorse
+
 # 2. Margine GNOME defaults (gschema override)
 # ---------------------------------------------------------------------------
 # Write a gschema override that loads AFTER Bluefin's zz0 and overrides

@@ -92,6 +92,13 @@ grep -q '^[[:space:]]*set gfxterm_font=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
   || { echo "::error::A.4.gfx GRUB drop-in does not switch to gfxterm"; fail=1; }
 
+# A.4.keyring — login-keyring helper + its GUI backend (2026-06-16). Lets
+# `ujust margine-keyring blank` set the login keyring password empty so it
+# auto-unlocks under fingerprint/autologin (Seahorse provides the dialog;
+# there is no headless API).
+check_exec "usr/bin/margine-keyring" "A.4.keyring"
+check_exec "usr/bin/seahorse" "A.4.keyring"
+
 # A.4.bis — desktop launchers have high-res icons and docs fallback
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"

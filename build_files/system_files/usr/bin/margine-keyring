@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# margine-keyring — inspect / blank / restore the GNOME login keyring's master
+# password.
+#
+# WHY: with fingerprint login OR GDM autologin, PAM never hands gnome-keyring
+# the login PASSWORD that encrypts the "login" keyring, so GNOME pops "unlock
+# Login keyring" at first secret access every session. The login keyring cannot
+# be unlocked by a fingerprint — the only fix is to set its master password to
+# EMPTY, after which it auto-unlocks. It is then stored UNENCRYPTED on disk,
+# acceptable ONLY because Margine encrypts the disk at rest (LUKS + TPM2).
+#
+# There is NO supported headless API to change a keyring's master password
+# (the Secret Service exposes only ChangeWithMasterPassword, which needs the
+# session-negotiated encrypted transport, and ChangeWithPrompt, which raises a
+# GUI dialog). So `blank` backs up the keyring, opens Seahorse to the right
+# place, prints the exact steps + the security warning, and `status` verifies.
+#
+# Per-user — NO sudo (the keyring lives under $HOME).
+set -euo pipefail
+
+KEYDIR="${XDG_DATA_HOME:-$HOME/.local/share}/keyrings"
+LOGIN="$KEYDIR/login.keyring"
+
+# Encrypted GNOME keyrings begin with the magic "GnomeKeyring\n\r\0\n". The
+# empty-password keyring is written in the textual (GKeyFile) format starting
+# with "[keyring]" — no magic. So a "GnomeKeyring" prefix == still encrypted.
+is_encrypted() {
+  [[ -f "$LOGIN" ]] || return 1
+  [[ "$(head -c 12 "$LOGIN" 2>/dev/null)" == "GnomeKeyring" ]]
+}
+
+status() {
+  echo "== margine-keyring status =="
+  if [[ ! -f "$LOGIN" ]]; then
+    echo "  login keyring: ABSENT ($LOGIN)"
+    echo "  (created on next secret store; with no password set it auto-unlocks)"
+    return 0
+  fi
+  if is_encrypted; then
+    echo "  login keyring: PASSWORD-PROTECTED (encrypted)"
+    echo "  => GNOME WILL prompt to unlock it on fingerprint / autologin."
+    echo "  fix: ujust margine-keyring blank"
+  else
+    echo "  login keyring: empty-password (unencrypted) — auto-unlocks, no prompt [OK]"
+  fi
+  echo "  file: $LOGIN ($(stat -c '%s bytes, mode %a' "$LOGIN" 2>/dev/null))"
+  local bak
+  bak="$(ls -1t "$LOGIN".margine.bak.* 2>/dev/null | head -1 || true)"
+  [[ -n "$bak" ]] && echo "  backup: $bak (restore with: ujust margine-keyring restore)"
+}
+
+blank() {
+  [[ -f "$LOGIN" ]] || { echo "No login keyring yet — nothing to blank."; exit 0; }
+  if ! is_encrypted; then
+    echo "login keyring is already empty-password (unencrypted) — nothing to do [OK]"; exit 0
+  fi
+  cat <<'WARN'
+========================= SECURITY NOTICE =========================
+Setting the login keyring password to EMPTY stores it UNENCRYPTED on
+disk. Its contents (saved Wi-Fi/VPN/browser/online-account secrets)
+are then protected ONLY by file permissions AND your full-disk
+encryption (Margine: LUKS + TPM2). This is the standard, reasonable
+fix for fingerprint/autologin on an FDE machine — but do NOT do it on
+a machine WITHOUT disk encryption.
+==================================================================
+WARN
+  read -r -p "Proceed? type 'yes' to continue: " ans
+  [[ "$ans" == "yes" ]] || { echo "aborted (no change)."; exit 1; }
+
+  local ts bak
+  ts="$(date +%Y%m%d-%H%M%S)"
+  bak="$LOGIN.margine.bak.$ts"
+  cp -a "$LOGIN" "$bak"
+  echo "backed up -> $bak"
+
+  command -v seahorse >/dev/null 2>&1 \
+    || { echo "ERROR: seahorse not installed (run 'bootc upgrade' to the image that ships it)"; exit 1; }
+
+  cat <<'STEPS'
+
+Opening Seahorse. In its window:
+  1. Left sidebar: Passwords  ->  right-click "Login"
+  2. Change Password
+  3. Enter your CURRENT login password
+  4. Leave the NEW password EMPTY  ->  Continue  ->  confirm the
+     "stored unencrypted" warning
+
+Then close Seahorse and verify:   ujust margine-keyring status
+(should report: empty-password — auto-unlocks). To undo:
+   ujust margine-keyring restore
+STEPS
+  seahorse >/dev/null 2>&1 &
+  exit 0
+}
+
+restore() {
+  local bak
+  bak="$(ls -1t "$LOGIN".margine.bak.* 2>/dev/null | head -1 || true)"
+  [[ -n "$bak" ]] || { echo "no margine backup found in $KEYDIR"; exit 1; }
+  cp -a "$bak" "$LOGIN"
+  echo "restored $LOGIN from $bak"
+  echo "(the password-protected keyring is back; GNOME will prompt again on login)"
+}
+
+case "${1:-status}" in
+  status)  status ;;
+  blank)   blank ;;
+  restore) restore ;;
+  -h|--help) echo "usage: margine-keyring [status|blank|restore]" ;;
+  *) echo "usage: margine-keyring [status|blank|restore]"; exit 2 ;;
+esac

@@ -567,61 +567,22 @@ wsf-preload STATE="status":
         ;;
     esac
 
-# Enroll the TPM2 so the encrypted root unlocks automatically at boot; the install passphrase stays valid as recovery. `remove` undoes it.
+# Deprecated alias for `margine-tpm-unlock` (renamed 2026-06-15). Use `ujust margine-tpm-unlock [status|enable|disable]` — it auto-detects the device, refuses to leave the TPM as the only key, and post-verifies. This alias forwards so the old name keeps working.
 [group('Margine')]
 margine-tpm2-enroll ACTION="enroll":
     #!/usr/bin/bash
     set -euo pipefail
-    # Validated flow (2026-06-11, ADR-0008 Phase 6): systemd-cryptenroll
-    # binds the secret to PCR 7 (Secure Boot policy state), and the
-    # shipped initramfs already includes the tpm2 unlock path — no
-    # dracut regeneration needed.
-    if [[ ! -e /dev/tpmrm0 && ! -e /dev/tpm0 ]]; then
-      echo "No TPM2 device found (/dev/tpmrm0). Nothing to do."; exit 1
-    fi
-    mapfile -t LUKS_DEVS < <(lsblk -prno NAME,FSTYPE | awk '$2=="crypto_LUKS"{print $1}')
-    if [[ ${#LUKS_DEVS[@]} -eq 0 ]]; then
-      echo "No LUKS device found — is the disk encrypted?"; exit 1
-    fi
-    if [[ ${#LUKS_DEVS[@]} -gt 1 ]]; then
-      echo "Multiple LUKS devices found (${LUKS_DEVS[*]})."
-      echo "Run systemd-cryptenroll manually on the one you want."; exit 1
-    fi
-    DEV="${LUKS_DEVS[0]}"
-    UUID="$(blkid -s UUID -o value "$DEV")"
+    # Superseded by margine-tpm-unlock, which is lockout-proof by construction
+    # (refuses to enroll unless a passphrase/recovery keyslot survives — the
+    # old recipe had no such guard, plus the A7 crypttab-sed finding). Kept as
+    # a thin forwarder so muscle memory / older docs don't hit "recipe not
+    # found"; enroll→enable, remove→disable.
+    echo "NOTE: 'margine-tpm2-enroll' was renamed to 'margine-tpm-unlock' (safer)."
     case "{{ ACTION }}" in
-      enroll)
-        echo "Enrolling TPM2 (PCR 7) on $DEV — you'll be asked for the current LUKS passphrase."
-        sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$DEV"
-        # Add tpm2-device=auto to the matching crypttab options so the
-        # initrd tries the TPM before prompting. The sed assumes the
-        # 4-field crypttab layout; a legal 3-field line (no options
-        # column) matches the grep but not the sed — so VERIFY after
-        # editing instead of trusting it (review finding A7).
-        if sudo grep -E "UUID=${UUID}" /etc/crypttab | grep -qv 'tpm2-device='; then
-          sudo sed -i -E "/UUID=${UUID}/ s/(\S+\s+\S+\s+\S+\s+)(\S+)/\1\2,tpm2-device=auto/" /etc/crypttab
-        fi
-        if ! sudo grep -E "UUID=${UUID}" /etc/crypttab | grep -q 'tpm2-device=auto'; then
-          echo "ERROR: /etc/crypttab was NOT updated (unexpected line layout)."
-          echo "The TPM2 secret IS enrolled, but the initrd will still prompt."
-          echo "Add ',tpm2-device=auto' to the options column of the line for"
-          echo "UUID=${UUID} in /etc/crypttab, then reboot to verify."
-          exit 1
-        fi
-        echo
-        echo "Done. Reboot to verify the disk unlocks without a passphrase."
-        echo "Your passphrase REMAINS valid — keep it: it's the recovery path"
-        echo "(firmware updates or Secure Boot changes can rotate PCR 7)."
-        ;;
-      remove)
-        echo "Removing the TPM2 enrollment from $DEV…"
-        sudo systemd-cryptenroll --wipe-slot=tpm2 "$DEV"
-        sudo sed -i -E "/UUID=${UUID}/ s/,?tpm2-device=auto//" /etc/crypttab
-        echo "Done. The passphrase prompt is back at boot."
-        ;;
-      *)
-        echo "Usage: ujust margine-tpm2-enroll [enroll|remove]"; exit 1
-        ;;
+      enroll) exec sudo /usr/bin/margine-tpm-unlock enable ;;
+      remove) exec sudo /usr/bin/margine-tpm-unlock disable ;;
+      status) exec /usr/bin/margine-tpm-unlock status ;;
+      *) echo "Usage: ujust margine-tpm-unlock [status|enable|disable]"; exit 1 ;;
     esac
 
 # Run every Margine validator in sequence with a one-line verdict each — the "is my system as shipped?" health check.

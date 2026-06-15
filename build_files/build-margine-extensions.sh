@@ -537,6 +537,75 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Downstream patch: o-tiling toggle is SESSION-ONLY (2026-06-15).
+#
+# o-tiling's toggle-tiling keybinding (Super+Shift+t -> ext.toggle_tiling())
+# calls auto_tile_off()/auto_tile_on() with the default save_setting=TRUE, so
+# every keypress WRITES tile-by-default into the USER dconf layer. That value
+# then MASKS Margine's distro default (30-gnome-defaults/dconf/03-margine-o-
+# tiling sets tile-by-default=true) permanently: once a user toggles off,
+# tiling stays off across every future login, and any later change to the
+# Margine default silently never applies. Confirmed on the reference host
+# 2026-06-15 — live `dconf read /org/gnome/shell/extensions/o-tiling/tile-by-
+# default` was `false`, masking the distro `true`. (This is why the recurring
+# "toggle doesn't switch" report survived the 2.8.8->2.8.17 bump AND the
+# schema-registration fix: a stale USER-LEVEL copy under
+# ~/.local/share/gnome-shell/extensions/ shadows this system copy, so none of
+# our system-side fixes ever loaded. The prune for that lives in
+# scripts/install-user-extensions, removed_user_install.)
+#
+# o-tiling already ships the no-persist overloads auto_tile_off(false)/
+# auto_tile_on(false) — it uses them itself on its own enable path
+# (extension.js:2574-2575). Point the keybinding at them so the toggle is
+# SESSION-ONLY: every login starts at the Margine default (tiled), and the
+# chord floats/tiles for the current session with no dconf drift. Same hard-
+# fail-if-pattern-missing contract as the search-light patches above —
+# o-tiling is a core Margine feature, so a future upstream rename must STOP
+# the build for re-evaluation, never silently ship the foot-gun.
+OTILING_EXT="${EXT_DIR}/o-tiling@oliwebd.github.com/extension.js"
+if [[ -f "$OTILING_EXT" ]]; then
+  if grep -q 'margine: session-only toggle' "$OTILING_EXT"; then
+    log "o-tiling session-only toggle patch already present"
+  elif python3 - "$OTILING_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """    toggle_tiling() {
+        if (this.auto_tiler !== null) {
+            this.auto_tile_off();
+        }
+        else {
+            this.auto_tile_on();
+        }
+    }"""
+new = """    toggle_tiling() {
+        // margine: session-only toggle — pass save_setting=false so the chord
+        // never persists tile-by-default into the user dconf layer (which
+        // would mask Margine's distro default permanently). Login state always
+        // follows the distro default; the toggle floats/tiles for this session.
+        if (this.auto_tiler !== null) {
+            this.auto_tile_off(false);
+        }
+        else {
+            this.auto_tile_on(false);
+        }
+    }"""
+if old not in s:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "o-tiling: toggle is now session-only (no tile-by-default dconf persistence)"
+  else
+    log "ERROR: o-tiling toggle_tiling pattern not found (upstream changed?) — refusing to ship unpatched"
+    exit 1
+  fi
+else
+  log "ERROR: o-tiling extension.js not found — the patch target is gone, refusing to guess"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Register our extensions' gschemas into the GLOBAL schema set.
 # ---------------------------------------------------------------------------
 # build.sh's 30-gnome-defaults stage copies + compiles the global schema set,

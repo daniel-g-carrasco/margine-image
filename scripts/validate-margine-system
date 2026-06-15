@@ -714,9 +714,28 @@ elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   # ~/.local/share/gnome-shell/extensions/ before, but per-user
   # install caused shadow/race bugs documented in margine-image
   # PR #20). Check system-wide first, then fall back to user-dir.
-  if compgen -G "/usr/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
+  OT_SYS="/usr/share/gnome-shell/extensions/o-tiling@oliwebd.github.com"
+  OT_USER="$HOME/.local/share/gnome-shell/extensions/o-tiling@oliwebd.github.com"
+  if [[ -d "$OT_SYS" ]]; then
     ok "o-tiling installed system-wide (PR A pattern)"
-  elif compgen -G "$HOME/.local/share/gnome-shell/extensions/o-tiling@*" >/dev/null; then
+    # SHADOW (the recurring "tiling toggle doesn't work" root cause,
+    # 2026-06-16): a user-level copy shadows the system one — GNOME loads
+    # ~/.local and refuses /usr/share ("...will not be loaded"), so every
+    # system-side fix (version bumps, schema registration, the session-only
+    # toggle patch) is invisible. It also re-appears nowhere now that o-tiling
+    # is removed_user_install, so once cleared it stays cleared.
+    if [[ -d "$OT_USER" ]]; then
+      bad "o-tiling USER SHADOW present at ~/.local — it masks the system copy and breaks the tiling toggle. Remove with: rm -rf '$OT_USER' (then log out/in). It will NOT come back."
+    fi
+    # Session-only toggle marker (margine-image PR #165): the toggle must not
+    # persist tile-by-default into the user dconf layer. Assert it on the copy
+    # GNOME actually loads (system, now that the shadow is gone).
+    if grep -q 'margine: session-only toggle' "$OT_SYS/extension.js" 2>/dev/null; then
+      ok "o-tiling session-only toggle patch present (no dconf foot-gun)"
+    else
+      warn "o-tiling session-only toggle patch NOT in the loaded extension.js — pre-#165 image, or a copy that missed the patch"
+    fi
+  elif [[ -d "$OT_USER" ]]; then
     warn "o-tiling installed under ~/.local (pre-PR-A legacy location)"
   else
     bad "o-tiling NOT installed — system-wide install at OCI build time failed"

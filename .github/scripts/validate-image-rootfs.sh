@@ -144,6 +144,14 @@ grep -q 'margine: re-entrancy guard' "$SL_EXT" \
   || { echo "::error::A.3.ter search-light hide() re-entrancy guard NOT present in the image"; fail=1; }
 grep -q 'margine: defer off input/gesture context' "$SL_EXT" \
   || { echo "::error::A.3.ter search-light input-context deferral (vector #4) NOT present in the image"; fail=1; }
+# o-tiling session-only toggle (2026-06-16): the toggle-tiling keybinding must
+# NOT persist tile-by-default into the user dconf layer (it would mask the
+# distro default permanently). build-margine-extensions.sh points it at the
+# no-persist overloads; assert the marker landed on the FINAL image so the core
+# tiling toggle can never silently regress to the dconf foot-gun.
+OT_EXT="$ROOTFS/usr/share/gnome-shell/extensions/o-tiling@oliwebd.github.com/extension.js"
+grep -q 'margine: session-only toggle' "$OT_EXT" \
+  || { echo "::error::A.3.ter o-tiling session-only toggle patch NOT present in the image"; fail=1; }
 test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/margine-logo.svg" \
   || { echo "::error::A.3.ter margine-logo.svg missing from hicolor"; fail=1; }
 test -s "$ROOTFS/usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg" \

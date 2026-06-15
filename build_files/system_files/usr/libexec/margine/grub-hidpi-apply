@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Make the baked HiDPI GRUB font live on an EXISTING install.
+#
+# WHY THIS EXISTS: bootupd renders /boot/grub2/grub.cfg from the image's
+# /usr/lib/bootupd/grub2-static/{grub-static-pre.cfg,configs.d/*,grub-static-
+# efi.cfg} ONLY at OS install time (or `migrate-static-grub-config`). A normal
+# `bootc upgrade` / `rpm-ostree upgrade` does NOT re-render it, and `bootupctl
+# update` only refreshes the EFI binaries — neither rewrites grub.cfg nor
+# copies the font to /boot. So a new font / drop-in shipped in the image never
+# reaches the boot partition until this runs. Fresh installs pick it up at
+# install; existing installs run this once (via `ujust margine-grub-hidpi`).
+#
+# Idempotent. Reversible: the font/config live in the image (rpm-ostree
+# rollback reverts the rootfs side); re-running this re-renders from whatever
+# image is currently deployed.
+set -euo pipefail
+
+[[ "$(id -u)" -eq 0 ]] || { echo "ERROR: must run as root (use: ujust margine-grub-hidpi)"; exit 1; }
+
+FONT_SRC=/usr/lib/bootupd/grub2-static/fonts/margine.pf2
+if [[ ! -f "$FONT_SRC" ]]; then
+  echo "ERROR: baked GRUB font missing ($FONT_SRC)."
+  echo "       This deployment predates the HiDPI GRUB font — run 'bootc upgrade' first."
+  exit 1
+fi
+
+# 1) Put the font on /boot, where GRUB ($prefix=/boot/grub2) can loadfont it.
+#    bootupd renders grub.cfg but does NOT ship this font, so copy it ourselves.
+echo "Installing $FONT_SRC -> /boot/grub2/fonts/margine.pf2"
+mkdir -p /boot/grub2/fonts
+install -m0644 "$FONT_SRC" /boot/grub2/fonts/margine.pf2
+
+# 2) Re-render /boot/grub2/grub.cfg (+ the ESP's grub-static-efi.cfg) from the
+#    current image's static drop-ins. `backend install --with-static-configs`
+#    is the only bootupd path that re-applies configs.d/* after install;
+#    --filesystem /boot lets bootupd discover the backing ESP(s). DEST_ROOT=/
+#    is the running system; src-root defaults to /.
+echo "Re-rendering /boot/grub2/grub.cfg from the image static config..."
+/usr/bin/bootupctl backend install --with-static-configs --filesystem /boot /
+
+echo "Done. Reboot to see the larger boot menu:  systemctl reboot"

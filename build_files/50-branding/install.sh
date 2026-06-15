@@ -465,6 +465,30 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
+# ---------------------------------------------------------------------------
+# HiDPI GRUB: bake a large console font for the boot menu.
+# ---------------------------------------------------------------------------
+# GRUB has no DPI scaling, and the old gfxmode-low trick is firmware-dependent
+# (the GOP/VBE must expose the chosen mode or GRUB falls back to native ->
+# tiny glyphs again — which is why every gfxmode iteration was a no-op). A
+# baked LARGE .pf2 is resolution-independent. Generate it from Liberation Mono
+# (present in the base image; DejaVu is not) with an explicit family name so
+# the embedded font name is the stable "Margine Regular 36" that
+# 05_margine-gfxmode.cfg selects via gfxterm_font. Place it under the bootupd
+# static tree: a FRESH install's `bootupctl install --with-static-configs`
+# ships it to /boot automatically; EXISTING installs pull it via
+# `ujust margine-grub-hidpi` (bootupd does NOT re-render the static grub.cfg
+# on `bootc upgrade`).
+log "Baking HiDPI GRUB font (margine.pf2)"
+_grub_ttf=/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf
+[[ -f "$_grub_ttf" ]] || { log "ERROR: $_grub_ttf missing — cannot bake GRUB font"; exit 1; }
+command -v grub2-mkfont >/dev/null 2>&1 || { log "ERROR: grub2-mkfont missing — cannot bake GRUB font"; exit 1; }
+install -d -m0755 /usr/lib/bootupd/grub2-static/fonts
+grub2-mkfont -s 36 -n "Margine" \
+  -o /usr/lib/bootupd/grub2-static/fonts/margine.pf2 "$_grub_ttf" \
+  || { log "ERROR: grub2-mkfont failed"; exit 1; }
+log "GRUB font baked: $(stat -c %s /usr/lib/bootupd/grub2-static/fonts/margine.pf2) bytes (name 'Margine Regular 36')"
+
 log "Bluefin branding stripped"
 
 # ---------------------------------------------------------------------------

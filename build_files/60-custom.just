@@ -652,3 +652,8 @@ margine-autologin ACTION="status" USER="":
 [group('Margine')]
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}
+
+# Make the GRUB boot menu legible on HiDPI panels: copy the baked large font onto /boot and re-render /boot/grub2/grub.cfg from the image. Run ONCE after a `bootc upgrade`, then reboot. (A bootc upgrade alone does NOT re-render the bootloader config — bootupd only does that at install time, so new font/gfx settings never reach /boot otherwise.)
+[group('Margine')]
+margine-grub-hidpi:
+    @sudo /usr/libexec/margine/grub-hidpi-apply

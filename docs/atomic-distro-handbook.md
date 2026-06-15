@@ -1886,6 +1886,14 @@ Margine's recipe set defines the supported surface:
 
 The recipe validates against `scxctl list` (whatever the shipped scx-scheds actually supports) instead of a hardcoded scheduler list — so a package bump can't desync the CLI from reality.
 
+### The recipe surface, mid-2026
+
+`60-custom.just` is the whole user-facing API, and it has grown a few opt-in layers and safety helpers since the first cut:
+
+- **AI layer — `ujust margine-ai` / `margine-ai-remove`.** Installs **Alpaca** (`com.jeffser.Alpaca`), a Flatpak GUI that bundles its own Ollama backend — the AI layer is **100% Flatpak and lays nothing native** on the host (deliberate: the base stays lean, AI is sandboxed and fully removable). GPU acceleration is wired Flatpak-side, _not_ by layering: the recipe detects the GPU and offers the `com.jeffser.Alpaca.Plugins.AMD` ROCm extension for AMD, points APUs at Ollama's Vulkan backend (with an `HSA_OVERRIDE_GFX_VERSION=11.0.0` note for `gfx110x`), and explains the NVIDIA/CPU paths. (The base already ships AMD ROCm + Mesa Vulkan inherited from Bluefin, but a Flatpak sandbox can't reach the host ROCm — hence the in-sandbox plugin.) The installed Flatpak refs are CI-validated against Flathub (§9.11).
+- **Safe disk/login helpers — `ujust margine-tpm-unlock` / `margine-autologin`.** Both are designed to be unfootgunnable. `margine-tpm-unlock enable` auto-detects the LUKS device backing root, **refuses to enroll unless a passphrase/recovery keyslot will survive** (the TPM can never become the sole key), only ever wipes the `tpm2` slot, confirms before mutating, and post-verifies; `status`/`disable` round it out. `margine-autologin on|off|status` edits `/etc/gdm/custom.conf` idempotently (preserves other keys, BOM- and multi-`[daemon]`-safe, timestamped backup, SELinux relabel) and never selects root or a system account. Both were authored and hardened through an adversarial review loop before shipping.
+- **Freshness from the machine — `ujust margine-status` / `margine-update`.** The on-host counterpart to the `/status` page (§9.9): `margine-status` compares the booted deployment to the latest `:stable` and prints the Fedora → Bluefin → Margine chain plus the running kernel (`uname -r` — the only place the real booted kernel is knowable); `margine-update` stages the latest image and reboots.
+
 ## 5.5 tuned profiles + the scheduler picker
 
 Margine ships the CachyOS kernel (BORE as default CPU scheduler) plus `scx-scheds`, with `scx_loader.service` **disabled** — sched_ext is opt-in. Two integration layers sit on top.
@@ -3356,6 +3364,27 @@ out "MARGINE-GUI-SMOKE: PASS ext=$EXT"
 > *Root cause:* a crashing GNOME extension took down the shell *after* `graphical.target` was reached. Layer B's grep can't see past the target; it never logs into a session.
 > *Fix:* Layer C logs in as a disposable user and checks the things a human would notice — shell alive, ≥6 extensions enabled, no `gnome-shell` coredump, no Clutter `Bail out!` in the journal — and prints `MARGINE-GUI-SMOKE: PASS/FAIL` to serial. Catching a crashing-extension regression that Layer B passes is exactly the gap it exists to close.
 
+### Layer C, part two: a soft user-smoke gate
+
+Layer C (above) asks "is the _session_ alive?". A second injected oneshot asks a sharper question: "is this **Margine**, or just some GNOME?". `inject-gui-probe.sh` now stages a second payload alongside the GUI probe — `.github/smoke/user-smoke-probe.sh` + `margine-user-smoke.service` — and the extra injection is guarded, so a missing payload only warns (the GUI probe still goes in; you never lose the whole gate to a renamed file).
+
+```bash
+# margine-image/.github/smoke/user-smoke-probe.sh (shape — every check WARN-only)
+check KERNEL      "uname -r | grep -q cachyos"
+check GDM         "systemctl is-active --quiet gdm && pgrep -u smoke -x gnome-shell"
+check OTILING     "enabled-extensions contains o-tiling@oliwebd.github.com"
+check SEARCHLIGHT "enabled-extensions does NOT contain search-light@icedman.github.com"
+check KEYBINDS    "Hyprland-style binds present in the booted user dconf"
+check GAMING      "ujust --list | grep -q margine-gaming"
+check GSCHEMA     "gsettings get org.gnome.desktop.interface accent-color == 'yellow'"
+```
+
+The probe asserts Margine _identity_ — the signed CachyOS kernel actually booted, the session is up, o-tiling is enabled, the Hyprland-style binds are present, search-light is gone, the gaming recipe shipped, and the `zz1-margine` gschema override took. But it never fails: it always `exit 0` and writes `MARGINE-USER-SMOKE: <CHECK> <PASS|WARN>` lines to the same serial console a `smoke-boot.yml` step parses into `$GITHUB_STEP_SUMMARY`. A regression shows up as a table on the run, not a red X.
+
+It is non-blocking three ways on purpose — `if: always()` on the parse step, `continue-on-error: true`, and a trailing `|| true`. Promotion to `:stable` still keys **solely** on `steps.boot.outputs.passed` (Layer B). The identity probe is a dashboard, not a veto: it tells you "this still looks like Margine" without ever standing between a booting image and `:stable`.
+
+The wants-symlink lives in `graphical.target.wants` — deliberately, not `multi-user.target.wants`. Hooking a `After=graphical.target` unit into `multi-user.target.wants` re-creates the ordering-cycle skip bug from §9.5 (systemd silently drops the unit, and you get a "no verdict" non-result that reads as success).
+
 ## 9.6 Disk images and ISOs: build-disk.yml
 
 The OCI image updates installed systems; the ISO/qcow2 pipeline creates new ones. It is manual-trigger only (`workflow_dispatch`, plus PR runs on `disk_config/`/`live-env/` path changes) — ISOs are ~5–9 GB, built per release event, not per push. The ISO is built by a separate Titanoboa job (§10.2); the BIB-driven `build_disk` job now produces only the smoke-gate `qcow2` (the `anaconda-iso` matrix entry was removed in ADR-0008 Phase 5/7):
@@ -3451,6 +3480,96 @@ Two satellites complete the release loop:
 
 
 ---
+
+## 9.9 The /status freshness dashboard
+
+The website's `/status` page answers one question — "is the Margine you'd install today current with upstream, or stale/broken?" — from a single JSON document the CI produces. `build-status-json.sh` emits a `schemaVersion: 2` doc describing the whole **Fedora → Bluefin → Margine** chain: it reads `skopeo inspect` of both `bluefin-dx:stable` and `margine:stable` (version/date/digest/labels) and the latest _meaningful_ run conclusion via `gh api`.
+
+```bash
+# margine-image/.github/scripts/build-status-json.sh (shape)
+skopeo inspect docker://ghcr.io/ublue-os/bluefin-dx:stable   # version/date/digest/labels
+skopeo inspect docker://ghcr.io/daniel-g-carrasco/margine:stable
+gh api .../actions/runs --jq 'first conclusion in success|failure|timed_out'
+```
+
+Two subtleties make it honest rather than merely green:
+
+- **Meaningful runs only.** `cancel-in-progress` (§9.2) leaves a trail of `cancelled`/`skipped` runs; if the latest run is one of those the page reads "Unknown". The script walks back to the latest run whose conclusion is `success`, `failure`, or `timed_out` and reports _that_.
+- **A `health()` map** normalises raw conclusions to the page's vocabulary. The Margine layer is `unknown` when the image can't be inspected at all (a registry blip must never let the page assert green), `behind` when its `org.opencontainers.image.base.digest` label ≠ the _current_ `bluefin-dx:stable` digest, and `failed` on a failed/timed-out build or smoke.
+
+A guard aborts the producer if **both** skopeo inspects come back empty, so a transient registry outage can't overwrite the last-good document with an all-`unknown` one. `publish-status-json.sh` then pushes the JSON straight to the website repo's `main` (see §9.12 for why no PR), rebasing on a push race, **preserving the curated `kernel` value** already published, and skipping the commit when only the timestamp would change (no churn). `status-json.yml` runs the pair after every build/smoke/ISO (`workflow_run`), daily, and on demand.
+
+To make the `behind` check possible, `build.yml` stamps the image with the Bluefin digest it was built **from** — best-effort, so a lookup failure never fails a build:
+
+```yaml
+# margine-image/.github/workflows/build.yml (base-digest label step)
+- name: Resolve base image digest (best-effort)
+  continue-on-error: true
+  run: |
+    DIGEST="$(skopeo inspect --no-tags --format '{{.Digest}}' \
+      docker://ghcr.io/ublue-os/bluefin-dx:stable)"
+    echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+# → label org.opencontainers.image.base.digest=<digest>
+```
+
+## 9.10 GHCR retention: pruning the tag-move orphans
+
+Every daily run moves `:stable`/`:candidate` (and their dated siblings) to a fresh digest. The _old_ digest doesn't vanish — it becomes an **untagged orphan version** GHCR keeps forever. `ghcr-cleanup.yml` (the SHA-pinned `dataaxiom/ghcr-cleanup-action`) prunes them:
+
+```yaml
+# margine-image/.github/workflows/ghcr-cleanup.yml (trimmed)
+with:
+  keep-n-untagged: 3
+  exclude-tags: "stable,latest,candidate,stable.*,candidate.*,pr-*,2*"
+  validate: true
+  dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+```
+
+`exclude-tags` covers the named, dated (`2*`), and `pr-*` tags so only genuine orphans are eligible; `validate: true` re-checks the manifest list before deletion. The daily cron does the real prune; manual `workflow_dispatch` defaults to **dry-run** so you can read the kill list before arming it. The first real run reaped ~315 orphaned versions.
+
+The gotcha that bit us: in that action `delete-untagged` and `keep-n-untagged` are **mutually exclusive** — set both and it errors out before doing anything. Use `keep-n-untagged` (which retains a small rollback window of recent orphans) and drop `delete-untagged`.
+
+## 9.11 Pin + ref automation
+
+The supply-chain pins (§8) are kept honest by CI, not by human memory (o-tiling once sat at 2.8.8 right through the 2.8.11 GNOME-50 fix because nothing watched it):
+
+- **o-tiling release pin.** Renovate tracks the GitHub-release version through a `customManager` matching the `OTILING_VERSION` constant. Hosted Renovate can't hash a release zip, so a companion `otiling-pin-sha.yml` recomputes the `sha256` _on Renovate's own branch_ and commits it back — the bot opens the version bump, the workflow fills in the hash.
+- **EGO + fork pins.** `check-upstream-pins.yml` watches the EGO-hosted extension `version_tag` pins (hide-cursor, smile) and the Titanoboa fork, opening an issue when upstream moves.
+
+Separately, `validate-flatpak-refs.yml` runs `validate-flatpak-refs.sh`, the pure-Flatpak analog to gaming-native's rpm depsolve dry-run:
+
+```bash
+# margine-image/.github/scripts/validate-flatpak-refs.sh (shape)
+# parse every app ID out of the recipes' `flatpak install` lines …
+for id in "${IDS[@]}"; do
+  curl -fsS "https://flathub.org/api/v2/appstream/$id" >/dev/null \
+    || fail "$id no longer on Flathub (renamed/delisted?)"
+done
+```
+
+It checks every Flatpak the recipes install — the AI layer's `com.jeffser.Alpaca` (+ its `Plugins.AMD` ROCm extension) and the gaming set — against the Flathub API on recipe PRs and weekly, so a renamed or delisted app is caught _in CI_ instead of at the user's `ujust margine-ai` / `margine-gaming`, where it would fail at install time.
+
+## 9.12 Cross-repo bumps that actually land
+
+The website repo is **private on a free plan**: no branch protection, and "Allow auto-merge" is OFF. That collided with the original `bump-site-iso-date.sh`, which after each IA ISO publish opened a PR and ran `gh pr merge --auto`. With auto-merge disabled that command _errors_ — so the one-line date bump sat as an open PR every release while the live site kept advertising the **previous** ISO. The failure surfaced only as a `::warning::` on an otherwise-green job, so it went unnoticed for several releases.
+
+The fix: stop round-tripping a PR nothing can merge. Commit the one-line bump and push **straight to `main`** with a rebase-retry, and `exit 1` (red job) on real failure so it can't fail silently again.
+
+```bash
+# margine-image/.github/scripts/bump-site-iso-date.sh (shape)
+sed -i "s/LATEST_ISO_DATE = .*/LATEST_ISO_DATE = \"$NEW_DATE\";/" "$SITE_INDEX"
+git commit -aqm "chore(release): bump LATEST_ISO_DATE to $NEW_DATE"
+for attempt in 1 2 3; do
+  git push origin HEAD:main && exit 0
+  git fetch origin main && git rebase origin/main || git rebase --abort
+done
+echo "::error::could not push the site bump"; exit 1
+```
+
+`publish-status-json.sh` (§9.9) reuses the same direct-push pattern.
+
+**Lesson — match the merge mechanism to the repo.** For a private/free repo with no branch protection and no auto-merge, a deterministic bot bump should push to `main`, not open a PR that nothing on the plan can merge. A PR is for review you'll actually do; a date bump is neither reviewed nor mergeable here, so the PR is pure latency that silently rots — and a `::warning::` on a green job is invisible. Make the genuine failure path red.
+
 
 # 10. Getting the image onto metal: installers and ISOs
 

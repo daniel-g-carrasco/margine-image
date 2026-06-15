@@ -426,10 +426,16 @@ margine-scheduler MODE="status":
 
 
 # Install Alpaca (Flatpak GUI for local LLMs; bundles Ollama backend
-# in the Flatpak runtime). No host install needed, no GPU passthrough
-# to configure — first launch downloads the chosen model.
+# in the Flatpak runtime). No host install needed; first launch downloads
+# the chosen model.
+# GPU note: Alpaca is sandboxed, so it does NOT use the host ROCm that the
+# Bluefin base already ships — GPU acceleration in the Flatpak comes either
+# from the com.jeffser.Alpaca.Plugins.AMD extension (ROCm inside the sandbox,
+# offered below when an AMD GPU is detected) or from Ollama's Vulkan backend
+# (no plugin; great for integrated GPUs/APUs). CPU is the fallback.
 # RamaLama (Red Hat's CLI runner) is NOT installed by this recipe;
-# instructions printed below for power users who want it in distrobox.
+# instructions printed below for power users who want it in distrobox — that
+# path CAN use the host ROCm directly.
 [group('Margine')]
 margine-ai:
     #!/usr/bin/bash
@@ -461,10 +467,17 @@ margine-ai:
       - mistral:7b       — fast general, ~4 GB
       - phi3.5:3.8b      — small footprint, ~2 GB (CPU-friendly)
 
+    GPU acceleration:
+      - The Flatpak is sandboxed and does NOT use the host ROCm. This
+        recipe offers the AMD ROCm plugin (com.jeffser.Alpaca.Plugins.AMD)
+        when it detects an AMD GPU. Vulkan is the no-plugin alternative
+        and is often best on integrated GPUs/APUs.
+      - NVIDIA: Flatpak auto-pulls the matching GL driver; Ollama uses CUDA
+        through it. Intel: Vulkan. No GPU: runs on CPU (fine, just slower —
+        consider phi3.5:3.8b on a 16 GB-RAM machine).
+
     Hardware note:
       - 8 GB VRAM is the comfort floor for ~7B-parameter models.
-      - CPU-only inference works but is markedly slower; consider
-        phi3.5:3.8b on a 16 GB-RAM laptop.
 
     To uninstall: ujust margine-ai-remove
 
@@ -472,6 +485,41 @@ margine-ai:
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
     flatpak install --system -y --or-update flathub com.jeffser.Alpaca
+
+    # GPU acceleration for the sandbox. The host ROCm (shipped by the Bluefin
+    # base) does not reach into the Flatpak; AMD accel needs the ROCm plugin
+    # extension inside the sandbox, or Ollama's Vulkan backend (no plugin).
+    gpu="$(lspci 2>/dev/null | grep -iE 'vga|3d controller|display controller' || true)"
+    if echo "$gpu" | grep -qiE 'amd|ati|radeon'; then
+      echo
+      echo "AMD GPU detected. The ROCm plugin (com.jeffser.Alpaca.Plugins.AMD)"
+      echo "enables GPU acceleration inside Alpaca's sandbox (a sizeable download)."
+      read -rp "Install the AMD ROCm plugin now? [Y/n] " amd
+      case "$amd" in
+        [nN]|[nN][oO]) echo "Skipped — Alpaca will use Vulkan if available, else CPU." ;;
+        *) flatpak install --system -y --or-update flathub com.jeffser.Alpaca.Plugins.AMD \
+             && echo "AMD ROCm plugin installed." \
+             || echo "Plugin install failed — Alpaca still works on Vulkan/CPU." ;;
+      esac
+      cat <<'EOF'
+    Integrated AMD GPU (APU, e.g. Radeon 7xxM / gfx110x)? ROCm may not detect
+    it until you set, in Alpaca → Preferences → environment:
+        HSA_OVERRIDE_GFX_VERSION=11.0.0
+    Or skip ROCm entirely and use Ollama's Vulkan backend, which usually works
+    on APUs out of the box. Check Alpaca's hardware list to see which the GPU
+    shows up under.
+    EOF
+    elif echo "$gpu" | grep -qiE 'nvidia'; then
+      echo
+      echo "NVIDIA GPU detected. Flatpak auto-pulls the matching GL driver and"
+      echo "Ollama uses CUDA through it. If the GPU isn't used, make sure the"
+      echo "proprietary driver is active and restart Alpaca."
+    else
+      echo
+      echo "No discrete AMD/NVIDIA GPU detected — Alpaca runs on CPU (or Intel"
+      echo "Vulkan if present). phi3.5:3.8b is the comfortable CPU-only pick."
+    fi
+
     cat <<'EOF'
 
     == Done ==
@@ -486,6 +534,7 @@ margine-ai-remove:
     set -euo pipefail
     echo "This will:"
     echo "  - flatpak uninstall com.jeffser.Alpaca"
+    echo "  - flatpak uninstall com.jeffser.Alpaca.Plugins.AMD (if present)"
     echo
     echo "  NOT touched: model files cached under"
     echo "    ~/.var/app/com.jeffser.Alpaca/data/  — delete by hand"
@@ -493,6 +542,7 @@ margine-ai-remove:
     echo
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    flatpak uninstall --system -y com.jeffser.Alpaca.Plugins.AMD || true
     flatpak uninstall --system -y com.jeffser.Alpaca || true
     echo "Done."
 

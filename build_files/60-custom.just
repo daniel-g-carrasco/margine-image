@@ -657,3 +657,8 @@ margine-tpm-unlock ACTION="status" PCRS="7":
 [group('Margine')]
 margine-grub-hidpi:
     @sudo /usr/libexec/margine/grub-hidpi-apply
+
+# Inspect/fix/undo the GNOME login keyring's master password. `status` (default, read-only) reports whether the keyring is password-protected (which makes GNOME prompt to unlock it on fingerprint login / autologin — PAM never gets the password that encrypts it). `blank` backs it up and opens Seahorse to set the password EMPTY so it auto-unlocks — SECURITY: the keyring is then stored UNENCRYPTED, acceptable ONLY because Margine encrypts the disk (LUKS+TPM2). `restore` puts the backup back. Per-user, no sudo.
+[group('Margine')]
+margine-keyring ACTION="status":
+    @/usr/bin/margine-keyring "{{ ACTION }}"

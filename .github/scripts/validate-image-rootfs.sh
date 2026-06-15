@@ -75,14 +75,20 @@ check_file "etc/xdg/autostart/margine-first-boot.desktop" "A.4"
 check_file "etc/xdg/autostart/margine-first-boot-status.desktop" "A.4"
 check_exec "usr/libexec/margine-first-boot-status" "A.4"
 
-# A.4.gfx — GRUB HiDPI legibility drop-in (2026-06-14). Without it the bootc
-# static GRUB config sets no gfxmode/font, so the menu renders at the panel's
-# native resolution with a 16px font — unreadable on HiDPI. Assert the
-# configs.d fragment ships and actually sets a gfxmode + switches to gfxterm.
+# A.4.gfx — GRUB HiDPI legibility via a BAKED LARGE FONT (2026-06-16, was a
+# gfxmode-low scheme that firmware ignored on amdgpu UEFI = no-op). Assert the
+# image ships: the generated font, a drop-in that loadfonts it + selects it
+# via gfxterm_font + switches to gfxterm, and the re-render helper (bootupd
+# does NOT re-render the static config on `bootc upgrade`, so existing installs
+# need `ujust margine-grub-hidpi`).
 GRUB_GFX="usr/lib/bootupd/grub2-static/configs.d/05_margine-gfxmode.cfg"
 check_file "$GRUB_GFX" "A.4.gfx"
-grep -q '^[[:space:]]*set gfxmode=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
-  || { echo "::error::A.4.gfx GRUB drop-in present but sets no gfxmode — menu stays tiny on HiDPI"; fail=1; }
+check_nonempty "usr/lib/bootupd/grub2-static/fonts/margine.pf2" "A.4.gfx"
+check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
+grep -q 'loadfont .*margine\.pf2' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
+  || { echo "::error::A.4.gfx GRUB drop-in does not loadfont the baked margine.pf2 — menu stays tiny on HiDPI"; fail=1; }
+grep -q '^[[:space:]]*set gfxterm_font=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
+  || { echo "::error::A.4.gfx GRUB drop-in does not set gfxterm_font — gfxterm would fall back to its tiny built-in font"; fail=1; }
 grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
   || { echo "::error::A.4.gfx GRUB drop-in does not switch to gfxterm"; fail=1; }
 

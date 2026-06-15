@@ -48,10 +48,14 @@ if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/s
   echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
 fi
 
-# A.3 — All 10 enabled-extensions UUIDs installed system-wide.
-# (search-light is NOT enabled by Margine — GNOME-native search replaces it —
-# but it stays installed by Bluefin and patched by us; its presence + crash
-# patches are still asserted by A.3.ter below.)
+# A.3 — Every baked extension installed system-wide (9 enabled by default +
+# blur-my-shell, which is installed-but-not-enabled-by-default — kept so a
+# user can re-enable it with the smooth STATIC defaults in
+# dconf/05-margine-blur-my-shell; dropped from the enabled set 2026-06-16 for
+# 120Hz-iGPU jank + upstream bugs).
+# (search-light is likewise NOT enabled by Margine — GNOME-native search
+# replaces it — but it stays installed by Bluefin and patched by us; its
+# presence + crash patches are still asserted by A.3.ter below.)
 for uuid in \
   appindicatorsupport@rgcjonas.gmail.com \
   bazaar-integration@kolunmi.github.io \

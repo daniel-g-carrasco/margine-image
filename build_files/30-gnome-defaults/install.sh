@@ -23,7 +23,16 @@ cat > /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'OVERRIDE'
 # crash class isn't worth the dependency. Bluefin's copy stays installed
 # (and Margine keeps patching it, see build-margine-extensions.sh) so a user
 # can flip it back on; it just doesn't auto-load.
-enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'blur-my-shell@aunetx', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info', 'smile-extension@mijorus.it']
+# blur-my-shell is ALSO NOT enabled (dropped 2026-06-16): its dynamic
+# per-frame Gaussian blur (sigma=70 at scale 2) made the whole desktop —
+# its own transitions AND o-tiling window animations — visibly janky on the
+# reference HiDPI iGPU at 120Hz (verified live: "without blur everything runs
+# smoother"), and it carries three known unfixed-upstream GNOME-50 defects
+# (hotplug black bg #561, overview swipe ghost icons #738/GNOME#2857,
+# unreliable dynamic dock blur #574). It stays installed (Bluefin ships it)
+# with smooth STATIC defaults (dconf/05-margine-blur-my-shell) so re-enabling
+# it doesn't bring the jank back.
+enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'o-tiling@oliwebd.github.com', 'hide-cursor@elcste.com', 'caffeine@patapon.info', 'smile-extension@mijorus.it']
 # Decision (2026-06-07): drop VS Code from the dock favourites and pin
 # Bazaar there instead. Reasoning: VS Code is a creator's tool but its
 # daily presence in the dock is project-specific (users jump in and

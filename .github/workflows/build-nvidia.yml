@@ -1,0 +1,109 @@
+name: Build Margine NVIDIA variant (experimental)
+
+# EXPERIMENTAL — see ADR 0009 (margine-fedora-atomic/docs/adr/0009-nvidia-variant.md).
+#
+# Builds the NVIDIA variant: the SAME signed CachyOS kernel plus an
+# akmod-nvidia[-open] kmod compiled against kernel-cachyos-devel-matched and
+# re-signed with the Margine MOK (so Secure Boot stays ON, one enrollment).
+# The build logic lives behind the ENABLE_NVIDIA build-arg in
+# Containerfile + build_files/custom-kernel/install.sh; the base build never
+# runs it.
+#
+# Manual ONLY: no push/schedule trigger, no smoke gate, no promotion to
+# :stable. It pushes a clearly-experimental tag (default :nvidia-test). There
+# is NO NVIDIA GPU in CI, so a green run proves only that the kmod COMPILES +
+# SIGNS — it does NOT prove the driver actually drives a real NVIDIA GPU. That
+# must be validated on real hardware before :stable-nvidia is trusted/promoted
+# (Margine's reference machine is AMD). This is genuinely novel territory
+# (nvidia-against-a-CachyOS-kernel under bootc has no upstream precedent), so
+# expect several iterations to make it build green.
+
+on:
+  workflow_dispatch:
+    inputs:
+      nvidia_kmod:
+        description: "kmod flavour"
+        default: nvidia-open
+        type: choice
+        options:
+          - nvidia-open
+          - nvidia
+      tag:
+        description: "image tag to push (experimental)"
+        default: nvidia-test
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-nvidia
+  cancel-in-progress: true
+
+jobs:
+  build-nvidia:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space (nvidia + CUDA userland is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h / | tail -1
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Stage MOK secrets for BuildKit
+        env:
+          MOK_KEY: ${{ secrets.MOK_KEY }}
+          MOK_CERT: ${{ secrets.MOK_CERT }}
+        run: |
+          mkdir -p /tmp/margine-secrets
+          chmod 700 /tmp/margine-secrets
+          printf '%s' "$MOK_KEY"  > /tmp/margine-secrets/MOK.key
+          printf '%s' "$MOK_CERT" > /tmp/margine-secrets/MOK.pem
+          chmod 600 /tmp/margine-secrets/*
+
+      - name: Resolve margine-fedora-atomic spec ref
+        id: specref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="$(gh api repos/${{ github.repository_owner }}/margine-fedora-atomic/commits/main --jq .sha)"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build NVIDIA variant (build-arg ENABLE_NVIDIA=1)
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/${{ github.repository_owner }}/margine"
+          sudo -E buildah build \
+            --file ./Containerfile \
+            --format docker \
+            --layers \
+            --build-arg "MARGINE_REF=${{ steps.specref.outputs.sha }}" \
+            --build-arg "ENABLE_NVIDIA=1" \
+            --build-arg "NVIDIA_KMOD=${{ inputs.nvidia_kmod }}" \
+            --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
+            --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
+            --tag "${IMG}:${{ inputs.tag }}" \
+            .
+          sudo buildah images "${IMG}:${{ inputs.tag }}"
+
+      - name: Push experimental tag
+        run: |
+          IMG="ghcr.io/${{ github.repository_owner }}/margine"
+          sudo buildah push "${IMG}:${{ inputs.tag }}"
+          echo "Pushed ${IMG}:${{ inputs.tag }} — EXPERIMENTAL, not validated on real NVIDIA hardware."
+
+      - name: Wipe staged secrets
+        if: always()
+        run: rm -rf /tmp/margine-secrets

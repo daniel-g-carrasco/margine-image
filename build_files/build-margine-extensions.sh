@@ -535,3 +535,29 @@ else
   log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Register our extensions' gschemas into the GLOBAL schema set.
+# ---------------------------------------------------------------------------
+# build.sh's 30-gnome-defaults stage copies + compiles the global schema set,
+# but it runs BEFORE this script (Containerfile order: build.sh, then this),
+# so the schemas of the extensions WE install here (o-tiling, hide-cursor,
+# smile) never reach /usr/share/glib-2.0/schemas/. Without that the schema is
+# not registered system-wide and `gsettings get/set
+# org.gnome.shell.extensions.<ext> ...` fails — the extension still reads its
+# own local compiled schema at runtime, but the user bootstrap + diagnostics
+# that go through gsettings cannot. Copy ours over now and recompile.
+# (Found 2026-06-15: o-tiling schema unregistered on a live host.)
+log "Registering Margine extension gschemas into the global schema set"
+shopt -s nullglob
+for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it; do
+  for xml in "/usr/share/gnome-shell/extensions/${uuid}/schemas/"*.gschema.xml; do
+    base="$(basename "$xml")"
+    if [[ ! -f "/usr/share/glib-2.0/schemas/${base}" ]]; then
+      install -m 0644 "$xml" "/usr/share/glib-2.0/schemas/${base}"
+      log "  copied ${base} (from ${uuid})"
+    fi
+  done
+done
+glib-compile-schemas /usr/share/glib-2.0/schemas
+log "Global gschema recompile done"

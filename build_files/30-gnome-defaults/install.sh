@@ -52,16 +52,17 @@ accent-color='yellow'
 # GNOME's distro defaults win over Bluefin's, which is what we want
 # until we have an opinion.
 
-# Number of dynamic workspaces — Margine binds Super+1..0 (Hyprland
-# muscle memory) via the user-level bootstrap, so the base default
-# should give us 10 slots ready at first login.
+# Workspaces: a FIXED set of FIVE (Daniel's explicit, standing preference,
+# reaffirmed 2026-06-15 — NOT 10). dynamic-workspaces=false makes the count
+# fixed; with it true, num-workspaces is ignored and GNOME grows them
+# on demand. Super+1..5 switch to the five; the Super+6..0 binds from the
+# Hyprland chain are simply inert with only five workspaces (harmless).
 [org.gnome.mutter]
-dynamic-workspaces=true
+dynamic-workspaces=false
 
 [org.gnome.desktop.wm.preferences]
-# Override Bluefin's num-workspaces=4. The Hyprland binding chain in
-# margine-fedora-atomic's configure-gnome-keybindings expects 10.
-num-workspaces=10
+# Override Bluefin's num-workspaces=4 → 5 (Daniel's standing preference).
+num-workspaces=5
 
 [org.gnome.desktop.wm.keybindings]
 # Bluefin remaps Super+d → show-desktop, which collides with

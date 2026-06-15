@@ -1,0 +1,43 @@
+name: Validate Flatpak refs
+
+# The AI layer (ujust margine-ai -> Alpaca) and the gaming layer are
+# pure-Flatpak — there's no rpm depsolve to dry-run the way
+# gaming-native-packages.txt is validated. The rot to catch instead is a
+# Flatpak being renamed or delisted on Flathub, which would make the recipe's
+# `flatpak install` fail at runtime. This checks every app ID the recipes
+# install against the Flathub API. Cheap: curl + python, ~1 min, no build.
+
+on:
+  pull_request:
+    paths:
+      - "build_files/60-custom.just"
+      - ".github/scripts/validate-flatpak-refs.sh"
+      - ".github/workflows/validate-flatpak-refs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "build_files/60-custom.just"
+      - ".github/scripts/validate-flatpak-refs.sh"
+  schedule:
+    - cron: "23 8 * * 1" # Monday morning, alongside check-upstream-pins
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-flatpak-refs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Validate Flatpak app IDs against Flathub
+        run: .github/scripts/validate-flatpak-refs.sh

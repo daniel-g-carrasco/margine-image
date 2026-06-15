@@ -99,7 +99,6 @@ fi
 EXPECTED_EXTENSIONS=(
   appindicatorsupport@rgcjonas.gmail.com
   bazaar-integration@kolunmi.github.io
-  blur-my-shell@aunetx
   dash-to-dock@micxgx.gmail.com
   gradia-integration@alexandervanhee.github.io
   gsconnect@andyholmes.github.io
@@ -110,8 +109,12 @@ EXPECTED_EXTENSIONS=(
 )
 # search-light@icedman.github.com was dropped from the default enable set
 # 2026-06-14 (GNOME-50 crash class; replaced by GNOME-native search). smile
-# was added 2026-06-13. Keep this list in lockstep with the enabled-extensions
-# line in build_files/30-gnome-defaults/install.sh (zz1-margine override).
+# was added 2026-06-13. blur-my-shell@aunetx was dropped 2026-06-16 (dynamic
+# per-frame Gaussian blur janked the 120Hz HiDPI iGPU — its own transitions
+# AND o-tiling animations — plus 3 unfixed-upstream GNOME-50 bugs). All three
+# stay INSTALLED but are not in the enabled set. Keep this list in lockstep
+# with the enabled-extensions line in build_files/30-gnome-defaults/install.sh
+# (zz1-margine override).
 # NOTE: tilingshell@ferrarodomenico.com is installed but NOT in the
 # default enable list (superseded by o-tiling on 2026-05-31).
 

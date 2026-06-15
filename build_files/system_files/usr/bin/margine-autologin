@@ -1,0 +1,317 @@
+#!/usr/bin/bash
+# margine-autologin — enable/disable/inspect GDM (GNOME) autologin from the CLI.
+#
+# Edits /etc/gdm/custom.conf in place (a writable per-machine /etc layer on
+# Margine), touching ONLY the [daemon] AutomaticLoginEnable / AutomaticLogin
+# keys and preserving every other section, key, and comment. No GUI required.
+#
+#   margine-autologin            # = status — print ENABLED (user) or disabled
+#   margine-autologin status     # same, no mutation
+#   margine-autologin on [USER]  # enable autologin for USER (idempotent)
+#   margine-autologin off        # disable autologin (idempotent)
+#
+# Run via `ujust margine-autologin …`. 'status' is read-only and needs no
+# privilege; 'on'/'off' mutate /etc and re-exec themselves under sudo.
+set -euo pipefail
+
+CONF=/etc/gdm/custom.conf
+SELF="margine-autologin"
+
+die() { printf '%s: %s\n' "$SELF" "$*" >&2; exit 1; }
+
+# Escalate the mutating actions. Called only for 'on'/'off', BEFORE any write,
+# so a non-root invocation re-runs the whole command as root via sudo rather
+# than failing. Keeps the recipe a single sudo-free line (status never prompts)
+# while still guaranteeing every write happens as root.
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      # Re-exec the exact action+args under root. ${USER_ARG:+ "$USER_ARG"}
+      # passes the user only when one was given, so 'off' (and arg-less 'on')
+      # don't append a stray empty argument.
+      exec sudo -- "$0" "$ACTION" ${USER_ARG:+ "$USER_ARG"}
+    fi
+    die "must run as root. Use:  ujust ${SELF} ${ACTION}${USER_ARG:+ $USER_ARG}"
+  fi
+}
+
+# The single gate every autologin target must clear, regardless of how it was
+# chosen (explicit arg, $SUDO_USER, or the passwd fallback). A valid target
+# must EXIST, have a uid in [1000,65534) — which also excludes root (uid 0),
+# every system/service account (uid < 1000), and nobody/overflow (>= 65534) —
+# and have a genuine interactive login shell (not *nologin / *false / empty).
+# GDM autologin only makes sense for a real human desktop account; a system
+# account would fail the PAM session loop or silently configure a meaningless,
+# unsafe autologin target. This subsumes the existence and "not root" checks.
+validate_real_user() {
+  local u="$1" uid shell
+  uid="$(id -u "$u" 2>/dev/null)" \
+    || die "user '$u' does not exist."
+  { [ "$uid" -ge 1000 ] && [ "$uid" -lt 65534 ]; } \
+    || die "refusing autologin for '$u' (uid $uid is not a normal user account)."
+  shell="$(getent passwd "$u" | cut -d: -f7)"
+  case "$shell" in
+    *nologin|*false|"")
+      die "refusing autologin for '$u' (no real login shell: '${shell}')." ;;
+  esac
+}
+
+# Resolve the target user for `on`:
+#   explicit arg  >  $SUDO_USER (unless 'root')  >  first real local account.
+# This function only PICKS a candidate name; on its own it guarantees nothing
+# about that name. The caller MUST run validate_real_user on the result before
+# writing it — that gate (exists, uid in [1000,65534), genuine login shell,
+# not root) is applied uniformly to all three resolution paths below.
+resolve_user() {
+  local u="$1"
+  if [ -z "$u" ]; then
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+      u="${SUDO_USER}"
+    else
+      # First passwd entry with a normal uid range and a real login shell.
+      # (validate_real_user re-checks this; the filter only keeps the default
+      # candidate sensible so a "could not determine" message is accurate.)
+      u="$(getent passwd | awk -F: '
+        $3 >= 1000 && $3 < 65534 \
+          && $7 != "" \
+          && $7 !~ /(nologin|false)$/ { print $1; exit }' || true)"
+    fi
+  fi
+  [ -n "$u" ] || die "could not determine a user to enable autologin for. Pass one explicitly:  ujust ${SELF} on <user>"
+  printf '%s' "$u"
+}
+
+# Restore the SELinux label on CONF. Run UNCONDITIONALLY after every write:
+# editing in place keeps whatever context the inode already had, which is
+# wrong if the file arrived mislabelled (e.g. restored from a backup disk and
+# carrying user_home_t). GDM runs as xdm_t and must read xdm_etc_t, so a
+# stale label can make GDM silently ignore the change — or break login. The
+# policy default for /etc/gdm/custom.conf is xdm_etc_t; restorecon resets to
+# it. It is a no-op on an already-correct file, so there is no downside to
+# always running it. -F forces customizable types too.
+relabel_conf() {
+  command -v restorecon >/dev/null 2>&1 || return 0
+  restorecon -F -- "$CONF" 2>/dev/null || true
+}
+
+# Timestamped backup before any write (only if the file already exists). The
+# backup is relabelled too: cp -a copies the SOURCE context, so a mislabelled
+# CONF would otherwise spawn mislabelled backups forever — harmless to GDM
+# (it never reads them) but tidy to keep them at the policy default.
+backup_conf() {
+  [ -f "$CONF" ] || return 0
+  local bak
+  bak="${CONF}.margine.bak.$(date +%Y%m%d-%H%M%S-%N)"
+  cp -a -- "$CONF" "$bak"
+  command -v restorecon >/dev/null 2>&1 && restorecon -F -- "$bak" 2>/dev/null || true
+  printf '%s: backed up %s -> %s\n' "$SELF" "$CONF" "$bak"
+}
+
+# Line-aware INI editor. Sets keys ONLY inside [daemon], creating the section
+# (and the file) if absent, updating existing keys in place, and leaving every
+# other section/key/comment byte-for-byte. Re-runs never duplicate a key.
+# Args: KEY1 VAL1 [KEY2 VAL2 …]   (each key set under [daemon]).
+set_daemon_keys() {
+  CONF="$CONF" python3 - "$@" <<'PY'
+import os, sys
+
+conf = os.environ["CONF"]
+pairs = sys.argv[1:]
+wanted = {pairs[i]: pairs[i + 1] for i in range(0, len(pairs), 2)}
+
+try:
+    with open(conf, "r", encoding="utf-8-sig") as fh:
+        lines = fh.read().splitlines()
+except FileNotFoundError:
+    lines = []
+
+def header(line):
+    s = line.strip()
+    return s.startswith("[") and s.endswith("]")
+
+out = []
+in_daemon = False
+seen = set()          # keys already updated inside [daemon]
+daemon_found = False
+i = 0
+while i < len(lines):
+    line = lines[i]
+    if header(line):
+        # Leaving a section: if it was [daemon], flush any keys not yet seen
+        # right before the next header so they stay inside [daemon].
+        if in_daemon:
+            for k, v in wanted.items():
+                if k not in seen:
+                    out.append("%s=%s" % (k, v))
+                    seen.add(k)
+        in_daemon = (line.strip() == "[daemon]")
+        if in_daemon:
+            daemon_found = True
+        out.append(line)
+        i += 1
+        # Tidy placement: if this [daemon] holds no key we intend to set,
+        # emit the wanted keys immediately after the header (before any
+        # trailing blank line) instead of letting the end-of-section flush
+        # drop them after the blanks. Existing matching keys, if any, are
+        # still updated in place by the loop below.
+        if in_daemon:
+            existing = []
+            j = i
+            while j < len(lines) and not header(lines[j]):
+                sj = lines[j].strip()
+                if sj and not sj.startswith(("#", ";")) and "=" in sj:
+                    existing.append(sj.split("=", 1)[0].strip())
+                j += 1
+            if not any(k in wanted for k in existing):
+                for k, v in wanted.items():
+                    if k not in seen:   # guard: a 2nd [daemon] must not re-emit
+                        out.append("%s=%s" % (k, v))
+                        seen.add(k)
+        continue
+
+    if in_daemon:
+        stripped = line.strip()
+        if stripped and not stripped.startswith(("#", ";")) and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in wanted:
+                if key not in seen:
+                    out.append("%s=%s" % (key, wanted[key]))
+                    seen.add(key)
+                i += 1
+                continue
+    out.append(line)
+    i += 1
+
+# File (or last section) ended while still inside [daemon]: flush remainder.
+if in_daemon:
+    for k, v in wanted.items():
+        if k not in seen:
+            out.append("%s=%s" % (k, v))
+            seen.add(k)
+
+# No [daemon] section existed anywhere: append a fresh one.
+if not daemon_found:
+    if out and out[-1].strip() != "":
+        out.append("")
+    out.append("[daemon]")
+    for k, v in wanted.items():
+        out.append("%s=%s" % (k, v))
+
+with open(conf, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(out) + "\n")
+PY
+}
+
+# Read current state from the [daemon] section for `status`.
+# Prints:  "<enabled-bool> <login-user>"  (either field may be empty).
+read_state() {
+  CONF="$CONF" python3 - <<'PY'
+import os
+conf = os.environ["CONF"]
+try:
+    with open(conf, "r", encoding="utf-8-sig") as fh:
+        lines = fh.read().splitlines()
+except FileNotFoundError:
+    print(" ")
+    raise SystemExit(0)
+
+in_daemon = False
+enabled = ""
+user = ""
+for line in lines:
+    s = line.strip()
+    if s.startswith("[") and s.endswith("]"):
+        in_daemon = (s == "[daemon]")
+        continue
+    if not in_daemon or not s or s.startswith(("#", ";")) or "=" not in s:
+        continue
+    k, v = s.split("=", 1)
+    k = k.strip(); v = v.strip()
+    if k == "AutomaticLoginEnable":
+        enabled = v
+    elif k == "AutomaticLogin":
+        user = v
+print("%s %s" % (enabled, user))
+PY
+}
+
+ACTION="${1:-status}"
+USER_ARG="${2:-}"
+
+case "$ACTION" in
+  status|"")
+    state="$(read_state)"
+    enabled="${state%% *}"
+    login_user="${state#* }"
+    # Case-insensitive truthy match for the GDM boolean.
+    shopt -s nocasematch
+    if [[ "$enabled" == "true" ]] && [ -n "$login_user" ]; then
+      shopt -u nocasematch
+      printf 'autologin: ENABLED for user "%s"\n' "$login_user"
+    else
+      shopt -u nocasematch
+      printf 'autologin: disabled\n'
+    fi
+    ;;
+
+  on)
+    require_root
+    target="$(resolve_user "$USER_ARG")"
+    # ONE gate for every resolution path (explicit arg, $SUDO_USER, fallback):
+    # rejects root, system/service accounts (uid<1000), nobody/overflow
+    # (uid>=65534), nologin/false shells, and non-existent users — closing the
+    # system-account / nobody autologin hole. Nothing is written until this
+    # passes, so a bogus target never reaches AutomaticLogin.
+    validate_real_user "$target"
+    backup_conf
+    set_daemon_keys \
+      AutomaticLoginEnable True \
+      AutomaticLogin "$target"
+    # Relabel on EVERY write: in-place edits keep the inode's existing context,
+    # so a file that arrived mislabelled would never get corrected otherwise,
+    # and GDM (xdm_t) could then fail to read this very change. restorecon is
+    # idempotent — a no-op when already correct.
+    relabel_conf
+    printf '%s: autologin ENABLED for "%s".\n' "$SELF" "$target"
+    printf '%s: SECURITY — this machine will boot straight to "%s"'\''s desktop with NO password.\n' "$SELF" "$target"
+    printf '%s: takes effect at the next reboot (or GDM restart).\n' "$SELF"
+    ;;
+
+  off)
+    require_root
+    if [ ! -f "$CONF" ]; then
+      printf '%s: %s does not exist — autologin already disabled.\n' "$SELF" "$CONF"
+      exit 0
+    fi
+    backup_conf
+    # Keep it minimal + reversible: flip the enable flag to False and leave
+    # the remembered AutomaticLogin user in place (re-enabling is a no-arg `on`
+    # away if you keep that user). Other sections/keys are untouched.
+    set_daemon_keys AutomaticLoginEnable False
+    # Relabel here too — same rationale as `on`: an in-place edit preserves a
+    # possibly-wrong context, and a mislabelled custom.conf can break login.
+    relabel_conf
+    printf '%s: autologin disabled.\n' "$SELF"
+    printf '%s: takes effect at the next reboot (or GDM restart).\n' "$SELF"
+    ;;
+
+  -h|--help|help)
+    cat <<EOF
+${SELF} — enable/disable/inspect GDM autologin (edits ${CONF}).
+
+Usage:
+  ujust ${SELF}              show current state (default, read-only)
+  ujust ${SELF} status       show current state
+  ujust ${SELF} on [user]    enable autologin (defaults to your account)
+  ujust ${SELF} off          disable autologin
+
+'on'/'off' mutate ${CONF} and re-exec under sudo if not already root.
+'on' only accepts a real human account (uid in [1000,65534) with a genuine
+login shell); root, system/service accounts, and nobody are refused.
+EOF
+    ;;
+
+  *)
+    die "unknown action '$ACTION'. Try:  ujust ${SELF} [status|on|off]"
+    ;;
+esac

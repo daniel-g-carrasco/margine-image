@@ -131,9 +131,11 @@ margine-gaming:
     Trade-off — host RPMs are layered via rpm-ostree, which means:
       - Your booted deployment becomes "branched" from the base OCI
         image: `rpm-ostree status` will show LayeredPackages: …
-      - Every `bootc upgrade` re-applies the layer on top of the new
-        base, which is slower (~30-60s extra per upgrade) and can
-        occasionally fail on file conflicts when upstream relocates a
+      - You MUST update with `ujust margine-update` (NOT `bootc
+        upgrade`, which REFUSES a client-layered deployment). It
+        re-applies the layer on top of the new base — slower (~30-60s
+        extra per update) and can occasionally fail on file conflicts
+        when upstream relocates a
         file in a layered RPM.
     This recipe is THE supported way to get the gaming layer on
     Margine — the separate Margine Gaming image + ISO were retired
@@ -211,7 +213,7 @@ margine-gaming-remove:
 # as rpm-ostree layered RPMs, the launchers without an RPM stay Flatpak).
 # Native gives maximum Proton/Wine compatibility (no Flatpak sandbox
 # restrictions on controllers, kernel namespaces, Mesa version, etc.)
-# at the cost of +30-60s per `bootc upgrade` and occasional file-
+# at the cost of +30-60s per `ujust margine-update` and occasional file-
 # conflict risk. Use it if you game daily, run anti-cheat titles
 # (EAC/BattlEye), use VR/Steam Link, or mix NVIDIA proprietary with
 # Mesa-git. For occasional gaming the Flatpak default (margine-gaming)
@@ -249,7 +251,7 @@ margine-gaming-native:
                                 controllers integrate without sandbox
                                 quirks, Mesa version always matches
                                 the system. The cost is +30-60s per
-                                `bootc upgrade` to re-apply the layer.
+                                `ujust margine-update` to re-apply the layer.
 
     Pick this variant if: anti-cheat titles, VR, daily play, or NVIDIA
     proprietary + Mesa-git side-by-side.
@@ -626,15 +628,24 @@ margine-doctor:
 margine-status:
     @/usr/bin/margine-status
 
-# Pull the latest Margine :stable and stage it for the next reboot.
+# Pull the latest Margine :stable and stage it for the next reboot. Picks the right upgrader automatically: rpm-ostree if you have layered packages (e.g. ujust margine-gaming-native), bootc otherwise.
 [group('Margine')]
 margine-update:
     #!/usr/bin/bash
     set -euo pipefail
     /usr/bin/margine-status || true
     echo
-    if command -v bootc >/dev/null 2>&1; then
-      echo "Staging the latest Margine :stable (bootc upgrade)…"
+    # bootc upgrade REFUSES a client-layered deployment ("Deployment contains
+    # local rpm-ostree modifications; cannot upgrade via bootc"). So the choice
+    # is NOT "is bootc installed" (it always is on a bootc image) — it's "are
+    # there layered/local packages". If so, use rpm-ostree upgrade, which pulls
+    # the new base image AND re-applies the layers. Otherwise prefer bootc.
+    if rpm-ostree status 2>/dev/null | grep -qE '^[[:space:]]*(Layered|Local)Packages:'; then
+      echo "Layered packages detected (e.g. gaming-native) — using rpm-ostree upgrade"
+      echo "(bootc upgrade refuses client-layered deployments; rpm-ostree re-applies your layers)."
+      sudo rpm-ostree upgrade
+    elif command -v bootc >/dev/null 2>&1; then
+      echo "No local layers — using bootc upgrade…"
       sudo bootc upgrade
     else
       echo "Staging the latest Margine :stable (rpm-ostree upgrade)…"
@@ -653,7 +664,7 @@ margine-autologin ACTION="status" USER="":
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}
 
-# Make the GRUB boot menu legible on HiDPI panels: copy the baked large font onto /boot and re-render /boot/grub2/grub.cfg from the image. Run ONCE after a `bootc upgrade`, then reboot. (A bootc upgrade alone does NOT re-render the bootloader config — bootupd only does that at install time, so new font/gfx settings never reach /boot otherwise.)
+# Make the GRUB boot menu legible on HiDPI panels: copy the baked large font onto /boot and re-render /boot/grub2/grub.cfg from the image. Run ONCE after `ujust margine-update`, then reboot. (An upgrade alone does NOT re-render the bootloader config — bootupd only does that at install time, so new font/gfx settings never reach /boot otherwise.)
 [group('Margine')]
 margine-grub-hidpi:
     @sudo /usr/libexec/margine/grub-hidpi-apply

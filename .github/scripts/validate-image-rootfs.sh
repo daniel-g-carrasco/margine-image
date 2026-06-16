@@ -85,6 +85,11 @@ GRUB_GFX="usr/lib/bootupd/grub2-static/configs.d/05_margine-gfxmode.cfg"
 check_file "$GRUB_GFX" "A.4.gfx"
 check_nonempty "usr/lib/bootupd/grub2-static/fonts/margine.pf2" "A.4.gfx"
 check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
+# The re-render runs automatically at boot (the bootloader on /boot isn't
+# updated by image upgrades) — assert the service ships AND is enabled.
+check_file "usr/lib/systemd/system/margine-grub-hidpi.service" "A.4.gfx"
+test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service" \
+  || { echo "::error::A.4.gfx margine-grub-hidpi.service is not enabled (multi-user.target.wants symlink missing) — GRUB font won't auto-apply"; fail=1; }
 grep -q 'loadfont .*margine\.pf2' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
   || { echo "::error::A.4.gfx GRUB drop-in does not loadfont the baked margine.pf2 — menu stays tiny on HiDPI"; fail=1; }
 grep -q '^[[:space:]]*set gfxterm_font=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \

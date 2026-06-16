@@ -664,7 +664,7 @@ margine-autologin ACTION="status" USER="":
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}
 
-# Make the GRUB boot menu legible on HiDPI panels: copy the baked large font onto /boot and re-render /boot/grub2/grub.cfg from the image. Run ONCE after `ujust margine-update`, then reboot. (An upgrade alone does NOT re-render the bootloader config — bootupd only does that at install time, so new font/gfx settings never reach /boot otherwise.)
+# Force/inspect the HiDPI GRUB font + grub.cfg render NOW. Normally you don't need this: margine-grub-hidpi.service applies it automatically at boot whenever the image's baked GRUB config changes (the bootloader on /boot isn't updated by image upgrades, so a boot-time service closes the gap). Run this only to apply it immediately after an update instead of waiting for the next reboot. Safe + idempotent (grub2-script-check + backup; no-op when already current).
 [group('Margine')]
 margine-grub-hidpi:
     @sudo /usr/libexec/margine/grub-hidpi-apply

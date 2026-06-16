@@ -37,6 +37,17 @@ jobs:
         with:
           args: -color
 
+      - name: hadolint (Containerfile)
+        # Lints the active bootc ./Containerfile (Containerfile.plan-b-from-
+        # bluefin is a dormant fallback, intentionally not linted). Rules and
+        # the warning-level failure threshold live in .hadolint.yaml so a
+        # local `hadolint Containerfile` matches CI. SHA-pinned like every
+        # other action here.
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: Containerfile
+          config: .hadolint.yaml
+
       - name: shellcheck (tracked *.sh + shebang-discovered system_files)
         # -S warning: the only info-level items are SC1091 ("can't
         # follow /ctx/00-common.sh") — a build-container path that does

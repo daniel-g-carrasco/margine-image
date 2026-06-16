@@ -1,0 +1,72 @@
+# OpenSSF Scorecard — automated supply-chain security checks.
+#
+# Adopted 2026-06-16. Scorecard is a drop-in Action that grades the
+# supply-chain hygiene Margine already practises (SHA-pinned actions,
+# least-privilege workflow tokens, cosign-by-digest signed releases,
+# Renovate dependency updates). It publishes a 0-10 score to the OpenSSF
+# REST API (which backs the README badge) and uploads SARIF to GitHub
+# code-scanning.
+#
+# Expect LOW marks on Branch-Protection / Code-Review / CI-Tests-need-
+# reviewers: those score multi-maintainer practices a single-maintainer
+# personal project cannot satisfy — that is expected, not a regression.
+# Read the high-signal checks instead: Pinned-Dependencies,
+# Token-Permissions, Dangerous-Workflow, Dependency-Update-Tool,
+# Signed-Releases — Margine should score very well on those.
+#
+# Uses a third-party action (ossf/scorecard-action), SHA-pinned like every
+# other action in this repo (the tj-actions/changed-files lesson).
+name: Scorecard supply-chain security
+
+on:
+  # For the Branch-Protection check. Only the default branch is supported.
+  branch_protection_rule:
+  # Keep the Maintained check fresh.
+  schedule:
+    - cron: '43 13 * * 2'
+  push:
+    branches: [main]
+
+# Declare default permissions as read only.
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-24.04
+    # publish_results only works when run from the default branch.
+    if: github.event.repository.default_branch == github.ref_name
+    permissions:
+      # Upload the results to the code-scanning dashboard.
+      security-events: write
+      # Publish results to the OpenSSF REST API and get the badge.
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publish to the OpenSSF REST API so the repo can show the badge.
+          publish_results: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
+        with:
+          sarif_file: results.sarif

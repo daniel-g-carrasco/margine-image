@@ -34,18 +34,17 @@
 #   * hide-cursor@elcste.com — Wayland-native auto-hide of the mouse
 #     cursor on inactivity. EGO id 6727. Bluefin does not ship this.
 #
-# What we do NOT install here:
-#   * search-light@icedman.github.com — Bluefin's
-#     build-gnome-extensions.sh already installs it system-wide from
-#     git master (newer than EGO release, supports GNOME 50). Adding
-#     a second copy here would re-trigger the "shadow" bug.
-#   * appindicator / bazaar / blur-my-shell / dash-to-dock /
-#     gradia-integration / gsconnect / caffeine — all baked by Bluefin.
+# What we do NOT install here (baked by Bluefin's build-gnome-extensions.sh):
+#   * appindicator / bazaar / dash-to-dock / gradia-integration / gsconnect /
+#     caffeine — kept, enabled via the zz1 override.
+#   * search-light / blur-my-shell / logomenu — REMOVED below (the "remove
+#     Bluefin-baked extensions Margine doesn't ship" block): GNOME-50 crash
+#     class, 120Hz-iGPU blur jank, and unused branding respectively.
 #
-# Enablement: zz1-margine.gschema.override (in build.sh) already lists
-# all 11 UUIDs in [org.gnome.shell] enabled-extensions, so once the
-# files land here the extensions are active on first GDM login. No
-# per-user install, no autostart, no race.
+# Enablement: zz1-margine.gschema.override (in 30-gnome-defaults) lists the
+# enabled UUIDs in [org.gnome.shell] enabled-extensions, so once the files
+# land here the extensions are active on first GDM login. No per-user install,
+# no autostart, no race.
 set -euo pipefail
 
 log() { printf '[margine-extensions] %s\n' "$*"; }
@@ -198,7 +197,6 @@ install_hidecursor() {
 #   o-tiling      "Tile This Workspace"  view-quilt-symbolic (on)
 #                                         view-compact-symbolic (off)
 #   o-tiling      "Border Width"          border-all-symbolic
-#   search-light  panel button            search-symbolic
 #
 # Rather than sed-patch each extension's JS (fragile across upstream bumps,
 # and it would only fix OUR baked set), provide the removed names as compat
@@ -212,7 +210,6 @@ declare -A ICON_SHIMS=(
   [view-quilt-symbolic]=view-grid-symbolic        # tiling ON  (tiled grid)
   [view-compact-symbolic]=view-restore-symbolic   # tiling OFF (floating/overlap)
   [border-all-symbolic]=checkbox-symbolic         # border width (bordered box)
-  [search-symbolic]=system-search-symbolic        # search-light magnifier
 )
 install_legacy_icon_shims() {
   local dst=/usr/share/icons/hicolor/scalable/actions
@@ -254,6 +251,24 @@ install_smile_ext() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Remove Bluefin-baked extensions Margine does not ship (2026-06-16).
+# ---------------------------------------------------------------------------
+# Bluefin's build-gnome-extensions.sh bakes these into the base image as plain
+# dirs under EXT_DIR (not RPM-owned). Margine doesn't enable them and no longer
+# ships them at all: blur-my-shell (per-frame dynamic blur janks the 120Hz
+# HiDPI iGPU + unfixed GNOME-50 bugs), search-light (GNOME-50 crash class;
+# GNOME-native overview/app-grid search replaces it), logomenu (branding we
+# don't use). Removing the dirs is the clean fix — their dconf defaults,
+# downstream patches, icon shims and validator/smoke references are all dropped
+# alongside this. A user who wants one back installs it from extensions.gnome.org.
+for _unwanted in blur-my-shell@aunetx logomenu@aryan_k search-light@icedman.github.com; do
+  if [[ -d "${EXT_DIR}/${_unwanted}" ]]; then
+    rm -rf "${EXT_DIR:?}/${_unwanted}"
+    log "removed Bluefin-baked extension Margine doesn't ship: ${_unwanted}"
+  fi
+done
+
 install_otiling
 install_hidecursor
 install_smile_ext
@@ -283,260 +298,6 @@ done
 log "Done. No dnf operations to clean up — script never installed anything."
 
 # ---------------------------------------------------------------------------
-# Downstream patch: search-light unrealize-while-mapped crash (2026-06-10).
-#
-# search-light v101 (baked by the Bluefin base, git master) crashes the
-# whole shell with SIGABRT when an app is launched from the search
-# overlay under GNOME 50:
-#   Clutter:ERROR:clutter-actor.c:1989:clutter_actor_real_unrealize:
-#     assertion failed: (!clutter_actor_is_mapped (self))
-#   JS stack: extension.js:755 (_release_ui) -> 495 (hide) -> 1012
-# _release_ui() remove_child()s the entry while the overlay is still
-# mapped; Clutter 18's stricter unrealize asserts abort. Reproduced on
-# the reference host (coredump 2026-06-10 22:31, journal-verified); on
-# Wayland this kills the session and trips GNOME's crash protection
-# (disable-user-extensions=true). Upstream has similar open reports
-# (icedman/search-light #82, #133) and no fix as of v101.
-#
-# One-line mitigation: hide() (= unmap) the entry before detaching it,
-# so the remove_child never runs on a mapped actor. Visually
-# imperceptible (one frame before the fade). Idempotent + soft-fail:
-# if Bluefin bumps search-light and the code changes, we log and move
-# on rather than failing the build — the patch is a mitigation, not a
-# load-bearing feature.
-SEARCH_LIGHT_EXT="${EXT_DIR}/search-light@icedman.github.com/extension.js"
-if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
-  if grep -q 'this._entry.hide(); // margine: unmap before detach' "$SEARCH_LIGHT_EXT"; then
-    log "search-light unrealize patch already present"
-  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-# Only the _release_ui() occurrence (the crash site), NOT the show-path one.
-old = """  _release_ui() {
-    if (this._entry) {
-      if (this._entry.get_parent()) {
-        this._entry.get_parent().remove_child(this._entry);"""
-new = """  _release_ui() {
-    if (this._entry) {
-      if (this._entry.get_parent()) {
-        this._entry.hide(); // margine: unmap before detach (Clutter 18 unrealize assert)
-        this._entry.get_parent().remove_child(this._entry);"""
-if old not in s:
-    sys.exit(1)
-open(p, "w").write(s.replace(old, new, 1))
-PYEOF
-  then
-    log "search-light: applied unrealize-while-mapped mitigation (_release_ui)"
-  else
-    # HARD FAIL (was a soft WARN until 2026-06-12). The mitigation is
-    # load-bearing: without it, launching an app from the overlay
-    # SIGABRTs the whole shell (Wayland = session gone). A soft-fail
-    # here means shipping a crasher and finding out from a user — if
-    # upstream changes the code, the build must stop until the patch
-    # is re-evaluated. Belt+braces: build.yml Layer A also asserts the
-    # patch marker on the final image.
-    log "ERROR: search-light _release_ui pattern not found (upstream changed?) — refusing to ship unpatched"
-    exit 1
-  fi
-else
-  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# Downstream patch #2: search-light press-gesture SIGABRT (2026-06-13).
-#
-# Clicking the panel button crashes the whole shell under GNOME 50:
-#   Clutter:ERROR:clutter-gesture.c:544:set_state:
-#     assertion failed: (new_state == CLUTTER_GESTURE_STATE_POSSIBLE)
-#   #  clutter_press_gesture_point_began -> clutter_gesture_handle_event
-# The 'button-press-event' handler calls _toggle_search_light() -> show()
-# SYNCHRONOUSLY inside the Clutter 18 press gesture; show() reparents the
-# entry/search actors, grabs key focus and connects global stage events,
-# which corrupts the in-flight gesture's state machine. The next gesture
-# point event then asserts and SIGABRTs. On Wayland that kills the session
-# and, after a couple of crashes, GNOME trips safe-mode (all extensions
-# off). Reproduced on the reference host (coredump 2026-06-13 14:28,
-# journal-verified). This is the "show-path" sibling of patch #1 above,
-# which only covered the app-launch (_release_ui) path.
-#
-# Mitigation: defer the toggle out of the gesture's call stack with
-# GLib.idle_add (GLib + Clutter are already imported), so the press
-# gesture finishes cleanly before any actor surgery runs. Imperceptible
-# (one idle tick). Same hard-fail-if-pattern-missing contract as #1: this
-# crash is load-bearing (it ends the session), so a future upstream rename
-# must stop the build, not ship a crasher. Layer A asserts the marker too.
-if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
-  if grep -q 'margine: defer the toggle out of the' "$SEARCH_LIGHT_EXT"; then
-    log "search-light press-gesture patch already present"
-  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """    this._indicator.connectObject(
-      'button-press-event',
-      this._toggle_search_light.bind(this),
-      this,
-    );"""
-new = """    this._indicator.connectObject(
-      'button-press-event',
-      () => {
-        // margine: defer the toggle out of the Clutter 18 press-gesture
-        // handler. Running show()/actor-reparent synchronously here
-        // corrupts the gesture state machine and SIGABRTs the session.
-        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-          this._toggle_search_light();
-          return GLib.SOURCE_REMOVE;
-        });
-        return Clutter.EVENT_STOP;
-      },
-      this,
-    );"""
-if old not in s:
-    sys.exit(1)
-open(p, "w").write(s.replace(old, new, 1))
-PYEOF
-  then
-    log "search-light: applied press-gesture mitigation (deferred button-press toggle)"
-  else
-    log "ERROR: search-light button-press connectObject pattern not found (upstream changed?) — refusing to ship unpatched"
-    exit 1
-  fi
-else
-  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# Downstream patch #3: search-light hide() re-entrancy SIGABRT (2026-06-13).
-#
-# Pressing the search shortcut (e.g. Super+Space) crashes the whole shell:
-#   clutter_actor_set_mapped: assertion '!CLUTTER_ACTOR_IN_MAP_UNMAP' failed
-#   Clutter:ERROR clutter-actor.c:1989:clutter_actor_real_unrealize:
-#     assertion failed: (!clutter_actor_is_mapped (self))
-#   JS: _release_ui -> hide -> _release_ui (re-entrant)
-# Root cause (coredump JS stack, 2026-06-13 19:00): hide() -> _release_ui()
-# -> this._entry.hide() (added by patch #1) flips the stage key-focus, which
-# fires _onKeyFocusChanged -> this.hide() AGAIN, re-entering _release_ui()
-# while the first teardown is still mid-unmap -> remove_child on an actor in
-# the MAP_UNMAP state aborts. This is a DISTINCT crash from #1 (detach order)
-# and #2 (press gesture); it is reached from the keyboard accelerator path,
-# which #2's button-press deferral does not cover.
-#
-# Fix: a re-entrancy guard on hide() so the recursive hide() (from the
-# focus change during _release_ui) is a no-op and teardown runs exactly
-# once. The guard is cleared right after the synchronous teardown so a
-# later real hide() still works and an exception in the async fade can't
-# wedge it. Load-bearing (the crash ends the session) -> hard-fail if the
-# upstream shape changed; Layer A asserts the marker on the final image.
-if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
-  if grep -q 'margine: re-entrancy guard' "$SEARCH_LIGHT_EXT"; then
-    log "search-light hide() re-entrancy guard already present"
-  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  hide() {
-    if (this._isDraggingIcon()) {
-      return;
-    }
-
-    this._release_ui();
-    this._remove_events();"""
-new = """  hide() {
-    if (this._isDraggingIcon()) {
-      return;
-    }
-    // margine: re-entrancy guard. _release_ui() hides the entry, which
-    // flips stage key-focus -> _onKeyFocusChanged -> hide() again, re-
-    // entering teardown mid-unmap -> Clutter unrealize-while-mapped
-    // SIGABRT (clutter_actor_real_unrealize). Make the re-entrant hide()
-    // a no-op so teardown runs exactly once.
-    if (this._hiding) {
-      return;
-    }
-    this._hiding = true;
-
-    this._release_ui();
-    this._remove_events();
-    this._hiding = false;"""
-if old not in s:
-    sys.exit(1)
-open(p, "w").write(s.replace(old, new, 1))
-PYEOF
-  then
-    log "search-light: applied hide() re-entrancy guard"
-  else
-    log "ERROR: search-light hide() pattern not found (upstream changed?) — refusing to ship unpatched"
-    exit 1
-  fi
-else
-  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# Downstream patch #4: defer ALL show/hide triggers off input/gesture context
-# (holistic fix for the GNOME 50 / Clutter 18 session crashes, 2026-06-14).
-#
-# Patches #1/#2/#3 fixed three specific crash paths, but a FOURTH remained:
-# the keyboard shortcut (Super+Space) runs _toggle_search_light -> show()/
-# _acquire_ui() which reparents (add_child/remove_child) and grabs key focus
-# SYNCHRONOUSLY while a Clutter press gesture is in flight on the stage:
-#   clutter-gesture.c:544 set_state: assertion (new_state == POSSIBLE)
-#   clutter_press_gesture_point_began <- clutter_stage_process_event
-# Root theme across all four coredumps: search-light mutates the actor tree
-# synchronously inside event/gesture/signal handlers, from many triggers
-# (panel button [deferred by #2], the two keyboard accelerators, and the
-# notify::key-focus / Escape / in-fullscreen-changed hide handlers).
-#
-# Holistic fix: defer every EVENT-CONTEXT entry into show()/hide() by ONE
-# GLib idle tick, so the actor surgery runs off the gesture FSM and outside
-# input dispatch — neither set_state nor unrealize-while-mapped can fire.
-# show()/hide()/_toggle_search_light/_visible are left BYTE-FOR-BYTE unchanged
-# (no new state machine -> the overlay can never get stuck shown/hidden);
-# only the five callers are wrapped. Load-bearing (each crash ends the
-# session) -> hard-fail if any of the five 'old' strings is missing; Layer A
-# asserts the marker on the final image.
-if [[ -f "$SEARCH_LIGHT_EXT" ]]; then
-  if grep -q 'margine: defer off input/gesture context' "$SEARCH_LIGHT_EXT"; then
-    log "search-light input-context deferral already present"
-  elif python3 - "$SEARCH_LIGHT_EXT" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-M = "// margine: defer off input/gesture context (Clutter 18 set_state / unrealize)"
-subs = [
-    ("      this.accel.listenFor(shortcut, this._toggle_search_light.bind(this));",
-     "      this.accel.listenFor(shortcut, () => {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this._toggle_search_light();\n          return GLib.SOURCE_REMOVE;\n        });\n      });" % M),
-    ("      this.accel2.listenFor(shortcut, this._toggle_search_light.bind(this));",
-     "      this.accel2.listenFor(shortcut, () => {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this._toggle_search_light();\n          return GLib.SOURCE_REMOVE;\n        });\n      });" % M),
-    ("        this._hidePopups();\n      }\n\n      this.hide();",
-     "        this._hidePopups();\n      }\n\n      %s\n      GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n        this.hide();\n        return GLib.SOURCE_REMOVE;\n      });" % M),
-    ("      if (evt.get_key_symbol() === Clutter.KEY_Escape) {\n        this.hide();\n        return Clutter.EVENT_STOP;",
-     "      if (evt.get_key_symbol() === Clutter.KEY_Escape) {\n        %s\n        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n          this.hide();\n          return GLib.SOURCE_REMOVE;\n        });\n        return Clutter.EVENT_STOP;" % M),
-    ("  _onFullScreen() {\n    this.hide();\n  }",
-     "  _onFullScreen() {\n    %s\n    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {\n      this.hide();\n      return GLib.SOURCE_REMOVE;\n    });\n  }" % M),
-]
-for old, new in subs:
-    if old not in s:
-        sys.exit(1)
-    s = s.replace(old, new, 1)
-open(p, "w").write(s)
-PYEOF
-  then
-    log "search-light: deferred all show/hide triggers off input/gesture context"
-  else
-    log "ERROR: search-light trigger patterns not found (upstream changed?) — refusing to ship unpatched"
-    exit 1
-  fi
-else
-  log "ERROR: search-light extension.js not found — the patch target is gone, refusing to guess"
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
 # Downstream patch: o-tiling toggle is SESSION-ONLY (2026-06-15).
 #
 # o-tiling's toggle-tiling keybinding (Super+Shift+t -> ext.toggle_tiling())
@@ -558,10 +319,10 @@ fi
 # auto_tile_on(false) — it uses them itself on its own enable path
 # (extension.js:2574-2575). Point the keybinding at them so the toggle is
 # SESSION-ONLY: every login starts at the Margine default (tiled), and the
-# chord floats/tiles for the current session with no dconf drift. Same hard-
-# fail-if-pattern-missing contract as the search-light patches above —
-# o-tiling is a core Margine feature, so a future upstream rename must STOP
-# the build for re-evaluation, never silently ship the foot-gun.
+# chord floats/tiles for the current session with no dconf drift. Hard-fails
+# the build if the upstream pattern changes — o-tiling is a core Margine
+# feature, so a future upstream rename must STOP the build for re-evaluation,
+# never silently ship the foot-gun.
 OTILING_EXT="${EXT_DIR}/o-tiling@oliwebd.github.com/extension.js"
 if [[ -f "$OTILING_EXT" ]]; then
   if grep -q 'margine: session-only toggle' "$OTILING_EXT"; then

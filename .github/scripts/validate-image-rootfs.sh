@@ -48,18 +48,13 @@ if grep -Eiq '<image[[:space:]>]|data:image/' "$ROOTFS/usr/share/icons/Adwaita/s
   echo "::error::A.2 start-here-symbolic.svg embeds a raster image; GTK4 symbolic icons require path/circle/rect primitives"; fail=1
 fi
 
-# A.3 — Every baked extension installed system-wide (9 enabled by default +
-# blur-my-shell, which is installed-but-not-enabled-by-default — kept so a
-# user can re-enable it with the smooth STATIC defaults in
-# dconf/05-margine-blur-my-shell; dropped from the enabled set 2026-06-16 for
-# 120Hz-iGPU jank + upstream bugs).
-# (search-light is likewise NOT enabled by Margine — GNOME-native search
-# replaces it — but it stays installed by Bluefin and patched by us; its
-# presence + crash patches are still asserted by A.3.ter below.)
+# A.3 — Every baked, enabled-by-default extension installed system-wide.
+# (blur-my-shell, search-light and logomenu were REMOVED from the image
+# entirely on 2026-06-16 — see build-margine-extensions.sh — so they're
+# intentionally absent and not checked here.)
 for uuid in \
   appindicatorsupport@rgcjonas.gmail.com \
   bazaar-integration@kolunmi.github.io \
-  blur-my-shell@aunetx \
   dash-to-dock@micxgx.gmail.com \
   gradia-integration@alexandervanhee.github.io \
   gsconnect@andyholmes.github.io \
@@ -136,10 +131,8 @@ grep -qxF 'Icon=margine-documentation' "$ROOTFS/usr/share/applications/margine-d
 DCONF_DIR="$ROOTFS/etc/dconf/db/distro.d"
 for keyfile in \
   01-margine-dash-to-dock \
-  02-margine-search-light \
   03-margine-o-tiling \
   04-margine-tilingshell \
-  05-margine-blur-my-shell \
   06-margine-caffeine \
   07-margine-custom-keybindings; do
   check_file "etc/dconf/db/distro.d/$keyfile" "A.3.bis"
@@ -149,23 +142,11 @@ if grep -qE '^\[org\.gnome\.shell\.extensions\.' "$ROOTFS/usr/share/glib-2.0/sch
 fi
 grep -qxF 'system-db:distro' "$ROOTFS/etc/dconf/profile/user" || { echo "::error::A.3.bis /etc/dconf/profile/user lacks system-db:distro"; fail=1; }
 grep -qxF '[org/gnome/shell/extensions/dash-to-dock]' "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock dconf section missing"; fail=1; }
-grep -qxF '[org/gnome/shell/extensions/search-light]' "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light dconf section missing"; fail=1; }
 grep -qxF '[org/gnome/shell/extensions/o-tiling]' "$DCONF_DIR/03-margine-o-tiling" || { echo "::error::A.3.bis o-tiling dconf section missing"; fail=1; }
 
-# A.3.ter — downstream patches + branding must land on the FINAL
-# image (added 2026-06-12 after the search-light mitigation nearly
-# shipped unapplied: the build script's soft-fail and a 2-day-old
-# staged deployment hid it). These assert OUTCOMES, independent of
-# how the build scripts behave.
-SL_EXT="$ROOTFS/usr/share/gnome-shell/extensions/search-light@icedman.github.com/extension.js"
-grep -q 'margine: unmap before detach' "$SL_EXT" \
-  || { echo "::error::A.3.ter search-light unrealize mitigation NOT present in the image"; fail=1; }
-grep -q 'margine: defer the toggle out of the' "$SL_EXT" \
-  || { echo "::error::A.3.ter search-light press-gesture mitigation NOT present in the image"; fail=1; }
-grep -q 'margine: re-entrancy guard' "$SL_EXT" \
-  || { echo "::error::A.3.ter search-light hide() re-entrancy guard NOT present in the image"; fail=1; }
-grep -q 'margine: defer off input/gesture context' "$SL_EXT" \
-  || { echo "::error::A.3.ter search-light input-context deferral (vector #4) NOT present in the image"; fail=1; }
+# A.3.ter — downstream patches + branding must land on the FINAL image
+# (added 2026-06-12). These assert OUTCOMES, independent of how the build
+# scripts behave.
 # o-tiling session-only toggle (2026-06-16): the toggle-tiling keybinding must
 # NOT persist tile-by-default into the user dconf layer (it would mask the
 # distro default permanently). build-margine-extensions.sh points it at the
@@ -187,25 +168,21 @@ test -x "$ROOTFS/usr/libexec/margine/staged-update-notify" \
   || { echo "::error::A.3.ter staged-update-notify missing"; fail=1; }
 
 # A.3.quater — legacy icon-name compat shims (2026-06-13). adwaita-icon-
-# theme 50 dropped these symbolic names, but the baked o-tiling and
-# search-light extensions still reference them and render the broken-image
-# placeholder without a shim (build-margine-extensions.sh copies the
-# closest Adwaita symbolic under each legacy name). Assert the OUTCOME so
-# a vanished source — which the build only warns about — cannot silently
-# re-introduce the placeholders.
+# theme 50 dropped these symbolic names, but the baked o-tiling extension
+# still references them and renders the broken-image placeholder without a
+# shim (build-margine-extensions.sh copies the closest Adwaita symbolic under
+# each legacy name). Assert the OUTCOME so a vanished source — which the build
+# only warns about — cannot silently re-introduce the placeholders.
 ICON_ACT="$ROOTFS/usr/share/icons/hicolor/scalable/actions"
-for ic in view-quilt-symbolic view-compact-symbolic border-all-symbolic search-symbolic; do
+for ic in view-quilt-symbolic view-compact-symbolic border-all-symbolic; do
   test -s "$ICON_ACT/${ic}.svg" \
     || { echo "::error::A.3.quater icon shim ${ic}.svg missing/empty — baked extensions will show placeholder icons"; fail=1; }
 done
 
-# search-light rounded-corners daniel default: border-radius=7.0
-# (the value is an INDEX 0-7 into the extension's px table, not
-# pixels — 7 = 32px max rounding; the old 30 was out of range and
-# silently ignored. See #94.)
-grep -qE "^border-radius=7" "$DCONF_DIR/02-margine-search-light" || { echo "::error::A.3.bis search-light border-radius!=7 — daniel default lost"; fail=1; }
-# dash-to-dock background customisation present (cosmetic regression sentinel)
-grep -qE "^running-indicator-style='DOTS'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock running-indicator-style sentinel missing"; fail=1; }
+# dash-to-dock cosmetic block present (regression sentinel). Pin a STABLE key
+# (transparency-mode), not a volatile cosmetic value, so adjusting a default
+# (e.g. running-indicator-style) never false-fails the build.
+grep -qE "^transparency-mode='DYNAMIC'" "$DCONF_DIR/01-margine-dash-to-dock" || { echo "::error::A.3.bis dash-to-dock cosmetic block sentinel missing"; fail=1; }
 
 # A.3.quinquies — keybinding conflict resolution (2026-06-14). o-tiling's
 # UPSTREAM keybinding defaults shadow GNOME-native + Margine custom shortcuts.

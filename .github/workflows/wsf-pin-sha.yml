@@ -7,9 +7,11 @@ name: Fix WSF sha pin
 # `sha256sum -c`. This recomputes WSF_SHA256 on the Renovate branch right
 # after the version bump, so the PR is mergeable as-is.
 #
-# Runs only on Renovate branches that touch the WSF section. The commit is
-# made with GITHUB_TOKEN, which by design does not re-trigger workflows, so
-# there is no loop.
+# Runs only on Renovate branches that touch the WSF section. The hash is
+# committed back via the GraphQL API (createCommitOnBranch) so the commit is
+# VERIFIED / GitHub-signed — main requires signed commits, and a plain
+# `git commit` from the runner is unsigned and would block the PR. Like a
+# GITHUB_TOKEN push, an API commit does not re-trigger workflows (no loop).
 
 on:
   push:
@@ -36,6 +38,8 @@ jobs:
           ref: ${{ github.ref_name }}
 
       - name: Recompute WSF_SHA256 to match WSF_VERSION
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           f=build_files/45-wsf/install.sh
@@ -53,8 +57,22 @@ jobs:
             exit 0
           fi
           sed -i "s/^WSF_SHA256=.*/WSF_SHA256=${new}/" "$f"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "wsf: sync WSF_SHA256 for ${ver}"
-          git push
-          echo "Updated WSF_SHA256 -> ${new} for ${ver}"
+          # Commit the recomputed hash as a VERIFIED commit via the GraphQL API
+          # (github-actions[bot], GitHub-signed) so the Renovate branch passes
+          # main's require-signed-commits rule and the PR merges without a bypass.
+          gh api graphql -f query='
+            mutation ($repo:String!, $branch:String!, $msg:String!, $path:String!, $contents:Base64String!, $oid:GitObjectID!) {
+              createCommitOnBranch(input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                message: { headline: $msg },
+                fileChanges: { additions: [{ path: $path, contents: $contents }] },
+                expectedHeadOid: $oid
+              }) { commit { oid url } }
+            }' \
+            -f repo="${GITHUB_REPOSITORY}" \
+            -f branch="${GITHUB_REF_NAME}" \
+            -f msg="wsf: sync WSF_SHA256 for ${ver}" \
+            -f path="$f" \
+            -f contents="$(base64 -w0 "$f")" \
+            -f oid="$(git rev-parse HEAD)"
+          echo "Committed WSF_SHA256 -> ${new} for ${ver} (verified API commit)"

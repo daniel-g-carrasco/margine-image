@@ -53,8 +53,8 @@ base:
         source: copr:bieszczaders/kernel-cachyos
       terminal:
         action: inherit Bluefin default (Ptyxis); no override
-      branding_extensions_disabled:
-        - logomenu@aryan_k  # only true branding ext; Bazaar+Gradia are functional and stay enabled
+      branding_extensions_removed:
+        - logomenu@aryan_k  # removed from the image entirely (2026-06-16); Bazaar+Gradia are functional and stay enabled
       tiling_extension:
         action: install-user-extensions --apply (Tiling Shell from EGO)
       configure_user_state:
@@ -342,7 +342,6 @@ host_packages:
       - gnome-tweaks
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
-      - gnome-shell-extension-blur-my-shell
       - gnome-shell-extension-dash-to-dock
       - gnome-shell-extension-gsconnect
       - gnome-shell-extension-workspace-indicator
@@ -638,77 +637,6 @@ gnome:
       running-indicator-style: DEFAULT
       apply-custom-theme: false
       hot-keys: false
-    # ------------------------------------------------------------------
-    # Blur My Shell — cosmetic-only defaults captured 2026-06-02 from
-    # daniel's VM, narrowed 2026-06-03 to the cosmetic surface (blur
-    # radius/brightness, transparency, per-surface pipeline assignment).
-    # Source of truth: margine-image build_files/build.sh
-    # zz1-margine.gschema.override; this YAML mirrors it for
-    # configure-gnome-appearance's user-state re-apply.
-    #
-    # Explicitly NOT declared (and why — same reasoning as the gschema):
-    #   * pipelines / rounded-blur-found / settings-version — extension
-    #     internal state.
-    #   * blur-my-shell.hidetopbar.compatibility — not cosmetic
-    #     (interop toggle with another extension).
-    # ------------------------------------------------------------------
-    org.gnome.shell.extensions.blur-my-shell.appfolder:
-      brightness: 0.4
-      sigma: 70
-    org.gnome.shell.extensions.blur-my-shell.applications:
-      pipeline: 'pipeline_default'
-    org.gnome.shell.extensions.blur-my-shell.coverflow-alt-tab:
-      pipeline: 'pipeline_default'
-    org.gnome.shell.extensions.blur-my-shell.dash-to-dock:
-      blur: true
-      brightness: 0.4
-      pipeline: 'pipeline_default_rounded'
-      sigma: 70
-      static-blur: true
-      style-dash-to-dock: 0
-      unblur-in-overview: true
-    org.gnome.shell.extensions.blur-my-shell.dash-to-panel:
-      blur-original-panel: true
-    org.gnome.shell.extensions.blur-my-shell.lockscreen:
-      pipeline: 'pipeline_default'
-    org.gnome.shell.extensions.blur-my-shell.overview:
-      pipeline: 'pipeline_default'
-    org.gnome.shell.extensions.blur-my-shell.panel:
-      brightness: 0.4
-      corner-radius: 0
-      override-background: true
-      pipeline: 'pipeline_default'
-      sigma: 70
-      static-blur: false
-      unblur-in-overview: true
-    org.gnome.shell.extensions.blur-my-shell.screenshot:
-      pipeline: 'pipeline_default'
-    org.gnome.shell.extensions.blur-my-shell.window-list:
-      brightness: 0.4
-      sigma: 70
-    # org.gnome.shell.extensions.tilingshell — removed 2026-06-02
-    # along with the user_install entry. o-tiling has its own
-    # schema (no comparable per-key surface to declare here yet).
-    # ------------------------------------------------------------------
-    # Search Light — cosmetic-only (dark background scrim + blur tuning).
-    # Popup sizing, monitor selection, keybind, font-size, animation
-    # speed, and border-radius are deliberately left at extension
-    # defaults so the popup adapts to the user's hardware and
-    # accessibility settings rather than being frozen.
-    # ------------------------------------------------------------------
-    # Search Light — Margine baseline captured 2026-06-03 from daniel's
-    # VM. border-radius is deliberately NOT declared so the popup uses
-    # the system GNOME default and adapts to theme changes. blur keys
-    # are also not declared — blur-background stays off (rendering
-    # glitches in search-light's blur), making blur-sigma /
-    # blur-brightness operational no-ops.
-    org.gnome.shell.extensions.search-light:
-      animation-speed: 100.0
-      background-color: '(0.0, 0.0, 0.0, 0.75)'
-      blur-background: false
-      shortcut-search: ['<Super>space']
-      use-animations: true
-      window-effect: 0
     org.gnome.shell.extensions.just-perfection:
       note: >
         Just Perfection lets you trim shell elements (top-bar menus,
@@ -742,19 +670,14 @@ gnome:
       - dash-to-dock@micxgx.gmail.com
       - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
-      # blur-my-shell intentionally NOT enabled (2026-06-16) — its dynamic
-      # per-frame Gaussian blur janked the 120Hz HiDPI iGPU (its own
-      # transitions AND o-tiling animations) and it carries 3 unfixed-upstream
-      # GNOME-50 bugs. Still installed (Bluefin) so a user can re-enable it
-      # (the dconf defaults are the smooth STATIC config), but it must NOT be
-      # in this enable: list — configure-gnome-extensions treats this as the
-      # source of truth and was re-enabling blur on every bootstrap/upgrade
-      # (the "blur keeps coming back" recurrence, fixed 2026-06-16). Keep it
-      # in lockstep with margine-image zz1 enabled-extensions (#167).
-      # search-light intentionally NOT enabled (2026-06-14) — GNOME-native
-      # search replaces it (Super = overview, Super+Space = app-grid). Bluefin's
-      # copy stays installed (and Margine keeps patching it) so it can be
-      # re-enabled, but it doesn't auto-load and carries the GNOME-50 crash class.
+      # blur-my-shell, search-light and logomenu are REMOVED from the image
+      # entirely (2026-06-16, margine-image build-margine-extensions.sh) — not
+      # merely absent from this list. blur janked the 120Hz HiDPI iGPU (its own
+      # transitions AND o-tiling animations) + 3 unfixed GNOME-50 bugs;
+      # search-light is the GNOME-50 crash class (GNOME-native Super /
+      # Super+Space search replaces it); logomenu is branding we don't use.
+      # A user who wants one back installs it from Extensions Manager. Keep this
+      # list in lockstep with margine-image zz1 enabled-extensions.
       # Tiling Shell removed entirely (2026-06-02). o-tiling is the
       # Margine default tiling engine. To A/B compare Tiling Shell,
       # install it from Extensions Manager (EGO ID 7065).
@@ -820,7 +743,11 @@ gnome:
           shadowed Bluefin's copy — see "Extension search-light already
           installed in ~/.local — /usr/share will not be loaded" in
           journalctl. Removed from user_install; Bluefin's system copy
-          is the source of truth.
+          was the source of truth. Update 2026-06-16: search-light is now
+          removed from the image system-wide too (build-margine-extensions.sh
+          deletes the Bluefin-baked copy — GNOME-50 crash class, GNOME-native
+          search replaces it). This entry still prunes any stale user-side
+          copy on upgrade.
       - uuid: hide-cursor@elcste.com
         removed_at: 2026-06-03
         reason: >

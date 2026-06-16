@@ -474,9 +474,9 @@ elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   # returned "Schema inesistente". Extension loads but keybindings
   # have no effect. Check each Margine-enabled extension's gsettings
   # schema is registered, when it's reasonable to expect one.
+  # blur-my-shell + search-light were REMOVED from the image (2026-06-16), so
+  # their schemas are intentionally absent — not listed here.
   EXT_SCHEMA_MAP=(
-    "search-light@icedman.github.com=org.gnome.shell.extensions.search-light"
-    "blur-my-shell@aunetx=org.gnome.shell.extensions.blur-my-shell"
     "dash-to-dock@micxgx.gmail.com=org.gnome.shell.extensions.dash-to-dock"
     "caffeine@patapon.info=org.gnome.shell.extensions.caffeine"
     "o-tiling@oliwebd.github.com=org.gnome.shell.extensions.o-tiling"

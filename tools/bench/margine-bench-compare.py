@@ -135,6 +135,20 @@ def main():
     ctx = (f"{meta.get('cpu_model', 'unknown CPU')} · {meta.get('nproc', '?')} CPUs · "
            f"governor {meta.get('governor', '?')} · {meta.get('date', '')}")
 
+    # Thermal comparability: a run that started much hotter throttles and looks
+    # worse, so surface the start temps and warn if they diverge too much.
+    temps = {labels[i]: runs[i].get("temp_start_c") for i in range(len(runs))}
+    have = {k: float(v) for k, v in temps.items() if isinstance(v, (int, float))}
+    if have:
+        ctx += " · start temp " + ", ".join(f"{k} {v:.0f}°C" for k, v in have.items())
+        if len(have) >= 2 and (max(have.values()) - min(have.values())) > 8:
+            spread = max(have.values()) - min(have.values())
+            ctx += (f"  ⚠ Δ{spread:.0f}°C — not thermally comparable; "
+                    f"re-run from a similar cold start")
+            print(f"WARNING: start temps differ by {spread:.0f}°C "
+                  f"({', '.join(f'{k} {v:.0f}°C' for k, v in have.items())}). "
+                  f"For a defensible claim, re-run both from a similar temperature.\n")
+
     _terminal(labels, subj, base, usable, rel, args.title, ctx, skipped)
     md_path = args.out_prefix + ".md"
     svg_path = args.out_prefix + ".svg"

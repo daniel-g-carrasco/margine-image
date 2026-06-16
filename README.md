@@ -38,6 +38,14 @@ tools that make it ready for work from minute one. Built on
 [Install](#install) ·
 [For developers](#for-developers)
 
+<br>
+
+⚡ **Snappier under load** — Margine's signed CachyOS/BORE kernel does **up to ~1.8× the scheduling throughput** and **40–55% lower median / average latency** than the stock Fedora kernel, measured on the **same laptop**.
+
+<img src="tools/bench/results/2026-06-16/perf-kernel.svg" alt="Margine CachyOS/BORE kernel vs stock Fedora kernel — scheduler benchmark chart" width="92%">
+
+<sub>Median of 4 runs · governor performance · scx off · same hardware · <a href="tools/bench/results/2026-06-16/">how this was measured →</a></sub>
+
 </div>
 
 ---

@@ -34,6 +34,23 @@
         '.github/workflows/**.yml',
       ],
     },
+    {
+      // Containerfile base images (bluefin-dx, bluefin, bazzite, our own
+      // margine) track the rolling :stable tag BY DESIGN — Margine rebuilds on
+      // the upstream :stable cadence and stamps base.digest itself. Never let
+      // Renovate pin them to a digest: it freezes nothing useful and produced a
+      // recurring "pin dependencies" branch-update failure on the dashboard.
+      // Tag/version bumps stay enabled; only pin/pinDigest/digest are off.
+      enabled: false,
+      matchManagers: [
+        'dockerfile',
+      ],
+      matchUpdateTypes: [
+        'digest',
+        'pinDigest',
+        'pin',
+      ],
+    },
   ],
   customManagers: [
     {

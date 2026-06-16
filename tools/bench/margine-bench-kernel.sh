@@ -525,9 +525,25 @@ bench_schbench() {
   run_in schbench -m "$HALF_PROC" -t "$HALF_PROC" -r "$BENCH_RUNTIME" >"$sb_out" 2>&1 \
     || warn "schbench returned non-zero (CLI flag mismatch in this build?); see output below."
   cat "$sb_out"
-  # First *.0th pair = wakeup-latency percentiles (the desktop-snappiness metric).
-  res schbench_p50_us "$(parse_metric "$sb_out" 's/.*50\.0th:[[:space:]]*([0-9.]+).*/\1/p')"
-  res schbench_p99_us "$(parse_metric "$sb_out" 's/.*99\.0th:[[:space:]]*([0-9.]+).*/\1/p')"
+  # Capture the FINAL Wakeup-Latency percentiles (steady state at the end of the
+  # run), not the first interval checkpoint. schbench prints several interval
+  # blocks; track the Wakeup sections (ignoring Request/RPS) and keep the last
+  # 50.0th/99.0th seen. The token search tolerates the "* " marker schbench puts
+  # on a percentile line. Wakeup latency = the desktop-snappiness metric.
+  local sb_wake
+  sb_wake="$(awk '
+    /Wakeup Latencies/ { sec = 1; next }
+    /Request Latencies|RPS percentiles|sched delay/ { sec = 0 }
+    sec {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "50.0th:") p50 = $(i + 1)
+        if ($i == "99.0th:") p99 = $(i + 1)
+      }
+    }
+    END { print p50 "\t" p99 }
+  ' "$sb_out")"
+  res schbench_p50_us "$(printf '%s' "$sb_wake" | cut -f1)"
+  res schbench_p99_us "$(printf '%s' "$sb_wake" | cut -f2)"
   hr
 }
 

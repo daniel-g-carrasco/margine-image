@@ -33,6 +33,7 @@ import argparse
 import html
 import json
 import sys
+from statistics import median
 
 # key, human label, unit, lower_is_better, comparison word for the delta phrase
 METRICS = [
@@ -105,17 +106,53 @@ def main():
     if len(args.json) < 2:
         ap.error("need at least two JSON files to compare")
 
-    runs = [load(p) for p in args.json]
-    labels = [r["label"] for r in runs]
+    raw = [load(p) for p in args.json]
 
     # Guard: refuse identity-only runs (a bench that didn't actually execute).
-    # Name the offenders so it's obvious which OS needs re-running.
-    empty = [labels[i] for i, r in enumerate(runs)
+    # Name the offending FILE so it's obvious which run to redo.
+    empty = [args.json[i] for i, r in enumerate(raw)
              if not any(isinstance(r.get(k), (int, float)) for k, *_ in METRICS)]
     if empty:
-        sys.exit("error: these runs have NO benchmark metrics (identity-only — "
-                 "re-run the bench on them, without interrupting it): "
-                 + ", ".join(empty))
+        sys.exit("error: these files have NO benchmark metrics (identity-only — "
+                 "re-run the bench, without interrupting it): " + ", ".join(empty))
+
+    # Aggregate: group runs by label and take the MEDIAN of each metric, so
+    # several runs of the same system collapse into one robust column. Run each
+    # system 2-3× with the SAME BENCH_LABEL for a defensible, throttling-resistant
+    # number; a single run per label still works (median of one = that value).
+    groups, order = {}, []
+    for r in raw:
+        lab = r.get("label", "?")
+        if lab not in groups:
+            groups[lab] = []
+            order.append(lab)
+        groups[lab].append(r)
+
+    runs, variance = [], []
+    for lab in order:
+        g = groups[lab]
+        a = {"label": lab, "n_runs": len(g)}
+        for k in ("cpu_model", "nproc", "governor", "date", "kernel"):
+            a[k] = g[0].get(k)
+        for key, name, *_ in METRICS:
+            vals = [r[key] for r in g if isinstance(r.get(key), (int, float))]
+            if vals:
+                a[key] = median(vals)
+                if len(vals) >= 2 and median(vals) and \
+                        (max(vals) - min(vals)) / median(vals) > 0.25:
+                    rng = (max(vals) - min(vals)) / median(vals) * 100
+                    variance.append(
+                        f"{lab} · {name}: {rng:.0f}% spread across {len(vals)} runs")
+        for tkey in ("temp_start_c", "temp_end_c"):
+            vals = [r[tkey] for r in g if isinstance(r.get(tkey), (int, float))]
+            if vals:
+                a[tkey] = median(vals)
+        runs.append(a)
+    labels = order
+
+    if len(labels) < 2:
+        ap.error("need at least two distinct systems (labels) to compare; got: "
+                 + ", ".join(labels))
 
     subj = (pick(labels, [args.subject.lower()], 0) if args.subject
             else pick(labels, SUBJECT_HINTS, 0))
@@ -157,6 +194,12 @@ def main():
             print(f"WARNING: start temps differ by {spread:.0f}°C "
                   f"({', '.join(f'{k} {v:.0f}°C' for k, v in have.items())}). "
                   f"For a defensible claim, re-run both from a similar temperature.\n")
+
+    if any(r["n_runs"] > 1 for r in runs):
+        ctx += " · median of " + ", ".join(
+            f"{labels[i]} ×{runs[i]['n_runs']}" for i in range(len(runs)))
+    for v in variance:
+        print(f"NOTE — high run-to-run variance: {v} (consider another run)")
 
     _terminal(labels, subj, base, usable, rel, args.title, ctx, skipped)
     md_path = args.out_prefix + ".md"

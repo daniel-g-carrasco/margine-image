@@ -12,7 +12,7 @@ it inside a **throwaway distrobox container** with a dedicated scratch HOME
 reused, never removed).
 
 | Script | What it does | Needs a container? |
-|--------|--------------|--------------------|
+| --- | --- | --- |
 | `margine-bench-kernel.sh` | Characterises the signed CachyOS/BORE kernel: identity (CONFIG_CACHY/SCHED_BORE/SCHED_CLASS_EXT, `sched_bore` tunable, active scx scheduler, signed bootc deployment) + scheduler latency under load (schbench, optional) + throughput (`perf bench sched messaging`/`pipe`) + thread contention (sysbench), all under a stress-ng background load. Can also emit machine-readable JSON (see below). | yes (perf/sysbench/stress-ng) |
 | `margine-bench-compare.py` | Reads two or more `margine-bench-kernel.sh` JSON results and produces a terminal table, a **Markdown table**, and an **SVG bar chart** of relative performance — the "CachyOS vs stock" comparison for the website. Pure stdlib, no pip. | no (just python3) |
 | `margine-bench-gaming.sh` | Captures a game session's FPS/frametime via MangoHud logging and summarises avg / 1% low / 0.1% low FPS + frametime (1% low = mean FPS of the slowest 1% of frames by frametime). Prints the exact Steam launch-options string to use. | no |
@@ -64,8 +64,13 @@ BENCH_LABEL=fedora-stock    BENCH_JSON_OUT=fedora.json   ./margine-bench-kernel.
 
 Tips for numbers you can defend as a claim: plug in the laptop, governor on
 `performance`, close other apps, and run each a few times (`BENCH_RUNTIME=30`)
-to confirm they're stable. Same kernel build, same hardware — the only variable
-between Bluefin DX and Margine is the kernel itself, which is the cleanest A/B.
+to confirm they're stable. **Let the machine cool to a similar idle temperature
+before each run** — the script records the start (cold) and end (under-load) CPU
+temperature, warns if you start above ~60 °C or throttle above ~90 °C, and
+`margine-bench-compare` flags two runs that started more than ~8 °C apart as not
+thermally comparable. Same kernel build, same hardware, similar start temp — the
+only variable between Bluefin DX and Margine is then the kernel itself, which is
+the cleanest A/B.
 
 **2. Generate the comparison + chart:**
 

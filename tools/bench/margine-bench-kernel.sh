@@ -99,6 +99,32 @@ bad()  { printf '  %s[FAIL]%s %s\n'   "$C_RED" "$C_RST" "$*"; }
 info() { printf '  %s\n' "$*"; }
 kv()   { printf '  %-28s %s\n' "$1" "$2"; }
 
+# read_cpu_temp_c — best-effort current CPU temperature in °C (one decimal),
+# printed to stdout; returns non-zero if no sensor is readable. Prefers a real
+# CPU-package sensor (AMD k10temp/zenpower, Intel coretemp), then falls back to
+# the x86_pkg_temp / acpitz thermal zones. Pure /sys read, no tools, no mutation.
+read_cpu_temp_c() {
+  local want h n z
+  for want in k10temp zenpower coretemp; do
+    for h in /sys/class/hwmon/hwmon*; do
+      [[ -r "$h/name" ]] || continue
+      n="$(cat "$h/name" 2>/dev/null || true)"
+      if [[ "$n" == "$want" && -r "$h/temp1_input" ]]; then
+        awk '{printf "%.1f", $1/1000}' "$h/temp1_input" 2>/dev/null && return 0
+      fi
+    done
+  done
+  for want in x86_pkg_temp acpitz; do
+    for z in /sys/class/thermal/thermal_zone*; do
+      [[ -r "$z/type" && -r "$z/temp" ]] || continue
+      if [[ "$(cat "$z/type" 2>/dev/null || true)" == "$want" ]]; then
+        awk '{printf "%.1f", $1/1000}' "$z/temp" 2>/dev/null && return 0
+      fi
+    done
+  done
+  return 1
+}
+
 # ----------------------------------------------------------------------------
 # 1. KERNEL / SCHEDULER IDENTITY (pure host read, no mutation)
 # ----------------------------------------------------------------------------
@@ -216,8 +242,15 @@ identity_report() {
     kv "Memory" "$(free -h | awk '/^Mem:/ {print $3" used / "$2" total"}')"
   fi
   kv "Load average" "$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo n/a)"
+  local temp_start; temp_start="$(read_cpu_temp_c || true)"
+  if [[ -n "$temp_start" ]]; then
+    kv "CPU temp (start)" "${temp_start} °C"
+  else
+    info "CPU temp sensor not readable — thermal context will be omitted."
+  fi
 
   # ---- Structured metadata for the optional JSON output --------------------
+  res temp_start_c "$temp_start"
   res label    "${BENCH_LABEL:-$krel}"
   res kernel   "$krel"
   res hostname "$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || echo unknown)"
@@ -701,6 +734,10 @@ main() {
   bench_perf_pipe
   bench_sysbench
 
+  # End-of-run CPU temp (still under sustained load ≈ peak) — records the
+  # thermal envelope and lets us flag throttling that would skew the numbers.
+  res temp_end_c "$(read_cpu_temp_c || true)"
+
   # Stop load before the summary so the load-average reading settles.
   stop_background_load
 
@@ -709,6 +746,17 @@ main() {
   info "BORE:     $( [[ "$(cat /proc/sys/kernel/sched_bore 2>/dev/null || echo 0)" == 1 ]] && echo 'active' || echo 'inactive/unknown' )"
   if [[ -r /sys/kernel/sched_ext/state ]]; then
     info "scx:      $(cat /sys/kernel/sched_ext/state 2>/dev/null || echo unknown)"
+  fi
+  local _ts="${RESULTS[temp_start_c]:-}" _te="${RESULTS[temp_end_c]:-}"
+  if [[ -n "$_ts" ]]; then
+    info "CPU temp: start ${_ts} °C${_te:+, end ${_te} °C (under load)}"
+    if awk -v s="$_ts" 'BEGIN{exit !(s+0>=60)}'; then
+      warn "Start temp >=60 °C — let the machine cool for a comparable cold start."
+    fi
+    if [[ -n "$_te" ]] && awk -v e="$_te" 'BEGIN{exit !(e+0>=90)}'; then
+      warn "End temp >=90 °C — possible thermal throttling; numbers may be conservative."
+    fi
+    info "(Compare runs only when both machines START from a similar temperature.)"
   fi
   info ""
   info "How to read the numbers:"

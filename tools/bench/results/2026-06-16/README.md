@@ -8,7 +8,7 @@ kernel**, plus the published chart.
 
 ## Conditions
 
-- **Hardware:** AMD Ryzen 5 7640U w/ Radeon 760M (12 threads), laptop, on AC.
+- **Hardware:** Framework Laptop 13 (AMD Ryzen 7040 Series — Ryzen 5 7640U / Radeon 760M, 12 threads), on AC. The exact board generation is inferable from the CPU.
 - **Governor:** `performance`. sched_ext (scx) schedulers: **off** (stock BORE).
 - **Method:** the *same* `margine-bench-kernel.sh` on the *same* laptop, switching
   ostree deployments — Margine vs `ghcr.io/ublue-os/bluefin-dx:stable` — so the

@@ -2,8 +2,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520" font-family="Inter,Segoe UI,sans-serif">
 <rect width="1100" height="520" fill="#0d0f12"/>
 <text x="60" y="28" fill="#f2f2f2" font-size="20" font-weight="700">Margine kernel vs stock Fedora &#8212; same laptop, median of runs</text>
-<text x="60" y="46" fill="#9aa0a6" font-size="12">AMD Ryzen 5 7640U w/ Radeon 760M Graphics &#183; 12 CPUs &#183; governor performance &#183; 2026-06-16T23:07:27+02:00 &#183; start temp margine-cachyos 54&#176;C, bluefin-dx 52&#176;C</text>
-<text x="60" y="62" fill="#9aa0a6" font-size="12">median of margine-cachyos &#215;3, bluefin-dx &#215;4</text>
+<text x="60" y="46" fill="#9aa0a6" font-size="12">Framework Laptop 13 (AMD Ryzen 5 7640U, Radeon 760M) &#183; 12 CPUs &#183; governor performance &#183; 2026-06-16T23:07:27+02:00</text>
+<text x="60" y="62" fill="#9aa0a6" font-size="12">start temp margine-cachyos 54&#176;C, bluefin-dx 52&#176;C &#183; median of margine-cachyos &#215;3, bluefin-dx &#215;4</text>
 <line x1="60" y1="315.2" x2="1076" y2="315.2" stroke="#2a2e35" stroke-dasharray="3 4" stroke-width="1"/>
 <text x="52" y="319.2" fill="#9aa0a6" font-size="11" text-anchor="end">0.5&#215;</text>
 <line x1="60" y1="240.3" x2="1076" y2="240.3" stroke="#D97757" stroke-width="1"/>

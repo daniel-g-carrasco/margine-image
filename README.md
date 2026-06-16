@@ -44,7 +44,7 @@ tools that make it ready for work from minute one. Built on
 
 <img src="tools/bench/results/2026-06-16/perf-kernel.svg" alt="Margine CachyOS/BORE kernel vs stock Fedora kernel — scheduler benchmark chart" width="92%">
 
-<sub>Median of 4 runs · governor performance · scx off · same hardware · <a href="tools/bench/results/2026-06-16/">how this was measured →</a></sub>
+<sub>Median of 4 runs · Framework Laptop 13 (Ryzen 5 7640U) · governor performance · scx off · <a href="tools/bench/results/2026-06-16/">how this was measured →</a></sub>
 
 </div>
 

@@ -101,6 +101,8 @@ def main():
     ap.add_argument("--out-prefix", default="margine-bench-compare",
                     help="output path prefix for .svg / .md (default: %(default)s)")
     ap.add_argument("--title", default="Kernel performance — Margine vs stock")
+    ap.add_argument("--machine", help="hardware label for the subtitle "
+                    "(overrides the auto-detected DMI machine / cpu_model)")
     args = ap.parse_args()
 
     if len(args.json) < 2:
@@ -132,7 +134,7 @@ def main():
     for lab in order:
         g = groups[lab]
         a = {"label": lab, "n_runs": len(g)}
-        for k in ("cpu_model", "nproc", "governor", "date", "kernel"):
+        for k in ("cpu_model", "nproc", "governor", "date", "kernel", "machine"):
             a[k] = g[0].get(k)
         for key, name, *_ in METRICS:
             vals = [r[key] for r in g if isinstance(r.get(key), (int, float))]
@@ -178,7 +180,8 @@ def main():
         return (baseval / val) if lower else (val / baseval)
 
     meta = runs[subj]
-    ctx = (f"{meta.get('cpu_model', 'unknown CPU')} · {meta.get('nproc', '?')} CPUs · "
+    hw = args.machine or meta.get("machine") or meta.get("cpu_model", "unknown CPU")
+    ctx = (f"{hw} · {meta.get('nproc', '?')} CPUs · "
            f"governor {meta.get('governor', '?')} · {meta.get('date', '')}")
 
     # Thermal comparability: a run that started much hotter throttles and looks

@@ -1,6 +1,6 @@
 ## Margine kernel vs stock Fedora — same laptop, median of runs
 
-*AMD Ryzen 5 7640U w/ Radeon 760M Graphics · 12 CPUs · governor performance · 2026-06-16T23:07:27+02:00 · start temp margine-cachyos 54°C, bluefin-dx 52°C · median of margine-cachyos ×3, bluefin-dx ×4. Lower is better for latency/time, higher for throughput. Baseline for the deltas is **bluefin-dx**. Each run executed the same `margine-bench-kernel.sh` under a `stress-ng` background load.*
+*Framework Laptop 13 (AMD Ryzen 5 7640U, Radeon 760M) · 12 CPUs · governor performance · 2026-06-16T23:07:27+02:00 · start temp margine-cachyos 54°C, bluefin-dx 52°C · median of margine-cachyos ×3, bluefin-dx ×4. Lower is better for latency/time, higher for throughput. Baseline for the deltas is **bluefin-dx**. Each run executed the same `margine-bench-kernel.sh` under a `stress-ng` background load.*
 
 | Metric | **margine-cachyos** | bluefin-dx | margine-cachyos vs bluefin-dx |
 |---|---|---|---|

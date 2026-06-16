@@ -259,6 +259,12 @@ identity_report() {
   res cachyos  "$( [[ "$krel" == *cachy* ]] && echo 1 || echo 0 )"
   res bore     "$( [[ "$(cat /proc/sys/kernel/sched_bore 2>/dev/null || echo 0)" == 1 ]] && echo 1 || echo 0 )"
   [[ -r /proc/cpuinfo ]] && res cpu_model "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')"
+  # Machine model from DMI (e.g. "Framework Laptop 13 (AMD Ryzen 7040Series)") —
+  # the comparer prefers this over cpu_model for the chart subtitle.
+  [[ -r /sys/class/dmi/id/product_name ]] && res machine "$(printf '%s %s' \
+    "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || true)" \
+    "$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)" \
+    | sed 's/  */ /g; s/^ *//; s/ *$//')"
   [[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]] && \
     res governor "$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
   [[ -r /sys/kernel/sched_ext/state ]] && \

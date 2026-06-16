@@ -270,13 +270,44 @@ def _write_md(path, svg_path, labels, subj, base, usable, rel, title, ctx, skipp
         f.write("\n".join(lines) + "\n")
 
 
+def xt(s):
+    """Escape for XML AND replace every non-ASCII char with a numeric entity, so
+    the SVG is pure ASCII and renders correctly no matter how a viewer guesses
+    the encoding (GitHub inline, browsers, rsvg/magick). Without this, the
+    'x' multiply sign, micro, degree, middot and em-dash show up as mojibake in
+    viewers that assume Latin-1 (which is what a missing encoding declaration
+    leaves them to do)."""
+    return html.escape(str(s)).encode("ascii", "xmlcharrefreplace").decode("ascii")
+
+
+def _wrap(text, maxc):
+    """Greedily wrap a ' . '-separated caption into lines of <= maxc chars."""
+    out, cur = [], ""
+    for seg in text.split(" · "):
+        cand = (cur + " · " + seg) if cur else seg
+        if len(cand) <= maxc or not cur:
+            cur = cand
+        else:
+            out.append(cur)
+            cur = seg
+    if cur:
+        out.append(cur)
+    return out
+
+
 def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
     n_groups, n_series = len(usable), len(labels)
-    pad_l, pad_r, pad_t, pad_b = 60, 24, 70, 130
+    pad_l, pad_r, pad_b = 60, 24, 130
     group_w, bar_gap, group_gap = 46 * n_series, 6, 40
     plot_w = n_groups * group_w + (n_groups - 1) * group_gap
     plot_h = 300
     W = pad_l + plot_w + pad_r
+
+    # Title + wrapped subtitle drive the top padding, so a long caption takes a
+    # second line instead of overflowing the right edge.
+    sub_lines = _wrap(ctx, max(40, int((W - 2 * pad_l) / 6.2)))
+    title_y, sub_y0, sub_step = 28, 46, 16
+    pad_t = sub_y0 + len(sub_lines) * sub_step + 12
     H = pad_t + plot_h + pad_b
 
     rels = [[rel(vals[s], vals[base], lower) for s in range(n_series)]
@@ -289,13 +320,15 @@ def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
     other_iter = iter(COLORS["other"])
     colors = [color_for(labels[i], i == subj, other_iter) for i in range(n_series)]
 
-    s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+    s = ['<?xml version="1.0" encoding="UTF-8"?>',
+         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
          f'viewBox="0 0 {W} {H}" font-family="Inter,Segoe UI,sans-serif">']
     s.append(f'<rect width="{W}" height="{H}" fill="#0d0f12"/>')
-    s.append(f'<text x="{pad_l}" y="30" fill="#f2f2f2" font-size="20" '
-             f'font-weight="700">{html.escape(title)}</text>')
-    s.append(f'<text x="{pad_l}" y="50" fill="#9aa0a6" font-size="12">'
-             f'{html.escape(ctx)}</text>')
+    s.append(f'<text x="{pad_l}" y="{title_y}" fill="#f2f2f2" font-size="20" '
+             f'font-weight="700">{xt(title)}</text>')
+    for i, line in enumerate(sub_lines):
+        s.append(f'<text x="{pad_l}" y="{sub_y0 + i * sub_step}" fill="#9aa0a6" '
+                 f'font-size="12">{xt(line)}</text>')
 
     # gridlines + y labels (relative scale)
     for gv in [0.5, 1.0, 1.5, 2.0]:
@@ -307,7 +340,7 @@ def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
         s.append(f'<line x1="{pad_l}" y1="{yy:.1f}" x2="{pad_l + plot_w}" '
                  f'y2="{yy:.1f}" stroke="{col}"{dash} stroke-width="1"/>')
         s.append(f'<text x="{pad_l - 8}" y="{yy + 4:.1f}" fill="#9aa0a6" '
-                 f'font-size="11" text-anchor="end">{gv:.1f}×</text>')
+                 f'font-size="11" text-anchor="end">{xt(f"{gv:.1f}×")}</text>')
 
     bw = (group_w - (n_series - 1) * bar_gap) / n_series
     for gi, (key, label, unit, lower, word, vals) in enumerate(usable):
@@ -320,7 +353,7 @@ def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
             s.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bw:.1f}" '
                      f'height="{bh:.1f}" rx="3" fill="{colors[si]}"/>')
             s.append(f'<text x="{bx + bw/2:.1f}" y="{by - 5:.1f}" fill="#e8e8e8" '
-                     f'font-size="10" text-anchor="middle">{r:.2f}×</text>')
+                     f'font-size="10" text-anchor="middle">{xt(f"{r:.2f}×")}</text>')
         # metric label (wrapped to two lines)
         cx = gx + group_w / 2
         words = label.split()
@@ -328,12 +361,12 @@ def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
         l1, l2 = " ".join(words[:mid]), " ".join(words[mid:])
         ly = pad_t + plot_h + 18
         s.append(f'<text x="{cx:.1f}" y="{ly}" fill="#c7ccd1" font-size="11" '
-                 f'text-anchor="middle">{html.escape(l1)}</text>')
+                 f'text-anchor="middle">{xt(l1)}</text>')
         if l2:
             s.append(f'<text x="{cx:.1f}" y="{ly + 14}" fill="#c7ccd1" '
-                     f'font-size="11" text-anchor="middle">{html.escape(l2)}</text>')
+                     f'font-size="11" text-anchor="middle">{xt(l2)}</text>')
         s.append(f'<text x="{cx:.1f}" y="{ly + 30}" fill="#7f868d" font-size="9" '
-                 f'text-anchor="middle">({html.escape(unit)})</text>')
+                 f'text-anchor="middle">({xt(unit)})</text>')
 
     # legend
     lx, ly = pad_l, H - 30
@@ -342,10 +375,10 @@ def _write_svg(path, labels, subj, base, usable, rel, title, ctx):
                  f'fill="{colors[si]}"/>')
         lab = labels[si] + ("  (baseline)" if si == base else "")
         s.append(f'<text x="{lx + 18}" y="{ly}" fill="#c7ccd1" font-size="12">'
-                 f'{html.escape(lab)}</text>')
+                 f'{xt(lab)}</text>')
         lx += 30 + (len(lab) * 7)
     s.append(f'<text x="{pad_l}" y="{H - 10}" fill="#7f868d" font-size="10">'
-             f'Higher = better (latency inverted). Baseline = 1.00×.</text>')
+             f'{xt("Higher = better (latency inverted). Baseline = 1.00×.")}</text>')
     s.append("</svg>")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(s) + "\n")

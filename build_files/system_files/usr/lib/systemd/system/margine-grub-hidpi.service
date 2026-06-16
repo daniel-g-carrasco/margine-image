@@ -1,0 +1,20 @@
+[Unit]
+Description=Margine: apply the HiDPI GRUB font + re-render grub.cfg when the baked config changes
+Documentation=https://github.com/daniel-g-carrasco/margine-image
+# The bootloader lives on /boot (+ESP); bootc/bootupd only write it at install,
+# not on image upgrades. This oneshot closes that gap: it renders the image's
+# baked GRUB static config onto /boot whenever it differs (idempotent — a no-op
+# on every boot where nothing changed). Needs /boot mounted; skips itself if the
+# image ships no baked font.
+RequiresMountsFor=/boot
+ConditionPathExists=/usr/lib/bootupd/grub2-static/fonts/margine.pf2
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# Idempotent + self-guarding (grub2-script-check + backup + atomic write); the
+# script no-ops unless the rendered grub.cfg/font would differ from /boot.
+ExecStart=/usr/libexec/margine/grub-hidpi-apply --quiet
+
+[Install]
+WantedBy=multi-user.target

@@ -46,7 +46,10 @@ status() {
   echo "  file: $LOGIN ($(stat -c '%s bytes, mode %a' "$LOGIN" 2>/dev/null))"
   local bak
   bak="$(ls -1t "$LOGIN".margine.bak.* 2>/dev/null | head -1 || true)"
-  [[ -n "$bak" ]] && echo "  backup: $bak (restore with: ujust margine-keyring restore)"
+  # NB: plain `[[ -n "$bak" ]] && echo` would make status() exit non-zero under
+  # `set -e` when there is no backup — use an if so `ujust margine-keyring`
+  # (default action) always exits 0.
+  if [[ -n "$bak" ]]; then echo "  backup: $bak (restore with: ujust margine-keyring restore)"; fi
 }
 
 blank() {

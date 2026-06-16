@@ -1,41 +1,65 @@
 #!/usr/bin/env bash
-# Make the baked HiDPI GRUB font live on an EXISTING install.
+# Apply the baked HiDPI GRUB font + render /boot/grub2/grub.cfg from the image's
+# bootupd static config. Idempotent — re-renders ONLY when the result would
+# differ from what's already on /boot.
 #
-# WHY THIS EXISTS: bootupd renders /boot/grub2/grub.cfg from the image's
-# /usr/lib/bootupd/grub2-static/{grub-static-pre.cfg,configs.d/*,grub-static-
-# efi.cfg} ONLY at OS install time (or `migrate-static-grub-config`). A normal
-# `bootc upgrade` / `rpm-ostree upgrade` does NOT re-render it, and `bootupctl
-# update` only refreshes the EFI binaries — neither rewrites grub.cfg nor
-# copies the font to /boot. So a new font / drop-in shipped in the image never
-# reaches the boot partition until this runs. Fresh installs pick it up at
-# install; existing installs run this once (via `ujust margine-grub-hidpi`).
+# Runs AUTOMATICALLY at boot via margine-grub-hidpi.service (so a new baked
+# GRUB config lands after an image update with no manual step) and on demand
+# via `ujust margine-grub-hidpi`.
 #
-# Idempotent. Reversible: the font/config live in the image (rpm-ostree
-# rollback reverts the rootfs side); re-running this re-renders from whatever
-# image is currently deployed.
+# WHY a per-install step exists at all: the OS image is immutable, but the
+# BOOTLOADER lives on /boot (+ the ESP), which bootc/bootupd write at INSTALL
+# time and do NOT update on `rpm-ostree upgrade` / `bootc upgrade` (bootupd
+# update refreshes only the EFI binaries, never re-renders grub.cfg). So the
+# baked grub.cfg/font never reach /boot on an upgrade by themselves. There is
+# no supported bootupd re-render command — `bootupctl backend install` refuses
+# once /boot/bootupd-state.json exists. So we replicate bootupd's own
+# composition (grub-static-pre.cfg + configs.d/*.cfg, glob-sorted), guarded by
+# grub2-script-check + a backup + atomic write so it can never leave an
+# unbootable grub.cfg.
 set -euo pipefail
+
+QUIET=0; [[ "${1:-}" == "--quiet" ]] && QUIET=1
+say() { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$*"; }
 
 [[ "$(id -u)" -eq 0 ]] || { echo "ERROR: must run as root (use: ujust margine-grub-hidpi)"; exit 1; }
 
-FONT_SRC=/usr/lib/bootupd/grub2-static/fonts/margine.pf2
-if [[ ! -f "$FONT_SRC" ]]; then
-  echo "ERROR: baked GRUB font missing ($FONT_SRC)."
-  echo "       This deployment predates the HiDPI GRUB font — run 'ujust margine-update' first."
-  exit 1
+SRC=/usr/lib/bootupd/grub2-static
+FONT_SRC="$SRC/fonts/margine.pf2"
+FONT_DST=/boot/grub2/fonts/margine.pf2
+CFG=/boot/grub2/grub.cfg
+
+# Image without the baked font (e.g. rolled back below #168) → nothing to do.
+[[ -f "$FONT_SRC" ]] || { say "no baked GRUB font in this image — nothing to do"; exit 0; }
+# Need the static parts + a /boot/grub2 (skip quietly on odd layouts).
+[[ -f "$SRC/grub-static-pre.cfg" && -d "$SRC/configs.d" && -d /boot/grub2 ]] \
+  || { say "bootupd static config or /boot/grub2 not present — skipping"; exit 0; }
+
+# Render exactly as bootupd does for /boot/grub2/grub.cfg: pre + configs.d/*
+# (the shell glob sorts the same way bootupd does). The ESP's
+# grub-static-efi.cfg has no font logic, so we never touch it.
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+cat "$SRC/grub-static-pre.cfg" "$SRC"/configs.d/*.cfg > "$tmp"
+
+# Idempotent fast path (the common case every boot): font already on /boot and
+# grub.cfg already equals the render → nothing to do.
+if [[ -f "$FONT_DST" ]] && cmp -s "$FONT_SRC" "$FONT_DST" && cmp -s "$tmp" "$CFG"; then
+  say "GRUB HiDPI font + grub.cfg already current — nothing to do"
+  exit 0
 fi
 
-# 1) Put the font on /boot, where GRUB ($prefix=/boot/grub2) can loadfont it.
-#    bootupd renders grub.cfg but does NOT ship this font, so copy it ourselves.
-echo "Installing $FONT_SRC -> /boot/grub2/fonts/margine.pf2"
-mkdir -p /boot/grub2/fonts
-install -m0644 "$FONT_SRC" /boot/grub2/fonts/margine.pf2
+# Safety gate: never install a grub.cfg that fails syntax or is missing the
+# load-bearing pieces (BLS menu import + our font).
+grub2-script-check "$tmp" || { echo "ERROR: rendered grub.cfg failed grub2-script-check — refusing to install"; exit 1; }
+grep -q 'blscfg'      "$tmp" || { echo "ERROR: rendered grub.cfg lacks blscfg (no menu entries) — refusing"; exit 1; }
+grep -q 'margine.pf2' "$tmp" || { echo "ERROR: rendered grub.cfg lacks the margine font — refusing"; exit 1; }
 
-# 2) Re-render /boot/grub2/grub.cfg (+ the ESP's grub-static-efi.cfg) from the
-#    current image's static drop-ins. `backend install --with-static-configs`
-#    is the only bootupd path that re-applies configs.d/* after install;
-#    --filesystem /boot lets bootupd discover the backing ESP(s). DEST_ROOT=/
-#    is the running system; src-root defaults to /.
-echo "Re-rendering /boot/grub2/grub.cfg from the image static config..."
-/usr/bin/bootupctl backend install --with-static-configs --filesystem /boot /
+# 1) Font onto /boot (GRUB $prefix=/boot/grub2 at boot).
+install -D -m0644 "$FONT_SRC" "$FONT_DST"
+say "installed $FONT_DST"
 
-echo "Done. Reboot to see the larger boot menu:  systemctl reboot"
+# 2) grub.cfg: back up the current one, then atomically replace.
+[[ -f "$CFG" ]] && cp -a "$CFG" "$CFG.margine.bak"
+install -m0644 "$tmp" "$CFG"
+say "re-rendered $CFG (backup: $CFG.margine.bak)"
+say "Done. The larger boot menu shows on the NEXT reboot."

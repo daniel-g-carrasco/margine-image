@@ -1215,6 +1215,39 @@ fi
 
 It also warns if stock Fedora `kernel-*` RPMs are visible in the deployment, and flags common out-of-tree module packages (nvidia, zfs, vbox) as out-of-policy.
 
+## 3.6 Benchmarking the kernel
+
+The kernel is Margine's one performance-relevant delta from Bluefin DX, so it is the one thing worth measuring — and the only fair way to measure it is to hold everything else constant. The harness lives in `tools/bench/` in the image repo; it is host-side, never baked into the image, and excluded from CI (`tools/**` is in `build.yml`'s `paths-ignore`).
+
+**The harness — `margine-bench-kernel.sh`.** Margine's host has no `dnf`, so the benchmark tools (`perf`, `sysbench`, `stress-ng`, and an optional `schbench` built from git) run inside a throwaway Fedora distrobox with a dedicated scratch `HOME`. This is sound because *a distrobox container shares the host kernel* — the numbers reflect the real booted CachyOS/BORE kernel, not the container's userspace. Four scheduler benchmarks run under a `stress-ng --cpu` background load, because an idle machine tells you nothing about behaviour under use:
+
+| Benchmark | Measures | Note |
+| --- | --- | --- |
+| `schbench` | wakeup-latency percentiles under load | optional, built from kernel.org git in-container; the parser takes the *final* steady-state checkpoint, not the first interval |
+| `perf bench sched pipe` | context-switch round-trip latency + rate | pure userspace, no `perf_event` access needed |
+| `perf bench sched messaging` | many-task messaging throughput | the packaged hackbench stand-in (hackbench is not in Fedora) |
+| `sysbench threads` | throughput + latency under mutex contention | |
+
+With `BENCH_JSON_OUT` set, the run also writes a machine-readable result — the parsed metrics plus identity (kernel, governor, nproc, and the DMI machine model) and *start/end CPU temperature* — and *fails loudly* (a red banner, a non-zero exit, `metrics_collected: 0` in the JSON) if the tools never ran, so an interrupted run cannot silently produce an identity-only file that later looks like a real measurement.
+
+**The method — a deployment-switch A/B.** The comparison runs on *one laptop*: benchmark Margine, then switch ostree deployments and benchmark the baseline, so the *only* variable is the kernel:
+
+```bash
+# on Margine (CachyOS/BORE):
+BENCH_LABEL=margine-cachyos BENCH_JSON_OUT=m.json ./margine-bench-kernel.sh
+# rebase to the stock-kernel baseline, dropping any layered pkgs so depsolve passes:
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/ublue-os/bluefin-dx:stable --uninstall steam …
+# …reboot, benchmark again, then `rpm-ostree rollback` back to Margine.
+```
+
+Same hardware, same userspace, same governor (`performance`), no `scx` scheduler loaded — stock BORE vs stock Fedora EEVDF. The kernel *point* versions differ (each distro's current stable; different trees, not version-matchable), but that gap is bug-fix backports, far too small to explain the deltas.
+
+**The comparer — `margine-bench-compare.py`** (pure stdlib) groups result JSONs by label and reports the *median* of each metric, so several runs collapse into one throttling-resistant column. It refuses identity-only inputs (naming the file), flags any metric that swings more than 25% across runs, warns when two systems' median start temps differ by more than 8 °C (not thermally comparable), and emits an ASCII-safe SVG (numeric XML entities + a UTF-8 declaration, so `×`/`µ`/`°` render in any viewer instead of mojibake) plus a Markdown table.
+
+**Thermal control matters on a thin-and-light.** Under sustained all-core load this hardware hits its ~100 °C limit and throttles — both kernels equally. A hotter *start* throttles sooner and looks worse, so each side is run several times at varied start temperatures and the *median start temp is matched* (the comparer enforces the 8 °C rule). Every run ends at the thermal limit, so the absolute numbers are conservative; the relative gap is fair.
+
+**Result (median of 4, Framework Laptop 13 / AMD Ryzen 5 7640U, 2026-06-16):** CachyOS/BORE does ~1.8× the context-switch throughput, +54% thread throughput, and 40–55% lower median / average scheduling latency than the stock Fedora kernel — at a ~10% cost to *tail* latency (p95/p99). That common-case-for-tail trade is BORE's design, and the fact that it shows up (rather than a clean sweep) is a sign the measurement is honest rather than cherry-picked. Raw per-run data, the chart, and a provenance README are committed under `margine-image` `tools/bench/results/2026-06-16/`; the user-facing write-up is the [Kernel performance](https://margine.the-empty.place/docs/kernel-performance) doc.
+
 ## Alternatives & other distros
 
 Approaches to "which kernel ships in the image", roughly by increasing maintenance cost:

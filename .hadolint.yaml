@@ -1,0 +1,19 @@
+# hadolint config for the Margine bootc Containerfile.
+# Run by the Lint workflow (.github/workflows/lint.yml) over the active
+# ./Containerfile. Containerfile.plan-b-from-bluefin is a dormant fallback
+# and is intentionally not linted.
+#
+# Gate on warning and above: errors + warnings fail CI; info/style are
+# advisory. This catches the things hadolint is actually good at on a bootc
+# image (deprecated syntax, missing `--no-install-recommends`-class flags,
+# shellcheck findings inside RUN blocks) without nagging on the deliberate
+# layer layout below.
+failure-threshold: warning
+
+ignored:
+  # DL3059 "Multiple consecutive RUN instructions. Consider consolidation."
+  # Deliberate here: separate RUN steps keep the long bootc build readable
+  # and cache-friendly, and the image is run through hhd-dev/rechunk after
+  # build — the final OCI layer layout is regenerated regardless of how many
+  # RUN instructions the Containerfile uses, so consolidating buys nothing.
+  - DL3059

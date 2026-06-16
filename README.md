@@ -24,6 +24,7 @@ tools that make it ready for work from minute one. Built on
 <p>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/build.yml?branch=main&label=build&logo=github"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/daniel-g-carrasco/margine-image"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/daniel-g-carrasco/margine-image/badge"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io margine" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://margine.the-empty.place/#install"><img alt="Install" src="https://img.shields.io/badge/install-from%20ISO-D97757"></a>
   <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
@@ -65,7 +66,7 @@ operations.
 | 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
 | ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; ISO installs stage the public key in Anaconda before the first post-install reboot, while rebases use a one-shot service fallback. Secure Boot remains enabled once the MOK is enrolled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
-| 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+H/J/K/L` to move focus, `Super+Return` for the terminal, `Super+E` for Files, `Super+period` for the emoji picker, and `Super+number` for workspaces (the full, conflict-resolved set lives in the keyboard reference). Hide Cursor, Caffeine, Search Light, and the Smile emoji-picker companion are added to the default Bluefin extension set; LogoMenu is disabled. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
+| 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+H/J/K/L` to move focus, `Super+Return` for the terminal, `Super+E` for Files, `Super+period` for the emoji picker, and `Super+number` for workspaces (the full, conflict-resolved set lives in the keyboard reference). Hide Cursor, Caffeine, and the Smile emoji-picker companion are added to the default Bluefin extension set; Blur My Shell, Search Light and LogoMenu are removed. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
 | 🛠 **Creator-tier system tools** | The base image also ships **mangohud** (Vulkan/OpenGL overlay for monitoring CPU/GPU/RAM during DaVinci/Blender renders, OBS recording, ffmpeg encoding), **goverlay** (Qt GUI to configure MangoHud), and **steam-devices** (udev rules for USB game controllers — useful for any creator using a controller as jog wheel / foot pedal). Plus the upstream Bluefin DX set: GameMode, input-remapper, tuned, tuned-ppd. |
 | ⚙️ **Opt-in CPU scheduler picker** | Activities -> **"Margine CPU Scheduler"** opens a Zenity picker populated from `scxctl list`, including an Off entry that stops `scx_loader` and returns to kernel BORE. Right-click quick actions cover shipped schedulers such as `scx_lavd`, `scx_bpfland`, `scx_rusty`, `scx_flash`, `scx_cosmos`, and `scx_rustland`. CLI equivalent: `ujust margine-scheduler <name>`. |
@@ -160,7 +161,7 @@ After the reboot, two more one-time steps:
    this point on the kernel boots normally under Secure Boot and you
    will not see this screen again. Full walkthrough with the exact
    screen-by-screen flow is at
-   <https://margine.the-empty.place/docs/first-boot>.
+   <https://margine.the-empty.place/docs/install-iso>.
 2. Run **`ujust margine-bootstrap`**.
 
 
@@ -230,6 +231,23 @@ margine-validate-atomic-layout
 margine-validate-cachyos-kernel
 ```
 
+### Verify the image signature
+
+Every pushed image is signed with [cosign](https://github.com/sigstore/cosign)
+**by digest**. To verify it (before rebasing, or any time):
+
+```sh
+cosign verify \
+  --key https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/secrets/cosign.pub \
+  ghcr.io/daniel-g-carrasco/margine:stable
+```
+
+A valid signature prints the verified payload and exits `0`; a missing or
+bad signature exits non-zero. The signing public key lives in this repo at
+[`secrets/cosign.pub`](secrets/cosign.pub) (the private half never leaves CI
+— it signs in a separate least-privilege job, see
+[`.github/workflows/build.yml`](.github/workflows/build.yml)).
+
 ## What's inside (technical reference)
 
 <details>
@@ -277,9 +295,10 @@ for the full rationale.
 Pin: `ublue-os/titanoboa@5c457c3d`.
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
-Blur My Shell, Dash to Dock, Gradia Integration, GSConnect (all from
-Bluefin); Search Light, o-tiling, Hide Cursor, Caffeine, and the Smile
-emoji-picker companion (added by Margine).
+Dash to Dock, Gradia Integration, GSConnect (from Bluefin); o-tiling,
+Hide Cursor, Caffeine, and the Smile emoji-picker companion (added by
+Margine). Blur My Shell, Search Light and LogoMenu (Bluefin defaults)
+are removed.
 
 **Preinstalled Flatpak apps**: Zen Browser, Bitwarden, LibreOffice,
 g4music, Smile (emoji picker), GIMP, Inkscape, darktable, Audacity, OBS

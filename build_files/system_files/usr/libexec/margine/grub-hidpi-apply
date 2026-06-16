@@ -20,7 +20,7 @@ set -euo pipefail
 FONT_SRC=/usr/lib/bootupd/grub2-static/fonts/margine.pf2
 if [[ ! -f "$FONT_SRC" ]]; then
   echo "ERROR: baked GRUB font missing ($FONT_SRC)."
-  echo "       This deployment predates the HiDPI GRUB font — run 'bootc upgrade' first."
+  echo "       This deployment predates the HiDPI GRUB font — run 'ujust margine-update' first."
   exit 1
 fi
 

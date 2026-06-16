@@ -69,7 +69,7 @@ operations.
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
 | 🛠 **Creator-tier system tools** | The base image also ships **mangohud** (Vulkan/OpenGL overlay for monitoring CPU/GPU/RAM during DaVinci/Blender renders, OBS recording, ffmpeg encoding), **goverlay** (Qt GUI to configure MangoHud), and **steam-devices** (udev rules for USB game controllers — useful for any creator using a controller as jog wheel / foot pedal). Plus the upstream Bluefin DX set: GameMode, input-remapper, tuned, tuned-ppd. |
 | ⚙️ **Opt-in CPU scheduler picker** | Activities -> **"Margine CPU Scheduler"** opens a Zenity picker populated from `scxctl list`, including an Off entry that stops `scx_loader` and returns to kernel BORE. Right-click quick actions cover shipped schedulers such as `scx_lavd`, `scx_bpfland`, `scx_rusty`, `scx_flash`, `scx_cosmos`, and `scx_rustland`. CLI equivalent: `ujust margine-scheduler <name>`. |
-| 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonPlus**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per `bootc upgrade`. `ujust margine-gaming{,-native}-remove` rolls either variant back. |
+| 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonPlus**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per update (the daily auto-update and `ujust margine-update` both re-apply the layer). `ujust margine-gaming{,-native}-remove` rolls either variant back. |
 | 🤖 **Optional AI workflow** | `ujust margine-ai` installs [**Alpaca**](https://flathub.org/apps/com.jeffser.Alpaca) — a Flatpak GUI for local LLMs that bundles its own Ollama backend, no host install or daemon-running required. Pick a model from inside Alpaca on first launch (recommended starters: `llama3.1:8b` for general use, `qwen2.5-coder:7b` for code, `phi3.5:3.8b` for CPU-only). Power users who want the [RamaLama](https://github.com/containers/ramalama) CLI in a sandbox get instructions printed by the recipe. `ujust margine-ai-remove` undoes it. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
@@ -197,8 +197,9 @@ systemctl reboot
 
 Trade-off: maximum Proton/Wine compatibility (anti-cheat works,
 VR/Steam Link/USB controllers integrate cleanly, Mesa always
-matches the system), at the cost of +30-60s per `bootc upgrade` to
-re-apply the layer. Recommended if you run EAC/BattlEye titles,
+matches the system), at the cost of +30-60s per update (the daily
+auto-update and `ujust margine-update` both re-apply the layer).
+Recommended if you run EAC/BattlEye titles,
 VR headsets, or NVIDIA proprietary + Mesa-git side-by-side.
 
 To remove either:
@@ -211,10 +212,14 @@ systemctl reboot
 
 The result of either is a layered (not ostree-canonical) deployment —
 `rpm-ostree status` will show `LayeredPackages: gamescope vkBasalt`
-(or the larger list for the native variant), and every `bootc
-upgrade` re-applies the layer on top of the new base (~30-60s extra
-for Flatpak variant, ~60-90s for native). The recipe prints the same warning before the
-install prompt.
+(or the larger list for the native variant), and every update
+re-applies the layer on top of the new base (~30-60s extra for the
+Flatpak variant, ~60-90s for native). Update a layered system with the
+daily auto-update or `ujust margine-update` — **not** a raw `bootc
+upgrade`, which refuses a client-layered deployment (`Deployment
+contains local rpm-ostree modifications`); and avoid `rpm-ostree
+reset`, which removes the whole layer. The recipe prints the same
+trade-off warning before the install prompt.
 
 ### Post-install verification
 
@@ -284,10 +289,13 @@ Studio, EasyEffects, Reaper, Apostrophe.
 optional TPM2 auto-unlock via `systemd-cryptenroll`; `cosign`
 signature on the registry image.
 
-**Update orchestration**: `bootc upgrade` daily via `uupd.timer`
-(inherited from Bluefin); `flatpak update`, `brew upgrade`,
-`distrobox upgrade` also orchestrated by `uupd`. Rollback via
-`bootc rollback`.
+**Update orchestration**: daily via `uupd.timer` (inherited from
+Bluefin), which auto-detects the deployment and runs `bootc upgrade`
+(unlayered) or `rpm-ostree upgrade` (when packages are layered, e.g.
+gaming-native) — staged, applied on next reboot. `flatpak update`,
+`brew upgrade`, `distrobox upgrade` also orchestrated by `uupd`. Manual
+update: `ujust margine-update` (same auto-detection). Rollback via the
+boot menu or `bootc rollback`.
 
 **CI workflows** (under `.github/workflows/`):
 - `build.yml` — builds the image, runs Layer A guardrails, publishes

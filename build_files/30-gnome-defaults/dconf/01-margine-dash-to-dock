@@ -1,20 +1,29 @@
 [org/gnome/shell/extensions/dash-to-dock]
 # Anti-collision with Margine's Super+1..0 workspace binds.
 hot-keys=false
-# Cosmetic defaults captured from a reference Margine deployment.
+# Cosmetic defaults captured from Daniel's reference deployment (2026-06-16):
+# fully-transparent fixed bottom dock, 36px icons. Host-specific keys
+# (preferred-monitor / preferred-monitor-by-connector) are deliberately NOT
+# baked — they bind to one machine's outputs.
 animation-time=0.15
-apply-custom-theme=true
+apply-custom-theme=false
 background-color='rgb(40,40,40)'
-background-opacity=0.8
-custom-background-color=true
-custom-theme-shrink=false
+background-opacity=0.0
+custom-background-color=false
+custom-theme-shrink=true
 customize-alphas=true
+dance-urgent-applications=false
 dash-max-icon-size=36
-icon-size-fixed=true
 disable-overview-on-startup=true
 dock-fixed=true
+dock-position='BOTTOM'
+extend-height=false
 force-straight-corner=false
-max-alpha=0.8
-min-alpha=0.5
-running-indicator-style='DOTS'
+height-fraction=0.9
+icon-size-fixed=true
+isolate-locations=true
+max-alpha=0.0
+min-alpha=0.0
+running-indicator-style='DEFAULT'
+show-icons-emblems=true
 transparency-mode='DYNAMIC'

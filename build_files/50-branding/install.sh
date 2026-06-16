@@ -471,17 +471,22 @@ fi
 # GRUB has no DPI scaling, and the old gfxmode-low trick is firmware-dependent
 # (the GOP/VBE must expose the chosen mode or GRUB falls back to native ->
 # tiny glyphs again — which is why every gfxmode iteration was a no-op). A
-# baked LARGE .pf2 is resolution-independent. Generate it from Liberation Mono
-# (present in the base image; DejaVu is not) with an explicit family name so
-# the embedded font name is the stable "Margine Regular 36" that
-# 05_margine-gfxmode.cfg selects via gfxterm_font. Place it under the bootupd
-# static tree: a FRESH install's `bootupctl install --with-static-configs`
-# ships it to /boot automatically; EXISTING installs pull it via
-# `ujust margine-grub-hidpi` (bootupd does NOT re-render the static grub.cfg
-# on `bootc upgrade`).
+# baked LARGE .pf2 is resolution-independent. Generate it from **Noto Sans
+# Mono** (present in the base image: google-noto-sans-mono-vf-fonts) with an
+# explicit family name so the embedded font name is the stable "Margine
+# Regular 36" that 05_margine-gfxmode.cfg selects via gfxterm_font.
+# IMPORTANT — why Noto, not Liberation Mono: GRUB's gfxterm menu border is drawn
+# with box-drawing glyphs (U+2500 block). Liberation Mono LACKS that block, so a
+# font baked from it rendered the menu border as rows of missing-glyph boxes
+# (┌┐└┘─│ → "?"). Noto Sans Mono ships the full U+2500-25FF range, fixing the
+# border. Place the font under the bootupd static tree: a FRESH install's
+# `bootupctl install --with-static-configs` ships it to /boot automatically;
+# EXISTING installs pull it via the margine-grub-hidpi service / ujust recipe
+# (bootupd does NOT re-render the static grub.cfg on `bootc upgrade`).
 log "Baking HiDPI GRUB font (margine.pf2)"
-_grub_ttf=/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf
-[[ -f "$_grub_ttf" ]] || { log "ERROR: $_grub_ttf missing — cannot bake GRUB font"; exit 1; }
+# Variable-font filename carries an axis suffix (NotoSansMono[wght].ttf); glob it.
+_grub_ttf="$(ls /usr/share/fonts/google-noto-vf/NotoSansMono*.ttf 2>/dev/null | head -1)"
+[[ -n "$_grub_ttf" && -f "$_grub_ttf" ]] || { log "ERROR: Noto Sans Mono TTF not found under /usr/share/fonts/google-noto-vf/ — cannot bake GRUB font"; exit 1; }
 command -v grub2-mkfont >/dev/null 2>&1 || { log "ERROR: grub2-mkfont missing — cannot bake GRUB font"; exit 1; }
 install -d -m0755 /usr/lib/bootupd/grub2-static/fonts
 grub2-mkfont -s 36 -n "Margine" \

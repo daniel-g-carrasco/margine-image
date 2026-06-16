@@ -1,12 +1,22 @@
 [org/gnome/shell/extensions/o-tiling]
-active-hint=true
+# Cosmetic defaults captured from Daniel's reference deployment (2026-06-16):
+# tighter gaps, no active-hint border, minimal title-bar chrome.
+active-hint=false
 active-hint-border-radius=14
-active-hint-border-width=4
-gap-inner=4
-gap-outer=4
+active-hint-border-width=3
+active-hint-overlay-enabled=false
+gap-inner=2
+gap-outer=1
 mouse-cursor-follows-active-window=true
+panel-transparency=false
+show-close-button=false
+show-minimize-maximize-buttons=false
+show-title=false
 skip-overview=false
+stacking-with-mouse=false
+theme-consistency-style='default'
 tile-by-default=true
+workspace-switcher-style=false
 
 # --- Keybinding conflict resolution (2026-06-14) ---
 # o-tiling's UPSTREAM keybinding defaults collide with GNOME-native and

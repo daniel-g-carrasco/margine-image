@@ -57,6 +57,12 @@ BENCH_NO_CONTAINER="${BENCH_NO_CONTAINER:-0}"           # 1 = host tools only, n
 BENCH_BUILD_SCHBENCH="${BENCH_BUILD_SCHBENCH:-1}"       # 1 = try to build optional schbench from git
 # Dedicated, throwaway HOME for the container so the host $HOME is never shared.
 BENCH_HOME="${BENCH_HOME:-${XDG_RUNTIME_DIR:-/tmp}/margine-bench-home}"
+# Machine-readable output. When BENCH_JSON_OUT is set, the parsed metrics +
+# identity metadata are written there as JSON (in ADDITION to the human report)
+# so margine-bench-compare can diff several kernels. BENCH_LABEL names the run
+# (e.g. margine-cachyos / bluefin-dx / fedora-stock); defaults to the kernel rel.
+BENCH_JSON_OUT="${BENCH_JSON_OUT:-}"
+BENCH_LABEL="${BENCH_LABEL:-}"
 
 NPROC="$(nproc)"
 HALF_PROC="$(( NPROC > 1 ? NPROC / 2 : 1 ))"
@@ -64,6 +70,16 @@ HALF_PROC="$(( NPROC > 1 ? NPROC / 2 : 1 ))"
 # Runtime state.
 USE_CONTAINER=0    # 1 once we have committed to using the container
 CREATED_BOX=0      # 1 ONLY if this run created the container (gates cleanup)
+
+# Structured results, populated by the bench functions and emitted as JSON at
+# the end when BENCH_JSON_OUT is set. Keys are stable metric identifiers.
+declare -A RESULTS=()
+BENCH_TMPDIR=""    # holds each bench's raw output for parsing; removed on exit
+LAST_BENCH_OUT=""  # path to the most recent bench's captured raw output
+
+# res KEY VALUE — record a structured result (skipped if VALUE is empty, so a
+# bench that didn't run / didn't parse simply leaves the key absent).
+res() { [[ -n "${2:-}" ]] && RESULTS["$1"]="$2"; return 0; }
 
 # ----------------------------------------------------------------------------
 # Pretty printing helpers
@@ -200,6 +216,20 @@ identity_report() {
     kv "Memory" "$(free -h | awk '/^Mem:/ {print $3" used / "$2" total"}')"
   fi
   kv "Load average" "$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo n/a)"
+
+  # ---- Structured metadata for the optional JSON output --------------------
+  res label    "${BENCH_LABEL:-$krel}"
+  res kernel   "$krel"
+  res hostname "$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || echo unknown)"
+  res date     "$(date -Is 2>/dev/null || date)"
+  res nproc    "$NPROC"
+  res cachyos  "$( [[ "$krel" == *cachy* ]] && echo 1 || echo 0 )"
+  res bore     "$( [[ "$(cat /proc/sys/kernel/sched_bore 2>/dev/null || echo 0)" == 1 ]] && echo 1 || echo 0 )"
+  [[ -r /proc/cpuinfo ]] && res cpu_model "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')"
+  [[ -r /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor ]] && \
+    res governor "$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
+  [[ -r /sys/kernel/sched_ext/state ]] && \
+    res scx_state "$(cat /sys/kernel/sched_ext/state 2>/dev/null || echo unknown)"
 }
 
 # ----------------------------------------------------------------------------
@@ -420,7 +450,7 @@ run_bench_filtered() {
   local label="$1" filter="$2"; shift 2
   [[ "${1:-}" == "--" ]] && shift
   local out_file rc=0
-  out_file="$(mktemp)"
+  out_file="$(mktemp -p "${BENCH_TMPDIR:-${TMPDIR:-/tmp}}")"
   # Capture the bench's real exit status; do NOT let a pipeline mask it.
   run_in "$@" >"$out_file" 2>&1 || rc=$?
   if [[ "$rc" -ne 0 ]]; then
@@ -434,9 +464,14 @@ run_bench_filtered() {
     fi
     sed 's/^/      /' "$out_file"
   fi
-  rm -f "$out_file"
+  # Keep the raw output for the caller to parse into RESULTS (cleaned with
+  # BENCH_TMPDIR on exit) instead of deleting it here.
+  LAST_BENCH_OUT="$out_file"
   return 0
 }
+
+# parse_metric FILE SED_EXPR — print the first capture-group-1 match, else empty.
+parse_metric() { sed -nE "$2" "$1" 2>/dev/null | head -1; }
 
 # 4a. schbench (OPTIONAL) — wakeup & request latency under load. This is the
 #     gold-standard scheduler latency metric: how quickly a woken task gets to
@@ -453,8 +488,13 @@ bench_schbench() {
   hr
   # schbench's CLI is broadly stable on -m/-t/-r across recent versions; if a
   # given build differs, we surface a hint rather than aborting.
-  run_in schbench -m "$HALF_PROC" -t "$HALF_PROC" -r "$BENCH_RUNTIME" 2>&1 \
-    || warn "schbench returned non-zero (CLI flag mismatch in this build?); see output above."
+  local sb_out; sb_out="$(mktemp -p "${BENCH_TMPDIR:-${TMPDIR:-/tmp}}")"
+  run_in schbench -m "$HALF_PROC" -t "$HALF_PROC" -r "$BENCH_RUNTIME" >"$sb_out" 2>&1 \
+    || warn "schbench returned non-zero (CLI flag mismatch in this build?); see output below."
+  cat "$sb_out"
+  # First *.0th pair = wakeup-latency percentiles (the desktop-snappiness metric).
+  res schbench_p50_us "$(parse_metric "$sb_out" 's/.*50\.0th:[[:space:]]*([0-9.]+).*/\1/p')"
+  res schbench_p99_us "$(parse_metric "$sb_out" 's/.*99\.0th:[[:space:]]*([0-9.]+).*/\1/p')"
   hr
 }
 
@@ -475,6 +515,8 @@ bench_perf_messaging() {
   run_bench_filtered "perf bench sched messaging" \
     'total|messaging|sec|groups' \
     -- perf bench sched messaging -g "$groups" -l "$loops"
+  res sched_messaging_total_s \
+    "$(parse_metric "$LAST_BENCH_OUT" 's/.*Total time:[[:space:]]*([0-9.]+).*/\1/p')"
   hr
 }
 
@@ -490,6 +532,10 @@ bench_perf_pipe() {
   run_bench_filtered "perf bench sched pipe" \
     'total|ops|usecs|seconds' \
     -- perf bench sched pipe
+  res sched_pipe_usecs_op \
+    "$(parse_metric "$LAST_BENCH_OUT" 's@.*[[:space:]]([0-9.]+)[[:space:]]+usecs/op.*@\1@p')"
+  res sched_pipe_ops_sec \
+    "$(parse_metric "$LAST_BENCH_OUT" 's@.*[[:space:]]([0-9.]+)[[:space:]]+ops/sec.*@\1@p')"
   hr
 }
 
@@ -512,6 +558,14 @@ bench_sysbench() {
     'total time|total number of events|events/s|eps|min:|avg:|max:|95th' \
     -- sysbench threads \
       --threads="$NPROC" --time="$BENCH_RUNTIME" --thread-yields=1000 --thread-locks=8 run
+  res sysbench_events \
+    "$(parse_metric "$LAST_BENCH_OUT" 's/.*total number of events:[[:space:]]*([0-9]+).*/\1/p')"
+  res sysbench_total_time_s \
+    "$(parse_metric "$LAST_BENCH_OUT" 's/.*total time:[[:space:]]*([0-9.]+)s.*/\1/p')"
+  res sysbench_lat_avg_ms \
+    "$(parse_metric "$LAST_BENCH_OUT" 's/.*avg:[[:space:]]*([0-9.]+).*/\1/p')"
+  res sysbench_lat_95th_ms \
+    "$(parse_metric "$LAST_BENCH_OUT" 's/.*95th percentile:[[:space:]]*([0-9.]+).*/\1/p')"
   hr
 }
 
@@ -560,8 +614,48 @@ cleanup() {
   elif [[ "$CREATED_BOX" == "1" ]]; then
     info "Keeping container '$BENCH_BOX' (BENCH_KEEP=1). Scratch HOME: $BENCH_HOME"
   fi
+  # Remove the per-bench raw-output scratch dir (only ever our own mktemp -d).
+  [[ -n "$BENCH_TMPDIR" && -d "$BENCH_TMPDIR" ]] && rm -rf -- "$BENCH_TMPDIR"
 }
 trap cleanup EXIT
+
+# ----------------------------------------------------------------------------
+# Machine-readable output: write RESULTS as JSON so margine-bench-compare can
+# diff several kernels. Uses python3 (present on Fedora/Bluefin/Margine) for
+# correct typing + escaping; degrades to a clean warning if python3 is absent.
+# ----------------------------------------------------------------------------
+emit_json() {
+  [[ -n "$BENCH_JSON_OUT" ]] || return 0
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "BENCH_JSON_OUT set but python3 not found — skipping JSON output."
+    return 0
+  fi
+  local k
+  {
+    printf 'schema\t%s\n' "margine-bench-kernel/1"
+    for k in "${!RESULTS[@]}"; do printf '%s\t%s\n' "$k" "${RESULTS[$k]}"; done
+  } | python3 -c '
+import sys, json
+d = {}
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if "\t" not in line:
+        continue
+    k, v = line.split("\t", 1)
+    try:
+        d[k] = int(v)
+    except ValueError:
+        try:
+            d[k] = float(v)
+        except ValueError:
+            d[k] = v
+with open(sys.argv[1], "w") as f:
+    json.dump(d, f, indent=2, sort_keys=True)
+    f.write("\n")
+' "$BENCH_JSON_OUT" \
+    && ok "Wrote machine-readable results to $BENCH_JSON_OUT (label: ${RESULTS[label]:-?})" \
+    || warn "Failed to write JSON to $BENCH_JSON_OUT"
+}
 
 # ----------------------------------------------------------------------------
 # MAIN
@@ -572,6 +666,9 @@ main() {
   printf 'Margine kernel/scheduler benchmark  —  %s\n' "$(date -Is 2>/dev/null || date)"
   hr
   printf '%s' "$C_RST"
+
+  # Scratch dir for each bench's raw output (parsed into RESULTS, removed on exit).
+  BENCH_TMPDIR="$(mktemp -d 2>/dev/null || true)"
 
   # Always-available identity section (pure host read).
   identity_report
@@ -627,6 +724,9 @@ main() {
   info "Tip: pin the cpufreq governor to 'performance' BEFORE running for the most"
   info "     comparable numbers — but this script intentionally does NOT change it."
   hr
+
+  # Optional machine-readable output for margine-bench-compare.
+  emit_json
 }
 
 main "$@"

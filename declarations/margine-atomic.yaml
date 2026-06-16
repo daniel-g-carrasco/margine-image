@@ -603,28 +603,40 @@ gnome:
       allow-volume-above-100-percent: false
     org.gnome.shell.extensions.dash-to-dock:
       note: >
-        Borrowed from Bluefin's zz0-bluefin-modifications.gschema.override
-        (fixed dock, semi-transparent, dynamic background, app dots).
-        The hot-keys=false override is a keybinding-collision fix
-        (NOT cosmetic): Dash-to-Dock binds Super+1..9 to launch dash
-        slots by default, which collides with Margine's Super+1..0
-        workspace navigation. Disabling the extension's hot-key
-        handler lets configure-gnome-keybindings' workspace binds
-        win cleanly.
+        Captured from Daniel's reference deployment (2026-06-16): a fully-
+        transparent fixed bottom dock, 36px icons, default running indicator.
+        MUST stay in lockstep with margine-image
+        build_files/30-gnome-defaults/dconf/01-margine-dash-to-dock —
+        configure-gnome-appearance --apply writes these to the user's dconf,
+        so a stale value here RESETS the dock on the next margine-bootstrap.
+        Host-specific keys (preferred-monitor / preferred-monitor-by-connector)
+        are deliberately NOT declared — they bind to one machine's outputs.
+        The hot-keys=false override is a keybinding-collision fix (NOT
+        cosmetic): Dash-to-Dock binds Super+1..9 to launch dash slots, which
+        collides with Margine's Super+1..0 workspace navigation; disabling it
+        lets configure-gnome-keybindings' workspace binds win cleanly.
       dock-fixed: true
+      dock-position: BOTTOM
+      extend-height: false
+      height-fraction: 0.9
       force-straight-corner: false
       custom-theme-shrink: true
       disable-overview-on-startup: true
+      isolate-locations: true
       transparency-mode: DYNAMIC
       animation-time: 0.15
       background-color: 'rgb(40,40,40)'
-      background-opacity: 0.8
-      custom-background-color: true
+      background-opacity: 0.0
+      custom-background-color: false
       customize-alphas: true
-      max-alpha: 0.8
-      min-alpha: 0.5
-      running-indicator-style: DOTS
-      apply-custom-theme: true
+      max-alpha: 0.0
+      min-alpha: 0.0
+      dash-max-icon-size: 36
+      icon-size-fixed: true
+      show-icons-emblems: true
+      dance-urgent-applications: false
+      running-indicator-style: DEFAULT
+      apply-custom-theme: false
       hot-keys: false
     # ------------------------------------------------------------------
     # Blur My Shell — cosmetic-only defaults captured 2026-06-02 from

@@ -773,8 +773,43 @@ main() {
   info "     comparable numbers — but this script intentionally does NOT change it."
   hr
 
+  # ---- Guard: did the benchmarks actually RUN? -----------------------------
+  # A run interrupted before the tooling was ready (or one that reused a broken
+  # container left by a previous Ctrl-C) writes an identity-only result that
+  # silently looks "done". Count the core (non-optional) metrics and make an
+  # empty result impossible to miss — including a non-zero exit status.
+  local guard_rc=0 have=0 k
+  local core_keys=(sched_messaging_total_s sched_pipe_usecs_op sched_pipe_ops_sec \
+                   sysbench_events sysbench_total_time_s sysbench_lat_avg_ms \
+                   sysbench_lat_95th_ms)
+  for k in "${core_keys[@]}"; do [[ -n "${RESULTS[$k]:-}" ]] && have=$((have + 1)); done
+  res metrics_collected "$have"
+  res metrics_expected "${#core_keys[@]}"
+
+  if [[ "$have" -eq 0 ]]; then
+    hr
+    bad "NO BENCHMARK METRICS WERE COLLECTED — this result is IDENTITY-ONLY."
+    warn "The benchmarks did not run. Usual causes: no network, an interrupted"
+    warn "previous run left a half-built container, or the container/tools could"
+    warn "not be installed (and the host has no perf/sysbench/stress-ng either)."
+    info "Fix and re-run — and do NOT Ctrl-C it mid-way:"
+    info "    distrobox rm --force ${BENCH_BOX} 2>/dev/null || true"
+    info "    BENCH_LABEL=... BENCH_JSON_OUT=... ${0##*/}"
+    [[ -n "$BENCH_JSON_OUT" ]] && \
+      warn "'${BENCH_JSON_OUT}' has NO metrics — do not use it for a comparison."
+    hr
+    guard_rc=1
+  elif [[ "$have" -lt "${#core_keys[@]}" ]]; then
+    warn "PARTIAL result: only ${have}/${#core_keys[@]} core metrics captured — some"
+    warn "benches were skipped (their tool was unavailable). The comparison will"
+    warn "simply omit the missing rows; re-run if you want the full set."
+  else
+    ok "All ${have}/${#core_keys[@]} core benchmark metrics captured."
+  fi
+
   # Optional machine-readable output for margine-bench-compare.
   emit_json
+  return "$guard_rc"
 }
 
 main "$@"

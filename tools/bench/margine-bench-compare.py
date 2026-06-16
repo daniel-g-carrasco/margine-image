@@ -108,6 +108,15 @@ def main():
     runs = [load(p) for p in args.json]
     labels = [r["label"] for r in runs]
 
+    # Guard: refuse identity-only runs (a bench that didn't actually execute).
+    # Name the offenders so it's obvious which OS needs re-running.
+    empty = [labels[i] for i, r in enumerate(runs)
+             if not any(isinstance(r.get(k), (int, float)) for k, *_ in METRICS)]
+    if empty:
+        sys.exit("error: these runs have NO benchmark metrics (identity-only — "
+                 "re-run the bench on them, without interrupting it): "
+                 + ", ".join(empty))
+
     subj = (pick(labels, [args.subject.lower()], 0) if args.subject
             else pick(labels, SUBJECT_HINTS, 0))
     base = (pick(labels, [args.baseline.lower()], len(runs) - 1) if args.baseline

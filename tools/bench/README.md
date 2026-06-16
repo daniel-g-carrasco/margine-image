@@ -72,6 +72,12 @@ thermally comparable. Same kernel build, same hardware, similar start temp — t
 only variable between Bluefin DX and Margine is then the kernel itself, which is
 the cleanest A/B.
 
+If a run can't reach its tools (no network, an interrupted previous run left a
+broken container, etc.) it now **fails loudly** — a non-zero exit, a red
+`NO BENCHMARK METRICS WERE COLLECTED` banner, and `metrics_collected: 0` in the
+JSON — instead of silently writing a useless identity-only result.
+`margine-bench-compare` likewise refuses an identity-only JSON and names it.
+
 **2. Generate the comparison + chart:**
 
 ```bash

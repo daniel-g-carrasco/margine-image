@@ -727,10 +727,18 @@ gnome:
     enable:
       - appindicatorsupport@rgcjonas.gmail.com
       - bazaar-integration@kolunmi.github.io
-      - blur-my-shell@aunetx
       - dash-to-dock@micxgx.gmail.com
       - gradia-integration@alexandervanhee.github.io
       - gsconnect@andyholmes.github.io
+      # blur-my-shell intentionally NOT enabled (2026-06-16) — its dynamic
+      # per-frame Gaussian blur janked the 120Hz HiDPI iGPU (its own
+      # transitions AND o-tiling animations) and it carries 3 unfixed-upstream
+      # GNOME-50 bugs. Still installed (Bluefin) so a user can re-enable it
+      # (the dconf defaults are the smooth STATIC config), but it must NOT be
+      # in this enable: list — configure-gnome-extensions treats this as the
+      # source of truth and was re-enabling blur on every bootstrap/upgrade
+      # (the "blur keeps coming back" recurrence, fixed 2026-06-16). Keep it
+      # in lockstep with margine-image zz1 enabled-extensions (#167).
       # search-light intentionally NOT enabled (2026-06-14) — GNOME-native
       # search replaces it (Super = overview, Super+Space = app-grid). Bluefin's
       # copy stays installed (and Margine keeps patching it) so it can be

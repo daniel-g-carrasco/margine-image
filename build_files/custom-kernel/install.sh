@@ -168,7 +168,12 @@ ConditionPathExists=!/var/.mok-enrolled
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c '(echo "${MOK_PASSWORD}"; echo "${MOK_PASSWORD}") | mokutil --import "${_mok_cert}"'
+# Skip the import (and thus the redundant MokManager prompt at next reboot) when
+# it's pointless: Secure Boot off → nothing to enroll; or the Margine MOK is
+# already enrolled (e.g. the user enrolled it from the ISO with 'Enroll key from
+# disk' before installing). Only when SB is on AND the key is absent do we stage
+# the import. ExecStartPost still stamps /var/.mok-enrolled so this never re-runs.
+ExecStart=/bin/sh -c 'if mokutil --sb-state 2>/dev/null | grep -qi disabled; then echo "Secure Boot off — no MOK enrollment needed"; elif mokutil --list-enrolled 2>/dev/null | grep -q "Margine MOK Signing Key"; then echo "Margine MOK already enrolled — skipping"; else (echo "${MOK_PASSWORD}"; echo "${MOK_PASSWORD}") | mokutil --import "${_mok_cert}"; fi'
 ExecStartPost=/usr/bin/touch /var/.mok-enrolled
 RemainAfterExit=yes
 

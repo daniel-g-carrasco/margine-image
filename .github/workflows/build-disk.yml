@@ -40,6 +40,11 @@ name: Build disk images
 
 on:
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to build the ISO from: 'stable' = the normal ISO; 'nvidia' = the experimental NVIDIA variant (run build-nvidia.yml first to push :nvidia). NVIDIA ISO publishes as margine-nvidia-iso-<date> and does NOT bump the site's stable date."
+        default: stable
+        type: string
   pull_request:
     # `labeled` included so adding the iso-test label triggers a run
     # immediately (without it, the label did nothing until the next
@@ -276,7 +281,12 @@ jobs:
 
       - name: Prepare environment
         run: |
+          # ISO_TAG selects which published image the live ISO is built from.
+          # Defaults to 'stable' (current behaviour); 'nvidia' builds the
+          # experimental NVIDIA-variant ISO. Empty on non-dispatch triggers.
+          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "${GITHUB_ENV}"
+          echo "ISO_TAG=${ISO_TAG}" >> "${GITHUB_ENV}"
           echo "LIVE_TAG=${IMAGE_REGISTRY,,}/margine-live:ci-run-${{ github.run_id }}" >> "${GITHUB_ENV}"
 
       - name: Mount container storage on a BTRFS loopback
@@ -299,15 +309,15 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
-      - name: Pull base image (margine:stable)
+      - name: Pull base image (margine:${{ env.ISO_TAG }})
         run: |
-          sudo podman pull "${{ env.IMAGE_REGISTRY }}/margine:${{ env.DEFAULT_TAG }}"
+          sudo podman pull "${{ env.IMAGE_REGISTRY }}/margine:${{ env.ISO_TAG }}"
 
       - name: Build margine-live image
         id: live
         run: |
           set -euo pipefail
-          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/margine:${{ env.DEFAULT_TAG }}"
+          BASE_IMAGE="${{ env.IMAGE_REGISTRY }}/margine:${{ env.ISO_TAG }}"
           echo "Building ${LIVE_TAG} from ${BASE_IMAGE}"
           # --cap-add sys_admin + label=disable: build.sh regenerates the
           # initramfs (dracut) and, from Phase 2 on, installs Flatpaks via
@@ -534,9 +544,13 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
           DATE_TAG="$(date -u +%Y%m%d)"
-          IDENTIFIER="${{ matrix.image }}-live-iso-${DATE_TAG}"
-          TITLE="Margine Linux ISO ${DATE_TAG}"
-          DESCRIPTION="Margine live ISO (Titanoboa) — bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+          # Variant-aware identifier: stable -> margine-live-iso-<date> (unchanged);
+          # nvidia -> margine-nvidia-iso-<date>, titled "Margine NVIDIA".
+          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
+          if [[ "$ISO_TAG" == "stable" ]]; then VSLUG="live"; VLABEL=""; else VSLUG="$ISO_TAG"; VLABEL=" ${ISO_TAG^^}"; fi
+          IDENTIFIER="${{ matrix.image }}-${VSLUG}-iso-${DATE_TAG}"
+          TITLE="Margine${VLABEL} Linux ISO ${DATE_TAG}"
+          DESCRIPTION="Margine${VLABEL} live ISO (Titanoboa) — bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
           SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
@@ -663,8 +677,10 @@ jobs:
     #   instead of failing the workflow.
     name: Auto-bump LATEST_ISO_DATE on margine.the-empty.place repo
     needs: publish_ia
-    # PR events skip this step entirely.
-    if: success() && github.event_name != 'pull_request'
+    # PR events skip this step entirely. Only the stable ISO bumps the site's
+    # LATEST_ISO_DATE — the experimental NVIDIA ISO must not move the default
+    # download date (it gets its own constant when it's validated + wired).
+    if: success() && github.event_name != 'pull_request' && (inputs.image_tag == '' || inputs.image_tag == 'stable')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

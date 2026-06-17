@@ -64,7 +64,9 @@ jobs:
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40   # bootc-image-builder ~5min + first-boot ~12-15min + slack
+    timeout-minutes: 60   # bib ~5min + first-boot ~12-15min + slack for a slow apt mirror
+    # (40 -> 60 on 2026-06-17: a 37-min transient apt hang in "Install QEMU"
+    # ate the whole 40-min budget before the boot ran — run 27719837482.)
     permissions:
       contents: read
       packages: write   # needed for the candidate→stable promotion step
@@ -90,11 +92,24 @@ jobs:
 
       - name: Install QEMU + OVMF + tools
         run: |
-          sudo apt-get update -qq
+          # Retry + per-attempt timeout so a transient slow/hung apt mirror
+          # can't silently eat the job budget. A 37-min apt-get install hang
+          # (run 27719837482, 2026-06-17) cancelled the smoke at the 40-min
+          # timeout before the boot even started. timeout kills a hung attempt
+          # at 10min; the retry usually lands on a recovered/different mirror.
+          apt_retry() {
+            for i in 1 2 3; do
+              sudo timeout 600 apt-get "$@" && return 0
+              echo "::warning::apt-get $* failed/timed out (attempt $i); retrying in $((i * 15))s"
+              sleep $((i * 15))
+            done
+            return 1
+          }
+          apt_retry update -qq
           # qemu-utils = qemu-nbd (NOT pulled by qemu-system-x86), parted =
           # partprobe, util-linux = partx — all needed by the Layer C
           # inject-gui-probe nbd partition exposure (2026-06-13 hardening).
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils ovmf swtpm parted util-linux
+          apt_retry install -y -qq qemu-system-x86 qemu-utils ovmf swtpm parted util-linux
           # Verify KVM
           ls -la /dev/kvm || true
           kvm-ok 2>&1 || true

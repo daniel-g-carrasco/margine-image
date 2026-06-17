@@ -10,7 +10,9 @@ name: Build Margine NVIDIA variant (experimental)
 # runs it.
 #
 # Manual ONLY: no push/schedule trigger, no smoke gate, no promotion to
-# :stable. It pushes a clearly-experimental tag (default :nvidia-test). There
+# :stable. It pushes a clearly-experimental tag (default :nvidia — the tag the
+# nvidia ISO build + the site selector consume; pass nvidia-test for throwaway
+# runs). There
 # is NO NVIDIA GPU in CI, so a green run proves only that the kmod COMPILES +
 # SIGNS — it does NOT prove the driver actually drives a real NVIDIA GPU. That
 # must be validated on real hardware before :stable-nvidia is trusted/promoted
@@ -29,8 +31,8 @@ on:
           - nvidia-open
           - nvidia
       tag:
-        description: "image tag to push (experimental)"
-        default: nvidia-test
+        description: "image tag to push (experimental; :nvidia is what the ISO/selector consume)"
+        default: nvidia
         type: string
 
 permissions:

@@ -1,122 +1,313 @@
-#!/usr/bin/env bash
-# Zenity front-end for the Margine sched_ext opt-in flow.
-set -euo pipefail
+#!/usr/bin/gjs -m
+// Margine CPU Scheduler — a GTK4 / libadwaita front-end for the sched_ext
+// (BPF) opt-in flow. Replaces the old Zenity radiolist: same backend
+// contract (scxctl + scx_loader.service, mirrors `ujust margine-scheduler`),
+// but a native GNOME UI that explains, per scheduler, what it is actually
+// good for.
+//
+// Backend contract (kept identical to build_files/60-custom.just):
+//   - `scxctl list`            -> supported schedulers
+//   - `scxctl get`             -> active scheduler ("no scx scheduler running" = off)
+//   - switch on:  pkexec systemctl enable --now scx_loader.service   (root: persistence)
+//                 scxctl <switch|start> --sched NAME                 (user: D-Bus to loader)
+//   - switch off: scxctl stop                                        (user)
+//                 pkexec systemctl disable --now scx_loader.service  (root)
+// Only the systemctl enable/disable needs root; scxctl talks to scx_loader
+// over the system bus as the active user (polkit-mediated), so the apply
+// flow is a single polkit prompt, no terminal.
 
-APP_NAME="Margine CPU Scheduler"
-SERVICE="scx_loader.service"
+import GObject from "gi://GObject";
+import Gio from "gi://Gio";
+import Gtk from "gi://Gtk?version=4.0";
+import Adw from "gi://Adw?version=1";
+import system from "system";
 
-show_error() {
-  local message="$1"
-  if command -v zenity >/dev/null 2>&1; then
-    zenity --error --title="$APP_NAME" --text="$message" || true
-  elif command -v notify-send >/dev/null 2>&1; then
-    notify-send --app-name="$APP_NAME" --icon=dialog-error "$APP_NAME" "$message" || true
-  else
-    printf '%s\n' "$message" >&2
-  fi
+const APP_ID = "org.margineos.SchedulerPicker";
+const SERVICE = "scx_loader.service";
+
+// Honest, practical descriptions for the schedulers we know well. Anything
+// scxctl reports that is not listed here gets the GENERIC note rather than an
+// invented use-case — the scx set grows and we would rather under-claim.
+const META = {
+  lavd: {
+    tag: "Gaming & low latency",
+    blurb:
+      "Latency-Aware Virtual Deadline. Keeps games, real-time audio and the " +
+      "desktop responsive while heavy work runs in the background. Margine's " +
+      "recommended pick for gaming.",
+    star: true,
+  },
+  bpfland: {
+    tag: "Interactive desktop",
+    blurb:
+      "Balances responsiveness and throughput. A strong all-day default — " +
+      "browsers, editors and video calls stay smooth under load.",
+    star: true,
+  },
+  flash: {
+    tag: "Audio & real-time",
+    blurb:
+      "Earliest-deadline-first for predictable latency. Best for pro-audio " +
+      "(DAWs, low-buffer PipeWire/JACK) and other deadline-sensitive work.",
+  },
+  rusty: {
+    tag: "Balanced multi-core",
+    blurb:
+      "General-purpose, multi-domain. A safe balanced choice for mixed " +
+      "workloads on many-core machines — builds, VMs, containers.",
+  },
+  cosmos: {
+    tag: "General purpose",
+    blurb:
+      "Broad workload coverage with sane defaults. A good neutral choice when " +
+      "you are not sure which to pick.",
+  },
+  p2dq: {
+    tag: "Throughput & servers",
+    blurb:
+      "Per-CPU scheduler with two deadline queues. Leans toward throughput and " +
+      "scales well on high core counts and server-style loads.",
+  },
+  tickless: {
+    tag: "Power & virtualization",
+    blurb:
+      "Minimises timer ticks for fewer wakeups — useful for battery life, VM " +
+      "hosts and latency-isolated cores.",
+  },
+  rustland: {
+    tag: "Experimental (userspace)",
+    blurb:
+      "Scheduling logic runs in userspace (Rust). Great for experimenting with " +
+      "sched_ext; not aimed at peak performance.",
+  },
+};
+const GENERIC = {
+  tag: "Experimental",
+  blurb:
+    "An additional sched_ext scheduler from the scx project. Worth a try if you " +
+    "like to experiment — see the scx documentation for specifics.",
+};
+// Friendly-first ordering; any scheduler not named here is appended after.
+const PREFERRED = ["lavd", "bpfland", "flash", "rusty", "cosmos", "p2dq", "tickless", "rustland"];
+
+// Run a command synchronously; return { ok, out } with stdout+stderr merged.
+function run(argv) {
+  try {
+    const proc = Gio.Subprocess.new(
+      argv,
+      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE,
+    );
+    const [, out] = proc.communicate_utf8(null, null);
+    return { ok: proc.get_successful(), out: out ?? "" };
+  } catch (e) {
+    return { ok: false, out: `${e}` };
+  }
 }
 
-if ! command -v zenity >/dev/null 2>&1; then
-  show_error "zenity is not installed, so the scheduler picker cannot open."
-  exit 1
-fi
-
-if ! command -v scxctl >/dev/null 2>&1; then
-  show_error "scxctl is not installed. The scx-scheds package is required."
-  exit 1
-fi
-
-mapfile -t supported < <(scxctl list 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' || true)
-if ((${#supported[@]} == 0)); then
-  show_error "scxctl did not report any supported schedulers."
-  exit 1
-fi
-
-is_supported() {
-  local scheduler="$1"
-  local item
-  for item in "${supported[@]}"; do
-    [[ "$item" == "$scheduler" ]] && return 0
-  done
-  return 1
+function listSchedulers() {
+  const { out } = run(["scxctl", "list"]);
+  const names = [...out.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const ordered = PREFERRED.filter((n) => names.includes(n));
+  for (const n of names) if (!ordered.includes(n)) ordered.push(n);
+  return ordered;
 }
 
-current_scheduler() {
-  local state item
-  state="$(scxctl get 2>/dev/null || true)"
-  if grep -qi 'no scx scheduler running' <<<"$state"; then
-    printf 'off'
-    return
-  fi
-  for item in "${supported[@]}"; do
-    if grep -Eq "(^|[^[:alnum:]_])(scx_)?${item}([^[:alnum:]_]|$)" <<<"$state"; then
-      printf '%s' "$item"
-      return
-    fi
-  done
-  printf 'unknown'
+function activeScheduler(supported) {
+  const { out } = run(["scxctl", "get"]);
+  if (/no scx scheduler running/i.test(out)) return "off";
+  for (const n of supported) {
+    const re = new RegExp(`(^|[^A-Za-z0-9_])(scx_)?${n}([^A-Za-z0-9_]|$)`);
+    if (re.test(out)) return n;
+  }
+  return "unknown";
 }
 
-description_for() {
-  case "$1" in
-    lavd) printf 'Latency-focused desktop and gaming scheduler' ;;
-    bpfland) printf 'Interactive and throughput balance' ;;
-    rusty) printf 'General-purpose scheduler from the Rust scx set' ;;
-    flash) printf 'Low-latency interactive scheduler' ;;
-    cosmos) printf 'General-purpose scheduler with broad workload coverage' ;;
-    rustland) printf 'Rust userspace scheduler from the scx set' ;;
-    *) printf 'Available through scx_loader' ;;
-  esac
+function loaderPersistent() {
+  return run(["systemctl", "is-enabled", SERVICE]).out.trim() === "enabled";
 }
 
-selected="$(current_scheduler)"
-preferred=(lavd bpfland rusty flash cosmos rustland)
-ordered=()
+const SchedulerWindow = GObject.registerClass(
+  class SchedulerWindow extends Adw.ApplicationWindow {
+    _init(app) {
+      super._init({
+        application: app,
+        title: "CPU Scheduler",
+        default_width: 540,
+        default_height: 720,
+        width_request: 360,
+        height_request: 480,
+      });
 
-for item in "${preferred[@]}"; do
-  if is_supported "$item"; then
-    ordered+=("$item")
-  fi
-done
+      this._rows = new Map(); // name -> Gtk.CheckButton
+      this._selected = "off";
 
-for item in "${supported[@]}"; do
-  present=0
-  for existing in "${ordered[@]}"; do
-    [[ "$existing" == "$item" ]] && present=1 && break
-  done
-  ((present == 0)) && ordered+=("$item")
-done
+      this._toasts = new Adw.ToastOverlay();
+      const toolbar = new Adw.ToolbarView();
+      this._toasts.set_child(toolbar);
+      this.set_content(this._toasts);
 
-rows=()
-if [[ "$selected" == "off" ]]; then
-  rows+=(TRUE off "Stop $SERVICE and use the kernel default scheduler")
-else
-  rows+=(FALSE off "Stop $SERVICE and use the kernel default scheduler")
-fi
+      const header = new Adw.HeaderBar();
+      toolbar.add_top_bar(header);
 
-for item in "${ordered[@]}"; do
-  if [[ "$selected" == "$item" ]]; then
-    rows+=(TRUE "$item" "$(description_for "$item")")
-  else
-    rows+=(FALSE "$item" "$(description_for "$item")")
-  fi
-done
+      const refreshBtn = new Gtk.Button({
+        icon_name: "view-refresh-symbolic",
+        tooltip_text: "Re-read the active scheduler",
+      });
+      refreshBtn.connect("clicked", () => this._refresh());
+      header.pack_start(refreshBtn);
 
-choice="$(
-  zenity --list --radiolist \
-    --title="$APP_NAME" \
-    --text="Choose the active sched_ext scheduler." \
-    --width=760 --height=500 \
-    --column="" --column="Scheduler" --column="Notes" \
-    --print-column=2 \
-    "${rows[@]}"
-)" || exit 0
+      this._applyBtn = new Gtk.Button({ label: "Apply" });
+      this._applyBtn.add_css_class("suggested-action");
+      this._applyBtn.connect("clicked", () => this._apply());
+      header.pack_end(this._applyBtn);
 
-[[ -n "$choice" ]] || exit 0
+      // Status banner — what is running right now (sits below the header).
+      this._banner = new Adw.Banner({ revealed: true });
+      toolbar.add_top_bar(this._banner);
 
-if command -v ptyxis >/dev/null 2>&1; then
-  printf -v quoted_choice '%q' "$choice"
-  ptyxis -- bash -lc "ujust margine-scheduler $quoted_choice; echo; read -rp 'Press Enter to close... '"
-else
-  ujust margine-scheduler "$choice"
-fi
+      const page = new Adw.PreferencesPage();
+      toolbar.set_content(page);
+
+      // Intro.
+      const intro = new Adw.PreferencesGroup({
+        description:
+          "Margine runs a signed CachyOS/BORE kernel with pluggable sched_ext " +
+          "(BPF) schedulers. Pick one below for the workload you care about — it " +
+          "applies live, no reboot, and persists across reboots.",
+      });
+      page.add(intro);
+
+      this._group = new Adw.PreferencesGroup({ title: "Scheduler" });
+      page.add(this._group);
+
+      // Footer note.
+      const foot = new Adw.PreferencesGroup();
+      const note = new Adw.ActionRow({
+        title: "Prefer a terminal?",
+        // Plain text: AdwActionRow parses subtitles as Pango markup, so avoid
+        // literal angle brackets (NAME, not <name>).
+        subtitle: "Run “ujust margine-scheduler NAME” — same effect as this app.",
+        subtitle_selectable: true,
+      });
+      note.add_prefix(Gtk.Image.new_from_icon_name("utilities-terminal-symbolic"));
+      foot.add(note);
+      page.add(foot);
+
+      this._populate();
+      this._refresh();
+    }
+
+    _addRow(name, title, tag, blurb, group, star) {
+      const row = new Adw.ActionRow({
+        title: star ? `${title}  ★` : title,
+        subtitle: blurb,
+      });
+      const check = new Gtk.CheckButton({ valign: Gtk.Align.CENTER });
+      if (group) check.set_group(group);
+      check.connect("toggled", () => {
+        if (check.active) this._selected = name;
+      });
+      row.add_prefix(check);
+      if (tag) {
+        const badge = new Gtk.Label({ label: tag, valign: Gtk.Align.CENTER });
+        badge.add_css_class("dim-label");
+        badge.add_css_class("caption");
+        row.add_suffix(badge);
+      }
+      row.set_activatable_widget(check);
+      this._group.add(row);
+      this._rows.set(name, check);
+      return check;
+    }
+
+    _populate() {
+      const supported = listSchedulers();
+
+      // "off" first, and the head of the radio group.
+      this._radioGroup = this._addRow(
+        "off",
+        "Kernel default (BORE)",
+        "Safe default",
+        "Turn sched_ext off and use Margine's built-in CachyOS BORE scheduler — " +
+          "well-rounded and the safe fallback. No BPF scheduler loaded.",
+        null,
+        false,
+      );
+
+      if (supported.length === 0) {
+        this._banner.set_title("scxctl reported no schedulers — is scx-scheds installed?");
+        this._applyBtn.set_sensitive(false);
+        return;
+      }
+
+      for (const name of supported) {
+        const meta = META[name] ?? GENERIC;
+        this._addRow(name, `scx_${name}`, meta.tag, meta.blurb, this._radioGroup, meta.star);
+      }
+    }
+
+    _refresh() {
+      const supported = [...this._rows.keys()].filter((n) => n !== "off");
+      const active = activeScheduler(supported);
+      this._selected = this._rows.has(active) ? active : "off";
+      const check = this._rows.get(this._selected);
+      if (check) check.set_active(true);
+
+      const persistent = loaderPersistent();
+      if (active === "off") {
+        this._banner.set_title("Active: kernel default (BORE) — sched_ext is off");
+      } else if (active === "unknown") {
+        this._banner.set_title("A sched_ext scheduler is running (name not recognised)");
+      } else {
+        this._banner.set_title(
+          `Active: scx_${active}${persistent ? "" : " — not yet persistent across reboots"}`,
+        );
+      }
+    }
+
+    _toast(text) {
+      this._toasts.add_toast(new Adw.Toast({ title: text, timeout: 4 }));
+    }
+
+    _apply() {
+      const name = this._selected;
+      const wasRunning =
+        activeScheduler([...this._rows.keys()].filter((n) => n !== "off")) !== "off";
+      this.set_sensitive(false);
+      this._applyBtn.set_label("Applying…");
+
+      let result;
+      if (name === "off") {
+        run(["scxctl", "stop"]);
+        result = run(["pkexec", "systemctl", "disable", "--now", SERVICE]);
+      } else {
+        result = run(["pkexec", "systemctl", "enable", "--now", SERVICE]);
+        if (result.ok) {
+          const verb = wasRunning ? "switch" : "start";
+          const r2 = run(["scxctl", verb, "--sched", name]);
+          if (!r2.ok) result = r2;
+        }
+      }
+
+      this.set_sensitive(true);
+      this._applyBtn.set_label("Apply");
+      this._refresh();
+
+      if (result.ok) {
+        this._toast(
+          name === "off" ? "Reverted to the kernel default (BORE)" : `Now running scx_${name}`,
+        );
+      } else {
+        const msg = (result.out || "").trim().split("\n").pop() || "operation failed";
+        this._toast(`Could not apply: ${msg}`);
+      }
+    }
+  },
+);
+
+const app = new Adw.Application({ application_id: APP_ID, flags: Gio.ApplicationFlags.FLAGS_NONE });
+app.connect("activate", () => {
+  const win = app.get_active_window() ?? new SchedulerWindow(app);
+  win.present();
+});
+app.run([system.programInvocationName, ...ARGV]);

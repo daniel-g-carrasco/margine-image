@@ -9,6 +9,9 @@ Terminal=false
 Categories=System;
 Keywords=scheduler;sched_ext;scx;cpu;performance;latency;
 StartupNotify=false
+# Matches the GApplication ID the GTK4 picker registers, so the running
+# window associates with this launcher (correct icon/name in the dock).
+StartupWMClass=org.margineos.SchedulerPicker
 
 # Quick-pick scheduler shortcuts in the right-click menu of the
 # launcher icon. User clicks one of these to set the scheduler

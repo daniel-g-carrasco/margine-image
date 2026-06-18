@@ -368,6 +368,14 @@ margine-scheduler MODE="status":
     # here for weeks because this recipe runs without -e. Found by the
     # 2026-06-12 code-quality review, finding A3.)
     ensure_loader() {
+      # scx_loader only restores a scheduler on boot from this config file;
+      # `enable` alone persists the SERVICE, but the choice reverts to BORE
+      # because default_sched is unset. Write it so the pick actually persists
+      # (mirrors the GTK picker). default_mode/default_sched casing is what
+      # scx_loader expects: PascalCase mode, scx_ prefix.
+      sudo install -d -m0755 /etc/scx_loader
+      printf 'default_sched = "scx_%s"\ndefault_mode = "Auto"\n' "$MODE" \
+        | sudo tee /etc/scx_loader/config.toml >/dev/null
       sudo systemctl enable --now "$SERVICE" \
         || { echo "FAILED to enable $SERVICE — scheduler will not persist across reboots."; exit 1; }
     }
@@ -376,6 +384,8 @@ margine-scheduler MODE="status":
       if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
         scxctl stop 2>/dev/null || true
       fi
+      # Drop the boot default too, so a reboot really returns to BORE.
+      sudo rm -f /etc/scx_loader/config.toml
       sudo systemctl disable --now "$SERVICE" \
         || { echo "FAILED to disable $SERVICE — it may restart a scheduler at next boot."; exit 1; }
     }

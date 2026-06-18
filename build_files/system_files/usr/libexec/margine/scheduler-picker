@@ -113,12 +113,18 @@ function listSchedulers() {
 }
 
 // The independent system check: ask scxctl directly what is running.
+// scxctl get prints e.g. "running Lavd in Auto mode" — the name is
+// capitalized and carries no scx_ prefix, so match it case-insensitively.
 function activeScheduler(supported) {
   const { out } = run(["scxctl", "get"]);
-  if (/no scx scheduler running/i.test(out)) return "off";
+  if (!out.trim() || /no scx scheduler running/i.test(out)) return "off";
+  const m = out.match(/running\s+(?:scx[_-])?(\S+)\s+in\b/i);
+  const token = (m ? m[1] : "").toLowerCase();
+  const hit = supported.find((n) => n.toLowerCase() === token);
+  if (hit) return hit;
+  // Fallback: any supported name appearing anywhere (case-insensitive).
   for (const n of supported) {
-    const re = new RegExp(`(^|[^A-Za-z0-9_])(scx_)?${n}([^A-Za-z0-9_]|$)`);
-    if (re.test(out)) return n;
+    if (new RegExp(`(^|[^a-z0-9_])(scx[_-])?${n}([^a-z0-9_]|$)`, "i").test(out)) return n;
   }
   return "unknown";
 }
@@ -144,7 +150,17 @@ const SchedulerWindow = GObject.registerClass(
         height_request: 480,
       });
 
-      this._checks = new Map(); // scheduler name -> Gtk.Image (active tick)
+      this._rows = new Map(); // name -> { row, tick } for active highlighting
+
+      // Themed highlight for the active scheduler row — GTK4 named colors, so
+      // it follows the user's light/dark theme and accent colour.
+      const css = new Gtk.CssProvider();
+      css.load_from_string(".scheduler-active { background-color: alpha(@accent_color, 0.13); }");
+      Gtk.StyleContext.add_provider_for_display(
+        this.get_display(),
+        css,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+      );
 
       this._toasts = new Adw.ToastOverlay();
       const toolbar = new Adw.ToolbarView();
@@ -243,15 +259,20 @@ const SchedulerWindow = GObject.registerClass(
 
       row.connect("activated", () => this._apply(name));
       this._group.add(row);
-      this._checks.set(name, tick);
+      this._rows.set(name, { row, tick });
     }
 
     _refresh() {
-      const supported = [...this._checks.keys()];
+      const supported = [...this._rows.keys()];
       const active = activeScheduler(supported);
       const { active: svc, enabled } = loaderState();
 
-      for (const [name, tick] of this._checks) tick.set_visible(name === active);
+      for (const [name, { row, tick }] of this._rows) {
+        const on = name === active;
+        tick.set_visible(on);
+        if (on) row.add_css_class("scheduler-active");
+        else row.remove_css_class("scheduler-active");
+      }
       this._resetRow.set_sensitive(active !== "off");
 
       this._statusIcon.remove_css_class("success");
@@ -278,7 +299,7 @@ const SchedulerWindow = GObject.registerClass(
     }
 
     _apply(name) {
-      const wasRunning = activeScheduler([...this._checks.keys()]) !== "off";
+      const wasRunning = activeScheduler([...this._rows.keys()]) !== "off";
 
       let result;
       if (name === "off") {

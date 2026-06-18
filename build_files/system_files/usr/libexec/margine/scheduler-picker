@@ -3,7 +3,7 @@
 // (BPF) opt-in flow. Replaces the old Zenity radiolist: same backend
 // contract (scxctl + scx_loader.service, mirrors `ujust margine-scheduler`),
 // but a native GNOME UI that explains, per scheduler, what it is actually
-// good for.
+// good for, and applies on click (direct manipulation, GNOME-style).
 //
 // Backend contract (kept identical to build_files/60-custom.just):
 //   - `scxctl list`            -> supported schedulers
@@ -13,8 +13,8 @@
 //   - switch off: scxctl stop                                        (user)
 //                 pkexec systemctl disable --now scx_loader.service  (root)
 // Only the systemctl enable/disable needs root; scxctl talks to scx_loader
-// over the system bus as the active user (polkit-mediated), so the apply
-// flow is a single polkit prompt, no terminal.
+// over the system bus as the active user (polkit-mediated), so applying is a
+// single polkit prompt, no terminal.
 
 import GObject from "gi://GObject";
 import Gio from "gi://Gio";
@@ -112,6 +112,7 @@ function listSchedulers() {
   return ordered;
 }
 
+// The independent system check: ask scxctl directly what is running.
 function activeScheduler(supported) {
   const { out } = run(["scxctl", "get"]);
   if (/no scx scheduler running/i.test(out)) return "off";
@@ -122,8 +123,13 @@ function activeScheduler(supported) {
   return "unknown";
 }
 
-function loaderPersistent() {
-  return run(["systemctl", "is-enabled", SERVICE]).out.trim() === "enabled";
+// The scx_loader.service state, straight from systemd — the second half of the
+// cross-check (is it running now, and will it persist across reboots).
+function loaderState() {
+  return {
+    active: run(["systemctl", "is-active", SERVICE]).out.trim() || "unknown",
+    enabled: run(["systemctl", "is-enabled", SERVICE]).out.trim() || "unknown",
+  };
 }
 
 const SchedulerWindow = GObject.registerClass(
@@ -132,14 +138,13 @@ const SchedulerWindow = GObject.registerClass(
       super._init({
         application: app,
         title: "CPU Scheduler",
-        default_width: 540,
-        default_height: 720,
+        default_width: 560,
+        default_height: 740,
         width_request: 360,
         height_request: 480,
       });
 
-      this._rows = new Map(); // name -> Gtk.CheckButton
-      this._selected = "off";
+      this._checks = new Map(); // scheduler name -> Gtk.Image (active tick)
 
       this._toasts = new Adw.ToastOverlay();
       const toolbar = new Adw.ToolbarView();
@@ -148,39 +153,46 @@ const SchedulerWindow = GObject.registerClass(
 
       const header = new Adw.HeaderBar();
       toolbar.add_top_bar(header);
-
       const refreshBtn = new Gtk.Button({
         icon_name: "view-refresh-symbolic",
-        tooltip_text: "Re-read the active scheduler",
+        tooltip_text: "Re-check the active scheduler",
       });
       refreshBtn.connect("clicked", () => this._refresh());
-      header.pack_start(refreshBtn);
-
-      this._applyBtn = new Gtk.Button({ label: "Apply" });
-      this._applyBtn.add_css_class("suggested-action");
-      this._applyBtn.connect("clicked", () => this._apply());
-      header.pack_end(this._applyBtn);
-
-      // Status banner — what is running right now (sits below the header).
-      this._banner = new Adw.Banner({ revealed: true });
-      toolbar.add_top_bar(this._banner);
+      header.pack_end(refreshBtn);
 
       const page = new Adw.PreferencesPage();
       toolbar.set_content(page);
 
-      // Intro.
-      const intro = new Adw.PreferencesGroup({
+      // --- "Active now": an independent, live readout from the system itself
+      //     (scxctl + systemd) — the cross-check that your choice took effect,
+      //     plus a one-tap return to the kernel default.
+      const statusGroup = new Adw.PreferencesGroup({ title: "Active now" });
+      page.add(statusGroup);
+
+      this._statusIcon = Gtk.Image.new_from_icon_name("dialog-question-symbolic");
+      this._statusIcon.add_css_class("dim-label");
+      this._statusRow = new Adw.ActionRow({ title: "Checking…", subtitle: "" });
+      this._statusRow.add_prefix(this._statusIcon);
+      statusGroup.add(this._statusRow);
+
+      this._resetRow = new Adw.ButtonRow({
+        title: "Reset to kernel default (BORE)",
+        start_icon_name: "edit-undo-symbolic",
+      });
+      this._resetRow.connect("activated", () => this._apply("off"));
+      statusGroup.add(this._resetRow);
+
+      // --- "Choose a scheduler": tap a row to switch to it (one polkit prompt).
+      this._group = new Adw.PreferencesGroup({
+        title: "Choose a scheduler",
         description:
           "Margine runs a signed CachyOS/BORE kernel with pluggable sched_ext " +
-          "(BPF) schedulers. Pick one below for the workload you care about — it " +
-          "applies live, no reboot, and persists across reboots.",
+          "(BPF) schedulers. Tap one to switch to it — it applies live (no " +
+          "reboot) and persists across reboots.",
       });
-      page.add(intro);
-
-      this._group = new Adw.PreferencesGroup({ title: "Scheduler" });
       page.add(this._group);
 
-      // Footer note.
+      // --- Footer note.
       const foot = new Adw.PreferencesGroup();
       const note = new Adw.ActionRow({
         title: "Prefer a terminal?",
@@ -197,71 +209,67 @@ const SchedulerWindow = GObject.registerClass(
       this._refresh();
     }
 
-    _addRow(name, title, tag, blurb, group, star) {
-      const row = new Adw.ActionRow({
-        title: star ? `${title}  ★` : title,
-        subtitle: blurb,
-      });
-      const check = new Gtk.CheckButton({ valign: Gtk.Align.CENTER });
-      if (group) check.set_group(group);
-      check.connect("toggled", () => {
-        if (check.active) this._selected = name;
-      });
-      row.add_prefix(check);
-      if (tag) {
-        const badge = new Gtk.Label({ label: tag, valign: Gtk.Align.CENTER });
-        badge.add_css_class("dim-label");
-        badge.add_css_class("caption");
-        row.add_suffix(badge);
-      }
-      row.set_activatable_widget(check);
-      this._group.add(row);
-      this._rows.set(name, check);
-      return check;
-    }
-
     _populate() {
       const supported = listSchedulers();
-
-      // "off" first, and the head of the radio group.
-      this._radioGroup = this._addRow(
-        "off",
-        "Kernel default (BORE)",
-        "Safe default",
-        "Turn sched_ext off and use Margine's built-in CachyOS BORE scheduler — " +
-          "well-rounded and the safe fallback. No BPF scheduler loaded.",
-        null,
-        false,
-      );
-
       if (supported.length === 0) {
-        this._banner.set_title("scxctl reported no schedulers — is scx-scheds installed?");
-        this._applyBtn.set_sensitive(false);
+        const empty = new Adw.ActionRow({
+          title: "No schedulers available",
+          subtitle: "scxctl reported nothing — is the scx-scheds package installed?",
+        });
+        this._group.add(empty);
         return;
       }
-
       for (const name of supported) {
         const meta = META[name] ?? GENERIC;
-        this._addRow(name, `scx_${name}`, meta.tag, meta.blurb, this._radioGroup, meta.star);
+        this._addSchedulerRow(name, meta);
       }
+    }
+
+    _addSchedulerRow(name, meta) {
+      const row = new Adw.ActionRow({
+        title: meta.star ? `scx_${name}  ★` : `scx_${name}`,
+        subtitle: meta.blurb,
+        activatable: true,
+      });
+      const badge = new Gtk.Label({ label: meta.tag, valign: Gtk.Align.CENTER });
+      badge.add_css_class("dim-label");
+      badge.add_css_class("caption");
+      row.add_suffix(badge);
+
+      const tick = Gtk.Image.new_from_icon_name("object-select-symbolic");
+      tick.add_css_class("success");
+      tick.set_visible(false);
+      row.add_suffix(tick);
+
+      row.connect("activated", () => this._apply(name));
+      this._group.add(row);
+      this._checks.set(name, tick);
     }
 
     _refresh() {
-      const supported = [...this._rows.keys()].filter((n) => n !== "off");
+      const supported = [...this._checks.keys()];
       const active = activeScheduler(supported);
-      this._selected = this._rows.has(active) ? active : "off";
-      const check = this._rows.get(this._selected);
-      if (check) check.set_active(true);
+      const { active: svc, enabled } = loaderState();
 
-      const persistent = loaderPersistent();
+      for (const [name, tick] of this._checks) tick.set_visible(name === active);
+      this._resetRow.set_sensitive(active !== "off");
+
+      this._statusIcon.remove_css_class("success");
+      this._statusIcon.remove_css_class("dim-label");
       if (active === "off") {
-        this._banner.set_title("Active: kernel default (BORE) — sched_ext is off");
+        this._statusIcon.icon_name = "system-shutdown-symbolic";
+        this._statusIcon.add_css_class("dim-label");
+        this._statusRow.title = "Kernel default (BORE)";
+        this._statusRow.subtitle = `Live check · sched_ext off · ${SERVICE} ${svc}, ${enabled}`;
       } else if (active === "unknown") {
-        this._banner.set_title("A sched_ext scheduler is running (name not recognised)");
+        this._statusIcon.icon_name = "dialog-warning-symbolic";
+        this._statusRow.title = "A scheduler is running";
+        this._statusRow.subtitle = `Live check · name not recognised · ${SERVICE} ${svc}, ${enabled}`;
       } else {
-        this._banner.set_title(
-          `Active: scx_${active}${persistent ? "" : " — not yet persistent across reboots"}`,
-        );
+        this._statusIcon.icon_name = "emblem-ok-symbolic";
+        this._statusIcon.add_css_class("success");
+        this._statusRow.title = `scx_${active}`;
+        this._statusRow.subtitle = `Live check · scxctl reports it running · ${SERVICE} ${svc}, ${enabled}`;
       }
     }
 
@@ -269,12 +277,8 @@ const SchedulerWindow = GObject.registerClass(
       this._toasts.add_toast(new Adw.Toast({ title: text, timeout: 4 }));
     }
 
-    _apply() {
-      const name = this._selected;
-      const wasRunning =
-        activeScheduler([...this._rows.keys()].filter((n) => n !== "off")) !== "off";
-      this.set_sensitive(false);
-      this._applyBtn.set_label("Applying…");
+    _apply(name) {
+      const wasRunning = activeScheduler([...this._checks.keys()]) !== "off";
 
       let result;
       if (name === "off") {
@@ -289,10 +293,7 @@ const SchedulerWindow = GObject.registerClass(
         }
       }
 
-      this.set_sensitive(true);
-      this._applyBtn.set_label("Apply");
       this._refresh();
-
       if (result.ok) {
         this._toast(
           name === "off" ? "Reverted to the kernel default (BORE)" : `Now running scx_${name}`,

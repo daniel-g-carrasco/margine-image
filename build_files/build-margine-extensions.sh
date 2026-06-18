@@ -210,6 +210,7 @@ declare -A ICON_SHIMS=(
   [view-quilt-symbolic]=view-grid-symbolic        # tiling ON  (tiled grid)
   [view-compact-symbolic]=view-restore-symbolic   # tiling OFF (floating/overlap)
   [border-all-symbolic]=checkbox-symbolic         # border width (bordered box)
+  [view-column-symbolic]=view-dual-symbolic       # o-tiling "Columns" preset (absent from Adwaita 50)
 )
 install_legacy_icon_shims() {
   local dst=/usr/share/icons/hicolor/scalable/actions

@@ -7,6 +7,28 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-06-18)
+- **`ujust install-koofr`** (alias `ujust koofr`) — installs the Koofr Desktop
+  sync client natively and rootless from upstream's self-updating tarball into
+  `~/.koofr-dist` (no Flatpak/RPM/Distrobox; never layered, since it
+  auto-updates inside `$HOME`). Autostarts **hidden to the system tray** at
+  login via the binary's `-silent` flag, with `silentStart:true` persisted in
+  `~/.koofr/config.json` as belt-and-suspenders (guarded so it never clobbers a
+  running client); a manual menu launch still opens the window. `remove`
+  uninstalls the three artifacts and kills the process.
+- **`ujust margine-test-vm`** (+ `margine-test-vm-remove`) — throwaway VM to
+  test a Margine ISO on the real secure path: UEFI Secure Boot with Microsoft
+  keys pre-enrolled (so MOK enrollment is exercised) + an emulated TPM 2.0 (for
+  LUKS auto-unlock). Rootless `qemu:///session`; an ISO arg boots a ready VM,
+  no arg defines a clone template.
+- **EasyEffects autostarts headless** — system `/etc/xdg/autostart` entry runs
+  EasyEffects in `--service-mode` (no window) on login.
+
+### Changed (2026-06-18)
+- **Super+arrows now move the focused window** within the o-tiling layout (gaps
+  preserved) via `tile-move-*-global`; the GNOME gapless built-ins that used to
+  eat the chord are cleared. Focus stays on Super+hjkl.
+
 ### Added (2026-06-15)
 - **Safe TPM2-unlock + autologin helpers** — `ujust margine-tpm-unlock`
   (status/enable/disable) and `ujust margine-autologin` (status/on/off).

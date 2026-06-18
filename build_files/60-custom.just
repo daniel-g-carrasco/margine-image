@@ -814,3 +814,60 @@ margine-test-vm-remove NAME="margine-test-template":
     elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
     else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
     echo "Removed '$NAME' (domain + storage + nvram)."
+
+# Install/reinstall Koofr Desktop — native, rootless. Autostarts HIDDEN to the tray at login (-silent); a manual menu launch opens the window. Use `remove` to uninstall.
+[group('Apps')]
+install-koofr ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    DEST="${HOME}/.koofr-dist"
+    MENU="${HOME}/.local/share/applications/koofr.desktop"
+    AUTOSTART="${HOME}/.config/autostart/koofr.desktop"
+    CFG="${HOME}/.koofr/config.json"
+    URL="https://app.koofr.net/dl/apps/linux64"
+
+    if [ "{{ ACTION }}" = "remove" ] || [ "{{ ACTION }}" = "uninstall" ]; then
+      echo "Removing Koofr Desktop…"
+      pkill -f "${DEST}/storage" 2>/dev/null || true
+      rm -rf "${DEST}" "${MENU}" "${AUTOSTART}"
+      echo "Done."; exit 0
+    fi
+
+    echo "Downloading the latest Koofr Desktop client…"
+    TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
+    curl -fL --retry 3 -o "${TMP}/koofr.tar.gz" "${URL}"
+    tar -xzf "${TMP}/koofr.tar.gz" -C "${TMP}"
+
+    # Upstream installer is rootless: copies binaries to ~/.koofr-dist (it also writes .desktop
+    # files, which we overwrite below to make menu vs autostart behaviour deterministic).
+    ( cd "${TMP}/koofr" && printf 'n' | ./installer.sh )
+
+    # Menu launcher: NO flag -> a manual launch opens the window normally.
+    mkdir -p "$(dirname "${MENU}")"
+    printf '%s\n' \
+      '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
+      "Exec=${DEST}/storagegui" 'Terminal=false' 'Type=Application' \
+      "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' > "${MENU}"
+
+    # Autostart: starts HIDDEN to the tray at login (binary's own -silent flag).
+    mkdir -p "$(dirname "${AUTOSTART}")"
+    printf '%s\n' \
+      '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
+      'Comment=Koofr cloud sync (starts minimized to tray)' \
+      "Exec=${DEST}/storagegui -silent" 'Terminal=false' 'Type=Application' \
+      "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' \
+      'X-GNOME-Autostart-enabled=true' > "${AUTOSTART}"
+
+    # Belt-and-suspenders: if a config already exists, also persist Silent start so hidden-start
+    # survives the app regenerating its autostart entry. Skip while running (clobber risk) and
+    # skip if no config yet (the -silent autostart flag already covers a fresh install).
+    if [ -f "${CFG}" ] && ! pgrep -x storagegui >/dev/null 2>&1; then
+      tmp="$(mktemp)"; jq '.silentStart = true' "${CFG}" > "${tmp}" && mv "${tmp}" "${CFG}"
+    fi
+
+    echo; echo "Koofr installed in ${DEST}. Autostart = hidden to tray; menu launch = normal window."
+
+# alias for install-koofr
+[group('Apps')]
+koofr ACTION="install":
+    @ujust install-koofr {{ ACTION }}

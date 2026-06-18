@@ -45,23 +45,6 @@ if [[ -n "${NEW_FILE:-}" ]]; then
   fi
 fi
 
-# Torrent info-hash for the magnet button (re-added 2026-06-18 by request; the
-# site composes the magnet from this + constant trackers + the IA web-seed).
-# ALWAYS set it — even to empty: if IA had not derived the torrent in time the
-# button must HIDE for this release, not advertise the PREVIOUS release's
-# torrent (which would download the wrong ISO).
-if grep -q 'LATEST_ISO_BTIH = "[^"]*"' src/routes/index.tsx; then
-  sed -i "s|LATEST_ISO_BTIH = \"[^\"]*\"|LATEST_ISO_BTIH = \"${NEW_BTIH:-}\"|" \
-    src/routes/index.tsx
-  if [[ -n "${NEW_BTIH:-}" ]]; then
-    echo "Set LATEST_ISO_BTIH = $NEW_BTIH"
-  else
-    echo "::warning::no btih (IA torrent not derived in time) — magnet button hidden this release"
-  fi
-else
-  echo "::warning::LATEST_ISO_BTIH constant not found in site — skipped (renamed?)"
-fi
-
 # If a PR for the same target date already exists on the head branch
 # (re-dispatch on same UTC day), skip — don't churn.
 # Commit the bump straight to main and push — do NOT open a PR.

@@ -464,13 +464,7 @@ jobs:
     outputs:
       identifier: ${{ steps.ia_upload.outputs.identifier }}
       iso_file: ${{ steps.disk.outputs.artifact_basename }}
-      btih: ${{ steps.btih.outputs.btih }}
     steps:
-      - name: Checkout (for .github/scripts)
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
-        with:
-          fetch-depth: 1
-
       - name: Download ISO artifact (${{ matrix.image }})
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -613,27 +607,6 @@ jobs:
           done
           echo "::warning::IA torrent not derived within 20 min — index will use HTTP mirrors only"
 
-      - name: Compute torrent info-hash (btih) for the magnet link
-        id: btih
-        env:
-          IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
-        run: |
-          set -euo pipefail
-          URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
-          if curl -fsSL --max-time 60 "$URL" -o /tmp/iso.torrent; then
-            # Surface a parser failure (vs torrent-not-ready) but do NOT fail the
-            # publish over a magnet — the ISO is already uploaded; the site just
-            # hides the magnet button this run.
-            if BTIH="$(python3 .github/scripts/ia-btih.py /tmp/iso.torrent 2>/tmp/btih.err)"; then
-              echo "btih=$BTIH" >> "$GITHUB_OUTPUT"
-              echo "Computed btih: $BTIH (the site composes the full magnet from it)"
-            else
-              echo "::warning::ia-btih.py failed — magnet hidden this run: $(cat /tmp/btih.err 2>/dev/null)"
-            fi
-          else
-            echo "::warning::IA torrent not fetchable yet — magnet hidden this run"
-          fi
-
       - name: Generate index.html for the IA upload page
         env:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
@@ -762,7 +735,6 @@ jobs:
           GH_TOKEN: ${{ secrets.SITE_BUMP_TOKEN }}
           RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           NEW_FILE: ${{ needs.publish_ia.outputs.iso_file }}
-          NEW_BTIH: ${{ needs.publish_ia.outputs.btih }}
         run: |
           set -euo pipefail
           cd site

@@ -29,6 +29,18 @@ stable release is cut.
   preserved) via `tile-move-*-global`; the GNOME gapless built-ins that used to
   eat the chord are cleared. Focus stays on Super+hjkl.
 
+### Fixed (2026-06-18)
+- **Plymouth graphical boot on fresh installs and in VMs.** Two causes: (1) the
+  bootc/titanoboa ISO didn't set `rhgb quiet`, so fresh installs booted to a
+  text console with the LUKS prompt amid kernel logs — now baked as a kernel arg
+  (`/usr/lib/bootc/kargs.d/10-margine-plymouth.toml`). (2) The generic initramfs
+  pulled amdgpu/qxl/bochs but not `virtio_gpu`, so a guest with *virtio* video
+  had no early DRM device and Plymouth fell back to text — now forced in via
+  `/etc/dracut.conf.d/02-margine-vm-gpu.conf` (`add_drivers+=" virtio_gpu "`).
+  Diagnosed from an installed VM's journal (only `/dev/dri/card1=virtio_gpu`
+  appeared, late; no early `card0`, simpledrm didn't bind). QXL/std-video guests
+  were unaffected. The Plymouth theme itself was never at fault.
+
 ### Added (2026-06-15)
 - **Safe TPM2-unlock + autologin helpers** — `ujust margine-tpm-unlock`
   (status/enable/disable) and `ujust margine-autologin` (status/on/off).

@@ -1,33 +1,46 @@
 #!/usr/bin/gjs -m
 // Margine CPU Scheduler — a GTK4 / libadwaita front-end for the sched_ext
-// (BPF) opt-in flow. Replaces the old Zenity radiolist: same backend
-// contract (scxctl + scx_loader.service, mirrors `ujust margine-scheduler`),
-// but a native GNOME UI that explains, per scheduler, what it is actually
-// good for, and applies on click (direct manipulation, GNOME-style).
+// (BPF) opt-in flow. Native GNOME UI over scxctl + scx_loader that explains,
+// per scheduler, what it is good for, exposes the scx_loader modes, applies on
+// tap, and persists the choice so it actually survives a reboot.
 //
-// Backend contract (kept identical to build_files/60-custom.just):
-//   - `scxctl list`            -> supported schedulers
-//   - `scxctl get`             -> active scheduler ("no scx scheduler running" = off)
-//   - switch on:  pkexec systemctl enable --now scx_loader.service   (root: persistence)
-//                 scxctl <switch|start> --sched NAME                 (user: D-Bus to loader)
-//   - switch off: scxctl stop                                        (user)
-//                 pkexec systemctl disable --now scx_loader.service  (root)
-// Only the systemctl enable/disable needs root; scxctl talks to scx_loader
-// over the system bus as the active user (polkit-mediated), so applying is a
-// single polkit prompt, no terminal.
+// Backend (verified against scxctl 1.1.1 / scx_loader on Margine):
+//   - `scxctl list`                         -> supported schedulers
+//   - `scxctl get`                          -> "running Lavd in Auto mode" / "no scx scheduler running"
+//   - `scxctl start|switch --sched NAME --mode MODE`   (user, D-Bus to loader)
+//   - `scxctl stop`                                     (user)
+//   CLI mode values are lowercase: auto gaming lowlatency powersave server.
+//
+// Persistence (the bit scxctl alone does NOT do): scx_loader only restores a
+// scheduler on boot if /etc/scx_loader/config.toml sets default_sched /
+// default_mode. So Apply also writes that file (PascalCase mode, scx_ prefix)
+// and enables the service; Reset removes it and disables the service. That
+// write + enable is the only privileged step -> one polkit (pkexec) prompt.
 
 import GObject from "gi://GObject";
 import Gio from "gi://Gio";
+import GLib from "gi://GLib";
 import Gtk from "gi://Gtk?version=4.0";
 import Adw from "gi://Adw?version=1";
 import system from "system";
 
 const APP_ID = "org.margineos.SchedulerPicker";
 const SERVICE = "scx_loader.service";
+const CONFIG = "/etc/scx_loader/config.toml";
 
-// Honest, practical descriptions for the schedulers we know well. Anything
-// scxctl reports that is not listed here gets the GENERIC note rather than an
-// invented use-case — the scx set grows and we would rather under-claim.
+// scx_loader modes. cli = scxctl --mode value (lowercase); conf = TOML
+// default_mode value (PascalCase enum); label = UI text.
+const MODES = [
+  { id: "auto", cli: "auto", conf: "Auto", label: "Auto" },
+  { id: "gaming", cli: "gaming", conf: "Gaming", label: "Gaming" },
+  { id: "lowlatency", cli: "lowlatency", conf: "LowLatency", label: "Low latency" },
+  { id: "powersave", cli: "powersave", conf: "PowerSave", label: "Power save" },
+  { id: "server", cli: "server", conf: "Server", label: "Server" },
+];
+const modeById = (id) => MODES.find((m) => m.id === id) || MODES[0];
+
+// Honest, practical descriptions for the schedulers we know well; anything else
+// scxctl reports gets the GENERIC note rather than an invented use-case.
 const META = {
   lavd: {
     tag: "Gaming & low latency",
@@ -87,7 +100,6 @@ const GENERIC = {
     "An additional sched_ext scheduler from the scx project. Worth a try if you " +
     "like to experiment — see the scx documentation for specifics.",
 };
-// Friendly-first ordering; any scheduler not named here is appended after.
 const PREFERRED = ["lavd", "bpfland", "flash", "rusty", "cosmos", "p2dq", "tickless", "rustland"];
 
 // Run a command synchronously; return { ok, out } with stdout+stderr merged.
@@ -112,30 +124,39 @@ function listSchedulers() {
   return ordered;
 }
 
-// The independent system check: ask scxctl directly what is running.
-// scxctl get prints e.g. "running Lavd in Auto mode" — the name is
-// capitalized and carries no scx_ prefix, so match it case-insensitively.
-function activeScheduler(supported) {
+// Independent system check: ask scxctl what is running. Output is e.g.
+// "running Lavd in Auto mode" — name + mode capitalized, no scx_ prefix.
+function currentState(supported) {
   const { out } = run(["scxctl", "get"]);
-  if (!out.trim() || /no scx scheduler running/i.test(out)) return "off";
-  const m = out.match(/running\s+(?:scx[_-])?(\S+)\s+in\b/i);
-  const token = (m ? m[1] : "").toLowerCase();
-  const hit = supported.find((n) => n.toLowerCase() === token);
-  if (hit) return hit;
-  // Fallback: any supported name appearing anywhere (case-insensitive).
-  for (const n of supported) {
-    if (new RegExp(`(^|[^a-z0-9_])(scx[_-])?${n}([^a-z0-9_]|$)`, "i").test(out)) return n;
+  if (!out.trim() || /no scx scheduler running/i.test(out)) return { sched: "off", mode: "auto" };
+  const m = out.match(/running\s+(?:scx[_-])?(\S+)\s+in\s+(\S+)\s+mode/i);
+  if (m) {
+    const stok = m[1].toLowerCase();
+    const mtok = m[2].toLowerCase();
+    const sched = supported.find((n) => n.toLowerCase() === stok) || "unknown";
+    const mode = (MODES.find((x) => x.conf.toLowerCase() === mtok) || {}).id || "auto";
+    return { sched, mode };
   }
-  return "unknown";
+  for (const n of supported) {
+    if (new RegExp(`(^|[^a-z0-9_])(scx[_-])?${n}([^a-z0-9_]|$)`, "i").test(out))
+      return { sched: n, mode: "auto" };
+  }
+  return { sched: "unknown", mode: "auto" };
 }
 
-// The scx_loader.service state, straight from systemd — the second half of the
-// cross-check (is it running now, and will it persist across reboots).
 function loaderState() {
   return {
     active: run(["systemctl", "is-active", SERVICE]).out.trim() || "unknown",
     enabled: run(["systemctl", "is-enabled", SERVICE]).out.trim() || "unknown",
   };
+}
+
+// What scx_loader will start on boot (the real persistence signal).
+function bootDefault() {
+  const { out } = run(["cat", CONFIG]);
+  const sched = (out.match(/^\s*default_sched\s*=\s*"?(\S+?)"?\s*$/m) || [])[1] || null;
+  const mode = (out.match(/^\s*default_mode\s*=\s*"?(\S+?)"?\s*$/m) || [])[1] || null;
+  return { sched, mode };
 }
 
 function osPretty() {
@@ -150,15 +171,15 @@ const SchedulerWindow = GObject.registerClass(
         application: app,
         title: "CPU Scheduler",
         default_width: 560,
-        default_height: 740,
+        default_height: 760,
         width_request: 360,
         height_request: 480,
       });
 
-      this._rows = new Map(); // name -> { row, tick } for active highlighting
+      this._rows = new Map(); // name -> { row, tick }
+      this._mode = "auto";
+      this._suppressMode = false;
 
-      // Themed highlight for the active scheduler row — GTK4 named colors, so
-      // it follows the user's light/dark theme and accent colour.
       const css = new Gtk.CssProvider();
       css.load_from_string(".scheduler-active { background-color: alpha(@accent_color, 0.13); }");
       Gtk.StyleContext.add_provider_for_display(
@@ -166,6 +187,8 @@ const SchedulerWindow = GObject.registerClass(
         css,
         Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
       );
+
+      this._installActions(app);
 
       this._toasts = new Adw.ToastOverlay();
       const toolbar = new Adw.ToolbarView();
@@ -176,18 +199,13 @@ const SchedulerWindow = GObject.registerClass(
       toolbar.add_top_bar(header);
       const refreshBtn = new Gtk.Button({
         icon_name: "view-refresh-symbolic",
-        tooltip_text: "Re-check the active scheduler",
+        tooltip_text: "Re-check the active scheduler (F5)",
+        action_name: "app.refresh",
       });
-      refreshBtn.connect("clicked", () => this._refresh());
       header.pack_start(refreshBtn);
-
-      // Primary menu with About (version + kernel/scx info).
-      if (!app.lookup_action("about")) {
-        const aboutAction = new Gio.SimpleAction({ name: "about" });
-        aboutAction.connect("activate", () => this._showAbout());
-        app.add_action(aboutAction);
-      }
       const menu = new Gio.Menu();
+      menu.append("Re-check now", "app.refresh");
+      menu.append("Reset to kernel default (BORE)", "app.reset");
       menu.append("About Margine CPU Scheduler", "app.about");
       header.pack_end(
         new Gtk.MenuButton({ icon_name: "open-menu-symbolic", menu_model: menu, primary: true }),
@@ -196,9 +214,7 @@ const SchedulerWindow = GObject.registerClass(
       const page = new Adw.PreferencesPage();
       toolbar.set_content(page);
 
-      // --- "Active now": an independent, live readout from the system itself
-      //     (scxctl + systemd) — the cross-check that your choice took effect,
-      //     plus a one-tap return to the kernel default.
+      // --- "Active now": live cross-check + mode + one-tap reset.
       const statusGroup = new Adw.PreferencesGroup({ title: "Active now" });
       page.add(statusGroup);
 
@@ -208,6 +224,16 @@ const SchedulerWindow = GObject.registerClass(
       this._statusRow.add_prefix(this._statusIcon);
       statusGroup.add(this._statusRow);
 
+      const modeModel = new Gtk.StringList();
+      for (const m of MODES) modeModel.append(m.label);
+      this._modeRow = new Adw.ComboRow({
+        title: "Mode",
+        subtitle: "How the active scheduler is tuned",
+        model: modeModel,
+      });
+      this._modeRow.connect("notify::selected", () => this._onModeChanged());
+      statusGroup.add(this._modeRow);
+
       this._resetRow = new Adw.ButtonRow({
         title: "Reset to kernel default (BORE)",
         start_icon_name: "edit-undo-symbolic",
@@ -215,22 +241,19 @@ const SchedulerWindow = GObject.registerClass(
       this._resetRow.connect("activated", () => this._apply("off"));
       statusGroup.add(this._resetRow);
 
-      // --- "Choose a scheduler": tap a row to switch to it (one polkit prompt).
+      // --- "Choose a scheduler": tap a row to switch (one polkit prompt).
       this._group = new Adw.PreferencesGroup({
         title: "Choose a scheduler",
         description:
           "Margine runs a signed CachyOS/BORE kernel with pluggable sched_ext " +
           "(BPF) schedulers. Tap one to switch to it — it applies live (no " +
-          "reboot) and persists across reboots.",
+          "reboot) and is saved as the boot default.",
       });
       page.add(this._group);
 
-      // --- Footer note.
       const foot = new Adw.PreferencesGroup();
       const note = new Adw.ActionRow({
         title: "Prefer a terminal?",
-        // Plain text: AdwActionRow parses subtitles as Pango markup, so avoid
-        // literal angle brackets (NAME, not <name>).
         subtitle: "Run “ujust margine-scheduler NAME” — same effect as this app.",
         subtitle_selectable: true,
       });
@@ -240,16 +263,44 @@ const SchedulerWindow = GObject.registerClass(
 
       this._populate();
       this._refresh();
+
+      // Live auto-refresh so the status stays correct if the scheduler is
+      // changed from elsewhere (CLI, ujust). Read-only; stops with the window.
+      this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 4, () => {
+        this._refresh();
+        return GLib.SOURCE_CONTINUE;
+      });
+      this.connect("close-request", () => {
+        if (this._timer) GLib.source_remove(this._timer);
+        this._timer = 0;
+        return false;
+      });
+    }
+
+    _installActions(app) {
+      const add = (name, fn, accels) => {
+        if (!app.lookup_action(name)) {
+          const a = new Gio.SimpleAction({ name });
+          a.connect("activate", fn);
+          app.add_action(a);
+        }
+        if (accels) app.set_accels_for_action(`app.${name}`, accels);
+      };
+      add("refresh", () => this._refresh(), ["F5", "<Control>r"]);
+      add("reset", () => this._apply("off"), ["<Control>0"]);
+      add("about", () => this._showAbout(), ["F1"]);
+      add("quit", () => app.quit(), ["<Control>q", "<Control>w"]);
     }
 
     _populate() {
       const supported = listSchedulers();
       if (supported.length === 0) {
-        const empty = new Adw.ActionRow({
-          title: "No schedulers available",
-          subtitle: "scxctl reported nothing — is the scx-scheds package installed?",
-        });
-        this._group.add(empty);
+        this._group.add(
+          new Adw.ActionRow({
+            title: "No schedulers available",
+            subtitle: "scxctl reported nothing — is the scx-scheds package installed?",
+          }),
+        );
         return;
       }
       for (const name of supported) {
@@ -279,35 +330,55 @@ const SchedulerWindow = GObject.registerClass(
       this._rows.set(name, { row, tick });
     }
 
+    _onModeChanged() {
+      if (this._suppressMode) return;
+      const mode = (MODES[this._modeRow.selected] || MODES[0]).id;
+      if (mode === this._mode) return;
+      this._mode = mode;
+      const cur = currentState([...this._rows.keys()]);
+      if (cur.sched !== "off" && cur.sched !== "unknown") this._apply(cur.sched, mode);
+    }
+
     _refresh() {
       const supported = [...this._rows.keys()];
-      const active = activeScheduler(supported);
+      const st = currentState(supported);
       const { active: svc, enabled } = loaderState();
+      const boot = bootDefault();
 
       for (const [name, { row, tick }] of this._rows) {
-        const on = name === active;
+        const on = name === st.sched;
         tick.set_visible(on);
         if (on) row.add_css_class("scheduler-active");
         else row.remove_css_class("scheduler-active");
       }
-      this._resetRow.set_sensitive(active !== "off");
+      this._resetRow.set_sensitive(st.sched !== "off");
+
+      this._mode = st.mode;
+      const idx = MODES.findIndex((m) => m.id === st.mode);
+      this._suppressMode = true;
+      this._modeRow.selected = idx >= 0 ? idx : 0;
+      this._suppressMode = false;
+
+      const bootText = boot.sched
+        ? `${boot.sched}${boot.mode ? ` / ${boot.mode}` : ""}`
+        : "kernel default (BORE)";
 
       this._statusIcon.remove_css_class("success");
       this._statusIcon.remove_css_class("dim-label");
-      if (active === "off") {
+      if (st.sched === "off") {
         this._statusIcon.icon_name = "system-shutdown-symbolic";
         this._statusIcon.add_css_class("dim-label");
         this._statusRow.title = "Kernel default (BORE)";
-        this._statusRow.subtitle = `Live check · sched_ext off · ${SERVICE} ${svc}, ${enabled}`;
-      } else if (active === "unknown") {
+        this._statusRow.subtitle = `Live check · sched_ext off · on boot: ${bootText}`;
+      } else if (st.sched === "unknown") {
         this._statusIcon.icon_name = "dialog-warning-symbolic";
         this._statusRow.title = "A scheduler is running";
-        this._statusRow.subtitle = `Live check · name not recognised · ${SERVICE} ${svc}, ${enabled}`;
+        this._statusRow.subtitle = `Live check · name not recognised · ${SERVICE} ${svc}`;
       } else {
         this._statusIcon.icon_name = "object-select-symbolic";
         this._statusIcon.add_css_class("success");
-        this._statusRow.title = `scx_${active}`;
-        this._statusRow.subtitle = `Live check · scxctl reports it running · ${SERVICE} ${svc}, ${enabled}`;
+        this._statusRow.title = `scx_${st.sched} · ${modeById(st.mode).label}`;
+        this._statusRow.subtitle = `Live check · ${SERVICE} ${svc}, ${enabled} · on boot: ${bootText}`;
       }
     }
 
@@ -334,18 +405,32 @@ const SchedulerWindow = GObject.registerClass(
       about.present(this);
     }
 
-    _apply(name) {
-      const wasRunning = activeScheduler([...this._rows.keys()]) !== "off";
+    // Apply a scheduler (with mode) or "off". Writes the boot config + enables
+    // the service (the privileged half, one pkexec prompt), then applies live.
+    _apply(name, mode) {
+      mode = mode ?? this._mode;
+      const conf = modeById(mode).conf;
+      const cli = modeById(mode).cli;
+      const wasRunning = currentState([...this._rows.keys()]).sched !== "off";
 
       let result;
       if (name === "off") {
         run(["scxctl", "stop"]);
-        result = run(["pkexec", "systemctl", "disable", "--now", SERVICE]);
+        result = run([
+          "pkexec",
+          "sh",
+          "-c",
+          `rm -f ${CONFIG}; systemctl disable --now ${SERVICE}`,
+        ]);
       } else {
-        result = run(["pkexec", "systemctl", "enable", "--now", SERVICE]);
+        const writeConf =
+          "install -d -m0755 /etc/scx_loader && " +
+          `printf 'default_sched = "scx_%s"\\ndefault_mode = "%s"\\n' "$1" "$2" > ${CONFIG} && ` +
+          `systemctl enable --now ${SERVICE}`;
+        result = run(["pkexec", "sh", "-c", writeConf, "sh", name, conf]);
         if (result.ok) {
           const verb = wasRunning ? "switch" : "start";
-          const r2 = run(["scxctl", verb, "--sched", name]);
+          const r2 = run(["scxctl", verb, "--sched", name, "--mode", cli]);
           if (!r2.ok) result = r2;
         }
       }
@@ -353,7 +438,9 @@ const SchedulerWindow = GObject.registerClass(
       this._refresh();
       if (result.ok) {
         this._toast(
-          name === "off" ? "Reverted to the kernel default (BORE)" : `Now running scx_${name}`,
+          name === "off"
+            ? "Reverted to the kernel default (BORE)"
+            : `Now running scx_${name} (${modeById(mode).label})`,
         );
       } else {
         const msg = (result.out || "").trim().split("\n").pop() || "operation failed";

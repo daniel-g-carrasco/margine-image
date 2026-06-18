@@ -138,6 +138,11 @@ function loaderState() {
   };
 }
 
+function osPretty() {
+  const { out } = run(["cat", "/etc/os-release"]);
+  return (out.match(/^PRETTY_NAME="?(.*?)"?\s*$/m) || [])[1] || "Margine";
+}
+
 const SchedulerWindow = GObject.registerClass(
   class SchedulerWindow extends Adw.ApplicationWindow {
     _init(app) {
@@ -174,7 +179,19 @@ const SchedulerWindow = GObject.registerClass(
         tooltip_text: "Re-check the active scheduler",
       });
       refreshBtn.connect("clicked", () => this._refresh());
-      header.pack_end(refreshBtn);
+      header.pack_start(refreshBtn);
+
+      // Primary menu with About (version + kernel/scx info).
+      if (!app.lookup_action("about")) {
+        const aboutAction = new Gio.SimpleAction({ name: "about" });
+        aboutAction.connect("activate", () => this._showAbout());
+        app.add_action(aboutAction);
+      }
+      const menu = new Gio.Menu();
+      menu.append("About Margine CPU Scheduler", "app.about");
+      header.pack_end(
+        new Gtk.MenuButton({ icon_name: "open-menu-symbolic", menu_model: menu, primary: true }),
+      );
 
       const page = new Adw.PreferencesPage();
       toolbar.set_content(page);
@@ -287,7 +304,7 @@ const SchedulerWindow = GObject.registerClass(
         this._statusRow.title = "A scheduler is running";
         this._statusRow.subtitle = `Live check · name not recognised · ${SERVICE} ${svc}, ${enabled}`;
       } else {
-        this._statusIcon.icon_name = "emblem-ok-symbolic";
+        this._statusIcon.icon_name = "object-select-symbolic";
         this._statusIcon.add_css_class("success");
         this._statusRow.title = `scx_${active}`;
         this._statusRow.subtitle = `Live check · scxctl reports it running · ${SERVICE} ${svc}, ${enabled}`;
@@ -296,6 +313,25 @@ const SchedulerWindow = GObject.registerClass(
 
     _toast(text) {
       this._toasts.add_toast(new Adw.Toast({ title: text, timeout: 4 }));
+    }
+
+    _showAbout() {
+      const pretty = osPretty();
+      const kernel = run(["uname", "-r"]).out.trim();
+      const scxver = run(["scxctl", "--version"]).out.trim();
+      const about = new Adw.AboutDialog({
+        application_name: "Margine CPU Scheduler",
+        application_icon: "margine-scheduler",
+        version: pretty.replace(/^Margine\s*/, "") || "alpha",
+        developer_name: "Margine",
+        website: "https://margine.the-empty.place",
+        issue_url: "https://github.com/daniel-g-carrasco/margine-image/issues",
+        license_type: Gtk.License.APACHE_2_0,
+        comments:
+          "Switch the kernel's sched_ext (BPF) CPU scheduler at runtime.\n\n" +
+          `${pretty}\nKernel ${kernel} · ${scxver}`,
+      });
+      about.present(this);
     }
 
     _apply(name) {

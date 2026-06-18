@@ -11,4 +11,13 @@
 # ISO installer does NOT — so fresh installs (ISO *and* bare metal) booted to a
 # text console with no splash. Baking it here makes Plymouth work on every
 # install path (ISO install and rebase) regardless of the installer.
-kargs = ["rhgb", "quiet"]
+#
+# `plymouth.ignore-serial-consoles`: the installer adds `console=ttyS0,…` to
+# VM installs (a serial device is present). Plymouth treats a serial console as
+# "headless" and SKIPS the graphical splash — so VMs booted to text even with
+# rhgb. This flag tells Plymouth to ignore serial consoles and show the splash
+# anyway. Order-independent (unlike trying to re-order console= args), and a
+# no-op on machines without a serial console (bare metal). Confirmed on a live
+# VM 2026-06-18: removing console=ttyS0 made the splash appear; this flag is the
+# durable equivalent that keeps serial logging intact.
+kargs = ["rhgb", "quiet", "plymouth.ignore-serial-consoles"]

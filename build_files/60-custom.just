@@ -666,3 +666,151 @@ margine-grub-hidpi:
 [group('Margine')]
 margine-keyring ACTION="status":
     @/usr/bin/margine-keyring "{{ ACTION }}"
+
+# Spin up a throwaway VM to test a Margine ISO on the REAL secure path: UEFI
+# Secure Boot with Microsoft's keys pre-enrolled (so you also walk the MOK
+# enrollment flow Margine relies on) + an emulated TPM 2.0 (so you can test
+# LUKS TPM2 auto-unlock). Runs rootless on qemu:///session, so it reads ISOs
+# straight from your home — no sudo, no copying multi-GB files.
+#
+#   ujust margine-test-vm ~/Downloads/margine-20260618.iso     # create + boot a VM from that ISO (recommended)
+#   ujust margine-test-vm ~/Downloads/x.iso mytest 100         # custom name + 100 GiB disk
+#   ujust margine-test-vm                                       # no ISO: define a TEMPLATE to clone in virt-manager
+#
+# Tear a test VM down with `ujust margine-test-vm-remove [name]`.
+[group('Margine')]
+margine-test-vm ISO="" NAME="" DISK="80":
+    #!/usr/bin/bash
+    set -uo pipefail
+
+    CONN="qemu:///session"
+    ISO="{{ ISO }}"
+    NAME="{{ NAME }}"
+    DISK="{{ DISK }}"
+    POOL="default"
+    MEM=8192
+    VCPUS=4
+    TEMPLATE="margine-test-template"
+
+    for b in virt-install virsh; do
+      command -v "$b" >/dev/null 2>&1 || { echo "Missing '$b' — the Bluefin DX virt stack should provide it."; exit 1; }
+    done
+    virsh -c "$CONN" version >/dev/null 2>&1 || { echo "Cannot reach libvirt at $CONN."; exit 1; }
+
+    # Ensure the rootless default storage pool exists and is running.
+    if ! virsh -c "$CONN" pool-info "$POOL" >/dev/null 2>&1; then
+      target="$HOME/.local/share/libvirt/images"
+      mkdir -p "$target"
+      virsh -c "$CONN" pool-define-as "$POOL" dir --target "$target" >/dev/null 2>&1 || true
+      virsh -c "$CONN" pool-build "$POOL" >/dev/null 2>&1 || true
+    fi
+    virsh -c "$CONN" pool-start "$POOL" >/dev/null 2>&1 || true
+    virsh -c "$CONN" pool-autostart "$POOL" >/dev/null 2>&1 || true
+
+    print_walkthrough() {
+      echo
+      echo "  === Testing the secure path in this VM ==="
+      echo "  1. Boot the ISO and install Margine."
+      echo "  2. First boot after install: Secure Boot is ON with Microsoft's keys,"
+      echo "     so shim runs, but Margine signs its kernel/modules with its own MOK."
+      echo "     A blue MOK Manager screen appears:"
+      echo "         Enroll MOK -> Continue -> Yes -> enter the password"
+      echo "     (Margine's MOK password is 'margine-os', public by design), reboot."
+      echo "  3. Confirm Secure Boot:    mokutil --sb-state     # -> SecureBoot enabled"
+      echo "  4. TPM2 LUKS auto-unlock:  ujust margine-tpm-unlock enable"
+      echo "     then reboot — the disk should unlock from the emulated TPM with no"
+      echo "     passphrase prompt ('ujust margine-tpm-unlock status' to inspect)."
+    }
+
+    # Shared firmware: Secure Boot + enrolled MS keys, q35+SMM (required for SB),
+    # boot order hd,cdrom. A blank disk is unbootable, so UEFI falls through to the
+    # CD and runs the installer; after install the disk wins, so the ISO can stay
+    # inserted — no eject, no install loop.
+    FW="firmware=efi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=yes,hd,cdrom,bootmenu.enable=on"
+
+    if [[ -z "$ISO" ]]; then
+      # ---------- TEMPLATE mode (define a shut-off VM to clone) ----------
+      if virsh -c "$CONN" dominfo "$TEMPLATE" >/dev/null 2>&1; then
+        echo "Template '$TEMPLATE' already exists."
+        echo "Clone it in virt-manager (right-click -> Clone), attach your ISO to the"
+        echo "clone's CD-ROM, then boot. To rebuild it:"
+        echo "  ujust margine-test-vm-remove $TEMPLATE   (then re-run this)"
+        exit 0
+      fi
+      echo "Defining test template '$TEMPLATE' (${DISK} GiB, Secure Boot + enrolled MS keys + TPM 2.0)..."
+      virsh -c "$CONN" vol-create-as "$POOL" "${TEMPLATE}.qcow2" "${DISK}G" --format qcow2 >/dev/null \
+        || { echo "Failed to create the template disk volume."; exit 1; }
+      xml="$(mktemp /tmp/margine-test-template.XXXXXX.xml)"
+      if ! virt-install --connect "$CONN" --name "$TEMPLATE" \
+            --memory "$MEM" --vcpus "$VCPUS" --cpu host-passthrough --machine q35 \
+            --boot "$FW" --features smm.state=on \
+            --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
+            --disk vol="$POOL/${TEMPLATE}.qcow2",bus=virtio --disk device=cdrom,bus=sata \
+            --network user,model=virtio --graphics spice --video virtio \
+            --osinfo detect=on,require=off,name=fedora-rawhide \
+            --install no_install=yes --print-xml --dry-run > "$xml"; then
+        echo "virt-install could not generate the domain XML."; rm -f "$xml"; exit 1
+      fi
+      virsh -c "$CONN" define "$xml" >/dev/null || { echo "virsh define failed (kept $xml)."; exit 1; }
+      rm -f "$xml"
+      echo
+      echo "Template '$TEMPLATE' defined (shut off). To use it:"
+      echo "  1. Open virt-manager. If it isn't listed: File -> Add Connection ->"
+      echo "     'QEMU/KVM user session' -> Connect."
+      echo "  2. Right-click '$TEMPLATE' -> Clone... (one clone per test)."
+      echo "  3. On the clone, point the CD-ROM at your ISO (~/Downloads/*.iso), boot."
+      echo "  Or skip the clicking:  ujust margine-test-vm ~/Downloads/<your>.iso"
+      print_walkthrough
+      exit 0
+    fi
+
+    # ---------- ISO mode (create + boot a ready VM) ----------
+    real_iso="$(realpath -e "$ISO" 2>/dev/null)" || { echo "ISO not found: $ISO"; exit 1; }
+    case "$real_iso" in *.iso) : ;; *) echo "Note: '$real_iso' doesn't end in .iso — continuing anyway." ;; esac
+    if [[ -z "$NAME" ]]; then NAME="margine-test-$(basename "$real_iso" .iso)"; fi
+    NAME="$(printf '%s' "$NAME" | tr -c 'a-zA-Z0-9._-' '-')"
+    if virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
+      echo "A VM named '$NAME' already exists. Remove it or choose another name:"
+      echo "  ujust margine-test-vm-remove $NAME"
+      exit 1
+    fi
+    echo "Creating '$NAME' (${DISK} GiB, Secure Boot + enrolled MS keys + TPM 2.0) from:"
+    echo "  $real_iso"
+    if ! virt-install --connect "$CONN" --name "$NAME" --import \
+          --memory "$MEM" --vcpus "$VCPUS" --cpu host-passthrough --machine q35 \
+          --boot "$FW" --features smm.state=on \
+          --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
+          --disk size="$DISK",format=qcow2,bus=virtio \
+          --disk path="$real_iso",device=cdrom,bus=sata,readonly=on \
+          --network user,model=virtio --graphics spice --video virtio \
+          --osinfo detect=on,require=off,name=fedora-rawhide \
+          --noautoconsole; then
+      echo "virt-install failed to create the VM."; exit 1
+    fi
+    echo "VM '$NAME' created and booting the installer."
+    if command -v virt-viewer >/dev/null 2>&1; then
+      ( setsid virt-viewer --connect "$CONN" --wait "$NAME" >/dev/null 2>&1 & ) || true
+      echo "Opening the console (virt-viewer)."
+    else
+      echo "Open the console in virt-manager (QEMU/KVM user session) -> '$NAME'."
+    fi
+    print_walkthrough
+
+# Tear down a Margine test VM made by `ujust margine-test-vm`: stop it, then remove
+# the domain, its disk(s) and its UEFI nvram. Defaults to the clone template.
+[group('Margine')]
+margine-test-vm-remove NAME="margine-test-template":
+    #!/usr/bin/bash
+    set -uo pipefail
+    CONN="qemu:///session"
+    NAME="{{ NAME }}"
+    if ! virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
+      echo "No such VM on $CONN: $NAME"
+      echo "List test VMs:  virsh -c $CONN list --all"
+      exit 1
+    fi
+    virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
+    if   virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1; then :
+    elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
+    else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
+    echo "Removed '$NAME' (domain + storage + nvram)."

@@ -2,20 +2,28 @@
 # Cosmetic defaults captured from Daniel's reference deployment (2026-06-16):
 # tighter gaps, no active-hint border, minimal title-bar chrome.
 active-hint=false
-active-hint-border-radius=14
-active-hint-border-width=3
+# NB: these are uint32 keys — the value MUST carry the `uint32` GVariant type
+# tag. A bare `gap-inner=2` is stored as int32 in the dconf db, which mismatches
+# the gschema's `u` type, so gsettings silently ignores the default and falls
+# back to o-tiling's own (4) — that's why the gaps "weren't applied" on fresh
+# installs (user-reported 2026-06-18). Booleans/strings below don't need a tag.
+active-hint-border-radius=uint32 14
+active-hint-border-width=uint32 3
 active-hint-overlay-enabled=false
-gap-inner=2
-gap-outer=1
+gap-inner=uint32 2
+gap-outer=uint32 1
 mouse-cursor-follows-active-window=true
 panel-transparency=false
-show-close-button=false
-show-minimize-maximize-buttons=false
+show-close-button=true
+show-minimize-maximize-buttons=true
 show-title=false
-skip-overview=false
+skip-overview=true
+smart-gaps=false
+snap-to-grid=false
 stacking-with-mouse=false
 theme-consistency-style='default'
 tile-by-default=true
+workspace-number-indicator=true
 workspace-switcher-style=false
 
 # --- Keybinding conflict resolution (2026-06-14) ---

@@ -357,6 +357,9 @@ in the spec repo.
 - [**Universal Blue**](https://universal-blue.org/) — image-template,
   CI patterns, `uupd`.
 - [**CachyOS**](https://cachyos.org/) — scheduler and kernel patches.
+- [**o-tiling**](https://github.com/oliwebd/o-tiling) — the binary-tree tiling
+  engine that powers Margine's whole GNOME tiling workflow. No donations page —
+  star it, file good bugs, contribute.
 - [**Origami Linux**](https://gitlab.com/origami-linux/images) — reference
   for the MOK-signing kernel script.
 - [**MorrOS**](https://github.com/morrolinux/morros) — CI workflow

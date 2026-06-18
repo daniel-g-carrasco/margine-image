@@ -40,6 +40,14 @@ stable release is cut.
   Diagnosed from an installed VM's journal (only `/dev/dri/card1=virtio_gpu`
   appeared, late; no early `card0`, simpledrm didn't bind). QXL/std-video guests
   were unaffected. The Plymouth theme itself was never at fault.
+- **o-tiling gap defaults now actually apply.** `gap-inner`/`gap-outer` (and the
+  active-hint border radius/width) are `uint32` keys, but the dconf default wrote
+  them as bare ints (`gap-inner=2`), which the db stored as int32 — a type
+  mismatch the gschema rejects, so they silently fell back to o-tiling's own
+  defaults (gap 4) on fresh installs (user-reported). Tagged them `uint32` in
+  `03-margine-o-tiling`. Also aligned the o-tiling cosmetic defaults with the
+  intended config: title-bar min/max + close buttons on, skip-overview on,
+  workspace-number-indicator on, smart-gaps/snap-to-grid off.
 
 ### Added (2026-06-15)
 - **Safe TPM2-unlock + autologin helpers** — `ujust margine-tpm-unlock`

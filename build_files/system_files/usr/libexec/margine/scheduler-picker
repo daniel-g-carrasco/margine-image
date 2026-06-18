@@ -34,7 +34,7 @@ const HELPER = "/usr/libexec/margine/scheduler-apply";
 // scx_loader modes. cli = scxctl --mode value (lowercase); conf = TOML
 // default_mode value (PascalCase enum); label = UI text.
 const MODES = [
-  { id: "auto", cli: "auto", conf: "Auto", label: "Auto (recommended)" },
+  { id: "auto", cli: "auto", conf: "Auto", label: "Auto" },
   { id: "gaming", cli: "gaming", conf: "Gaming", label: "Gaming" },
   { id: "lowlatency", cli: "lowlatency", conf: "LowLatency", label: "Low latency" },
   { id: "powersave", cli: "powersave", conf: "PowerSave", label: "Power save" },
@@ -231,7 +231,7 @@ const SchedulerWindow = GObject.registerClass(
       for (const m of MODES) modeModel.append(m.label);
       this._modeRow = new Adw.ComboRow({
         title: "Mode",
-        subtitle: "Auto adapts to load & power profile (recommended); the others force a profile",
+        subtitle: "Auto adapts (recommended); the rest force a profile",
         model: modeModel,
       });
       this._modeRow.connect("notify::selected", () => this._onModeChanged());

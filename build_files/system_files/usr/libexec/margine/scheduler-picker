@@ -27,11 +27,14 @@ import system from "system";
 const APP_ID = "org.margineos.SchedulerPicker";
 const SERVICE = "scx_loader.service";
 const CONFIG = "/etc/scx_loader/config.toml";
+// All privileged work goes through this one helper so a scoped polkit rule
+// (49-margine-scheduler.rules) can ask once per session instead of every time.
+const HELPER = "/usr/libexec/margine/scheduler-apply";
 
 // scx_loader modes. cli = scxctl --mode value (lowercase); conf = TOML
 // default_mode value (PascalCase enum); label = UI text.
 const MODES = [
-  { id: "auto", cli: "auto", conf: "Auto", label: "Auto" },
+  { id: "auto", cli: "auto", conf: "Auto", label: "Auto (recommended)" },
   { id: "gaming", cli: "gaming", conf: "Gaming", label: "Gaming" },
   { id: "lowlatency", cli: "lowlatency", conf: "LowLatency", label: "Low latency" },
   { id: "powersave", cli: "powersave", conf: "PowerSave", label: "Power save" },
@@ -228,7 +231,7 @@ const SchedulerWindow = GObject.registerClass(
       for (const m of MODES) modeModel.append(m.label);
       this._modeRow = new Adw.ComboRow({
         title: "Mode",
-        subtitle: "How the active scheduler is tuned",
+        subtitle: "Auto adapts to load & power profile (recommended); the others force a profile",
         model: modeModel,
       });
       this._modeRow.connect("notify::selected", () => this._onModeChanged());
@@ -405,42 +408,22 @@ const SchedulerWindow = GObject.registerClass(
       about.present(this);
     }
 
-    // Apply a scheduler (with mode) or "off". Writes the boot config + enables
-    // the service (the privileged half, one pkexec prompt), then applies live.
+    // Apply a scheduler (with mode) or "off" through the one privileged helper
+    // (config + service + live switch) — a single pkexec, asked once per session
+    // thanks to the scoped polkit rule.
     _apply(name, mode) {
-      mode = mode ?? this._mode;
-      const conf = modeById(mode).conf;
-      const cli = modeById(mode).cli;
-      const wasRunning = currentState([...this._rows.keys()]).sched !== "off";
-
-      let result;
-      if (name === "off") {
-        run(["scxctl", "stop"]);
-        result = run([
-          "pkexec",
-          "sh",
-          "-c",
-          `rm -f ${CONFIG}; systemctl disable --now ${SERVICE}`,
-        ]);
-      } else {
-        const writeConf =
-          "install -d -m0755 /etc/scx_loader && " +
-          `printf 'default_sched = "scx_%s"\\ndefault_mode = "%s"\\n' "$1" "$2" > ${CONFIG} && ` +
-          `systemctl enable --now ${SERVICE}`;
-        result = run(["pkexec", "sh", "-c", writeConf, "sh", name, conf]);
-        if (result.ok) {
-          const verb = wasRunning ? "switch" : "start";
-          const r2 = run(["scxctl", verb, "--sched", name, "--mode", cli]);
-          if (!r2.ok) result = r2;
-        }
-      }
+      const m = modeById(mode ?? this._mode);
+      const result =
+        name === "off"
+          ? run(["pkexec", HELPER, "off"])
+          : run(["pkexec", HELPER, name, m.conf, m.cli]);
 
       this._refresh();
       if (result.ok) {
         this._toast(
           name === "off"
             ? "Reverted to the kernel default (BORE)"
-            : `Now running scx_${name} (${modeById(mode).label})`,
+            : `Now running scx_${name} (${m.label.replace(/ \(recommended\)$/, "")})`,
         );
       } else {
         const msg = (result.out || "").trim().split("\n").pop() || "operation failed";

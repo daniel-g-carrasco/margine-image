@@ -1,0 +1,48 @@
+#!/usr/bin/bash
+# Privileged apply helper for the Margine CPU scheduler (GTK picker + the
+# `ujust margine-scheduler` recipe). Runs as root via pkexec; the scoped polkit
+# rule (49-margine-scheduler.rules) makes that one prompt, cached — so the GUI
+# no longer asks on every change. Does the three privileged steps in one shot:
+#   1. write/clear the scx_loader boot config (/etc/scx_loader/config.toml) so
+#      the choice actually survives a reboot,
+#   2. enable/disable scx_loader.service,
+#   3. apply it live via scxctl (run as root here, so scx_loader's own polkit
+#      check is satisfied without a second prompt).
+#
+# Usage:
+#   scheduler-apply off
+#   scheduler-apply <sched> <ConfMode> <cliMode>   # e.g. lavd Auto auto
+set -euo pipefail
+
+SERVICE="scx_loader.service"
+CONFIG="/etc/scx_loader/config.toml"
+
+usage() {
+  echo "usage: scheduler-apply off | <sched> <ConfMode> <cliMode>" >&2
+  exit 2
+}
+
+action="${1:-}"
+[ -n "$action" ] || usage
+
+if [ "$action" = "off" ]; then
+  scxctl stop 2>/dev/null || true
+  rm -f "$CONFIG"
+  systemctl disable --now "$SERVICE"
+  exit 0
+fi
+
+sched="$action"
+conf_mode="${2:-Auto}"
+cli_mode="${3:-auto}"
+
+install -d -m 0755 /etc/scx_loader
+# default_sched / default_mode are what scx_loader restores on boot. Casing is
+# what it expects: scx_ prefix on the scheduler, PascalCase mode.
+printf 'default_sched = "scx_%s"\ndefault_mode = "%s"\n' "$sched" "$conf_mode" >"$CONFIG"
+systemctl enable --now "$SERVICE"
+
+# Apply live: switch if a scheduler is already running, otherwise start.
+if ! scxctl switch --sched "$sched" --mode "$cli_mode" 2>/dev/null; then
+  scxctl start --sched "$sched" --mode "$cli_mode"
+fi

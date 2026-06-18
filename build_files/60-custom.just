@@ -367,27 +367,17 @@ margine-scheduler MODE="status":
     # ("systemctl --user-or-sudo" is not a real flag: it failed silently
     # here for weeks because this recipe runs without -e. Found by the
     # 2026-06-12 code-quality review, finding A3.)
+    # All privileged work (write the scx_loader boot config + toggle the service
+    # + apply live) is done by the shared helper, so this recipe and the GTK
+    # picker behave identically and the config format lives in one place.
     ensure_loader() {
-      # scx_loader only restores a scheduler on boot from this config file;
-      # `enable` alone persists the SERVICE, but the choice reverts to BORE
-      # because default_sched is unset. Write it so the pick actually persists
-      # (mirrors the GTK picker). default_mode/default_sched casing is what
-      # scx_loader expects: PascalCase mode, scx_ prefix.
-      sudo install -d -m0755 /etc/scx_loader
-      printf 'default_sched = "scx_%s"\ndefault_mode = "Auto"\n' "$MODE" \
-        | sudo tee /etc/scx_loader/config.toml >/dev/null
-      sudo systemctl enable --now "$SERVICE" \
-        || { echo "FAILED to enable $SERVICE — scheduler will not persist across reboots."; exit 1; }
+      sudo /usr/libexec/margine/scheduler-apply "$MODE" Auto auto \
+        || { echo "FAILED to apply scx_$MODE."; exit 1; }
     }
 
     stop_loader() {
-      if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
-        scxctl stop 2>/dev/null || true
-      fi
-      # Drop the boot default too, so a reboot really returns to BORE.
-      sudo rm -f /etc/scx_loader/config.toml
-      sudo systemctl disable --now "$SERVICE" \
-        || { echo "FAILED to disable $SERVICE — it may restart a scheduler at next boot."; exit 1; }
+      sudo /usr/libexec/margine/scheduler-apply off \
+        || { echo "FAILED to disable $SERVICE."; exit 1; }
     }
 
     require_scxctl
@@ -422,15 +412,8 @@ margine-scheduler MODE="status":
           exit 1
         fi
 
-        echo "Enabling and starting scx_loader.service (opt-in)."
+        echo "Applying scx_$MODE and saving it as the boot default (opt-in)."
         ensure_loader
-        if scheduler_running; then
-          echo "Switching to scx_$MODE."
-          scxctl switch --sched "$MODE"
-        else
-          echo "Starting scx_$MODE."
-          scxctl start --sched "$MODE"
-        fi
         echo
         scxctl get || true
         ;;

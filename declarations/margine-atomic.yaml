@@ -876,7 +876,9 @@ gnome:
         command: 'flatpak run app.zen_browser.zen'
       - name: file_manager
         binding: '<Super>e'
-        command: 'nautilus'
+        # --new-window so repeated Super+E open NEW windows instead of just
+        # re-focusing the running single-instance Nautilus (user-reported).
+        command: 'nautilus --new-window'
       - name: btop
         binding: '<Super><Ctrl>t'
         command: 'ptyxis -- btop'

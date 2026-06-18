@@ -1,0 +1,14 @@
+# Plymouth graphical boot + a graphical disk-unlock prompt.
+#
+# `rhgb` puts Plymouth into graphical mode so the Margine theme renders (the
+# theme is script-based and already baked into the initramfs); `quiet` keeps
+# kernel/systemd logs off the console so they don't bury the LUKS passphrase
+# prompt. Without these, boot stays on the text console and the encryption
+# prompt appears in the middle of kernel log lines (user-reported 2026-06-18).
+#
+# Why this is needed as a baked kernel arg: the older Anaconda ISO added
+# `rhgb quiet` to the bootloader implicitly, but the current bootc/titanoboa
+# ISO installer does NOT — so fresh installs (ISO *and* bare metal) booted to a
+# text console with no splash. Baking it here makes Plymouth work on every
+# install path (ISO install and rebase) regardless of the installer.
+kargs = ["rhgb", "quiet"]

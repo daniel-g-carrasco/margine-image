@@ -43,3 +43,25 @@ focus-left=['<Super>h']
 focus-right=['<Super>l']
 focus-up=['<Super>k']
 focus-down=['<Super>j']
+# Super+arrows previously hit GNOME's gapless built-ins — mutter
+# toggle-tiled-left/right (snap to half, no gaps) and wm maximize/unmaximize
+# (strips the border) — which ignore o-tiling's layout + gaps (user-reported
+# 2026-06-18). Route Super+arrows to o-tiling's swap instead, so they move the
+# focused window within the tiled layout WITH the configured gaps. Keep
+# Ctrl+Super+hjkl as the chord alternative.
+tile-swap-left=['<Super>Left', '<Primary><Super>h']
+tile-swap-right=['<Super>Right', '<Primary><Super>l']
+tile-swap-up=['<Super>Up', '<Primary><Super>k']
+tile-swap-down=['<Super>Down', '<Primary><Super>j']
+
+[org/gnome/mutter/keybindings]
+# Free Super+Left/Right from GNOME's gapless edge-snap — o-tiling owns window
+# placement (Super+arrows now swap tiles, see above).
+toggle-tiled-left=@as []
+toggle-tiled-right=@as []
+
+[org/gnome/desktop/wm/keybindings]
+# Free Super+Up/Down from maximize/unmaximize (they strip o-tiling's gaps and
+# borders) — Super+Up/Down now swap tiles up/down.
+maximize=@as []
+unmaximize=@as []

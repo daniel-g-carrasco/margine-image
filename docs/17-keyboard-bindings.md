@@ -134,12 +134,26 @@ Mental model:
 | Action | o-tiling key | Margine chord | Was (upstream default) |
 | --- | --- | --- | --- |
 | Focus neighbour | `focus-{left,down,up,right}` | `SUPER+{h,j,k,l}` | also had `SUPER+ALT+arrows` — **dropped** (shadowed workspace-switch / overview-shift) |
+| **Move window in layout** | `tile-move-{left,right,up,down}-global` | `SUPER+arrows` | empty by default — **claimed** off GNOME's gapless built-ins (see note) |
 | Swap with neighbour | `tile-swap-*` | `SUPER+CTRL+arrows` | unchanged (no conflict) |
 | Adjustment mode | `tile-enter` | `SUPER+CTRL+RETURN` | `SUPER+RETURN` — collided with the terminal launcher |
 | Toggle auto-tiling | `toggle-tiling` | `SUPER+SHIFT+T` | `SUPER+T` — accidental whole-session toggle |
 | Float window | `toggle-floating` | `SUPER+SHIFT+F` | `SUPER+F` — collided with `toggle-fullscreen` |
 | Stacking | `toggle-stacking-global` | `SUPER+SHIFT+S` | `SUPER+S` — collided with quick-settings |
 | Resize | n/a — mouse | drag the gutter | o-tiling resizes via mouse drag |
+
+> **`SUPER+arrows` = move, and why it's `tile-move-*-global` not `tile-swap-*`.**
+> Plain `SUPER+arrows` used to hit GNOME's *gapless* built-ins — `mutter`
+> `toggle-tiled-left/right` (snap a window to a screen half, ignoring o-tiling's
+> gaps) and `wm` `maximize`/`unmaximize` (strips the window border). Both are
+> cleared to `@as []` in `03-margine-o-tiling`, and `SUPER+arrows` is routed to
+> o-tiling's own move action so the window moves *within the tiled layout with
+> the configured gaps*. The action **must** be `tile-move-*-global`: that is the
+> only move action o-tiling registers as a *global* shortcut
+> (`system/keybindings.js`). `tile-swap-*` is handled solely inside the
+> interactive tile (adjustment) mode, so binding it to a global chord is a
+> silent no-op — this was a real regression (fixed 2026-06-18) before the
+> correct key was used.
 
 Preferences live in the GNOME Extensions Manager UI for
 `o-tiling@oliwebd.github.com`. Tiling Shell is still installable from

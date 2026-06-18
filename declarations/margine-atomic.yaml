@@ -912,6 +912,7 @@ gnome:
       # these set. GNOME/Margine win; o-tiling keeps every feature on a
       # collision-free chord:
       #   Super+hjkl         focus neighbour (Hyprland parity)
+      #   Super+arrows       move focused window in layout (gaps kept)
       #   Super+Ctrl+arrows  swap with neighbour (o-tiling default, free)
       #   Super+Ctrl+Return  adjustment mode  (was Super+Return = terminal)
       #   Super+Shift+t      toggle auto-tiling (was Super+t; accidental
@@ -928,6 +929,18 @@ gnome:
       toggle-tiling:           '<Super><Shift>t'
       toggle-floating:         '<Super><Shift>f'
       toggle-stacking-global:  '<Super><Shift>s'
+      # Super+arrows MOVE the focused window within the tiled layout, gaps
+      # preserved (user-reported 2026-06-18: the gapless GNOME built-ins ate
+      # these). MUST be tile-move-*-global — that's o-tiling's registered
+      # GLOBAL move action (system/keybindings.js). tile-swap-* is only
+      # handled inside interactive tile mode, so binding it globally is a
+      # silent no-op. The GNOME built-ins that previously consumed Super+arrows
+      # (mutter toggle-tiled-left/right, wm maximize/unmaximize) are cleared in
+      # the 03-margine-o-tiling dconf file.
+      tile-move-left-global:   '<Super>Left'
+      tile-move-right-global:  '<Super>Right'
+      tile-move-up-global:     '<Super>Up'
+      tile-move-down-global:   '<Super>Down'
   app_folders:
     naming_note: >
       App folders in the GNOME Activities grid. Margine takes a

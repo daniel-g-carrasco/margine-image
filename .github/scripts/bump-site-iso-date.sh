@@ -32,12 +32,35 @@ echo "Bumping LATEST_ISO_DATE: $OLD_DATE → $NEW_DATE"
 
 sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
   src/routes/index.tsx
-# Note: LATEST_ISO_BTIH used to be bumped here too, when the Hero had a
-# magnet:? button composed from the btih. That button was retired
-# 2026-06-07 — Fragments rejects valid magnets parsed from arbitrary
-# trackers — and replaced with a direct link to the .torrent file
-# (which the LATEST_ISO_TORRENT constant already computes from
-# LATEST_ISO_DATE). So a single date bump now suffices.
+
+# Versioned ISO filename (margine-<date>.iso) — keeps the direct-HTTP link in
+# sync with the renamed upload so the downloaded file carries the version.
+if [[ -n "${NEW_FILE:-}" ]]; then
+  if grep -q 'LATEST_ISO_FILE = "[^"]*"' src/routes/index.tsx; then
+    sed -i "s|LATEST_ISO_FILE = \"[^\"]*\"|LATEST_ISO_FILE = \"$NEW_FILE\"|" \
+      src/routes/index.tsx
+    echo "Set LATEST_ISO_FILE = $NEW_FILE"
+  else
+    echo "::warning::LATEST_ISO_FILE constant not found in site — skipped (renamed?)"
+  fi
+fi
+
+# Torrent info-hash for the magnet button (re-added 2026-06-18 by request; the
+# site composes the magnet from this + constant trackers + the IA web-seed).
+# ALWAYS set it — even to empty: if IA had not derived the torrent in time the
+# button must HIDE for this release, not advertise the PREVIOUS release's
+# torrent (which would download the wrong ISO).
+if grep -q 'LATEST_ISO_BTIH = "[^"]*"' src/routes/index.tsx; then
+  sed -i "s|LATEST_ISO_BTIH = \"[^\"]*\"|LATEST_ISO_BTIH = \"${NEW_BTIH:-}\"|" \
+    src/routes/index.tsx
+  if [[ -n "${NEW_BTIH:-}" ]]; then
+    echo "Set LATEST_ISO_BTIH = $NEW_BTIH"
+  else
+    echo "::warning::no btih (IA torrent not derived in time) — magnet button hidden this release"
+  fi
+else
+  echo "::warning::LATEST_ISO_BTIH constant not found in site — skipped (renamed?)"
+fi
 
 # If a PR for the same target date already exists on the head branch
 # (re-dispatch on same UTC day), skip — don't churn.

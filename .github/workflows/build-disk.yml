@@ -368,6 +368,12 @@ jobs:
       # state. Catches Titanoboa/dracut/livesys regressions that static
       # checks can't see. ~3-6 min on KVM runners; generous 15 min cap.
       - name: Boot-test the ISO in QEMU (UEFI)
+        # The NVIDIA variant can't be QEMU-boot-tested (no GPU → the nvidia
+        # driver black-screens / never reaches a graphical target), and ADR 0009
+        # marks it experimental, validated on real hardware. Skipping the gate
+        # for it lets the ISO publish for bare-metal testing instead of the job
+        # timing out in the boot wait (run 27753036929). Stable keeps the gate.
+        if: inputs.image_tag == '' || inputs.image_tag == 'stable'
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -457,7 +463,14 @@ jobs:
       contents: read
     outputs:
       identifier: ${{ steps.ia_upload.outputs.identifier }}
+      iso_file: ${{ steps.disk.outputs.artifact_basename }}
+      btih: ${{ steps.btih.outputs.btih }}
     steps:
+      - name: Checkout (for .github/scripts)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 1
+
       - name: Download ISO artifact (${{ matrix.image }})
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -475,30 +488,35 @@ jobs:
             ls -la "$OUTDIR" || true
             exit 1
           fi
-          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
+          # Verify the downloaded artifact against the BUILD-side SHA256SUMS
+          # first (its paths are relative to OUTDIR, e.g. bootiso/<name>) —
+          # before renaming anything.
+          (cd "$OUTDIR" && sha256sum -c SHA256SUMS)
+
+          # Version the published filename so the download itself says which
+          # build it is: margine-<date>.iso (stable) / margine-<variant>-<date>.iso
+          # — instead of the generic margine-live.iso. Same UTC day as the IA
+          # identifier (both derived in this job).
+          DATE_TAG="$(date -u +%Y%m%d)"
+          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
+          VFILE="margine"
+          [[ "$ISO_TAG" != "stable" ]] && VFILE="margine-${ISO_TAG}"
+          NEWBASE="${VFILE}-${DATE_TAG}.iso"
+          if [[ "$(basename "$ARTIFACT")" != "$NEWBASE" ]]; then
+            mv -- "$ARTIFACT" "$(dirname "$ARTIFACT")/$NEWBASE"
+            ARTIFACT="$(dirname "$ARTIFACT")/$NEWBASE"
+          fi
           BASE="$(basename "$ARTIFACT")"
+          SIZE_BYTES="$(stat -c %s "$ARTIFACT")"
           echo "outdir=$OUTDIR" >> "$GITHUB_OUTPUT"
           echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
           echo "artifact_basename=$BASE" >> "$GITHUB_OUTPUT"
+          echo "date_tag=$DATE_TAG" >> "$GITHUB_OUTPUT"
           echo "Will upload $BASE — $((SIZE_BYTES / 1024 / 1024)) MB ($SIZE_BYTES bytes)"
-          # Re-verify checksum locally — catches any artifact-transit
-          # corruption before we burn an hour pushing it to IA. We chdir
-          # to the dir that contains the file (bootiso/) so paths in
-          # SHA256SUMS ("bootiso/install.iso") resolve correctly here,
-          # where the OUTDIR root sits one level above.
-          (cd "$OUTDIR" && sha256sum -c SHA256SUMS)
 
-          # Regenerate SHA256SUMS for the PUBLISHED layout. Internet
-          # Archive serves the uploaded file at the item root
-          # (archive.org/download/<id>/install.iso, not
-          # /bootiso/install.iso), so the SHA256SUMS we ship next to
-          # it must reference the basename only. End-users who do
-          # `sha256sum -c SHA256SUMS` after downloading both files from
-          # IA expect them to be siblings — the build-side
-          # bootiso/install.iso layout makes that check fail.
-          # cd into the artifact's dir so sha256sum prints just the
-          # basename (its argument), then write the result back to
-          # OUTDIR/SHA256SUMS (overwriting the build-side version).
+          # Regenerate SHA256SUMS for the PUBLISHED (flat, renamed) layout IA
+          # serves: archive.org/download/<id>/<BASE>. End users download the ISO
+          # + SHA256SUMS as siblings and run `sha256sum -c SHA256SUMS`.
           ( cd "$(dirname "$ARTIFACT")" && sha256sum "$BASE" ) > "$OUTDIR/SHA256SUMS"
           echo "SHA256SUMS rewritten for IA layout:"
           cat "$OUTDIR/SHA256SUMS"
@@ -543,7 +561,9 @@ jobs:
           set -euo pipefail
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           ARTIFACT="${{ steps.disk.outputs.artifact }}"
-          DATE_TAG="$(date -u +%Y%m%d)"
+          # Reuse the SAME date the ISO was renamed with (the IA upload between
+          # can be long enough to cross UTC midnight — review blocker).
+          DATE_TAG="${{ steps.disk.outputs.date_tag }}"
           # Variant-aware identifier: stable -> margine-live-iso-<date> (unchanged);
           # nvidia -> margine-nvidia-iso-<date>, titled "Margine NVIDIA".
           ISO_TAG="${{ inputs.image_tag || 'stable' }}"
@@ -593,13 +613,34 @@ jobs:
           done
           echo "::warning::IA torrent not derived within 20 min — index will use HTTP mirrors only"
 
+      - name: Compute torrent info-hash (btih) for the magnet link
+        id: btih
+        env:
+          IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
+        run: |
+          set -euo pipefail
+          URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
+          if curl -fsSL --max-time 60 "$URL" -o /tmp/iso.torrent; then
+            # Surface a parser failure (vs torrent-not-ready) but do NOT fail the
+            # publish over a magnet — the ISO is already uploaded; the site just
+            # hides the magnet button this run.
+            if BTIH="$(python3 .github/scripts/ia-btih.py /tmp/iso.torrent 2>/tmp/btih.err)"; then
+              echo "btih=$BTIH" >> "$GITHUB_OUTPUT"
+              echo "Computed btih: $BTIH (the site composes the full magnet from it)"
+            else
+              echo "::warning::ia-btih.py failed — magnet hidden this run: $(cat /tmp/btih.err 2>/dev/null)"
+            fi
+          else
+            echo "::warning::IA torrent not fetchable yet — magnet hidden this run"
+          fi
+
       - name: Generate index.html for the IA upload page
         env:
           IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
         run: |
           set -euo pipefail
           OUTDIR="${{ steps.disk.outputs.outdir }}"
-          DATE_TAG="$(date -u +%Y%m%d)"
+          DATE_TAG="${{ steps.disk.outputs.date_tag }}"
           ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
           HEADER="Margine ${DATE_TAG}"
           SUBHEAD="Margine — Bluefin DX + CachyOS signed kernel."
@@ -720,6 +761,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SITE_BUMP_TOKEN }}
           RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          NEW_FILE: ${{ needs.publish_ia.outputs.iso_file }}
+          NEW_BTIH: ${{ needs.publish_ia.outputs.btih }}
         run: |
           set -euo pipefail
           cd site

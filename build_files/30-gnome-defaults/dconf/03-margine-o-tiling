@@ -46,13 +46,16 @@ focus-down=['<Super>j']
 # Super+arrows previously hit GNOME's gapless built-ins — mutter
 # toggle-tiled-left/right (snap to half, no gaps) and wm maximize/unmaximize
 # (strips the border) — which ignore o-tiling's layout + gaps (user-reported
-# 2026-06-18). Route Super+arrows to o-tiling's swap instead, so they move the
-# focused window within the tiled layout WITH the configured gaps. Keep
-# Ctrl+Super+hjkl as the chord alternative.
-tile-swap-left=['<Super>Left', '<Primary><Super>h']
-tile-swap-right=['<Super>Right', '<Primary><Super>l']
-tile-swap-up=['<Super>Up', '<Primary><Super>k']
-tile-swap-down=['<Super>Down', '<Primary><Super>j']
+# 2026-06-18). Route Super+arrows to o-tiling's GLOBAL move action so they move
+# the focused window within the tiled layout WITH the gaps. It MUST be
+# tile-move-*-global — that's the action o-tiling registers as a global
+# shortcut (system/keybindings.js); tile-swap-* is only handled inside the
+# interactive tile mode, so binding it globally is a silent no-op (the bug in
+# the first pass). Focus stays on Super+hjkl.
+tile-move-left-global=['<Super>Left']
+tile-move-right-global=['<Super>Right']
+tile-move-up-global=['<Super>Up']
+tile-move-down-global=['<Super>Down']
 
 [org/gnome/mutter/keybindings]
 # Free Super+Left/Right from GNOME's gapless edge-snap — o-tiling owns window

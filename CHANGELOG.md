@@ -37,16 +37,20 @@ stable release is cut.
   eat the chord are cleared. Focus stays on Super+hjkl.
 
 ### Fixed (2026-06-18)
-- **Plymouth graphical boot on fresh installs and in VMs.** Two causes: (1) the
-  bootc/titanoboa ISO didn't set `rhgb quiet`, so fresh installs booted to a
-  text console with the LUKS prompt amid kernel logs — now baked as a kernel arg
-  (`/usr/lib/bootc/kargs.d/10-margine-plymouth.toml`). (2) The generic initramfs
-  pulled amdgpu/qxl/bochs but not `virtio_gpu`, so a guest with *virtio* video
-  had no early DRM device and Plymouth fell back to text — now forced in via
-  `/etc/dracut.conf.d/02-margine-vm-gpu.conf` (`add_drivers+=" virtio_gpu "`).
-  Diagnosed from an installed VM's journal (only `/dev/dri/card1=virtio_gpu`
-  appeared, late; no early `card0`, simpledrm didn't bind). QXL/std-video guests
-  were unaffected. The Plymouth theme itself was never at fault.
+- **Plymouth graphical boot on fresh installs and in VMs.** Three causes, all
+  baked into `/usr/lib/bootc/kargs.d/10-margine-plymouth.toml` + the theme:
+  (1) the bootc/titanoboa ISO didn't set `rhgb quiet`, so fresh installs booted
+  to a text console with the LUKS prompt amid kernel logs — now `rhgb quiet`.
+  (2) **The real blocker in VMs**: the installer adds `console=ttyS0` (the guest
+  has a serial device), which Plymouth treats as headless and so it skips the
+  graphical splash entirely — now `plymouth.ignore-serial-consoles`. Plymouth
+  then renders via the EFI framebuffer (efifb, built-in); no extra GPU module in
+  the initramfs is needed (an attempt to force `virtio_gpu` in was dropped — it
+  was unnecessary and the build container's dracut wouldn't resolve it anyway).
+  (3) The early-KMS→real-GPU mode switch mid-boot left the wordmark + LUKS prompt
+  off-centre — the theme now re-centres the logo and the dialog on a resolution
+  change (`margine.script` `refresh_callback`). The theme itself was never at
+  fault; the host (no serial console, real GPU) was unaffected throughout.
 - **o-tiling gap defaults now actually apply.** `gap-inner`/`gap-outer` (and the
   active-hint border radius/width) are `uint32` keys, but the dconf default wrote
   them as bare ints (`gap-inner=2`), which the db stored as int32 — a type

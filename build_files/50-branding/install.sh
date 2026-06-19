@@ -107,6 +107,18 @@ if command -v dracut >/dev/null 2>&1; then
         --add "ostree" \
         --kver "$kver" \
         "${kver_dir}initramfs.img"
+    # This is the LAST, authoritative initramfs regen in the build (custom-kernel
+    # regenerates earlier; this overwrites it) and it reads /etc/dracut.conf.d
+    # (no -c/--confdir), so 02-margine-vm-gpu.conf's `add_drivers virtio_gpu`
+    # applies here. Guard it: dracut warns-but-exits-0 when an add_drivers name
+    # is unknown (e.g. a future kernel-config rename), which would silently
+    # reproduce the "no Plymouth splash in virtio VMs" bug with a GREEN build —
+    # so assert the module actually landed (.ko is virtio-gpu.ko). Same rationale
+    # as the explicit `--add ostree`.
+    if ! lsinitrd "${kver_dir}initramfs.img" 2>/dev/null | grep -q 'virtio[-_]gpu'; then
+      log "ERROR: virtio_gpu missing from ${kver_dir}initramfs.img — 02-margine-vm-gpu.conf add_drivers did not take"
+      exit 1
+    fi
   done
 fi
 

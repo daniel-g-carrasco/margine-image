@@ -508,15 +508,21 @@ hostonly="no"
 hostonly_cmdline="no"
 CONF
 
-# VM GPU drivers in the generic initramfs so Plymouth gets early KMS in a VM.
-# The generic (--no-hostonly) dracut set pulls amdgpu/qxl/bochs but NOT
-# virtio_gpu, so a QEMU guest with *virtio* video had no DRM device until late
-# boot (virtio_gpu loads only after switch-root) — Plymouth then fell back to a
-# text console: no splash, and the LUKS passphrase prompt printed amid kernel
-# logs. simpledrm doesn't bind the OVMF/virtio framebuffer early enough to cover
-# the gap (journal: only /dev/dri/card1=virtio_gpu appears, late; no card0).
-# QXL/std-video guests already worked because those modules are in the initramfs
-# — this was video-device-specific, not a regression. Force virtio_gpu in too.
+# VM GPU drivers in the generic initramfs so Plymouth gets native early KMS in a
+# VM (no early-KMS->virtio_gpu mode switch, so the splash is centred from the
+# start). The generic (--no-hostonly) dracut set pulls amdgpu/qxl/bochs but NOT
+# virtio_gpu, so a QEMU guest with *virtio* video had no native DRM until late
+# boot. QXL/std-video guests already had their module — video-device-specific,
+# not a regression.
+#
+# IMPORTANT: this drop-in is NOT what the BUILD relies on. The two build-time
+# dracut regens pass `--add-drivers virtio_gpu` ON THE COMMAND LINE, because the
+# conf at /etc/dracut.conf.d was empirically NOT honored by the second (50-
+# branding) regen across the custom-kernel->50-branding step boundary — the
+# 2026-06-19 build failed the virtio_gpu assertion with the conf alone, while
+# `--add-drivers` lands it deterministically (verified locally). The conf is
+# kept so a RUNTIME initramfs regen (`rpm-ostree initramfs`) still preserves
+# virtio_gpu instead of silently dropping it.
 cat > /etc/dracut.conf.d/02-margine-vm-gpu.conf <<'CONF'
 add_drivers+=" virtio_gpu "
 CONF
@@ -568,6 +574,7 @@ for kver_dir in /usr/lib/modules/*/; do
   kver=$(basename "$kver_dir")
   dracut --force --no-hostonly --no-hostonly-cmdline \
       --add "ostree" \
+      --add-drivers "virtio_gpu" \
       --kver "$kver" \
       "${kver_dir}initramfs.img"
   log "Wrote ${kver_dir}initramfs.img ($(du -h "${kver_dir}initramfs.img" | cut -f1))"

@@ -86,6 +86,15 @@ fun refresh_callback () {
     logo.last_w = Window.GetWidth(0);
     logo.last_h = Window.GetHeight(0);
     layout_logos();
+    // The unlock dialog anchors off the live resolution too. If the LUKS
+    // passphrase prompt is already on screen when the mode switches (the
+    // early-KMS -> real-GPU change in VMs), re-flow it so the prompt + entry
+    // line stay centred — otherwise only the logo re-centred and the prompt
+    // (the user's actual complaint) stayed anchored to the stale layout.
+    if (dialog_visible) {
+      dialog_show(dialog_last_prompt);
+      dialog_set_input(dialog_last_input);
+    }
   }
 }
 Plymouth.SetRefreshFunction(refresh_callback);
@@ -112,8 +121,16 @@ entry_line_text = "";
 for (i = 0; i < ENTRY_COLUMNS; i++)
   entry_line_text += "__";
 
-// Vertical anchor for the dialog: below the centered logo.
+// Vertical anchor for the dialog: below the centered logo. Recomputed live in
+// dialog_show() so it follows a mid-boot resolution change (see refresh_callback).
 dialog_top = Window.GetY() + Window.GetHeight() * 0.72;
+
+// Dialog state so refresh_callback can re-flow the prompt after a resolution
+// change. Kept as FLAT globals (not under the `dialog` hash) so the lazy
+// `!global.dialog` setup check in dialog_show() still fires the first time.
+dialog_visible     = 0;
+dialog_last_prompt = "";
+dialog_last_input  = "";
 
 // Lazily create the three dialog sprites. Mirrors the upstream example
 // theme's global.dialog pattern (plymouth themes/script/script.script).
@@ -131,6 +148,10 @@ fun dialog_show (prompt)
   {
     if (!global.dialog)
       dialog_setup();
+
+    // Recompute the anchor against the LIVE resolution, so re-running this after
+    // a mode switch re-centres the prompt vertically (X is already live below).
+    dialog_top = Window.GetY() + Window.GetHeight() * 0.72;
 
     local.image;
 
@@ -165,6 +186,7 @@ fun dialog_set_input (input_text)
 
 fun dialog_hide ()
   {
+    dialog_visible = 0;
     if (global.dialog)
       {
         dialog.prompt_sprite.SetOpacity(0);
@@ -186,6 +208,9 @@ fun display_password_callback (prompt, bullets)
     for (i = 0; i < bullets; i++)
       bullet_text += "* ";
     dialog_set_input(bullet_text);
+    dialog_last_prompt = prompt;
+    dialog_last_input  = bullet_text;
+    dialog_visible     = 1;
   }
 
 // Non-secret question (e.g. `systemd-ask-password --echo`): echo the answer.
@@ -193,6 +218,9 @@ fun display_question_callback (prompt, entry)
   {
     dialog_show(prompt);
     dialog_set_input(entry);
+    dialog_last_prompt = prompt;
+    dialog_last_input  = entry;
+    dialog_visible     = 1;
   }
 
 // Back to normal boot: clear the dialog, splash-only again.

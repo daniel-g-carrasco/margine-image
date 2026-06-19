@@ -84,6 +84,37 @@ except Exception:
 sys.exit(1 if bad else 0)
 PY
 
+# 4. Plymouth theme: the three files are present and the (script-based) theme
+#    passes a cheap sanity gate. There is NO offline Plymouth-Script linter, so
+#    a balance + callback-presence check is the only build-time guard against a
+#    theme edit silently breaking the WHOLE boot splash — it otherwise surfaces
+#    only at boot, after promotion to :stable.
+PTHEME=/usr/share/plymouth/themes/margine
+for f in margine.plymouth margine.script watermark.png; do
+  if [[ -f "$PTHEME/$f" ]]; then ok "plymouth theme file: $f"
+  else err "plymouth theme file MISSING: $f"; fi
+done
+if [[ -f "$PTHEME/margine.script" ]]; then
+  python3 - "$PTHEME/margine.script" <<'PY' || fail=1
+import sys, re
+s = open(sys.argv[1]).read()
+code = re.sub(r'//.*', '', s)          # strip line comments
+code = re.sub(r'"[^"]*"', '""', code)  # strip string literals
+bad = False
+for o, c, name in (('{', '}', 'braces'), ('(', ')', 'parens'), ('[', ']', 'brackets')):
+    if code.count(o) != code.count(c):
+        print(f"FAIL: margine.script unbalanced {name}: {code.count(o)} open vs {code.count(c)} close")
+        bad = True
+for cb in ("Plymouth.SetRefreshFunction", "Plymouth.SetDisplayPasswordFunction"):
+    if cb not in s:
+        print(f"FAIL: margine.script no longer registers {cb}")
+        bad = True
+if not bad:
+    print("  ok: margine.script balanced + registers refresh/password callbacks")
+sys.exit(1 if bad else 0)
+PY
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "margine-validate-branding: FAIL"
   exit 1

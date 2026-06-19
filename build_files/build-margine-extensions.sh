@@ -149,7 +149,7 @@ install_otiling() {
   log "o-tiling ${OTILING_VERSION} → ${target}"
   rm -rf "${target}"
   mkdir -p "${target}"
-  curl -fL --retry 5 --retry-delay 10 -o /tmp/otiling.zip "${OTILING_URL}"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 -o /tmp/otiling.zip "${OTILING_URL}"
   verify_sha256 /tmp/otiling.zip "${OTILING_SHA256}"
   extract_zip /tmp/otiling.zip "${target}"
   rm -f /tmp/otiling.zip
@@ -170,7 +170,7 @@ install_hidecursor() {
 
   rm -rf "${target}"
   mkdir -p "${target}"
-  curl -fL --retry 5 --retry-delay 10 \
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 \
     -o /tmp/hidecursor.zip \
     "https://extensions.gnome.org/download-extension/${HIDECURSOR_UUID}.shell-extension.zip?version_tag=${HIDECURSOR_VERSION_TAG}"
   verify_sha256 /tmp/hidecursor.zip "${HIDECURSOR_SHA256}"
@@ -235,7 +235,7 @@ install_smile_ext() {
 
   rm -rf "${target}"
   mkdir -p "${target}"
-  curl -fL --retry 5 --retry-delay 10 \
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 \
     -o /tmp/smile-ext.zip \
     "https://extensions.gnome.org/download-extension/${SMILE_EXT_UUID}.shell-extension.zip?version_tag=${SMILE_EXT_VERSION_TAG}"
   verify_sha256 /tmp/smile-ext.zip "${SMILE_EXT_SHA256}"

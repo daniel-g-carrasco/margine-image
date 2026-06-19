@@ -105,6 +105,7 @@ if command -v dracut >/dev/null 2>&1; then
     kver=$(basename "$kver_dir")
     dracut --force --no-hostonly --no-hostonly-cmdline \
         --add "ostree" \
+        --add-drivers "virtio_gpu" \
         --kver "$kver" \
         "${kver_dir}initramfs.img"
     # This is the LAST, authoritative initramfs regen in the build (custom-kernel

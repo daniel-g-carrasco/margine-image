@@ -508,24 +508,16 @@ hostonly="no"
 hostonly_cmdline="no"
 CONF
 
-# VM GPU drivers in the generic initramfs so Plymouth gets native early KMS in a
-# VM (no early-KMS->virtio_gpu mode switch, so the splash is centred from the
-# start). The generic (--no-hostonly) dracut set pulls amdgpu/qxl/bochs but NOT
-# virtio_gpu, so a QEMU guest with *virtio* video had no native DRM until late
-# boot. QXL/std-video guests already had their module — video-device-specific,
-# not a regression.
-#
-# IMPORTANT: this drop-in is NOT what the BUILD relies on. The two build-time
-# dracut regens pass `--add-drivers virtio_gpu` ON THE COMMAND LINE, because the
-# conf at /etc/dracut.conf.d was empirically NOT honored by the second (50-
-# branding) regen across the custom-kernel->50-branding step boundary — the
-# 2026-06-19 build failed the virtio_gpu assertion with the conf alone, while
-# `--add-drivers` lands it deterministically (verified locally). The conf is
-# kept so a RUNTIME initramfs regen (`rpm-ostree initramfs`) still preserves
-# virtio_gpu instead of silently dropping it.
-cat > /etc/dracut.conf.d/02-margine-vm-gpu.conf <<'CONF'
-add_drivers+=" virtio_gpu "
-CONF
+# NB: we deliberately do NOT force virtio_gpu into the initramfs. It proved
+# UNNECESSARY — Plymouth renders fine in UEFI VMs via the EFI framebuffer
+# (efifb, built-in) once it isn't deferred by a serial console (handled by
+# plymouth.ignore-serial-consoles in 10-margine-plymouth.toml). It was also
+# unlandable here: `dracut --add-drivers virtio_gpu` includes the module on a
+# host but the build container's dracut silently skipped it (the 2026-06-19
+# builds failed an assertion proving it never made the initramfs). The brief
+# efifb->virtio_gpu mode switch mid-boot is handled by the theme re-centering on
+# resize (margine.script refresh_callback). On bare metal the real GPU driver
+# (e.g. amdgpu) is already in the generic set. So: no virtio_gpu drop-in.
 
 # Regenerate initramfs at the **bootc/ostree-expected path**:
 #   /usr/lib/modules/<KVER>/initramfs.img
@@ -574,7 +566,6 @@ for kver_dir in /usr/lib/modules/*/; do
   kver=$(basename "$kver_dir")
   dracut --force --no-hostonly --no-hostonly-cmdline \
       --add "ostree" \
-      --add-drivers "virtio_gpu" \
       --kver "$kver" \
       "${kver_dir}initramfs.img"
   log "Wrote ${kver_dir}initramfs.img ($(du -h "${kver_dir}initramfs.img" | cut -f1))"

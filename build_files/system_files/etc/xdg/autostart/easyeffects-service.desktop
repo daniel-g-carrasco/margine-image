@@ -2,15 +2,17 @@
 Type=Application
 Name=EasyEffects (background service)
 Comment=Run the EasyEffects audio DSP chain headless from login
-Exec=flatpak run com.github.wwmm.easyeffects --service-mode
+Exec=flatpak run com.github.wwmm.easyeffects --service-mode --hide-window
 Icon=com.github.wwmm.easyeffects
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
-# --service-mode starts EasyEffects (Qt, 8.x) in the background WITHOUT a
-# window, so the DSP chain is live from login ("hidden mode", user-requested
-# 2026-06-18). The older --gapplication-service flag is deprecated in 8.x.
-# EasyEffects applies no effects until a preset is enabled, so this is inert by
-# default; opening EasyEffects later attaches to this running service.
+# --service-mode runs EasyEffects (Qt, 8.x) as a background service from login;
+# --hide-window keeps its window CLOSED at startup. --service-mode ALONE still
+# pops the window open in 8.x (user-reported 2026-06-19), so BOTH flags are
+# required for a truly hidden start. The DSP chain is live from login but
+# applies no effects until a preset is enabled, so this is inert by default;
+# re-open EasyEffects from Activities and it attaches to this running service.
+# (--gapplication-service is the deprecated 8.x alias of --service-mode.)
 #
 # Opt out per-user: cp this file to ~/.config/autostart/ with an added
 # "Hidden=true" line, or toggle it off in GNOME Settings -> Apps -> Startup.

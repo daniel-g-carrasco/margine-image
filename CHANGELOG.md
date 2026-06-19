@@ -7,6 +7,13 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-06-19)
+- **EasyEffects now actually starts hidden.** The autostart used only
+  `--service-mode`, which in EasyEffects 8.x (Qt) still pops the window open at
+  login (user-reported). Add `--hide-window` so it starts as a background
+  service with the window closed; re-open it from Activities (it attaches to the
+  running service). Effects stay inert until a preset is enabled.
+
 ### Added (2026-06-18)
 - **`ujust install-koofr`** (alias `ujust koofr`) — installs the Koofr Desktop
   sync client natively and rootless from upstream's self-updating tarball into

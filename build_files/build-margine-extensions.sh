@@ -65,7 +65,7 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # Margine overrides in 03-margine-o-tiling are unchanged in 2.8.17.
 OTILING_VERSION="v2.9.4"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
-OTILING_SHA256="969d742b1e678b9384ee0ddcba7e601cad66e27395c8bf4115c9f9321fc53f4c"
+OTILING_SHA256="7cc729db825fce5e0ca695911c8522bc132cdbf5aa20c98e64661959d854969d"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
 # Shell major of the current base (50). When Bluefin bumps GNOME, the

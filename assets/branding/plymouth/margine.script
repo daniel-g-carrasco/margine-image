@@ -38,54 +38,56 @@ Window.SetBackgroundBottomColor (0.0, 0.0, 0.0);  // #000000
 // Size to ~15% of screen HEIGHT. (Was 22% of WIDTH, which under-sizes the
 // wordmark on tall 3:2 / HiDPI panels — only ~8% of height on 2880x1920.)
 // Cap at 40% of width for ultrawides, and never upscale beyond the source.
-// Draw a centered logo on EVERY display, sized to that display. A single
-// sprite centered on window 0 lands in a corner of any second/larger
-// monitor — reported 2026-06-15: a 4K external alongside the laptop showed
-// the wordmark in the top-left, not centered. Plymouth's Window.* methods
-// take an optional window index; iterate while one exists and keep each
-// sprite referenced (global `logos` hash) so it isn't garbage-collected.
 logo.orig = Image("watermark.png");
 
-// Lay out a centered logo on every display, sized to that display. Wrapped in a
-// function so it can RE-RUN when the mode changes mid-boot: the early-KMS
-// framebuffer is often a different resolution than the final one (notably in
-// VMs), and positioning the sprite only once left the wordmark off-centre after
-// the switch (user-reported 2026-06-18; at shutdown — where the resolution is
-// already final — it stayed centred, proving the math is right and only the
-// timing was wrong). Sprites are created once and reused via SetImage; the
-// scaled image is kept in the global `logos` hash so it isn't garbage-collected.
-fun layout_logos () {
-  for (i = 0; Window.GetWidth(i) > 0; i++) {
-    th = Math.Int(Window.GetHeight(i) * 0.15);
-    tw = Math.Int(th * logo.orig.GetWidth() / logo.orig.GetHeight());
-    if (tw > Window.GetWidth(i) * 0.40) {
-      tw = Math.Int(Window.GetWidth(i) * 0.40);
-      th = Math.Int(tw * logo.orig.GetHeight() / logo.orig.GetWidth());
-    }
-    if (tw > logo.orig.GetWidth()) {
-      tw = logo.orig.GetWidth();
-      th = logo.orig.GetHeight();
-    }
-    logos[i].image = logo.orig.Scale(tw, th);
-    if (!logos[i].sprite)
-      logos[i].sprite = Sprite();
-    logos[i].sprite.SetImage(logos[i].image);
-    logos[i].sprite.SetX(Window.GetX(i) + Window.GetWidth(i)  / 2 - logos[i].image.GetWidth()  / 2);
-    logos[i].sprite.SetY(Window.GetY(i) + Window.GetHeight(i) / 2 - logos[i].image.GetHeight() / 2);
+// Lay out ONE centred logo using flat globals (`logo.sprite`/`logo.image`) and
+// the NON-INDEXED Window API — the exact pattern the unlock dialog uses, and
+// which renders correctly at the LUKS prompt.
+//
+// A previous version laid a logo out per display via a
+// `for (i = 0; Window.GetWidth(i) > 0; i++)` loop that stored each sprite in a
+// NESTED `logos[i]` hash. That regressed the wordmark to invisible everywhere
+// (user-reported 2026-06-20: no logo at the LUKS prompt nor during boot), for
+// two compounding reasons: a sprite reference held only inside a nested hash is
+// not retained the way a flat global is (so the sprite was collected before it
+// drew), and the indexed multi-display calls are fragile at the early-KMS /
+// initramfs stage. A single centred logo is correct for the single-display
+// install; on a multi-monitor host it centres on the primary, which is fine.
+//
+// Wrapped in a function so it can RE-RUN when the mode changes mid-boot: the
+// early-KMS framebuffer is often a different resolution than the final one
+// (notably in VMs), and positioning the sprite only once left the wordmark
+// off-centre after the switch (user-reported 2026-06-18).
+fun layout_logo () {
+  th = Math.Int(Window.GetHeight() * 0.15);
+  tw = Math.Int(th * logo.orig.GetWidth() / logo.orig.GetHeight());
+  if (tw > Window.GetWidth() * 0.40) {
+    tw = Math.Int(Window.GetWidth() * 0.40);
+    th = Math.Int(tw * logo.orig.GetHeight() / logo.orig.GetWidth());
   }
+  if (tw > logo.orig.GetWidth()) {
+    tw = logo.orig.GetWidth();
+    th = logo.orig.GetHeight();
+  }
+  logo.image = logo.orig.Scale(tw, th);
+  if (!logo.sprite)
+    logo.sprite = Sprite();
+  logo.sprite.SetImage(logo.image);
+  logo.sprite.SetX(Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
+  logo.sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
 }
-layout_logos();
+layout_logo();
 
-// Re-centre only when the primary display geometry actually changes (the
-// early-boot mode switch), so the per-frame refresh stays cheap. Registering a
-// refresh function is also required by Plymouth.
-logo.last_w = Window.GetWidth(0);
-logo.last_h = Window.GetHeight(0);
+// Re-centre only when the display geometry actually changes (the early-boot
+// mode switch), so the per-frame refresh stays cheap. Registering a refresh
+// function is also required by Plymouth.
+logo.last_w = Window.GetWidth();
+logo.last_h = Window.GetHeight();
 fun refresh_callback () {
-  if (Window.GetWidth(0) != logo.last_w || Window.GetHeight(0) != logo.last_h) {
-    logo.last_w = Window.GetWidth(0);
-    logo.last_h = Window.GetHeight(0);
-    layout_logos();
+  if (Window.GetWidth() != logo.last_w || Window.GetHeight() != logo.last_h) {
+    logo.last_w = Window.GetWidth();
+    logo.last_h = Window.GetHeight();
+    layout_logo();
     // The unlock dialog anchors off the live resolution too. If the LUKS
     // passphrase prompt is already on screen when the mode switches (the
     // early-KMS -> real-GPU change in VMs), re-flow it so the prompt + entry

@@ -29,8 +29,16 @@
 #
 # What we install here:
 #   * o-tiling@oliwebd.github.com — auto-tiling, binary-tree split.
-#     Margine's default tiling engine. Not on EGO; we pull the
-#     versioned release zip from GitHub. Bluefin does not ship this.
+#     Margine's default tiling engine. Now also on EGO (pk 9875; it was
+#     NOT when this script was first written, ~2026-06-03), but we keep
+#     pulling the versioned release zip from GitHub on purpose: it lets
+#     us pin an EXACT upstream release + verify its sha256. Upstream ships
+#     the release on GitHub first, whereas EGO serves "latest approved for
+#     your shell", which lags review and changes over time. (We could
+#     switch to EGO's download-extension API with a pinned version_tag, as
+#     hide-cursor/smile below do — same pin+sha guarantee — but there's no
+#     gain; GitHub gives the exact upstream version we patch downstream.)
+#     Bluefin does not ship this.
 #   * hide-cursor@elcste.com — Wayland-native auto-hide of the mouse
 #     cursor on inactivity. EGO id 6727. Bluefin does not ship this.
 #

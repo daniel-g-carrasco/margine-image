@@ -43,9 +43,25 @@ name: Build Margine image
 on:
   push:
     branches: [main]
-    # Skip disk/IA workflow changes and pure-docs commits.
+    # Don't rebuild the image for changes that can't affect it (see list).
     paths-ignore:
+      # Only build.yml builds the :stable/:candidate image. Editing any
+      # OTHER workflow (ISO/IA, smoke, NVIDIA variant, pin-bumpers, lint,
+      # security, cleanup, status) must NOT trigger a full image rebuild.
+      # paths-ignore can't negate ("all workflows except build.yml"), so
+      # every non-image workflow is listed explicitly — add new ones here.
       - '.github/workflows/build-disk.yml'
+      - '.github/workflows/build-nvidia.yml'
+      - '.github/workflows/check-upstream-pins.yml'
+      - '.github/workflows/ghcr-cleanup.yml'
+      - '.github/workflows/ia-prune-history.yml'
+      - '.github/workflows/lint.yml'
+      - '.github/workflows/otiling-pin-sha.yml'
+      - '.github/workflows/scorecard.yml'
+      - '.github/workflows/smoke-boot.yml'
+      - '.github/workflows/status-json.yml'
+      - '.github/workflows/validate-flatpak-refs.yml'
+      - '.github/workflows/wsf-pin-sha.yml'
       - 'README.md'
       - 'CHANGELOG.md'
       - 'docs/**'
@@ -59,7 +75,23 @@ on:
     types: [labeled, synchronize]
     branches: [main]
     paths-ignore:
+      # Only build.yml builds the :stable/:candidate image. Editing any
+      # OTHER workflow (ISO/IA, smoke, NVIDIA variant, pin-bumpers, lint,
+      # security, cleanup, status) must NOT trigger a full image rebuild.
+      # paths-ignore can't negate ("all workflows except build.yml"), so
+      # every non-image workflow is listed explicitly — add new ones here.
       - '.github/workflows/build-disk.yml'
+      - '.github/workflows/build-nvidia.yml'
+      - '.github/workflows/check-upstream-pins.yml'
+      - '.github/workflows/ghcr-cleanup.yml'
+      - '.github/workflows/ia-prune-history.yml'
+      - '.github/workflows/lint.yml'
+      - '.github/workflows/otiling-pin-sha.yml'
+      - '.github/workflows/scorecard.yml'
+      - '.github/workflows/smoke-boot.yml'
+      - '.github/workflows/status-json.yml'
+      - '.github/workflows/validate-flatpak-refs.yml'
+      - '.github/workflows/wsf-pin-sha.yml'
       - 'README.md'
       - 'CHANGELOG.md'
       - 'docs/**'

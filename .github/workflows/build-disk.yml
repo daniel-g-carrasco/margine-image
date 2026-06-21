@@ -573,8 +573,19 @@ jobs:
           secret = ${IA_S3_SECRET}
           EOF
           chmod 0600 "$IA_CONFIG_FILE"
+          # --no-backup: when an upload CLOBBERS an existing file (e.g. a
+          # same-day re-publish of a fixed ISO reuses identifier
+          # margine-live-iso-<date> AND filename margine-<date>.iso), IA
+          # would otherwise move the old copy to history/files/<name>.~N~
+          # and KEEP it. For a multi-GB ISO that silently DOUBLES the item
+          # size and bloats the auto-generated torrent (observed 2026-06-20:
+          # a re-published ISO left an 8.5 GB stale copy in history/, torrent
+          # ~17.9 GB). Our ISOs are reproducible from a tagged commit, so we
+          # don't need IA's clobber-history — replace cleanly. Prune existing
+          # history with the ia-prune-history.yml workflow.
           ia --config-file "$IA_CONFIG_FILE" --debug upload "$IDENTIFIER" \
             "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
+            --no-backup \
             --retries 5 \
             --sleep 60 \
             --metadata="mediatype:software" \

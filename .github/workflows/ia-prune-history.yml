@@ -1,0 +1,77 @@
+# Prune Internet Archive item versioning backups (history/files/*).
+#
+# IA versions every clobbered file into history/files/<name>.~N~ and keeps
+# it forever. For multi-GB ISOs a same-day re-publish therefore doubles the
+# item size and bloats the auto-generated .torrent (the whole item is one
+# torrent). build-disk.yml now uploads with --no-backup so this stops
+# happening going forward; this workflow cleans up items that already
+# accumulated history (one-shot, manual).
+#
+# Auth uses the same IA_ACCESS_KEY / IA_SECRET_KEY secrets as publish_ia.
+name: IA prune history
+
+on:
+  workflow_dispatch:
+    inputs:
+      identifier:
+        description: "IA item identifier to prune (e.g. margine-live-iso-20260620)"
+        required: true
+        type: string
+      dry_run:
+        description: "List what would be deleted without deleting"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Delete history/files/* from an IA item
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install internetarchive CLI
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --quiet internetarchive
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Prune
+        env:
+          IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
+          IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
+          ID: ${{ inputs.identifier }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          export IA_CONFIG_FILE=/tmp/ia.ini
+          printf '[s3]\naccess = %s\nsecret = %s\n' "$IA_S3_ACCESS" "$IA_S3_SECRET" > "$IA_CONFIG_FILE"
+          chmod 0600 "$IA_CONFIG_FILE"
+
+          echo "== current files in $ID =="
+          ia --config-file "$IA_CONFIG_FILE" list "$ID" | sed 's/^/  /'
+
+          mapfile -t HIST < <(ia --config-file "$IA_CONFIG_FILE" list "$ID" | grep '^history/files/' || true)
+          if [ "${#HIST[@]}" -eq 0 ]; then
+            echo "No history/files/* entries — nothing to prune."
+            exit 0
+          fi
+          echo "== history/files to delete (${#HIST[@]}) =="
+          printf '  %s\n' "${HIST[@]}"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "dry-run: not deleting."
+            exit 0
+          fi
+
+          for f in "${HIST[@]}"; do
+            echo "deleting: $f"
+            # -H x-archive-keep-old-version:0 so deleting a backup does NOT
+            # itself create a fresh backup (which for an 8 GB file would
+            # defeat the purpose).
+            ia --config-file "$IA_CONFIG_FILE" delete "$ID" "$f" \
+              -H 'x-archive-keep-old-version:0' || {
+                echo "::warning::failed to delete $f"; }
+          done
+          echo "Done. IA will re-derive the torrent (smaller) within a few minutes."

@@ -871,3 +871,91 @@ install-koofr ACTION="install":
 [group('Apps')]
 koofr ACTION="install":
     @ujust install-koofr {{ ACTION }}
+
+# Set up Sunshine (game-stream host for Moonlight). EXPERIMENTAL, opt-in: installs the Flatpak, enables uinput for virtual input, opens the firewall ports. Margine's atomic-friendly take on Bazzite's `ujust setup-sunshine` (no rpm-ostree layering).
+[group('Gaming')]
+margine-sunshine:
+    #!/usr/bin/bash
+    set -euo pipefail
+
+    cat <<'EOF'
+    == Margine Sunshine setup (EXPERIMENTAL) ==
+
+    Sunshine is the host side of Moonlight game streaming. This sets it up
+    the atomic-friendly way (no rpm-ostree layering):
+
+      1. installs the Flatpak  dev.lizardbyte.app.Sunshine  (Flathub)
+      2. enables uinput + a udev rule, so Sunshine can create the virtual
+         gamepad/keyboard/mouse for the remote client
+      3. grants the Flatpak device access + runs its bundled setup helper
+      4. opens the Sunshine firewall ports (47984-48010, TCP + UDP)
+
+    Heads-up:
+      - This is Margine's first cut, not yet validated end-to-end. If
+        something is off, please report it.
+      - It opens network ports and grants input-device access, which is
+        why it is an explicit opt-in command and not a default.
+      - On Wayland (GNOME) the first stream prompts you to pick what to
+        share (the screen-capture portal). That is normal.
+
+    EOF
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+
+    echo; echo "== Installing the Sunshine Flatpak =="
+    flatpak install --system -y --or-update flathub dev.lizardbyte.app.Sunshine
+
+    echo; echo "== Enabling uinput (virtual input) =="
+    echo uinput | sudo tee /etc/modules-load.d/uinput.conf >/dev/null
+    sudo modprobe uinput || true
+    printf '%s\n' 'KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"' \
+      | sudo tee /etc/udev/rules.d/60-sunshine.rules >/dev/null
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger --subsystem-match=misc || true
+
+    echo; echo "== Granting Flatpak device access + running its setup helper =="
+    flatpak override --user --device=all dev.lizardbyte.app.Sunshine || true
+    # The Flatpak ships a helper that wires udev + a user service; best-effort.
+    flatpak run --command=additional-install.sh dev.lizardbyte.app.Sunshine || true
+
+    echo; echo "== Opening Sunshine firewall ports =="
+    if command -v firewall-cmd >/dev/null 2>&1; then
+      for p in 47984/tcp 47989/tcp 47990/tcp 48010/tcp 47998/udp 47999/udp 48000/udp 48002/udp 48010/udp; do
+        sudo firewall-cmd --permanent --add-port="$p" >/dev/null || true
+      done
+      sudo firewall-cmd --reload >/dev/null || true
+      echo "  firewalld: Sunshine ports opened."
+    else
+      echo "  firewall-cmd not found; open 47984-48010 (TCP + UDP) manually if needed."
+    fi
+
+    echo
+    cat <<'EOF'
+    == Done ==
+    Next steps:
+      1. Log out and back in once (so the uinput udev access applies).
+      2. Launch Sunshine from the Activities grid.
+      3. Open the web UI at  https://localhost:47990  to set a username and
+         password and pair your Moonlight client.
+      4. To autostart on login, enable it in the Sunshine web UI.
+
+    Roll back with:  ujust margine-sunshine-remove
+    EOF
+
+# Undo margine-sunshine (uninstall the Flatpak, remove the uinput rule + firewall ports)
+[group('Gaming')]
+margine-sunshine-remove:
+    #!/usr/bin/bash
+    set -euo pipefail
+    echo "Removing Sunshine..."
+    flatpak run --command=additional-uninstall.sh dev.lizardbyte.app.Sunshine || true
+    flatpak uninstall --system -y dev.lizardbyte.app.Sunshine || true
+    sudo rm -f /etc/udev/rules.d/60-sunshine.rules
+    sudo udevadm control --reload-rules || true
+    if command -v firewall-cmd >/dev/null 2>&1; then
+      for p in 47984/tcp 47989/tcp 47990/tcp 48010/tcp 47998/udp 47999/udp 48000/udp 48002/udp 48010/udp; do
+        sudo firewall-cmd --permanent --remove-port="$p" >/dev/null 2>&1 || true
+      done
+      sudo firewall-cmd --reload >/dev/null 2>&1 || true
+    fi
+    echo "Done. (uinput stays enabled, which is harmless.)"

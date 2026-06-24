@@ -101,9 +101,14 @@ fi
 # ostree dracut module (without which switch-root fails — see comment
 # in custom-kernel/install.sh).
 if command -v dracut >/dev/null 2>&1; then
+  # zstd-compress explicitly (don't rely on inheriting Bluefin's
+  # 10-compression.conf); fail loudly if zstd is missing rather than let
+  # dracut silently gzip the initramfs.
+  command -v zstd >/dev/null || { log "ERROR: zstd missing — dracut would silently gzip the initramfs"; exit 1; }
+  export DRACUT_NO_XATTR=1
   for kver_dir in /usr/lib/modules/*/; do
     kver=$(basename "$kver_dir")
-    dracut --force --no-hostonly --no-hostonly-cmdline \
+    dracut --force --zstd --no-hostonly --no-hostonly-cmdline \
         --add "ostree" \
         --kver "$kver" \
         "${kver_dir}initramfs.img"

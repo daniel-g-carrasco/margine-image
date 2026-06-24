@@ -42,7 +42,11 @@ jobs:
       - name: Check carried patches against upstream
         run: |
           set -euo pipefail
-          # PR -> short description of the carried patch
+          # PR -> short description of the carried patch. NB: the fork
+          # carries a THIRD patch (cce73fc, grub.cfg trailing-slash) that
+          # has NO upstream PR — it is fork-permanent (load-bearing for our
+          # plain-file EFI/MOK.der placement), so it is intentionally NOT
+          # tracked here; only the upstreamable PRs are watched.
           declare -A PRS=(
             ["147"]="mksquashfs -e ordering (zstd fallback fix)"
             ["148"]="grub2.extra_cfg (Secure Boot enroll menu entry)"

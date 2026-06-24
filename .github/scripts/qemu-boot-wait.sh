@@ -16,7 +16,7 @@
 # --gui-watch, gui=pass|fail|timeout|none (Layer C verdict, warn-only).
 set -euo pipefail
 
-MODE="" IMAGE="" LOG="serial.log" TIMEOUT=1800 GUI_WATCH=0
+MODE="" IMAGE="" LOG="serial.log" TIMEOUT=1800 GUI_WATCH=0 MEM=4096
 OK_REGEX='Started.*gdm\.service|Reached target graphical\.target|margine login:'
 FAIL_REGEX=""
 while [[ $# -gt 0 ]]; do
@@ -27,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --ok-regex) OK_REGEX="$2"; shift 2 ;;
     --fail-regex) FAIL_REGEX="$2"; shift 2 ;;
+    --mem) MEM="$2"; shift 2 ;;
     --gui-watch) GUI_WATCH=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -63,7 +64,7 @@ fi
 rm -f qemu.pid "$LOG"
 qemu-system-x86_64 \
   -enable-kvm \
-  -m 4096 -smp 4 \
+  -m "$MEM" -smp 4 \
   -machine q35 \
   -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" \
   -drive if=pflash,format=raw,file=ovmf_vars.fd \

@@ -229,6 +229,22 @@ restore_kernel_install_hooks
 log "Removing COPR repo file (kept only at build time)"
 rm -f /etc/yum.repos.d/*copr*
 
+# Refresh GPU firmware + microcode to match the (newer) CachyOS kernel.
+# The CachyOS kernel can be newer than the base image's linux-firmware
+# snapshot (the CachyOS spec only Recommends: it), so a kernel that
+# references amdgpu blobs absent from the base would fail the GPU probe /
+# black-screen before GDM on bare metal — invisible to the virtio-gpu CI
+# gate. Upgrade ONLY the firmware packages actually installed (so an
+# unknown-package name can't abort the transaction), from the always-on
+# Fedora repos; never block the build on it.
+FW_PKGS="$(rpm -qa --qf '%{NAME}\n' 'linux-firmware*' 'amd-gpu-firmware*' 'amd-ucode*' 2>/dev/null | sort -u | tr '\n' ' ')"
+if [[ -n "${FW_PKGS// /}" ]]; then
+  log "Refreshing firmware/microcode for $KERNEL_VERSION: $FW_PKGS"
+  # shellcheck disable=SC2086 # intentional word-split of the package list
+  dnf -y upgrade --refresh $FW_PKGS \
+    || log "WARN: firmware/microcode refresh non-fatal failure (continuing)"
+fi
+
 # ---------------------------------------------------------------------------
 # v4l2loopback against the CachyOS kernel (OPTIONAL — skip on build error)
 # ---------------------------------------------------------------------------
@@ -562,9 +578,15 @@ log "Regenerating initramfs for all installed kernels (generic, bootc-path, ostr
 # Verified missing 2026-05-30: `lsinitrd <initramfs> | grep ostree`
 # returned ZERO lines on our published image. `--no-hostonly` alone
 # is insufficient; ostree dracut module must be EXPLICITLY requested.
+# The initramfs MUST be zstd-compressed (today this only works by
+# inheriting Bluefin's 10-compression.conf; nothing pins it). Pass --zstd
+# explicitly AND fail loudly if the tool is missing, so dracut can never
+# silently fall back to gzip (slower boot, bigger initramfs).
+command -v zstd >/dev/null || { err "zstd binary missing — dracut would silently gzip the initramfs"; exit 1; }
+export DRACUT_NO_XATTR=1
 for kver_dir in /usr/lib/modules/*/; do
   kver=$(basename "$kver_dir")
-  dracut --force --no-hostonly --no-hostonly-cmdline \
+  dracut --force --zstd --no-hostonly --no-hostonly-cmdline \
       --add "ostree" \
       --kver "$kver" \
       "${kver_dir}initramfs.img"

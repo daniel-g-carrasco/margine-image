@@ -34,10 +34,18 @@ grub2:
   timeout: 5
   entries:
     - name: "Install Margine"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096"
       initrd: "/images/pxeboot/initrd.img"
     - name: "Install Margine (Basic Graphics Mode)"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image nomodeset"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096 nomodeset"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "Install Margine (verbose, no splash, no serial)"
+      # Field-debugging entry (added after the 2026-06-24 Beelink SER8 /
+      # Ryzen 8745H hang report). Drops `quiet rhgb` so the kernel + systemd
+      # print to the SCREEN, and drops console=ttyS0 so a machine with no
+      # real UART cannot stall every printk on serial TX. The bounded
+      # overlay keeps writable-layer sizing predictable.
+      linux: "/images/pxeboot/vmlinuz console=tty0 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096"
       initrd: "/images/pxeboot/initrd.img"
   # Raw fragment appended after the generated entries (margine-pins /
   # upstream PR: grub2.extra_cfg). With Secure Boot ON the live CachyOS

@@ -62,12 +62,18 @@ on:
 env:
   # Titanoboa pin — the official ISO builder since 2026-06-11
   # (ADR-0008 Phase 5). Pinned to OUR fork branch margine-pins =
-  # upstream post-#138 HEAD (5c457c3d) + exactly two patches:
+  # upstream post-#138 HEAD (5c457c3d) + THREE carried patches:
   #   1. mksquashfs -e ordering (upstream PR ublue-os/titanoboa#147)
   #      — without it the squashfs silently falls back to gzip
-  #   2. grub2.extra_cfg raw fragment (upstream PR pending) — used
-  #      for the Secure Boot "Enroll key (MokManager)" menu entry
-  # Revert to the upstream pin once both PRs land. Renovate disabled.
+  #   2. grub2.extra_cfg raw fragment (upstream PR ublue-os/titanoboa#148)
+  #      — the Secure Boot "Enroll key (MokManager)" menu entry
+  #   3. grub.cfg trailing-slash: write grub.cfg only into EFI
+  #      SUBdirectories (cce73fc, NO upstream PR — fork-permanent).
+  #      Load-bearing for our plain-file EFI/MOK.der placement; without it
+  #      upstream's `for dir in /work/EFI/*` glob hits the MOK.der FILE and
+  #      hard-fails the ISO build with "Not a directory".
+  # Reverting to an upstream pin is impossible until all three land.
+  # Renovate disabled.
   TITANOBOA_REF: "daniel-g-carrasco/titanoboa@cce73fc476e97fed626283afb6c518e0882a12d7"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
@@ -363,6 +369,26 @@ jobs:
           echo "size_mb=$((SIZE_BYTES / 1024 / 1024))" >> "$GITHUB_OUTPUT"
           echo "Live ISO: $((SIZE_BYTES / 1024 / 1024)) MB"
 
+      - name: Assert squashfs is zstd (guards the mksquashfs -e patch)
+        # The mksquashfs -e ordering patch on our titanoboa fork keeps the
+        # squashfs at zstd-19; an accidental revert to an upstream pin
+        # would silently produce a gzip squashfs (slow boot, bigger ISO)
+        # that the boot-test below would NOT catch. Assert it explicitly.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq squashfs-tools >/dev/null
+          ISO="$(ls "${{ steps.iso.outputs.outdir }}"/*.iso | head -1)"
+          MNT="$(mktemp -d)"
+          sudo mount -o loop,ro "$ISO" "$MNT"
+          SQ="$(sudo find "$MNT" -name 'squashfs.img' | head -1)"
+          if [[ -z "$SQ" ]]; then sudo umount "$MNT"; echo "::error::no squashfs.img in ISO"; exit 1; fi
+          COMP="$(sudo unsquashfs -s "$SQ" | grep -i 'Compression' || true)"
+          echo "squashfs: $COMP"
+          sudo umount "$MNT"
+          echo "$COMP" | grep -qi 'zstd' \
+            || { echo "::error::squashfs is NOT zstd (mksquashfs -e patch regressed?)"; exit 1; }
+
       # Gate (2026-06-12, review item #9): boot the freshly built ISO
       # in UEFI QEMU and require the live system to reach a usable
       # state. Catches Titanoboa/dracut/livesys regressions that static
@@ -389,6 +415,18 @@ jobs:
             --timeout 900 \
             --ok-regex 'Started.*gdm\.service|Reached target [Gg]raphical|livesys.*Finished|[Mm]argine login:' \
             --fail-regex 'dracut-emergency|Failed to start.*dmsquash|emergency shell'
+          # Constrained-RAM pass (2 GiB), WARN-ONLY: surfaces a live-overlay
+          # Overflow / read-only remount on low usable RAM (large iGPU UMA
+          # carveouts) without blocking the ship. Flip to gating once proven.
+          echo "=== constrained-RAM (2 GiB) boot pass (warn-only) ==="
+          sudo -E .github/scripts/qemu-boot-wait.sh \
+            --cdrom "$ISO" \
+            --mem 2048 \
+            --log iso-serial-2g.log \
+            --timeout 900 \
+            --ok-regex 'Started.*gdm\.service|Reached target [Gg]raphical|livesys.*Finished|[Mm]argine login:' \
+            --fail-regex 'Overflow|Remounting.*read-only|dracut-emergency|emergency shell' \
+            || echo "::warning::constrained-RAM (2 GiB) boot did not reach a usable state — see iso-serial-2g.log (live-overlay overflow on low usable RAM?)"
 
       - name: Upload ISO serial log
         # Always — a failed boot-test is debugged from this log (the
@@ -397,7 +435,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: iso-boot-serial-log
-          path: iso-serial.log
+          path: iso-serial*.log
           retention-days: 7
           if-no-files-found: ignore
 

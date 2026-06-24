@@ -315,9 +315,9 @@ full ~25-min image build. See the inline history comment at the
 top of [`.github/workflows/build.yml`](.github/workflows/build.yml)
 for the full rationale.
 
-**Titanoboa migration:** Phase 0 scaffolding is in progress; see
+**Titanoboa migration:** complete since 2026-06-11 (ADR-0008 Phase 5); see
 [`margine-fedora-atomic` ADR-0008](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/adr/0008-titanoboa-migration-plan.md).
-Pin: `ublue-os/titanoboa@5c457c3d`.
+Pin: `daniel-g-carrasco/titanoboa@cce73fc` (our fork of upstream `ublue-os/titanoboa@5c457c3d` + 3 carried patches; see `.github/workflows/build-disk.yml`).
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
 Dash to Dock, Gradia Integration, GSConnect (from Bluefin); o-tiling,

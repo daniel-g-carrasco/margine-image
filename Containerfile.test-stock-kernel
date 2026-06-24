@@ -46,7 +46,7 @@ RUN set -euo pipefail && \
       [ -f "$f.bak" ] && mv -f "$f.bak" "$f"; \
     done && \
     echo "== regenerating initramfs (generic, no-hostonly, +ostree, bootc path) ==" && \
-    mkdir -p /root && chmod 700 /root && \
+    ROOT_HOME="$(realpath -m /root)" && mkdir -p "$ROOT_HOME" && chmod 700 "$ROOT_HOME" && \
     for kver_dir in /usr/lib/modules/*/; do \
       kver=$(basename "$kver_dir"); \
       dracut --force --no-hostonly --no-hostonly-cmdline --add ostree \

@@ -95,6 +95,10 @@ operations.
 <img src="docs/screenshots/activities-search.png" alt="GNOME Activities with search open showing Margine extensions and dock" width="48%">
 &nbsp;
 <img src="docs/screenshots/lock-screen.png" alt="Lock screen with autumn-leaves wallpaper" width="48%">
+&nbsp;
+<img src="docs/screenshots/gaming-heroes.png" alt="Heroes III running on Margine through Proton" width="48%">
+&nbsp;
+<img src="docs/screenshots/scheduler-overview.png" alt="Margine CPU Scheduler picker with the sched_ext options" width="48%">
 
 </div>
 
@@ -219,6 +223,18 @@ ujust margine-gaming-remove        # for the Flatpak variant
 ujust margine-gaming-native-remove # for the native variant
 systemctl reboot
 ```
+
+**Game streaming (Sunshine, experimental):**
+
+Stream games from this machine to a [Moonlight](https://moonlight-stream.org/) client (laptop, tablet, TV, another PC). The atomic equivalent of Bazzite's `setup-sunshine`:
+
+```sh
+ujust margine-sunshine          # Sunshine (Moonlight host) as a Flatpak,
+                                # with uinput + firewall ports wired up.
+ujust margine-sunshine-remove   # roll it back
+```
+
+Then open `https://localhost:47990` to set credentials and pair. Experimental: not yet validated end to end.
 
 The result of either is a layered (not ostree-canonical) deployment —
 `rpm-ostree status` will show `LayeredPackages: gamescope vkBasalt`

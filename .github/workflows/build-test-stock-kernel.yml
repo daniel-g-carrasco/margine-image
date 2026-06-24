@@ -1,0 +1,87 @@
+---
+# TEST-ONLY build: Margine with the stock Fedora kernel (Containerfile.test-stock-kernel).
+#
+# An A/B control for the Ryzen 8745 / Radeon 780M desktop boot hang
+# (forum thread .../12247). Builds margine:stable with ONLY the kernel
+# reverted to Fedora's, pushes ghcr.io/<owner>/margine:test-stock-kernel.
+# A tester rebases to it; if it boots where margine:stable hangs, the
+# CachyOS kernel is confirmed as the cause.
+#
+# Manual only (workflow_dispatch). No MOK signing (Fedora kernel is
+# Fedora-signed), no rechunk, no SBOM, no cosign, no smoke-boot — this is
+# a throwaway diagnostic image, not a release.
+
+name: Build test image (stock Fedora kernel)
+
+on:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: margine
+  TEST_TAG: test-stock-kernel
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build_push:
+    name: Build (stock kernel) + push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Maximize build space
+        # margine:stable is ~14 GB; the swap layer + buildah cache need headroom.
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Build test image
+        run: |
+          set -euo pipefail
+          sudo -E buildah build \
+            --file ./Containerfile.test-stock-kernel \
+            --format docker \
+            --layers \
+            --tag "${IMAGE_NAME}:${TEST_TAG}" \
+            .
+          sudo buildah images "${IMAGE_NAME}:${TEST_TAG}"
+
+      - name: Push to GHCR
+        id: push
+        run: |
+          set -euo pipefail
+          OWNER="${{ github.repository_owner }}"
+          DEST="ghcr.io/${OWNER,,}/${IMAGE_NAME}:${TEST_TAG}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo skopeo login \
+            -u "${{ github.actor }}" --password-stdin ghcr.io
+          sudo skopeo copy --retry-times 3 \
+            "containers-storage:localhost/${IMAGE_NAME}:${TEST_TAG}" \
+            "docker://${DEST}"
+          echo "Pushed: ${DEST}"
+          {
+            echo "## Test image pushed"
+            echo ""
+            echo "\`${DEST}\`"
+            echo ""
+            echo "Rebase from a working Fedora Atomic / Bluefin DX install:"
+            echo '```'
+            echo "rpm-ostree rebase ostree-unverified-registry:${DEST}"
+            echo "systemctl reboot"
+            echo '```'
+            echo ""
+            echo "If this boots on hardware where margine:stable hangs, the CachyOS kernel is the cause."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,58 @@
+# =============================================================================
+# Margine — TEST-ONLY image: stock Fedora kernel instead of CachyOS
+# =============================================================================
+#
+# Purpose: an A/B control for the Ryzen 7 8745 + Radeon 780M DESKTOP boot
+# hang reported on the forum
+# (https://universal-blue.discourse.group/t/.../12247). Margine's live ISO
+# hard-hangs on those desktops while stock Bluefin DX (Fedora kernel) boots
+# fine. The single biggest difference between the two is the kernel
+# (Margine = CachyOS/BORE, Bluefin = stock Fedora). This image is
+# byte-for-byte the published `margine:stable` with ONLY the kernel reverted
+# to Fedora's, so a tester can isolate the variable:
+#
+#   margine:stable            (CachyOS) -> hangs   ─┐  if test-stock-kernel
+#   margine:test-stock-kernel (Fedora)  -> boots?  ─┘  boots, the CachyOS
+#                                                       kernel is the cause.
+#
+# NOT for production: not MOK-signed (the Fedora kernel is already signed by
+# Fedora's key, valid under Secure Boot), not rechunked, not cosign-signed,
+# not smoke-tested. Built only on demand by build-test-stock-kernel.yml
+# (workflow_dispatch) and pushed to ghcr.io/<owner>/margine:test-stock-kernel.
+# Rebase to it with `ostree-unverified-registry:` (see the workflow summary).
+# =============================================================================
+
+FROM ghcr.io/daniel-g-carrasco/margine:stable
+
+# Swap the CachyOS kernel back to the stock Fedora kernel. The dracut
+# invocation MUST match custom-kernel/install.sh exactly (generic, no
+# host-only, +ostree module, output at the bootc/ostree path
+# /usr/lib/modules/<KVER>/initramfs.img) or the image won't boot on real
+# installs (LUKS/btrfs) for reasons unrelated to the kernel under test.
+RUN set -euo pipefail && \
+    echo "== disabling kernel-install hooks for the swap (mirrors install.sh) ==" && \
+    for f in /usr/lib/kernel/install.d/05-rpmostree.install \
+             /usr/lib/kernel/install.d/50-dracut.install; do \
+      [ -f "$f" ] && { mv "$f" "$f.bak"; printf '#!/bin/sh\nexit 0\n' > "$f"; chmod +x "$f"; }; \
+    done && \
+    echo "== removing the CachyOS kernel + clearing its modules tree ==" && \
+    dnf -y remove 'kernel-cachyos*' || true && \
+    rm -rf /usr/lib/modules/* && \
+    echo "== installing the stock Fedora kernel (Fedora-signed) ==" && \
+    dnf -y install --refresh kernel kernel-core kernel-modules kernel-modules-core kernel-modules-extra && \
+    echo "== restoring kernel-install hooks ==" && \
+    for f in /usr/lib/kernel/install.d/05-rpmostree.install \
+             /usr/lib/kernel/install.d/50-dracut.install; do \
+      [ -f "$f.bak" ] && mv -f "$f.bak" "$f"; \
+    done && \
+    echo "== regenerating initramfs (generic, no-hostonly, +ostree, bootc path) ==" && \
+    mkdir -p /root && chmod 700 /root && \
+    for kver_dir in /usr/lib/modules/*/; do \
+      kver=$(basename "$kver_dir"); \
+      dracut --force --no-hostonly --no-hostonly-cmdline --add ostree \
+             --kver "$kver" "${kver_dir}initramfs.img"; \
+      echo "wrote ${kver_dir}initramfs.img"; \
+    done && \
+    dnf -y clean all
+
+RUN bootc container lint

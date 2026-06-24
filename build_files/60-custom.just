@@ -148,6 +148,12 @@ margine-gaming:
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
 
     echo
+    echo "== Ensuring full (unfiltered) Flathub at system level =="
+    # Rebased systems can have Flathub missing at --system scope, or the
+    # Fedora-FILTERED Flathub (which hides proprietary apps like Steam, the
+    # exact failure a tester hit 2026-06-24). Make it present + unfiltered.
+    sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    sudo flatpak remote-modify --system flathub --no-filter || true
     echo "== Installing gaming Flatpaks =="
     flatpak install --system -y --or-update flathub \
         com.valvesoftware.Steam \
@@ -273,6 +279,9 @@ margine-gaming-native:
     sudo rpm-ostree install "${GAMING_PKGS[@]}"
 
     echo
+    echo "== Ensuring full (unfiltered) Flathub at system level =="
+    sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    sudo flatpak remote-modify --system flathub --no-filter || true
     echo "== Installing the rest as Flatpaks =="
     flatpak install --system -y --or-update flathub \
         com.heroicgameslauncher.hgl \
@@ -902,6 +911,9 @@ margine-sunshine:
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
 
+    echo; echo "== Ensuring full (unfiltered) Flathub at system level =="
+    sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    sudo flatpak remote-modify --system flathub --no-filter || true
     echo; echo "== Installing the Sunshine Flatpak =="
     flatpak install --system -y --or-update flathub dev.lizardbyte.app.Sunshine
 

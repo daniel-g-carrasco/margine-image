@@ -81,4 +81,6 @@ ostreecontainer --url=ghcr.io/daniel-g-carrasco/margine:stable --transport=regis
 %include /usr/share/anaconda/post-scripts/bootc-switch.ks
 %include /usr/share/anaconda/post-scripts/zstd-compress.ks
 %include /usr/share/anaconda/post-scripts/secureboot-enroll-key.ks
+%include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
 %include /usr/share/anaconda/post-scripts/install-flatpaks.ks
+%include /usr/share/anaconda/post-scripts/flatpak-restore-selinux-labels.ks

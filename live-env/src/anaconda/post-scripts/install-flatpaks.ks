@@ -1,45 +1,64 @@
 # Margine Flatpak BAKE — rsync the pre-baked /var/lib/flatpak from the
 # live env into the freshly installed target (Titanoboa / ADR-0008).
 #
-# Ported from disk_config/iso-gnome.toml (BIB %post flatpak bake). The
-# live-env image already has the ~38 fundamentals in /var/lib/flatpak
-# (baked by live-env/src/build.sh). ostree+bootc reset /var per
-# deployment on install, so without this rsync the Flatpaks are lost on
-# first boot.
+# The live-env image already has the ~38 fundamentals in /var/lib/flatpak
+# (baked by live-env/src/build.sh). ostree+bootc reset /var per deployment
+# on install, and Margine does NOT bake Flatpaks into the committed image
+# /var, so without this rsync the Flatpaks are lost on first boot.
 #
-# rsync flags: ADR-0008 §4 invariant uses Bluefin's verified-in-production
-# `--filter='-x security.selinux'` — it preserves POSIX xattrs/ACLs but
-# strips SELinux labels, which ostree's finalize relabels correctly on the
-# target. Without this, baked Flatpaks can fail to launch with AVC denials.
+# 2026-06-26 fix (forum 12247 / fresh-install broken-flatpak P0):
+#   - TARGET the actually-mounted runtime /var (/mnt/sysimage/var), NOT the
+#     per-deployment .0/var checkout. With margine.conf's dedicated /var
+#     btrfs subvol the booted system mounts that subvol at /var; the old
+#     $DEPLOY_DIR/var (.0/var) was shadowed and the bake was silently lost.
+#   - Do NOT strip SELinux labels. The previous `--filter='-x
+#     security.selinux'` left the repo mislabeled, and ostree only relabels
+#     /var once at deploy-finalize (BEFORE %post), so nothing ever fixed it
+#     -> confined flatpak was denied access to /var/lib/flatpak/repo.
+#     Plain `-aAXUHKP` (Bluefin/Aurora pattern) + a relabel ks that runs
+#     AFTER this one (flatpak-restore-selinux-labels.ks) as belt-and-braces.
+#   - LOUD validation: the repo MUST end with refs/remotes/flathub or the
+#     bake failed; log a grep-able marker either way.
 #
 # NOT --erroronfail: every BAKE app is also in
 # /usr/share/flatpak/preinstall.d/margine-defaults.preinstall, so a failed
 # rsync degrades to a first-boot flatpak-preinstall.service download rather
-# than a bricked install. (bootc switch + partitioning carry --erroronfail;
-# the Flatpak bake is quality-of-life.)
+# than a bricked install.
 %post --nochroot --log=/mnt/sysimage/var/log/anaconda-post-flatpak-bake.log
 set -uo pipefail
 
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
-log "Locate target ostree deployment under /mnt/sysimage"
-DEPLOY_DIR="$(ls -d /mnt/sysimage/ostree/deploy/default/deploy/*.0 2>/dev/null | head -1)"
-if [[ -z "$DEPLOY_DIR" ]]; then
-  log "ERROR: no ostree deployment found under /mnt/sysimage — cannot rsync flatpaks"
-  ls -la /mnt/sysimage/ostree/deploy/ 2>&1 || true
-  exit 0
+# Target the actually-mounted runtime /var. Anaconda mounts the target's
+# /var subvol at /mnt/sysimage/var; fall back to the deployment .0/var only
+# if no separate /var was mounted (single-/ layout — still the right var).
+if mountpoint -q /mnt/sysimage/var; then
+  TARGET="/mnt/sysimage/var/lib"
+elif [[ -d /mnt/sysimage/var/lib || -d /mnt/sysimage/var ]]; then
+  TARGET="/mnt/sysimage/var/lib"
+else
+  DEPLOY_DIR="$(ls -d /mnt/sysimage/ostree/deploy/*/deploy/*.0 2>/dev/null | head -1)"
+  if [[ -z "$DEPLOY_DIR" ]]; then
+    log "ERROR: no /mnt/sysimage/var and no ostree deployment — cannot rsync flatpaks"
+    exit 0
+  fi
+  TARGET="$DEPLOY_DIR/var/lib"
 fi
-log "Target deploy dir = $DEPLOY_DIR"
+log "Target var/lib = $TARGET"
+mkdir -p "$TARGET"
 
-mkdir -p "$DEPLOY_DIR/var/lib"
 if [[ -d /var/lib/flatpak ]]; then
   installed="$(find /var/lib/flatpak/app -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)"
   log "Source /var/lib/flatpak has $installed installed apps (pre-baked in live env)"
-  log "rsync /var/lib/flatpak -> $DEPLOY_DIR/var/lib/"
-  rsync -aAXUHKP --filter='-x security.selinux' /var/lib/flatpak "$DEPLOY_DIR/var/lib/"
+  log "rsync /var/lib/flatpak -> $TARGET/"
+  rsync -aAXUHKP /var/lib/flatpak "$TARGET/"
   sync
-  log "rsync complete — target /var/lib/flatpak populated"
+  if [[ -d "$TARGET/flatpak/repo/refs/remotes/flathub" ]]; then
+    log "MARGINE-BAKE-OK: $TARGET/flatpak/repo/refs/remotes/flathub present ($installed apps)"
+  else
+    log "MARGINE-BAKE-FAIL: $TARGET/flatpak/repo/refs/remotes/flathub MISSING after rsync"
+  fi
 else
-  log "WARN: /var/lib/flatpak does not exist in the live env (nothing baked?)"
+  log "MARGINE-BAKE-FAIL: /var/lib/flatpak does not exist in the live env (nothing baked?)"
 fi
 %end

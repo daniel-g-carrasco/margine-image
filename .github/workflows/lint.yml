@@ -48,6 +48,12 @@ jobs:
           dockerfile: Containerfile
           config: .hadolint.yaml
 
+      - name: Flatpak-bake + console fix invariants (regression guard)
+        # Static guard for the 2026-06 fresh-install Flatpak-bake fixes and
+        # the phantom-UART console fix (forum 12247) — install-time-only
+        # behaviours no boot-test exercises. Fails if any is silently undone.
+        run: .github/scripts/check-flatpak-fixes.sh
+
       - name: shellcheck (tracked *.sh + shebang-discovered system_files)
         # -S warning: the only info-level items are SC1091 ("can't
         # follow /ctx/00-common.sh") — a build-container path that does

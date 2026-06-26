@@ -17,6 +17,7 @@
 set -euo pipefail
 
 MODE="" IMAGE="" LOG="serial.log" TIMEOUT=1800 GUI_WATCH=0 MEM=4096
+KERNEL="" INITRD="" APPEND=""
 OK_REGEX='Started.*gdm\.service|Reached target graphical\.target|margine login:'
 FAIL_REGEX=""
 while [[ $# -gt 0 ]]; do
@@ -28,6 +29,9 @@ while [[ $# -gt 0 ]]; do
     --ok-regex) OK_REGEX="$2"; shift 2 ;;
     --fail-regex) FAIL_REGEX="$2"; shift 2 ;;
     --mem) MEM="$2"; shift 2 ;;
+    --kernel) KERNEL="$2"; shift 2 ;;
+    --initrd) INITRD="$2"; shift 2 ;;
+    --append) APPEND="$2"; shift 2 ;;
     --gui-watch) GUI_WATCH=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -61,6 +65,17 @@ else
   MEDIA_ARGS=(-cdrom "$IMAGE")
 fi
 
+# Direct-kernel boot (CI serial injection). The shipped live ISO no longer
+# bakes console=ttyS0 (it stalls phantom-UART mini-PCs — see
+# live-env/src/iso.yaml). To keep the ISO boot-test observable over serial,
+# the caller extracts the ISO's kernel+initrd and passes them here with a
+# custom --append that adds console=ttyS0; QEMU/OVMF boots them directly
+# while the -cdrom still provides the live squashfs (root=live:CDLABEL=...).
+DIRECT_ARGS=()
+if [[ -n "$KERNEL" ]]; then
+  DIRECT_ARGS=(-kernel "$KERNEL" -initrd "$INITRD" -append "$APPEND")
+fi
+
 rm -f qemu.pid "$LOG"
 qemu-system-x86_64 \
   -enable-kvm \
@@ -69,6 +84,7 @@ qemu-system-x86_64 \
   -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" \
   -drive if=pflash,format=raw,file=ovmf_vars.fd \
   "${MEDIA_ARGS[@]}" \
+  "${DIRECT_ARGS[@]}" \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -serial "file:$LOG" \
   -display none \

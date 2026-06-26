@@ -406,11 +406,24 @@ jobs:
           sudo apt-get install -y -qq qemu-system-x86 ovmf >/dev/null
           ISO="$(ls "${{ steps.iso.outputs.outdir }}"/*.iso | head -1)"
           echo "Boot-testing: $ISO"
+          # The shipped ISO no longer bakes console=ttyS0 (it stalls
+          # phantom-UART mini-PCs like the Beelink SER8 — see
+          # live-env/src/iso.yaml). To keep serial observability in CI,
+          # extract the ISO's kernel+initrd and direct-boot them with
+          # console=ttyS0 + systemd.show_status=1 injected via --append;
+          # the -cdrom still serves the live squashfs (root=live:CDLABEL).
+          MNT="$(mktemp -d)"
+          sudo mount -o loop,ro "$ISO" "$MNT"
+          cp "$MNT/images/pxeboot/vmlinuz" ./ci-vmlinuz
+          cp "$MNT/images/pxeboot/initrd.img" ./ci-initrd.img
+          sudo umount "$MNT"
+          APPEND="quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096"
           # Shared watcher (same script gates the qcow2 in smoke-boot).
           # Live-healthy markers: GDM session (live autologin) or livesys
           # completing; dracut emergency = instant fail.
           sudo -E .github/scripts/qemu-boot-wait.sh \
             --cdrom "$ISO" \
+            --kernel ./ci-vmlinuz --initrd ./ci-initrd.img --append "$APPEND" \
             --log iso-serial.log \
             --timeout 900 \
             --ok-regex 'Started.*gdm\.service|Reached target [Gg]raphical|livesys.*Finished|[Mm]argine login:' \
@@ -421,6 +434,7 @@ jobs:
           echo "=== constrained-RAM (2 GiB) boot pass (warn-only) ==="
           sudo -E .github/scripts/qemu-boot-wait.sh \
             --cdrom "$ISO" \
+            --kernel ./ci-vmlinuz --initrd ./ci-initrd.img --append "$APPEND" \
             --mem 2048 \
             --log iso-serial-2g.log \
             --timeout 900 \

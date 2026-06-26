@@ -17,27 +17,28 @@
 # convenience only — the INSTALLED system is fully enforcing; the
 # install kickstart relabels the target).
 #
-# console=tty0 console=ttyS0,115200n8 + systemd.show_status=1: tty0 stays
-# the user's primary graphical console (plymouth/rhgb splash unchanged on
-# real hardware; a machine with no serial port simply ignores ttyS0),
-# while the kernel and systemd ALSO mirror to the serial port. The CI ISO
-# boot-test (build-disk.yml -> qemu-boot-wait.sh) wires QEMU ttyS0 to a
-# file and waits for the graphical-target/gdm markers — without a serial
-# console it sees only GRUB then silence and times out at 900s on a
-# perfectly healthy ISO (run 27453088479). show_status=1 forces systemd
-# to print "Reached target …/Started …" even though `quiet` is set. The
-# installed system already carries these consoles from the bootc base,
-# which is why the qcow2 smoke-boot has always been observable.
+# Serial console (console=ttyS0) is deliberately NOT baked into the
+# shipped entries. The earlier assumption that "a machine with no serial
+# port simply ignores ttyS0" turned out false: a board that advertises a
+# phantom 8250 UART (common on mini-PCs, e.g. the Beelink SER8 / Ryzen
+# 8745) makes every kernel printk busy-wait on a TX that never completes,
+# which on a show_status boot drags the whole boot ~30x slower and then
+# wedges (forum thread 12247, 2026-06-25). So the public ISO uses only
+# console=tty0. The CI ISO boot-test still gets full serial observability:
+# it boots the ISO's extracted kernel+initrd via -kernel/-initrd/-append
+# and injects console=ttyS0 + systemd.show_status=1 THERE (build-disk.yml
+# -> qemu-boot-wait.sh), so the serial console exists only in CI, never on
+# user hardware. The installed system's observability is unaffected.
 label: "Margine-Live"
 grub2:
   default: 0
   timeout: 5
   entries:
     - name: "Install Margine"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096"
       initrd: "/images/pxeboot/initrd.img"
     - name: "Install Margine (Basic Graphics Mode)"
-      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 console=ttyS0,115200n8 systemd.show_status=1 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096 nomodeset"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb console=tty0 root=live:CDLABEL=Margine-Live enforcing=0 rd.live.image rd.live.overlay.size=4096 nomodeset"
       initrd: "/images/pxeboot/initrd.img"
     - name: "Install Margine (verbose, no splash, no serial)"
       # Field-debugging entry (added after the 2026-06-24 Beelink SER8 /

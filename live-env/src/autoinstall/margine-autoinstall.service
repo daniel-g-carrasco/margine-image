@@ -1,0 +1,26 @@
+# CI-ONLY automated install trigger (forum 12247 install-gate).
+#
+# The Margine live ISO cannot use inst.ks= / OEMDRV: its initramfs has the
+# dmsquash-live hooks but ZERO anaconda-dracut modules, so those installer
+# triggers never fire. Instead this dormant unit (shipped in the LIVE env
+# only, never the installed system) runs Anaconda non-interactively when —
+# and only when — the live boot carries the `margine.autoinstall` kernel
+# arg, which CI injects via -append. A normal user boot never has that arg,
+# so this is a no-op for everyone except the CI install gate.
+[Unit]
+Description=Margine CI automated install (margine.autoinstall karg only)
+ConditionKernelCommandLine=margine.autoinstall
+After=network-online.target livesys.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+StandardOutput=journal+console
+StandardError=journal+console
+# --cmdline = fully non-interactive; aborts (not prompts) on any gap.
+ExecStart=/usr/sbin/anaconda --kickstart=/usr/share/anaconda/ci-autoinstall.ks --cmdline
+# Anaconda reboots via the `reboot` in the ks; with QEMU -no-reboot that
+# halts the VM so the gate can open the installed disk cleanly.
+
+[Install]
+WantedBy=multi-user.target

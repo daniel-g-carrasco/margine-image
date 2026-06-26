@@ -274,6 +274,19 @@ install -Dm0644 "$SRC_DIR/anaconda/profile.d/margine.conf" \
 # (same content as the Phase 2 line above) plus bootc-switch + zstd.
 cp "$SRC_DIR"/anaconda/post-scripts/*.ks /usr/share/anaconda/post-scripts/
 
+# CI install-gate (forum 12247): a dormant automated-install trigger. Its
+# ConditionKernelCommandLine=margine.autoinstall makes it a no-op on every
+# normal user boot; CI injects that karg to run a headless Anaconda install
+# and verify the Flatpak bake end to end. Live-env only — never reaches the
+# installed system.
+if [[ -d "$SRC_DIR/autoinstall" ]]; then
+  install -Dm0644 "$SRC_DIR/autoinstall/ci-autoinstall.ks" \
+    /usr/share/anaconda/ci-autoinstall.ks
+  install -Dm0644 "$SRC_DIR/autoinstall/margine-autoinstall.service" \
+    /usr/lib/systemd/system/margine-autoinstall.service
+  systemctl enable margine-autoinstall.service
+fi
+
 # Append Margine partitioning + ostreecontainer + %includes to the base
 # interactive-defaults.ks anaconda-live ships (preserve the base).
 cat "$SRC_DIR/anaconda/interactive-defaults.ks" \

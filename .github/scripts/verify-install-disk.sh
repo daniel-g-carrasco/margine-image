@@ -50,21 +50,40 @@ if [[ -z "$ROOT" ]]; then
   set +x; echo "::error::no btrfs root partition on $QCOW"; lsblk "$NBD" 2>/dev/null || true; blkid "$NBD"p* 2>/dev/null || true; exit 1
 fi
 mkdir -p "$MNT"
-if ! mount -o ro "$ROOT" "$MNT" 2>/dev/null; then
-  # ostree btrfs may need the default subvol; try the 'root' subvol explicitly.
-  mount -o ro,subvol=root "$ROOT" "$MNT" 2>/dev/null \
-    || mount -o ro,subvolid=5 "$ROOT" "$MNT" \
-    || { set +x; echo "::error::could not mount btrfs root $ROOT"; exit 1; }
+# Mount the btrfs TOP (subvolid 5) so EVERY subvol is traversable in one mount.
+# CRITICAL (review wzskaqvwo, confirmed on this bootc host): Margine's
+# margine.conf default_partitioning gives /var its OWN btrfs subvol, and
+# install-flatpaks.ks bakes into THAT dedicated /var (/mnt/sysimage/var/lib) —
+# NOT the per-deployment stateroot var (/ostree/deploy/$sr/var), which is just
+# an empty .ostree-selabeled stub. At the btrfs top the bake therefore lives at
+# $MNT/var/lib/flatpak. Reading the stateroot stub would FALSE-FAIL every check.
+mount -o ro,subvolid=5 "$ROOT" "$MNT" 2>/dev/null \
+  || mount -o ro "$ROOT" "$MNT" 2>/dev/null \
+  || { set +x; echo "::error::could not mount btrfs root $ROOT"; exit 1; }
+
+# VARLIB = the lib/ dir that actually contains the baked flatpak/ (the dedicated
+# /var subvol), located robustly across subvol layouts.
+VARLIB=""
+for cand in "$MNT/var/lib" "$MNT/root/var/lib"; do
+  if [[ -d "$cand/flatpak" ]]; then VARLIB="$cand"; break; fi
+done
+if [[ -z "$VARLIB" ]]; then
+  fp="$(find "$MNT" -maxdepth 6 -type d -path '*/var/lib/flatpak' 2>/dev/null | head -1)"
+  [[ -n "$fp" ]] && VARLIB="$(dirname "$fp")"
+fi
+if [[ -z "$VARLIB" ]]; then
+  # last resort: mount the dedicated var subvol explicitly
+  umount -R "$MNT" 2>/dev/null
+  if mount -o ro,subvol=var "$ROOT" "$MNT" 2>/dev/null && [[ -d "$MNT/lib/flatpak" ]]; then VARLIB="$MNT/lib"; fi
 fi
 set +x
-
-SR="$(ls "$MNT"/ostree/deploy 2>/dev/null | head -1)"
-if [[ -z "$SR" ]]; then
-  echo "::error::no ostree stateroot under /ostree/deploy"; ls -laR "$MNT"/ostree 2>/dev/null | head -40 || true; exit 1
+if [[ -z "$VARLIB" ]]; then
+  echo "::error::no var/lib/flatpak on installed disk — bake missing or unexpected subvol layout"
+  ls -laR "$MNT" 2>/dev/null | head -80 || true
+  exit 1
 fi
-VARLIB="$MNT/ostree/deploy/$SR/var/lib"
-echo "stateroot=$SR  varlib=$VARLIB"
-ls -la "$VARLIB/flatpak" 2>/dev/null | head -20 || echo "  (no $VARLIB/flatpak)"
+echo "varlib=$VARLIB (dedicated /var btrfs subvol)"
+ls -la "$VARLIB/flatpak" 2>/dev/null | head -20 || true
 
 fail=0
 ok()  { printf '  OK   %s\n' "$1"; }
@@ -85,9 +104,9 @@ echo "  baked apps under flatpak/app: $N"
 ctx="$(getfattr -n security.selinux --only-values "$VARLIB/flatpak" 2>/dev/null | tr -d '\0' || true)"
 echo "  /var/lib/flatpak SELinux context: ${ctx:-<unreadable>}"
 case "$ctx" in
-  *var_lib_t*|*var_t*) ok "SELinux context is var_lib_t" ;;
-  "")                  echo "  ::warning::could not read security.selinux xattr (non-fatal)" ;;
-  *)                   bad "SELinux context wrong ($ctx) — expected var_lib_t" ;;
+  *var_lib_t*) ok "SELinux context is var_lib_t" ;;
+  "")          echo "  ::warning::could not read security.selinux xattr (non-fatal)" ;;
+  *)           bad "SELinux context '$ctx' wrong — /var/lib/flatpak must be var_lib_t (var_t is NOT enough)" ;;
 esac
 
 echo

@@ -5,7 +5,7 @@
 # assertion is the cheap insurance that a future edit can't silently undo
 # them. Run in CI (lint). Exit 1 on any regression.
 set -uo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 2
 
 KS=live-env/src/anaconda/post-scripts/install-flatpaks.ks
 IDEF=live-env/src/anaconda/interactive-defaults.ks

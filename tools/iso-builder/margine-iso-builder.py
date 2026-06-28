@@ -63,7 +63,8 @@ class BuilderWindow(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Margine ISO Builder")
         self.set_default_size(900, 620)
-        self._proc = None  # the running Gio.Subprocess, if any
+        self._proc = None    # the running Gio.Subprocess, if any
+        self._stream = None  # its stdout pipe (kept referenced while reading)
 
         self.toasts = Adw.ToastOverlay()
         self.set_content(self.toasts)
@@ -210,25 +211,26 @@ class BuilderWindow(Adw.ApplicationWindow):
             self._set_running(False, "Failed to start.")
             self._proc = None
             return
-        stream = Gio.DataInputStream.new(self._proc.get_stdout_pipe())
-        self._read_next(stream)
+        # Keep a reference to the pipe: if it were GC'd the FD would close and
+        # the still-writing script would die of SIGPIPE (exit 141).
+        self._stream = self._proc.get_stdout_pipe()
+        self._read_next(self._stream)
         self._proc.wait_async(None, self._on_build_done)
 
     def _read_next(self, stream):
-        stream.read_line_async(GLib.PRIORITY_DEFAULT, None, self._on_line, stream)
+        # read_bytes (not read_line): a true EOF is a zero-length GBytes, while
+        # an empty output LINE still carries its '\n' — so unlike read_line
+        # (where both EOF and an empty line return b''), this never stops early.
+        stream.read_bytes_async(8192, GLib.PRIORITY_DEFAULT, None, self._on_chunk, None)
 
-    def _on_line(self, stream, result, _user):
+    def _on_chunk(self, stream, result, _user):
         try:
-            data, _length = stream.read_line_finish(result)
+            chunk = stream.read_bytes_finish(result)
         except GLib.Error:
             return
-        if not data:
-            return  # EOF (read_line_finish returns b'' at end-of-stream, not None)
-        try:
-            line = data.decode("utf-8", "replace") if isinstance(data, (bytes, bytearray)) else str(data)
-        except Exception:
-            line = repr(data)
-        self._append(line + "\n")
+        if chunk is None or chunk.get_size() == 0:
+            return  # true EOF
+        self._append(chunk.get_data().decode("utf-8", "replace"))
         self._read_next(stream)
 
     def _on_build_done(self, proc, result):
@@ -240,6 +242,7 @@ class BuilderWindow(Adw.ApplicationWindow):
             ok, code = False, -1
             self._append(f"\n[error waiting for process: {e.message}]\n")
         self._proc = None
+        self._stream = None
         if ok:
             self._set_running(False, "Done ✓")
             iso = self._newest_iso()

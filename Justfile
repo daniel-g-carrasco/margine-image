@@ -280,6 +280,21 @@ iso-gui:
     # system python3 has pygobject/GTK4/Adw (a venv/brew python on PATH may not)
     /usr/bin/python3 tools/iso-builder/margine-iso-builder.py
 
+# Install a GNOME launcher for the GUI into ~/.local/share/applications.
+[group('Build Live ISO (local dev)')]
+install-desktop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    apps="$HOME/.local/share/applications"
+    mkdir -p "$apps"
+    dst="$apps/place.empty.margine.IsoBuilder.desktop"
+    sed "s|@GUI@|{{justfile_directory()}}/tools/iso-builder/margine-iso-builder.py|" \
+      "{{justfile_directory()}}/tools/iso-builder/place.empty.margine.IsoBuilder.desktop.in" > "$dst"
+    chmod 0644 "$dst"
+    update-desktop-database "$apps" 2>/dev/null || true
+    echo "Installed launcher: $dst"
+    echo "Search 'Margine ISO Builder' in Activities (icon: margine-logo)."
+
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
 rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "qcow2" "disk_config/disk.toml")

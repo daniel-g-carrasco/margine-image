@@ -102,6 +102,12 @@ class BuilderWindow(Adw.ApplicationWindow):
         self.tag_row.set_selected(0)  # stable
         controls.add(self.tag_row)
 
+        self.secure_row = Adw.SwitchRow(
+            title="Secure Boot + TPM2 in the test VM",
+            subtitle="Enforce Secure Boot (MS keys) and emulate TPM 2.0 — "
+                     "exercises MOK enrollment and LUKS TPM2 auto-unlock")
+        controls.add(self.secure_row)
+
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8, homogeneous=True,
                           margin_top=6)
         controls.add(btn_row)
@@ -265,8 +271,10 @@ class BuilderWindow(Adw.ApplicationWindow):
         if not iso:
             self._toast("No ISO in output/ — build one first")
             return
-        argv = ["bash", "-lc", f"cd {shlex.quote(REPO_ROOT)} && just test-install-vm"]
-        self._append(f"\n$ just test-install-vm  (newest: {os.path.basename(iso)})\n")
+        sec = "true" if self.secure_row.get_active() else "false"
+        argv = ["bash", "-lc",
+                f"cd {shlex.quote(REPO_ROOT)} && just test-install-vm secure={sec}"]
+        self._append(f"\n$ just test-install-vm secure={sec}  (newest: {os.path.basename(iso)})\n")
         try:
             Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE)
             self._toast("Launching QEMU — install with DEFAULT partitioning")

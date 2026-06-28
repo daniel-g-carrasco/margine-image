@@ -42,7 +42,7 @@ OUT="${REPO_ROOT}/output"
 
 # Colour only on a real terminal — the GTK GUI captures plain stdout.
 if [[ -t 1 ]]; then C_B='\033[1;34m'; C_R='\033[1;31m'; C_0='\033[0m'; else C_B=''; C_R=''; C_0=''; fi
-log()  { printf '\n%b==>%b %s\n' "$C_B" "$C_0" "$*"; }
+log()  { printf '\n%b==>%b [%s] %s\n' "$C_B" "$C_0" "$(date +%H:%M:%S)" "$*"; }
 die()  { printf '%bERROR:%b %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
 
 command -v podman >/dev/null || die "podman is required"
@@ -115,6 +115,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
   sudo chown "${REAL_UID}:${REAL_GID}" "${ISO_PATH}" 2>/dev/null || true
 fi
 
-log "Live ISO ready:"
+log "Done in $((SECONDS / 60))m $((SECONDS % 60))s — Live ISO ready:"
 ls -lh "${ISO_PATH}"
-printf '\nTest it:  just test-install-vm     (or boot it in GNOME Boxes / virt-manager, UEFI, Secure Boot OFF)\n'
+printf '\nTest it:  just test-install-vm              (quick, Secure Boot off)\n'
+printf '          just test-install-vm secure=true  (Secure Boot + TPM2, the real path)\n'

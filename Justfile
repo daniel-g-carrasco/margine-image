@@ -240,23 +240,24 @@ build-iso-fast tag="stable":
 
 # Boot the newest local ISO in a UEFI QEMU VM (fresh disk) for a real install.
 [group('Build Live ISO (local dev)')]
-test-install-vm disk_size="40G" mem="6144":
+test-install-vm secure="false" disk_size="40G" mem="6144":
     #!/usr/bin/env bash
     set -euo pipefail
+    secure="{{secure}}"
     ISO="$(ls -t output/*.iso 2>/dev/null | head -1)"
     [[ -n "$ISO" ]] || { echo "No ISO in output/ — run 'just build-iso-fast' first." >&2; exit 1; }
     command -v qemu-system-x86_64 >/dev/null \
       || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes / virt-manager)." >&2; exit 1; }
-    OVMF_CODE=""
-    for f in /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE.fd \
-             /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/qemu/ovmf-x86_64-code.bin; do
-      [[ -f "$f" ]] && OVMF_CODE="$f" && break
-    done
-    OVMF_VARS=""
-    for f in /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS.fd \
-             /usr/share/edk2/x64/OVMF_VARS.4m.fd; do
-      [[ -f "$f" ]] && OVMF_VARS="$f" && break
-    done
+    # secure=true  → OVMF with Microsoft keys (Secure Boot ENFORCED) + emulated
+    #                TPM 2.0, to exercise MOK enrollment + TPM2 LUKS auto-unlock.
+    # secure=false → plain OVMF, no TPM: quick, for iterating install/ISO bugs.
+    if [[ "$secure" == "true" ]]; then code_n=(OVMF_CODE.secboot.fd); vars_n=(OVMF_VARS.secboot.fd)
+    else code_n=(OVMF_CODE.fd OVMF_CODE.4m.fd); vars_n=(OVMF_VARS.fd OVMF_VARS.4m.fd); fi
+    OVMF_CODE=""; OVMF_VARS=""
+    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
+      for n in "${code_n[@]}"; do [[ -f "$d/$n" ]] && OVMF_CODE="$d/$n" && break 2; done; done
+    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
+      for n in "${vars_n[@]}"; do [[ -f "$d/$n" ]] && OVMF_VARS="$d/$n" && break 2; done; done
     [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] \
       || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
     DISK="output/test-install.qcow2"
@@ -264,15 +265,32 @@ test-install-vm disk_size="40G" mem="6144":
     rm -f "$DISK" output/test-ovmf-vars.fd
     qemu-img create -f qcow2 "$DISK" "{{disk_size}}" >/dev/null
     cp "$OVMF_VARS" output/test-ovmf-vars.fd
-    echo "Booting $ISO (RAM {{mem}} MiB). Use DEFAULT partitioning in the installer."
-    exec qemu-system-x86_64 \
-      -accel kvm -m {{mem}} -smp 4 -machine q35 -cpu host \
-      -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}" \
-      -drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd" \
-      -drive "file=${DISK},if=virtio,format=qcow2" \
-      -cdrom "$ISO" -boot d \
-      -vga virtio -display gtk \
-      -device virtio-net,netdev=n0 -netdev user,id=n0
+    QEMU=(qemu-system-x86_64 -m {{mem}} -smp 4)
+    if [[ -e /dev/kvm ]]; then QEMU+=(-accel kvm -cpu host); else echo "::warning:: /dev/kvm absent → slow TCG"; QEMU+=(-cpu max); fi
+    if [[ "$secure" == "true" ]]; then
+      QEMU+=(-machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on -global ICH9-LPC.disable_s3=1)
+    else
+      QEMU+=(-machine q35)
+    fi
+    QEMU+=(-drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}")
+    QEMU+=(-drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd")
+    QEMU+=(-drive "file=${DISK},if=virtio,format=qcow2")
+    QEMU+=(-cdrom "$ISO" -boot d -vga virtio -display gtk)
+    QEMU+=(-device virtio-net,netdev=n0 -netdev user,id=n0)
+    if [[ "$secure" == "true" ]]; then
+      echo "Secure Boot: ON (OVMF MS keys). The Margine kernel is MOK-signed, so at the"
+      echo "boot menu pick 'Enroll Secure Boot key (MokManager)' (passphrase: margine-os)."
+      if command -v swtpm >/dev/null; then
+        td="output/swtpm"; mkdir -p "$td"
+        swtpm socket --tpmstate dir="$td" --ctrl type=unixio,path="$td/sock" --tpm2 --terminate --daemon
+        QEMU+=(-chardev "socket,id=chrtpm,path=$td/sock" -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0)
+        echo "TPM 2.0: emulated via swtpm (for LUKS TPM2 auto-unlock testing)."
+      else
+        echo "::warning:: swtpm not found → no TPM2 (LUKS auto-unlock not testable; install swtpm)."
+      fi
+    fi
+    echo "Booting $ISO (secure=$secure, RAM {{mem}} MiB). Use DEFAULT partitioning."
+    exec "${QEMU[@]}"
 
 # Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).
 [group('Build Live ISO (local dev)')]

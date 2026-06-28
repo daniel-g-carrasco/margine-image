@@ -270,7 +270,7 @@ cp "$SRC_DIR/anaconda/post-scripts/install-flatpaks.ks" \
 # === Phase 3 — Anaconda WebUI installer ===
 # WebUI engine (ADR-0008 §3.3), matching Bluefin/Bazzite production.
 dnf install -y --enable-repo=fedora-cisco-openh264 --allowerasing \
-  firefox anaconda-live anaconda-webui \
+  anaconda-live anaconda-webui \
   libblockdev-btrfs libblockdev-lvm libblockdev-dm
 mkdir -p /var/lib/rpm-state  # Anaconda WebUI requires it
 

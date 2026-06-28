@@ -145,6 +145,58 @@ install -Dm0644 /usr/share/pixmaps/margine-logo.png \
 # hicolor has no index.theme at this build stage, leaving the cache stale so the
 # name lookups above miss. -t builds the cache regardless.
 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+
+# THE ROOT CAUSE of the generic overview icon on the Anaconda WebUI window
+# (recurring forum report). The icon NAME resolves fine — the live Welcome
+# dialog proves the theme works — so copying margine-logo to the
+# org.fedoraproject.AnacondaInstaller.{svg,png} icon name is necessary but NOT
+# sufficient. The slitherer Qt runner calls
+#   QGuiApplication::setDesktopFileName("org.fedoraproject.AnacondaInstaller")
+#   QGuiApplication::setWindowIcon(QIcon::fromTheme("org.fedoraproject.AnacondaInstaller"))
+# so its Wayland app_id (== WM_CLASS) is "org.fedoraproject.AnacondaInstaller".
+# GNOME Shell's shell-window-tracker get_app_from_window_wmclass() matches a
+# window to a .desktop by (a) StartupWMClass= equal to the WM_CLASS, then
+# (b) loading "<WM_CLASS>.desktop" directly. anaconda ships ONLY liveinst.desktop
+# (StartupWMClass=liveinst, Exec=liveinst) and there is NO
+# org.fedoraproject.AnacondaInstaller.desktop anywhere (verified: rhinstaller/
+# anaconda ships only liveinst*.desktop + welcome-screen.desktop; slitherer
+# itself ships no .desktop — flagged in its Fedora package review). Both
+# matches miss, Qt registers no GApplication ID on the bus, so the window
+# falls through to GNOME's synthetic-app fallback -> GENERIC placeholder icon
+# in the overview (setWindowIcon only paints the in-window/titlebar icon, which
+# GNOME Shell's overview does NOT use). The Welcome dialog works precisely
+# because it HAS a matching desktop file (org.fedoraproject.welcome-screen.desktop).
+#
+# Fix: ship the matching .desktop. Its basename == the slitherer app_id so
+# GNOME's "<WM_CLASS>.desktop" lookup hits; StartupWMClass= is set to the same
+# value as belt-and-braces (covers the XWayland path too). Icon= points at the
+# themed name we installed above. NoDisplay=true keeps it out of the app grid
+# (it's a window-matcher, not a launcher — liveinst.desktop remains the dock
+# launcher). This is the GNOME analogue of Aurora's Plasma fix, which adds
+# StartupWMClass=slitherer to liveinst.desktop.
+# CORRECTION (2026-06-29, reference-distro investigation): the app_id is NOT
+# "org.fedoraproject.AnacondaInstaller". slitherer's setDesktopFileName does NOT
+# override the Wayland app_id, which is the binary name "slitherer" — Aurora
+# (same engine) proves it by setting StartupWMClass=slitherer. So the matcher
+# must be named "slitherer.desktop" (GNOME's "<app_id>.desktop" basename lookup)
+# AND/OR a .desktop with StartupWMClass=slitherer. We do BOTH: this basename
+# matcher here, plus a StartupWMClass=slitherer edit on liveinst.desktop after
+# anaconda-live installs (the primary, Aurora-proven path). Both Icon= the
+# Margine-branded AnacondaInstaller icon installed above. NoDisplay: matcher
+# only (liveinst stays the dock launcher).
+install -Dm0644 /dev/stdin \
+  /usr/share/applications/slitherer.desktop <<'SLITHERERDESK'
+[Desktop Entry]
+Type=Application
+Name=Install Margine
+Comment=Install Margine to your hard disk
+Exec=liveinst
+Icon=org.fedoraproject.AnacondaInstaller
+StartupNotify=true
+Terminal=false
+NoDisplay=true
+SLITHERERDESK
+update-desktop-database /usr/share/applications 2>/dev/null || true
 # Secure Boot notice for the live session (ADR-0008 Phase 6 UX).
 # If the live booted with SB disabled, a one-shot dialog explains that
 # Margine fully supports Secure Boot and how enrollment works, with a
@@ -163,7 +215,7 @@ command -v zenity  >/dev/null 2>&1 || exit 0
 if mokutil --sb-state 2>/dev/null | grep -qi 'enabled'; then
   exit 0
 fi
-zenity --info --no-wrap --title="Secure Boot" --window-icon=/usr/share/icons/hicolor/256x256/apps/org.fedoraproject.AnacondaInstaller.png   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
+zenity --info --no-wrap --title="Secure Boot" --icon-name=margine-logo   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
 SBNOTICE
 chmod 0755 /usr/libexec/margine-live-sb-notice
 
@@ -273,6 +325,23 @@ dnf install -y --enable-repo=fedora-cisco-openh264 --allowerasing \
   anaconda-live anaconda-webui \
   libblockdev-btrfs libblockdev-lvm libblockdev-dm
 mkdir -p /var/lib/rpm-state  # Anaconda WebUI requires it
+
+# Brand the Anaconda installer window icon — the Aurora-proven fix. GNOME picks
+# the overview/dock icon by matching the window's Wayland app_id (the slitherer
+# binary name) to a .desktop via StartupWMClass=. anaconda ships liveinst.desktop
+# with StartupWMClass=liveinst, so retarget it to "slitherer" and point Icon= at
+# the Margine-branded AnacondaInstaller icon. (liveinst.desktop only exists after
+# the anaconda-live install above; slitherer.desktop is shipped earlier as the
+# basename-match belt-and-braces.)
+if command -v desktop-file-edit >/dev/null 2>&1 && [ -f /usr/share/applications/liveinst.desktop ]; then
+  desktop-file-edit \
+    --set-key=Icon --set-value=org.fedoraproject.AnacondaInstaller \
+    --set-key=StartupWMClass --set-value=slitherer \
+    /usr/share/applications/liveinst.desktop || true
+  update-desktop-database /usr/share/applications 2>/dev/null || true
+else
+  echo "WARNING: could not brand liveinst.desktop (desktop-file-edit or file missing)" >&2
+fi
 
 # Margine Anaconda profile (WebUI + BTRFS/zstd defaults, variant_id
 # detection). See live-env/src/anaconda/profile.d/margine.conf.

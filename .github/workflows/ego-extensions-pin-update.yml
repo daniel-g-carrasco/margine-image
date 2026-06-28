@@ -1,0 +1,145 @@
+name: EGO extensions pin update
+
+# Watches the two EGO-hosted GNOME Shell extensions that Margine pins by
+# version_tag + sha256 in build_files/build-margine-extensions.sh:
+#   * hide-cursor@elcste.com   (HIDECURSOR_VERSION_TAG / HIDECURSOR_SHA256)
+#   * smile-extension@mijorus.it (SMILE_EXT_VERSION_TAG / SMILE_EXT_SHA256)
+#
+# Why this exists: o-tiling is watched by Renovate (GitHub releases datasource)
+# + otiling-pin-sha.yml. But Renovate has NO datasource for extensions.gnome.org,
+# so hide-cursor/smile were pinned by hand with nothing watching them -- the
+# exact rot that left o-tiling stuck at 2.8.8 ("nothing was watching this pin").
+# This job gives them the same automation WITHOUT changing the pin+sha+
+# reproducible model: it only proposes a PR; a human still reviews/merges, and
+# the build still verifies the sha256.
+#
+# Each run: resolve the GNOME Shell major the NEXT build will use (from the
+# bluefin-dx:stable base, same source the build reads via `gnome-shell --version`),
+# ask EGO for the latest version approved for THAT shell, and if the version_tag
+# differs from the pin, recompute the sha256 and open a PR. EGO only serves
+# shell-compatible reviewed versions, so a bump can never introduce an
+# incompatible extension; the build's assert_shell_compat is the backstop.
+#
+# Commits are made via the GraphQL createCommitOnBranch API so they are
+# GitHub-verified (main requires signed commits; a plain runner push is unsigned
+# and would block the PR) -- same approach as otiling-pin-sha.yml.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1" # Mondays 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ego-extensions-pin-update
+  cancel-in-progress: false
+
+env:
+  BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
+  EXT_FILE: build_files/build-margine-extensions.sh
+
+jobs:
+  check-and-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve target GNOME Shell major from the base image
+        id: shell
+        run: |
+          set -euo pipefail
+          ver="$(docker run --rm "$BASE_IMAGE" gnome-shell --version | awk '{print $3}')"
+          major="${ver%%.*}"
+          [ -n "$major" ] || { echo "::error::could not read gnome-shell version from $BASE_IMAGE"; exit 1; }
+          echo "Base $BASE_IMAGE ships GNOME Shell $ver (major $major)"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+
+      - name: Check EGO pins and update the file if a newer version exists
+        id: check
+        run: |
+          set -euo pipefail
+          MAJOR="${{ steps.shell.outputs.major }}"
+          f="$EXT_FILE"
+          changed=0
+          summary=""
+
+          # uuid : version_tag var : sha var
+          for entry in \
+            "hide-cursor@elcste.com:HIDECURSOR_VERSION_TAG:HIDECURSOR_SHA256" \
+            "smile-extension@mijorus.it:SMILE_EXT_VERSION_TAG:SMILE_EXT_SHA256"; do
+            uuid="${entry%%:*}"; rest="${entry#*:}"
+            tagvar="${rest%%:*}"; shavar="${rest##*:}"
+
+            info="$(curl -fsSL --retry 3 "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=${MAJOR}")" || {
+              echo "::warning::EGO has no version of ${uuid} for GNOME ${MAJOR} (or query failed) -- leaving pin as-is"
+              continue
+            }
+            new_tag="$(printf '%s' "$info" | python3 -c "import json,sys,re;d=json.load(sys.stdin);m=re.search(r'version_tag=(\d+)',d['download_url']);print(m.group(1) if m else '')")"
+            new_ver="$(printf '%s' "$info" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))")"
+            cur_tag="$(grep -oP "^${tagvar}=\"\K[0-9]+" "$f")"
+            [ -n "$new_tag" ] || { echo "::warning::no version_tag parsed for ${uuid}"; continue; }
+
+            if [ "$new_tag" = "$cur_tag" ]; then
+              echo "${uuid}: up to date (version_tag ${cur_tag}, v${new_ver}) for GNOME ${MAJOR}"
+              continue
+            fi
+
+            echo "${uuid}: ${cur_tag} -> ${new_tag} (v${new_ver}) for GNOME ${MAJOR} -- recomputing sha256"
+            new_sha="$(curl -fsSL --retry 3 "https://extensions.gnome.org/download-extension/${uuid}.shell-extension.zip?version_tag=${new_tag}" | sha256sum | cut -d' ' -f1)"
+            [ -n "$new_sha" ] || { echo "::error::failed to hash ${uuid} zip"; exit 1; }
+
+            sed -i "s/^${tagvar}=.*/${tagvar}=\"${new_tag}\"   # GNOME ${MAJOR}; resolved $(date -u +%F) (auto)/" "$f"
+            sed -i "s/^${shavar}=.*/${shavar}=\"${new_sha}\"/" "$f"
+            changed=1
+            summary="${summary}- \`${uuid}\`: version_tag ${cur_tag} -> ${new_tag} (v${new_ver}), sha256 recomputed"$'\n'
+          done
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          {
+            echo "branch=ego-ext-update-${{ github.run_id }}"
+            echo "summary<<EOF"
+            printf '%s' "$summary"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open PR with a verified commit
+        if: steps.check.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.check.outputs.branch }}
+          SUMMARY: ${{ steps.check.outputs.summary }}
+        run: |
+          set -euo pipefail
+          f="$EXT_FILE"
+          base_sha="$(git rev-parse HEAD)"
+
+          # Create the branch, then commit the edited file via the GraphQL API so
+          # the commit is GitHub-verified (main requires signed commits).
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/heads/${BRANCH}" -f sha="${base_sha}" >/dev/null
+
+          # shellcheck disable=SC2016  # $repo/$branch/... are GraphQL variables, not shell vars
+          gh api graphql -f query='
+            mutation ($repo:String!, $branch:String!, $msg:String!, $path:String!, $contents:Base64String!, $oid:GitObjectID!) {
+              createCommitOnBranch(input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                message: { headline: $msg },
+                fileChanges: { additions: [{ path: $path, contents: $contents }] },
+                expectedHeadOid: $oid
+              }) { commit { oid } }
+            }' \
+            -f repo="${GITHUB_REPOSITORY}" \
+            -f branch="${BRANCH}" \
+            -f msg="chore(ext): bump EGO extension pins to latest for the base shell" \
+            -f path="$f" \
+            -f contents="$(base64 -w0 "$f")" \
+            -f oid="${base_sha}" >/dev/null
+
+          printf 'Automated bump of the EGO-hosted GNOME extension pins to the latest version approved for the base image GNOME Shell.\n\n%s\nThe sha256 was recomputed; the build still verifies it. EGO only serves shell-compatible reviewed versions, and assert_shell_compat is the backstop. Review and merge as usual.\n' "$SUMMARY" > /tmp/pr-body.md
+          gh pr create --repo "${GITHUB_REPOSITORY}" --base main --head "${BRANCH}" \
+            --title "chore(ext): bump EGO extension pins (hide-cursor / smile)" \
+            --body-file /tmp/pr-body.md

@@ -28,6 +28,36 @@ BUILD_SCRIPT = os.path.join(REPO_ROOT, "live-env", "build-iso-local.sh")
 OUTPUT_DIR = os.path.join(REPO_ROOT, "output")
 BASE_TAGS = ["stable", "latest", "nvidia"]
 
+GUIDE = """<b>Margine ISO Builder</b> builds the Margine live ISO locally, so you \
+can test install-time and ISO bugs without the ~40 min CI build or an 8.5 GB \
+download. It is a developer tool — nothing here ships in the distro.
+
+<b>1 · Build an ISO</b>
+• Pick the <b>base image tag</b> (leave <tt>stable</tt> unless you know otherwise).
+• <b>Fast test ISO</b> — zstd-1, quick; best for iterating on bugs.
+• <b>Full ISO</b> — zstd-19, byte-identical to what CI ships.
+• A graphical password prompt appears — the build needs rootful podman.
+• Watch the log. When it shows <b>Done ✓</b>, the ISO is in <tt>output/</tt> \
+(open it with the folder button, top-right). The first build is slower (it pulls \
+the base image and clones Titanoboa); later builds are cached.
+
+<b>2 · Test the install</b>
+• Click <b>Test install in VM</b> — QEMU boots the newest ISO with a blank disk.
+• In the installer pick the <b>DEFAULT partitioning</b> — that creates the \
+dedicated /var the shipped ISO uses (the layout where the Flatpak bake matters).
+• After install → reboot → log in → open a terminal:
+   <tt>flatpak --system remotes</tt>  — must list <tt>flathub</tt>, no opendir error
+   <tt>flatpak --system list --app | wc -l</tt>  — ~37 baked apps right away
+
+<b>Good to know</b>
+• Needs ~30 GB free for the build scratch.
+• The password is your own user password (polkit), not a separate one.
+• <b>Cancel build</b> stops a build in progress.
+
+<b>Same actions from a terminal</b>
+<tt>just build-iso-fast</tt> · <tt>just test-install-vm</tt> · <tt>just build-iso</tt>
+"""
+
 
 class BuilderWindow(Adw.ApplicationWindow):
     def __init__(self, app):
@@ -43,6 +73,10 @@ class BuilderWindow(Adw.ApplicationWindow):
 
         header = Adw.HeaderBar()
         root.append(header)
+        self.help_btn = Gtk.Button(icon_name="help-about-symbolic")
+        self.help_btn.set_tooltip_text("How to use this")
+        self.help_btn.connect("clicked", self.on_help)
+        header.pack_start(self.help_btn)
         self.open_btn = Gtk.Button(icon_name="folder-open-symbolic")
         self.open_btn.set_tooltip_text("Open the output folder")
         self.open_btn.connect("clicked", self.on_open_output)
@@ -248,6 +282,22 @@ class BuilderWindow(Adw.ApplicationWindow):
     def on_open_output(self, _btn):
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         Gio.AppInfo.launch_default_for_uri(f"file://{OUTPUT_DIR}", None)
+
+    def on_help(self, _btn):
+        dlg = Adw.Dialog()
+        dlg.set_title("How to use")
+        dlg.set_content_width(580)
+        dlg.set_content_height(660)
+        view = Adw.ToolbarView()
+        view.add_top_bar(Adw.HeaderBar())
+        scroller = Gtk.ScrolledWindow(vexpand=True)
+        label = Gtk.Label(wrap=True, xalign=0, yalign=0, selectable=True,
+                          margin_top=12, margin_bottom=16, margin_start=16, margin_end=16)
+        label.set_markup(GUIDE)
+        scroller.set_child(label)
+        view.set_content(scroller)
+        dlg.set_child(view)
+        dlg.present(self)
 
     def _toast(self, text):
         self.toasts.add_toast(Adw.Toast.new(text))

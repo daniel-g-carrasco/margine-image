@@ -333,6 +333,29 @@ if [ "$WELCOME_PATCHED" -eq 0 ]; then
 	echo "WARNING: live welcome rebrand skipped — no anaconda-live asset carrying 'Welcome to Fedora' found (anaconda-live restructured?). Cosmetic; ISO build continues." >&2
 fi
 
+# Live session: never idle-lock, blank, or suspend while the user reads the
+# welcome screen or waits out an install. Root cause (verified) of "the session
+# locked / logged me out mid-install and I never saw the 'installed' screen":
+# live-env baked NO idle/lock/power override, so upstream GNOME defaults applied
+# (idle-delay 5 min, screensaver lock-enabled, sleep-inactive=suspend). With the
+# lock gone, anaconda-webui's "Successfully installed" completion screen stays
+# on-screen. zz4- sorts after the base zz1-margine override so it wins; it lives
+# only in the throwaway live rootfs (never the installed system) and is
+# independent of livesys's favorites/welcome override (different keys).
+cat > /usr/share/glib-2.0/schemas/zz4-margine-live.gschema.override <<'OVERRIDE'
+[org.gnome.desktop.session]
+idle-delay=uint32 0
+
+[org.gnome.desktop.screensaver]
+idle-activation-enabled=false
+lock-enabled=false
+
+[org.gnome.settings-daemon.plugins.power]
+sleep-inactive-ac-type='nothing'
+sleep-inactive-battery-type='nothing'
+idle-dim=false
+OVERRIDE
+
 # Recompile schemas in case the profile/installer added overrides.
 glib-compile-schemas /usr/share/glib-2.0/schemas || true
 

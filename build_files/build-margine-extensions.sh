@@ -71,9 +71,9 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # (switch moved, top-bar icon + windows frozen). Fixed in 2.8.11 via an
 # _indicator_updating guard; 2.8.17 is the current release. Schema keys
 # Margine overrides in 03-margine-o-tiling are unchanged in 2.8.17.
-OTILING_VERSION="v2.9.4"
+OTILING_VERSION="v2.9.5"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
-OTILING_SHA256="295cd3518863b35fcfa6ab47684a38bbb1cb42e88910da4a53eee873a65f5298"
+OTILING_SHA256="0c4066f7e9af46e71c4db8105df0b8689c50d20d381466a76a3f469a2da0af7d"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
 # Shell major of the current base (50). When Bluefin bumps GNOME, the

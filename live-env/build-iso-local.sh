@@ -64,9 +64,18 @@ fi
 # storage, so every podman step here must be rootful (sudo) and consistent.
 log "Build plan: ${BASE_IMAGE}  ->  ${LIVE_TAG}  ->  ISO (zstd-${ZSTD_LEVEL})"
 
-# 1. Base image into rootful storage.
-log "Pulling base image ${BASE_IMAGE} (rootful)"
-sudo podman pull "${BASE_IMAGE}"
+# 1. Base image into rootful storage. podman storage is PERSISTENT (no expiry),
+#    so once pulled the base is reused build after build. By default we only
+#    fetch it when it is ABSENT locally — repeated builds with an unchanged base
+#    skip the network entirely. Set MARGINE_PULL=always to refresh against the
+#    registry (picks up a new :stable). NOTE: via the GUI (pkexec) the env is
+#    sanitized, so the GUI always uses the cached base; refresh from a terminal.
+if [[ "${MARGINE_PULL:-auto}" == "always" ]] || ! sudo podman image exists "${BASE_IMAGE}"; then
+  log "Pulling base image ${BASE_IMAGE} (rootful)"
+  sudo podman pull "${BASE_IMAGE}"
+else
+  log "Using cached base ${BASE_IMAGE} (already in local storage; MARGINE_PULL=always to refresh)"
+fi
 
 # 2. Build the live image (identical flags to CI: dracut needs sys_admin,
 #    the Flatpak bake in build.sh needs user namespaces via label=disable).

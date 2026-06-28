@@ -246,50 +246,55 @@ test-install-vm secure="false" disk_size="40G" mem="6144":
     secure="{{secure}}"
     ISO="$(ls -t output/*.iso 2>/dev/null | head -1)"
     [[ -n "$ISO" ]] || { echo "No ISO in output/ — run 'just build-iso-fast' first." >&2; exit 1; }
+
+    if [[ "$secure" == "true" ]]; then
+      # Secure path delegated to libvirt/virt-install — the SAME firmware
+      # incantation as `ujust margine-test-vm`, which actually ENFORCES Secure
+      # Boot (raw-qemu SB here did not, despite enrolled OVMF). MS keys + SMM +
+      # emulated TPM 2.0, so the install exercises real MOK enrollment and TPM2
+      # LUKS auto-unlock. Console opens in virt-viewer/virt-manager.
+      command -v virt-install >/dev/null \
+        || { echo "secure=true needs virt-install — or run: ujust margine-test-vm \"$(realpath "$ISO")\"" >&2; exit 1; }
+      ISO_ABS="$(realpath "$ISO")"
+      SDISK="$(realpath output)/test-secure.qcow2"; rm -f "$SDISK"
+      NAME="margine-iso-localtest"
+      FW="firmware=efi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=yes,hd,cdrom,bootmenu.enable=on"
+      virsh --connect qemu:///session destroy  "$NAME" 2>/dev/null || true
+      virsh --connect qemu:///session undefine "$NAME" --nvram 2>/dev/null || true
+      echo "Secure Boot + TPM2 VM via virt-install. Use DEFAULT partitioning; first"
+      echo "boot of the INSTALLED system prompts MokManager (passphrase: margine-os)."
+      exec virt-install --connect qemu:///session --name "$NAME" --transient \
+        --memory "{{mem}}" --vcpus 4 --cpu host-passthrough --machine q35 \
+        --boot "$FW" --features smm.state=on \
+        --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
+        --disk path="$SDISK",size="$(printf '%s' '{{disk_size}}' | tr -dc 0-9)",format=qcow2,bus=virtio \
+        --disk path="$ISO_ABS",device=cdrom,bus=sata,readonly=on \
+        --network user,model=virtio --graphics spice --video virtio \
+        --osinfo detect=on,require=off,name=fedora-rawhide
+    fi
+
+    # secure=false (default): quick raw-qemu path, no Secure Boot / TPM.
     command -v qemu-system-x86_64 >/dev/null \
-      || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes / virt-manager)." >&2; exit 1; }
-    # secure=true  → OVMF with Microsoft keys (Secure Boot ENFORCED) + emulated
-    #                TPM 2.0, to exercise MOK enrollment + TPM2 LUKS auto-unlock.
-    # secure=false → plain OVMF, no TPM: quick, for iterating install/ISO bugs.
-    if [[ "$secure" == "true" ]]; then code_n=(OVMF_CODE.secboot.fd); vars_n=(OVMF_VARS.secboot.fd)
-    else code_n=(OVMF_CODE.fd OVMF_CODE.4m.fd); vars_n=(OVMF_VARS.fd OVMF_VARS.4m.fd); fi
+      || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes)." >&2; exit 1; }
     OVMF_CODE=""; OVMF_VARS=""
     for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
-      for n in "${code_n[@]}"; do [[ -f "$d/$n" ]] && OVMF_CODE="$d/$n" && break 2; done; done
+      for n in OVMF_CODE.fd OVMF_CODE.4m.fd; do [[ -f "$d/$n" ]] && OVMF_CODE="$d/$n" && break 2; done; done
     for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
-      for n in "${vars_n[@]}"; do [[ -f "$d/$n" ]] && OVMF_VARS="$d/$n" && break 2; done; done
-    [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] \
-      || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
+      for n in OVMF_VARS.fd OVMF_VARS.4m.fd; do [[ -f "$d/$n" ]] && OVMF_VARS="$d/$n" && break 2; done; done
+    [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
     DISK="output/test-install.qcow2"
     echo "Fresh blank target disk: $DISK ({{disk_size}})"
     rm -f "$DISK" output/test-ovmf-vars.fd
     qemu-img create -f qcow2 "$DISK" "{{disk_size}}" >/dev/null
     cp "$OVMF_VARS" output/test-ovmf-vars.fd
-    QEMU=(qemu-system-x86_64 -m {{mem}} -smp 4)
+    QEMU=(qemu-system-x86_64 -m {{mem}} -smp 4 -machine q35)
     if [[ -e /dev/kvm ]]; then QEMU+=(-accel kvm -cpu host); else echo "::warning:: /dev/kvm absent → slow TCG"; QEMU+=(-cpu max); fi
-    if [[ "$secure" == "true" ]]; then
-      QEMU+=(-machine q35,smm=on -global driver=cfi.pflash01,property=secure,value=on -global ICH9-LPC.disable_s3=1)
-    else
-      QEMU+=(-machine q35)
-    fi
     QEMU+=(-drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}")
     QEMU+=(-drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd")
     QEMU+=(-drive "file=${DISK},if=virtio,format=qcow2")
     QEMU+=(-cdrom "$ISO" -boot d -vga virtio -display gtk)
     QEMU+=(-device virtio-net,netdev=n0 -netdev user,id=n0)
-    if [[ "$secure" == "true" ]]; then
-      echo "Secure Boot: ON (OVMF MS keys). The Margine kernel is MOK-signed, so at the"
-      echo "boot menu pick 'Enroll Secure Boot key (MokManager)' (passphrase: margine-os)."
-      if command -v swtpm >/dev/null; then
-        td="output/swtpm"; mkdir -p "$td"
-        swtpm socket --tpmstate dir="$td" --ctrl type=unixio,path="$td/sock" --tpm2 --terminate --daemon
-        QEMU+=(-chardev "socket,id=chrtpm,path=$td/sock" -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0)
-        echo "TPM 2.0: emulated via swtpm (for LUKS TPM2 auto-unlock testing)."
-      else
-        echo "::warning:: swtpm not found → no TPM2 (LUKS auto-unlock not testable; install swtpm)."
-      fi
-    fi
-    echo "Booting $ISO (secure=$secure, RAM {{mem}} MiB). Use DEFAULT partitioning."
+    echo "Booting $ISO (quick, Secure Boot OFF, RAM {{mem}} MiB). Use DEFAULT partitioning."
     exec "${QEMU[@]}"
 
 # Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).

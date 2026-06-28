@@ -135,7 +135,16 @@ cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
 # build_files/50-branding/install.sh in the base image.
 install -Dm0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
   /usr/share/icons/hicolor/scalable/apps/org.fedoraproject.AnacondaInstaller.svg
-gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+# Also ship a RASTER copy. GNOME Shell's overview app-icon badge and any Qt
+# surface lacking the SVG icon-engine fall back to PNG; the scalable SVG alone
+# can render blank/placeholder (the Anaconda WebUI window showed the generic
+# icon despite the SVG above — forum re-report 2026-06-28).
+install -Dm0644 /usr/share/pixmaps/margine-logo.png \
+  /usr/share/icons/hicolor/256x256/apps/org.fedoraproject.AnacondaInstaller.png
+# -t/--ignore-theme-index: a bare `--force` aborts (silently, via `|| true`) if
+# hicolor has no index.theme at this build stage, leaving the cache stale so the
+# name lookups above miss. -t builds the cache regardless.
+gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 # Secure Boot notice for the live session (ADR-0008 Phase 6 UX).
 # If the live booted with SB disabled, a one-shot dialog explains that
 # Margine fully supports Secure Boot and how enrollment works, with a
@@ -154,7 +163,7 @@ command -v zenity  >/dev/null 2>&1 || exit 0
 if mokutil --sb-state 2>/dev/null | grep -qi 'enabled'; then
   exit 0
 fi
-zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
+zenity --info --no-wrap --title="Secure Boot" --window-icon=/usr/share/icons/hicolor/256x256/apps/org.fedoraproject.AnacondaInstaller.png   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
 SBNOTICE
 chmod 0755 /usr/libexec/margine-live-sb-notice
 

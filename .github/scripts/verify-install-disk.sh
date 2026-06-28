@@ -33,30 +33,29 @@ modprobe nbd max_part=16 2>/dev/null || modprobe nbd 2>/dev/null || true
 if ! qemu-nbd --connect="$NBD" "$QCOW"; then
   set +x; echo "::error::qemu-nbd --connect failed for $QCOW"; exit 1
 fi
-partprobe "$NBD" 2>/dev/null || partx -u "$NBD" 2>/dev/null || true
-parts=()
-for _ in $(seq 1 20); do
-  parts=("$NBD"p*)
-  if [[ ${#parts[@]} -gt 0 ]]; then break; fi
-  sleep 1
-  partprobe "$NBD" 2>/dev/null || true
-done
-
+# Wait specifically for the BTRFS root partition to appear AND be
+# blkid-identifiable. Partition nodes settle asynchronously after qemu-nbd
+# connect; a previous version broke out as soon as ANY nbd0p* node existed and
+# then probed for btrfs ONCE — racing the (last-to-appear) btrfs partition and
+# false-failing with "no btrfs root partition" even though the install was fine.
 ROOT=""
-for p in "$NBD"p*; do
-  if [[ "$(blkid -o value -s TYPE "$p" 2>/dev/null)" == "btrfs" ]]; then ROOT="$p"; break; fi
+for _ in $(seq 1 20); do
+  partprobe "$NBD" 2>/dev/null || partx -u "$NBD" 2>/dev/null || true
+  for p in "$NBD"p*; do
+    [[ -b "$p" ]] || continue
+    if [[ "$(blkid -o value -s TYPE "$p" 2>/dev/null)" == "btrfs" ]]; then ROOT="$p"; break 2; fi
+  done
+  sleep 1
 done
 if [[ -z "$ROOT" ]]; then
   set +x; echo "::error::no btrfs root partition on $QCOW"; lsblk "$NBD" 2>/dev/null || true; blkid "$NBD"p* 2>/dev/null || true; exit 1
 fi
 mkdir -p "$MNT"
 # Mount the btrfs TOP (subvolid 5) so EVERY subvol is traversable in one mount.
-# CRITICAL (review wzskaqvwo, confirmed on this bootc host): Margine's
-# margine.conf default_partitioning gives /var its OWN btrfs subvol, and
-# install-flatpaks.ks bakes into THAT dedicated /var (/mnt/sysimage/var/lib) —
-# NOT the per-deployment stateroot var (/ostree/deploy/$sr/var), which is just
-# an empty .ostree-selabeled stub. At the btrfs top the bake therefore lives at
-# $MNT/var/lib/flatpak. Reading the stateroot stub would FALSE-FAIL every check.
+# install-flatpaks.ks bakes into the per-deployment stateroot var CHECKOUT
+# (ostree/deploy/$sr/deploy/$commit.0/var/lib) — upstream Bluefin/Aurora parity,
+# NOT the bare dedicated /var subvol (empty until first boot). The VARLIB
+# resolution below locates the baked repo wherever it landed.
 mount -o ro,subvolid=5 "$ROOT" "$MNT" 2>/dev/null \
   || mount -o ro "$ROOT" "$MNT" 2>/dev/null \
   || { set +x; echo "::error::could not mount btrfs root $ROOT"; exit 1; }

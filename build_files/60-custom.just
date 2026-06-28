@@ -3,7 +3,7 @@
 # /usr/share/ublue-os/just/00-entry.just `import?` of 60-custom.just
 # (the only optional extension point in Bluefin's entry file).
 
-# Apply the full Margine user-state in one shot (home layout, GNOME extensions, keybindings, appearance, default apps, app folders). Pass MODE=unattended to skip the prompt.
+# Apply the full Margine user-state (home, GNOME, keybinds, apps) in one shot.
 [group('Margine')]
 margine-bootstrap MODE="interactive":
     #!/usr/bin/bash
@@ -87,7 +87,7 @@ margine-bootstrap MODE="interactive":
     [[ ${#FAILED[@]} -eq 0 ]]
 
 
-# Install the Margine gaming layer (Steam Flatpak + Lutris/Heroic/Bottles + gamescope/mangohud/vkBasalt/gamemode layered via rpm-ostree)
+# Install the gaming layer: Steam/Lutris/Heroic Flatpaks + RPM helpers.
 [group('Gaming')]
 margine-gaming:
     #!/usr/bin/bash
@@ -155,7 +155,7 @@ margine-gaming:
     sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     sudo flatpak remote-modify --system flathub --no-filter || true
     echo "== Installing gaming Flatpaks =="
-    flatpak install --system -y --or-update flathub \
+    sudo flatpak install --system -y --or-update flathub \
         com.valvesoftware.Steam \
         net.lutris.Lutris \
         com.heroicgameslauncher.hgl \
@@ -206,7 +206,7 @@ margine-gaming-remove:
         gamescope \
         vkBasalt || true
 
-    flatpak uninstall --system -y \
+    sudo flatpak uninstall --system -y \
         com.valvesoftware.Steam \
         net.lutris.Lutris \
         com.heroicgameslauncher.hgl \
@@ -224,6 +224,8 @@ margine-gaming-remove:
 # (EAC/BattlEye), use VR/Steam Link, or mix NVIDIA proprietary with
 # Mesa-git. For occasional gaming the Flatpak default (margine-gaming)
 # is enough.
+
+# Install the gaming layer NATIVELY (rpm-ostree RPMs, max Proton compat).
 [group('Gaming')]
 margine-gaming-native:
     #!/usr/bin/bash
@@ -283,7 +285,7 @@ margine-gaming-native:
     sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     sudo flatpak remote-modify --system flathub --no-filter || true
     echo "== Installing the rest as Flatpaks =="
-    flatpak install --system -y --or-update flathub \
+    sudo flatpak install --system -y --or-update flathub \
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
@@ -297,7 +299,7 @@ margine-gaming-native:
     The Flatpak apps are already in Activities (no reboot needed for them).
     EOF
 
-# Roll back the NATIVE Margine gaming layer (undo margine-gaming-native)
+# Roll back the native gaming layer (undo margine-gaming-native).
 [group('Gaming')]
 margine-gaming-native-remove:
     #!/usr/bin/bash
@@ -319,7 +321,7 @@ margine-gaming-native-remove:
     mapfile -t GAMING_PKGS < <(grep -vE '^[[:space:]]*(#|$)' "$PKGLIST")
     sudo rpm-ostree uninstall "${GAMING_PKGS[@]}" || true
 
-    flatpak uninstall --system -y \
+    sudo flatpak uninstall --system -y \
         com.heroicgameslauncher.hgl \
         com.usebottles.bottles \
         com.github.Matoking.protontricks \
@@ -337,7 +339,7 @@ margine-gaming-native-remove:
 #   ujust margine-scheduler          # show current state
 #   ujust margine-scheduler lavd     # start/switch to a shipped scheduler
 #   ujust margine-scheduler off      # stop scx_loader, return to BORE
-# Switch the CPU scheduler (sched_ext / BPF). Modes: status, off, or any scheduler reported by `scxctl list`. GUI launcher: Activities -> "Margine CPU Scheduler".
+# Switch the CPU scheduler (sched_ext/BPF): status, off, or a scxctl name.
 [group('Performance')]
 margine-scheduler MODE="status":
     #!/usr/bin/bash
@@ -440,6 +442,8 @@ margine-scheduler MODE="status":
 # RamaLama (Red Hat's CLI runner) is NOT installed by this recipe;
 # instructions printed below for power users who want it in distrobox — that
 # path CAN use the host ROCm directly.
+
+# Install Alpaca: a local-LLM GUI (Ollama backend) in a Flatpak sandbox.
 [group('Margine')]
 margine-ai:
     #!/usr/bin/bash
@@ -488,7 +492,7 @@ margine-ai:
     EOF
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
-    flatpak install --system -y --or-update flathub com.jeffser.Alpaca
+    sudo flatpak install --system -y --or-update flathub com.jeffser.Alpaca
 
     # GPU acceleration for the sandbox. The host ROCm (shipped by the Bluefin
     # base) does not reach into the Flatpak; AMD accel needs the ROCm plugin
@@ -501,7 +505,7 @@ margine-ai:
       read -rp "Install the AMD ROCm plugin now? [Y/n] " amd
       case "$amd" in
         [nN]|[nN][oO]) echo "Skipped — Alpaca will use Vulkan if available, else CPU." ;;
-        *) flatpak install --system -y --or-update flathub com.jeffser.Alpaca.Plugins.AMD \
+        *) sudo flatpak install --system -y --or-update flathub com.jeffser.Alpaca.Plugins.AMD \
              && echo "AMD ROCm plugin installed." \
              || echo "Plugin install failed — Alpaca still works on Vulkan/CPU." ;;
       esac
@@ -546,11 +550,11 @@ margine-ai-remove:
     echo
     read -rp "Continue? [y/N] " ans
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
-    flatpak uninstall --system -y com.jeffser.Alpaca.Plugins.AMD || true
-    flatpak uninstall --system -y com.jeffser.Alpaca || true
+    sudo flatpak uninstall --system -y com.jeffser.Alpaca.Plugins.AMD || true
+    sudo flatpak uninstall --system -y com.jeffser.Alpaca || true
     echo "Done."
 
-# Toggle the wayland-scroll-factor gnome-shell preload (on by image default). `off` fully unloads after logout; to merely neutralize, run `wsf set 1.0`.
+# Toggle the wayland-scroll-factor gnome-shell preload (on by default).
 [group('Margine')]
 wsf-preload STATE="status":
     #!/usr/bin/bash
@@ -571,7 +575,7 @@ wsf-preload STATE="status":
         ;;
     esac
 
-# Deprecated alias for `margine-tpm-unlock` (renamed 2026-06-15). Use `ujust margine-tpm-unlock [status|enable|disable]` — it auto-detects the device, refuses to leave the TPM as the only key, and post-verifies. This alias forwards so the old name keeps working.
+# Deprecated alias for margine-tpm-unlock (use that).
 [group('Margine')]
 margine-tpm2-enroll ACTION="enroll":
     #!/usr/bin/bash
@@ -589,7 +593,7 @@ margine-tpm2-enroll ACTION="enroll":
       *) echo "Usage: ujust margine-tpm-unlock [status|enable|disable]"; exit 1 ;;
     esac
 
-# Run every Margine validator in sequence with a one-line verdict each — the "is my system as shipped?" health check.
+# Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]
 margine-doctor:
     #!/usr/bin/bash
@@ -625,12 +629,12 @@ margine-doctor:
     fi
     exit $overall
 
-# Show this machine's Margine deployment vs the latest published :stable, plus the Fedora → Bluefin → Margine lineage and running kernel. Read-only.
+# Show Margine deployment vs latest :stable + lineage + kernel (read-only).
 [group('Margine')]
 margine-status:
     @/usr/bin/margine-status
 
-# Pull the latest Margine :stable and stage it for the next reboot. Picks the right upgrader automatically: rpm-ostree if you have layered packages (e.g. ujust margine-gaming-native), bootc otherwise.
+# Pull the latest Margine :stable and stage it for the next reboot.
 [group('Margine')]
 margine-update:
     #!/usr/bin/bash
@@ -656,22 +660,22 @@ margine-update:
     echo
     echo "Staged. Reboot to switch into it:  systemctl reboot"
 
-# Enable/disable/inspect GDM (GNOME) autologin from the CLI. Default ACTION=status is read-only (no sudo). `on [USER]` enables, `off` disables — both self-escalate via sudo and back up /etc/gdm/custom.conf first. SECURITY: autologin boots straight to the desktop with no password.
+# Enable/disable/inspect GDM autologin (default: status, read-only).
 [group('Margine')]
 margine-autologin ACTION="status" USER="":
     @/usr/bin/margine-autologin "{{ ACTION }}" "{{ USER }}"
 
-# TPM2 LUKS auto-unlock for the encrypted root, SAFELY: `status` (default) inspects; `enable [PCRS]` enrolls the TPM2 AND wires tpm2-device=auto into /etc/crypttab (refuses unless a passphrase/recovery keyslot survives — never the sole key, and the device must be proven to back root); `disable` removes only the tpm2 slot + its crypttab option. The LUKS passphrase always stays as fallback.
+# TPM2 LUKS auto-unlock for the encrypted root (status/enable/disable).
 [group('Margine')]
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}
 
-# Force/inspect the HiDPI GRUB font + grub.cfg render NOW. Normally you don't need this: margine-grub-hidpi.service applies it automatically at boot whenever the image's baked GRUB config changes (the bootloader on /boot isn't updated by image upgrades, so a boot-time service closes the gap). Run this only to apply it immediately after an update instead of waiting for the next reboot. Safe + idempotent (grub2-script-check + backup; no-op when already current).
+# Re-apply the HiDPI GRUB font + grub.cfg now (safe, idempotent).
 [group('Margine')]
 margine-grub-hidpi:
     @sudo /usr/libexec/margine/grub-hidpi-apply
 
-# Inspect/fix/undo the GNOME login keyring's master password. `status` (default, read-only) reports whether the keyring is password-protected (which makes GNOME prompt to unlock it on fingerprint login / autologin — PAM never gets the password that encrypts it). `blank` backs it up and opens Seahorse to set the password EMPTY so it auto-unlocks — SECURITY: the keyring is then stored UNENCRYPTED, acceptable ONLY because Margine encrypts the disk (LUKS+TPM2). `restore` puts the backup back. Per-user, no sudo.
+# Inspect/fix the GNOME login keyring password (status/blank/restore).
 [group('Margine')]
 margine-keyring ACTION="status":
     @/usr/bin/margine-keyring "{{ ACTION }}"
@@ -687,6 +691,8 @@ margine-keyring ACTION="status":
 #   ujust margine-test-vm                                       # no ISO: define a TEMPLATE to clone in virt-manager
 #
 # Tear a test VM down with `ujust margine-test-vm-remove [name]`.
+
+# Create + boot a throwaway Margine test VM from an ISO (libvirt).
 [group('Margine')]
 margine-test-vm ISO="" NAME="" DISK="80":
     #!/usr/bin/bash
@@ -805,8 +811,7 @@ margine-test-vm ISO="" NAME="" DISK="80":
     fi
     print_walkthrough
 
-# Tear down a Margine test VM made by `ujust margine-test-vm`: stop it, then remove
-# the domain, its disk(s) and its UEFI nvram. Defaults to the clone template.
+# Tear down a Margine test VM (stops it, removes domain + disks + UEFI nvram).
 [group('Margine')]
 margine-test-vm-remove NAME="margine-test-template":
     #!/usr/bin/bash
@@ -824,7 +829,7 @@ margine-test-vm-remove NAME="margine-test-template":
     else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
     echo "Removed '$NAME' (domain + storage + nvram)."
 
-# Install/reinstall Koofr Desktop — native, rootless. Autostarts HIDDEN to the tray at login (-silent); a manual menu launch opens the window. Use `remove` to uninstall.
+# Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
 [group('Apps')]
 install-koofr ACTION="install":
     #!/usr/bin/bash
@@ -881,7 +886,7 @@ install-koofr ACTION="install":
 koofr ACTION="install":
     @ujust install-koofr {{ ACTION }}
 
-# Set up Sunshine (game-stream host for Moonlight). EXPERIMENTAL, opt-in: installs the Flatpak, enables uinput for virtual input, opens the firewall ports. Margine's atomic-friendly take on Bazzite's `ujust setup-sunshine` (no rpm-ostree layering).
+# Set up Sunshine (Moonlight game-stream host). EXPERIMENTAL, opt-in.
 [group('Gaming')]
 margine-sunshine:
     #!/usr/bin/bash
@@ -915,7 +920,7 @@ margine-sunshine:
     sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
     sudo flatpak remote-modify --system flathub --no-filter || true
     echo; echo "== Installing the Sunshine Flatpak =="
-    flatpak install --system -y --or-update flathub dev.lizardbyte.app.Sunshine
+    sudo flatpak install --system -y --or-update flathub dev.lizardbyte.app.Sunshine
 
     echo; echo "== Enabling uinput (virtual input) =="
     echo uinput | sudo tee /etc/modules-load.d/uinput.conf >/dev/null
@@ -954,14 +959,14 @@ margine-sunshine:
     Roll back with:  ujust margine-sunshine-remove
     EOF
 
-# Undo margine-sunshine (uninstall the Flatpak, remove the uinput rule + firewall ports)
+# Undo margine-sunshine (Flatpak + uinput rule + firewall ports).
 [group('Gaming')]
 margine-sunshine-remove:
     #!/usr/bin/bash
     set -euo pipefail
     echo "Removing Sunshine..."
     flatpak run --command=additional-uninstall.sh dev.lizardbyte.app.Sunshine || true
-    flatpak uninstall --system -y dev.lizardbyte.app.Sunshine || true
+    sudo flatpak uninstall --system -y dev.lizardbyte.app.Sunshine || true
     sudo rm -f /etc/udev/rules.d/60-sunshine.rules
     sudo udevadm control --reload-rules || true
     if command -v firewall-cmd >/dev/null 2>&1; then

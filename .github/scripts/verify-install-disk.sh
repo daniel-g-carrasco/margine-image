@@ -61,33 +61,59 @@ mount -o ro,subvolid=5 "$ROOT" "$MNT" 2>/dev/null \
   || mount -o ro "$ROOT" "$MNT" 2>/dev/null \
   || { set +x; echo "::error::could not mount btrfs root $ROOT"; exit 1; }
 
-# VARLIB = the lib/ dir that actually contains the baked flatpak/ (the dedicated
-# /var subvol), located robustly across subvol layouts.
+# VARLIB = the var/lib dir that actually contains the baked flatpak/ repo.
+#
+# CRITICAL (2026-06-28, take 2): install-flatpaks.ks now bakes into the
+# per-deployment stateroot var checkout (ostree/deploy/$sr/deploy/$commit.0/
+# var/lib), EXACTLY like upstream Bluefin/Aurora — NOT the bare dedicated
+# /var btrfs subvol. On a freshly-installed-but-never-booted disk the bake
+# therefore lives under .../deploy/*.0/var/lib/flatpak; the dedicated /var
+# subvol is still empty (ostree seeds it on first boot). The previous
+# version of this gate asserted the bake at the bare /var subvol and so
+# FALSE-PASSED the broken layout — locate the repo by where it actually is,
+# preferring the deploy checkout and requiring a POPULATED flathub repo.
 VARLIB=""
-for cand in "$MNT/var/lib" "$MNT/root/var/lib"; do
-  if [[ -d "$cand/flatpak" ]]; then VARLIB="$cand"; break; fi
+# 1) the ostree deployment checkout where the bake lands (require flathub).
+#    Handle both a top-level ostree/ (subvols flat under subvolid=5) and a
+#    nested root subvol ($MNT/<rootsubvol>/ostree/...).
+for d in "$MNT"/ostree/deploy/*/deploy/*.0/var/lib \
+         "$MNT"/*/ostree/deploy/*/deploy/*.0/var/lib; do
+  if [[ -d "$d/flatpak/repo/refs/remotes/flathub" ]]; then VARLIB="$d"; break; fi
 done
+# 2) fallback: any var/lib whose flatpak repo has a flathub remote. The
+#    deploy-checkout path is deep (~13 levels under a nested root subvol),
+#    so keep maxdepth generous.
 if [[ -z "$VARLIB" ]]; then
-  fp="$(find "$MNT" -maxdepth 6 -type d -path '*/var/lib/flatpak' 2>/dev/null | head -1)"
-  [[ -n "$fp" ]] && VARLIB="$(dirname "$fp")"
+  fp="$(find "$MNT" -maxdepth 15 -type d -path '*/var/lib/flatpak/repo/refs/remotes/flathub' 2>/dev/null | head -1)"
+  [[ -n "$fp" ]] && VARLIB="${fp%/flatpak/repo/refs/remotes/flathub}"
 fi
+# 3) last resort: any var/lib/flatpak at all (so we report WHERE the broken
+#    bake landed instead of a bare "not found")
 if [[ -z "$VARLIB" ]]; then
-  # last resort: mount the dedicated var subvol explicitly
-  umount -R "$MNT" 2>/dev/null
-  if mount -o ro,subvol=var "$ROOT" "$MNT" 2>/dev/null && [[ -d "$MNT/lib/flatpak" ]]; then VARLIB="$MNT/lib"; fi
+  fp="$(find "$MNT" -maxdepth 12 -type d -path '*/var/lib/flatpak' 2>/dev/null | head -1)"
+  [[ -n "$fp" ]] && VARLIB="${fp%/flatpak}"
 fi
 set +x
 if [[ -z "$VARLIB" ]]; then
   echo "::error::no var/lib/flatpak on installed disk — bake missing or unexpected subvol layout"
-  ls -laR "$MNT" 2>/dev/null | head -80 || true
+  ls -laR "$MNT"/ostree/deploy "$MNT"/*/ostree/deploy 2>/dev/null | head -120 \
+    || ls -laR "$MNT" 2>/dev/null | head -120 || true
   exit 1
 fi
-echo "varlib=$VARLIB (dedicated /var btrfs subvol)"
+echo "varlib=$VARLIB (per-deployment stateroot var checkout)"
 ls -la "$VARLIB/flatpak" 2>/dev/null | head -20 || true
 
 fail=0
 ok()  { printf '  OK   %s\n' "$1"; }
 bad() { printf '::error::%s\n' "$1"; fail=1; }
+
+# Location assertion: the bake MUST live in the per-deployment stateroot
+# checkout. If VARLIB resolved anywhere else (e.g. the bare /var subvol, found
+# only by the diagnostic fallback), that is a regression to PR #222's target.
+case "$VARLIB" in
+  */ostree/deploy/*/deploy/*.0/var/lib) ok "bake is in the per-deployment .0/var checkout" ;;
+  *) bad "bake landed at $VARLIB, NOT the per-deployment .0/var checkout (regression to the bare /var subvol?)" ;;
+esac
 
 [[ -d "$VARLIB/flatpak/repo/refs/remotes/flathub" ]] \
   && ok "flatpak repo has refs/remotes/flathub" \

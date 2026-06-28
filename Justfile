@@ -220,11 +220,65 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
-# NOTE: there are deliberately no ISO recipes here. Margine ISOs are
-# built by Titanoboa in CI (build-disk.yml, ADR-0008) — the BIB
-# anaconda-iso path was retired 2026-06-12 and disk_config/iso.toml no
-# longer exists. The template's build-iso/rebuild-iso/run-vm-iso
-# recipes referenced that file and could never run.
+# Local Margine live-ISO build (DEV ONLY — not shipped in the distro).
+# Mirrors the CI job build_iso_titanoboa: same live-env + the SAME pinned
+# Titanoboa ref (kept in sync inside live-env/build-iso-local.sh). Runs in
+# rootful podman; output lands in ./output/. Lets install-time / ISO bugs
+# (the Flatpak bake, console kargs, livesys UX) be iterated locally instead
+# of waiting on the ~40 min CI build + an 8.5 GB artifact download. The old
+# BIB anaconda-iso path was retired 2026-06-12; these use Titanoboa locally.
+
+# Build the live ISO from the published base, zstd-19 (CI-identical).
+[group('Build Live ISO (local dev)')]
+build-iso tag="stable":
+    live-env/build-iso-local.sh {{tag}} 19
+
+# Fast throwaway TEST ISO: zstd-1 squashfs (quick) for iterating on ISO bugs.
+[group('Build Live ISO (local dev)')]
+build-iso-fast tag="stable":
+    live-env/build-iso-local.sh {{tag}} 1
+
+# Boot the newest local ISO in a UEFI QEMU VM (fresh disk) for a real install.
+[group('Build Live ISO (local dev)')]
+test-install-vm disk_size="40G" mem="6144":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ISO="$(ls -t output/*.iso 2>/dev/null | head -1)"
+    [[ -n "$ISO" ]] || { echo "No ISO in output/ — run 'just build-iso-fast' first." >&2; exit 1; }
+    command -v qemu-system-x86_64 >/dev/null \
+      || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes / virt-manager)." >&2; exit 1; }
+    OVMF_CODE=""
+    for f in /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/OVMF/OVMF_CODE.fd \
+             /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/qemu/ovmf-x86_64-code.bin; do
+      [[ -f "$f" ]] && OVMF_CODE="$f" && break
+    done
+    OVMF_VARS=""
+    for f in /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/OVMF/OVMF_VARS.fd \
+             /usr/share/edk2/x64/OVMF_VARS.4m.fd; do
+      [[ -f "$f" ]] && OVMF_VARS="$f" && break
+    done
+    [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] \
+      || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
+    DISK="output/test-install.qcow2"
+    echo "Fresh blank target disk: $DISK ({{disk_size}})"
+    rm -f "$DISK" output/test-ovmf-vars.fd
+    qemu-img create -f qcow2 "$DISK" "{{disk_size}}" >/dev/null
+    cp "$OVMF_VARS" output/test-ovmf-vars.fd
+    echo "Booting $ISO (RAM {{mem}} MiB). Use DEFAULT partitioning in the installer."
+    exec qemu-system-x86_64 \
+      -accel kvm -m {{mem}} -smp 4 -machine q35 -cpu host \
+      -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}" \
+      -drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd" \
+      -drive "file=${DISK},if=virtio,format=qcow2" \
+      -cdrom "$ISO" -boot d \
+      -vga virtio -display gtk \
+      -device virtio-net,netdev=n0 -netdev user,id=n0
+
+# Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).
+[group('Build Live ISO (local dev)')]
+iso-gui:
+    # system python3 has pygobject/GTK4/Adw (a venv/brew python on PATH may not)
+    /usr/bin/python3 tools/iso-builder/margine-iso-builder.py
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Margine ISO Builder
+Comment=Build and test the Margine live ISO locally (developer tool)
+Exec=/usr/bin/python3 @GUI@
+Icon=margine-logo
+Terminal=false
+Categories=Development;Building;
+StartupNotify=true
+StartupWMClass=place.empty.margine.IsoBuilder
+Keywords=margine;iso;build;titanoboa;

@@ -220,11 +220,103 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
-# NOTE: there are deliberately no ISO recipes here. Margine ISOs are
-# built by Titanoboa in CI (build-disk.yml, ADR-0008) — the BIB
-# anaconda-iso path was retired 2026-06-12 and disk_config/iso.toml no
-# longer exists. The template's build-iso/rebuild-iso/run-vm-iso
-# recipes referenced that file and could never run.
+# Local Margine live-ISO build (DEV ONLY — not shipped in the distro).
+# Mirrors the CI job build_iso_titanoboa: same live-env + the SAME pinned
+# Titanoboa ref (kept in sync inside live-env/build-iso-local.sh). Runs in
+# rootful podman; output lands in ./output/. Lets install-time / ISO bugs
+# (the Flatpak bake, console kargs, livesys UX) be iterated locally instead
+# of waiting on the ~40 min CI build + an 8.5 GB artifact download. The old
+# BIB anaconda-iso path was retired 2026-06-12; these use Titanoboa locally.
+
+# Build the live ISO from the published base, zstd-19 (CI-identical).
+[group('Build Live ISO (local dev)')]
+build-iso tag="stable":
+    live-env/build-iso-local.sh {{tag}} 19
+
+# Fast throwaway TEST ISO: zstd-1 squashfs (quick) for iterating on ISO bugs.
+[group('Build Live ISO (local dev)')]
+build-iso-fast tag="stable":
+    live-env/build-iso-local.sh {{tag}} 1
+
+# Boot the newest local ISO in a UEFI QEMU VM (fresh disk) for a real install.
+[group('Build Live ISO (local dev)')]
+test-install-vm secure="false" disk_size="40G" mem="6144":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    secure="{{secure}}"
+    ISO="$(ls -t output/*.iso 2>/dev/null | head -1)"
+    [[ -n "$ISO" ]] || { echo "No ISO in output/ — run 'just build-iso-fast' first." >&2; exit 1; }
+
+    if [[ "$secure" == "true" ]]; then
+      # Secure path delegated to libvirt/virt-install — the SAME firmware
+      # incantation as `ujust margine-test-vm`, which actually ENFORCES Secure
+      # Boot (raw-qemu SB here did not, despite enrolled OVMF). MS keys + SMM +
+      # emulated TPM 2.0, so the install exercises real MOK enrollment and TPM2
+      # LUKS auto-unlock. Console opens in virt-viewer/virt-manager.
+      command -v virt-install >/dev/null \
+        || { echo "secure=true needs virt-install — or run: ujust margine-test-vm \"$(realpath "$ISO")\"" >&2; exit 1; }
+      ISO_ABS="$(realpath "$ISO")"
+      SDISK="$(realpath output)/test-secure.qcow2"; rm -f "$SDISK"
+      NAME="margine-iso-localtest"
+      FW="firmware=efi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=yes,hd,cdrom,bootmenu.enable=on"
+      virsh --connect qemu:///session destroy  "$NAME" 2>/dev/null || true
+      virsh --connect qemu:///session undefine "$NAME" --nvram 2>/dev/null || true
+      echo "Secure Boot + TPM2 VM via virt-install. Use DEFAULT partitioning; first"
+      echo "boot of the INSTALLED system prompts MokManager (passphrase: margine-os)."
+      exec virt-install --connect qemu:///session --name "$NAME" --transient \
+        --memory "{{mem}}" --vcpus 4 --cpu host-passthrough --machine q35 \
+        --boot "$FW" --features smm.state=on \
+        --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
+        --disk path="$SDISK",size="$(printf '%s' '{{disk_size}}' | tr -dc 0-9)",format=qcow2,bus=virtio \
+        --disk path="$ISO_ABS",device=cdrom,bus=sata,readonly=on \
+        --network user,model=virtio --graphics spice --video virtio \
+        --osinfo detect=on,require=off,name=fedora-rawhide
+    fi
+
+    # secure=false (default): quick raw-qemu path, no Secure Boot / TPM.
+    command -v qemu-system-x86_64 >/dev/null \
+      || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes)." >&2; exit 1; }
+    OVMF_CODE=""; OVMF_VARS=""
+    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
+      for n in OVMF_CODE.fd OVMF_CODE.4m.fd; do [[ -f "$d/$n" ]] && OVMF_CODE="$d/$n" && break 2; done; done
+    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
+      for n in OVMF_VARS.fd OVMF_VARS.4m.fd; do [[ -f "$d/$n" ]] && OVMF_VARS="$d/$n" && break 2; done; done
+    [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
+    DISK="output/test-install.qcow2"
+    echo "Fresh blank target disk: $DISK ({{disk_size}})"
+    rm -f "$DISK" output/test-ovmf-vars.fd
+    qemu-img create -f qcow2 "$DISK" "{{disk_size}}" >/dev/null
+    cp "$OVMF_VARS" output/test-ovmf-vars.fd
+    QEMU=(qemu-system-x86_64 -m {{mem}} -smp 4 -machine q35)
+    if [[ -e /dev/kvm ]]; then QEMU+=(-accel kvm -cpu host); else echo "::warning:: /dev/kvm absent → slow TCG"; QEMU+=(-cpu max); fi
+    QEMU+=(-drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}")
+    QEMU+=(-drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd")
+    QEMU+=(-drive "file=${DISK},if=virtio,format=qcow2")
+    QEMU+=(-cdrom "$ISO" -boot d -vga virtio -display gtk)
+    QEMU+=(-device virtio-net,netdev=n0 -netdev user,id=n0)
+    echo "Booting $ISO (quick, Secure Boot OFF, RAM {{mem}} MiB). Use DEFAULT partitioning."
+    exec "${QEMU[@]}"
+
+# Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).
+[group('Build Live ISO (local dev)')]
+iso-gui:
+    # system python3 has pygobject/GTK4/Adw (a venv/brew python on PATH may not)
+    /usr/bin/python3 tools/iso-builder/margine-iso-builder.py
+
+# Install a GNOME launcher for the GUI into ~/.local/share/applications.
+[group('Build Live ISO (local dev)')]
+install-desktop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    apps="$HOME/.local/share/applications"
+    mkdir -p "$apps"
+    dst="$apps/place.empty.margine.IsoBuilder.desktop"
+    sed "s|@GUI@|{{justfile_directory()}}/tools/iso-builder/margine-iso-builder.py|" \
+      "{{justfile_directory()}}/tools/iso-builder/place.empty.margine.IsoBuilder.desktop.in" > "$dst"
+    chmod 0644 "$dst"
+    update-desktop-database "$apps" 2>/dev/null || true
+    echo "Installed launcher: $dst"
+    echo "Search 'Margine ISO Builder' in Activities (icon: margine-logo)."
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]

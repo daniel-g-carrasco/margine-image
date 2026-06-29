@@ -141,6 +141,35 @@ masks the bug). The four verified divergences (the actionable truth):
 not yet confirmed against a reproduced install. The definitive confirmation
 is the real-install CI gate (below).
 
+### Resolution (take 2 — 2026-06-28, REVERSES PR #222 on point 2)
+
+PR #222 guessed WRONG on the most-disputed point. CyberOto's fresh install on
+the official 20260626 ISO STILL had broken Flatpaks, and a diagnostic on a
+live VM install proved why: the booted `/var/lib/flatpak` was empty and
+`/var/lib/flatpak/repo` was an empty `unconfined_u:var_t` stub. The bake into
+the bare `/mnt/sysimage/var` subvol does NOT reach the booted runtime `/var`:
+on first deploy ostree seeds the stateroot var from the IMAGE COMMIT's `/var`
+and the booted system runs on THAT — not the bare subvol. Upstream
+Bluefin/Aurora use the IDENTICAL dedicated-`/var` partitioning yet bake into
+`$deployment.0/var/lib` (the per-deployment stateroot checkout), and it works.
+
+- `install-flatpaks.ks`: target `$deployment.0/var/lib` via
+  `ostree rev-parse --repo=/mnt/sysimage/ostree/repo ostree/0/1/0` — byte
+  parity with upstream. (Reverts PR #222's `/mnt/sysimage/var` target.)
+- `flatpak-preinstall.service` stays ENABLED (unlike upstream's `disable`):
+  Margine DEFERs the heavy creative apps + Reaper to it, and Reaper cannot be
+  baked (its `apply_extra` downloads the proprietary binary, fails in the
+  build container). Drop-in gains a trailing `restorecon -RF /var/lib/flatpak`
+  so a bake-lost fallback can't leave a mislabeled repo stub.
+- CI gate (`verify-install-disk.sh`) now asserts the bake LOCATION (the
+  `.0/var` checkout), not just presence, so a regression to the bare subvol
+  fails; `check-flatpak-fixes.sh` invariant #2 was inverted (it asserted the
+  old target) and is corrected.
+
+Confirmed by adversarial multi-agent review (byte-equivalent to upstream) +
+the install gate logging `MARGINE-INSTALL-FLATPAK: PASS` with varlib under
+`.../deploy/*.0/var/lib`.
+
 ---
 
 ## Cross-cutting: why both shipped, and the CI gaps

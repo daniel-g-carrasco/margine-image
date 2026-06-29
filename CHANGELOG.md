@@ -7,6 +7,22 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-06-28)
+- **Fresh-install Flatpaks were empty on every real install (take 2, reverses
+  PR #222).** The installer baked the default Flatpaks into the bare dedicated
+  `/var` btrfs subvol (`/mnt/sysimage/var`), but on a bootc/ostree first boot
+  the booted `/var` is the per-deployment stateroot checkout seeded from the
+  image commit — not that subvol — so the baked repo was lost and every
+  `flatpak` op failed (CyberOto, forum 12247). `install-flatpaks.ks` now bakes
+  into `$deployment.0/var/lib` via `ostree rev-parse … ostree/0/1/0`, byte
+  parity with upstream Bluefin/Aurora (which use the same dedicated-`/var`
+  partitioning). `flatpak-preinstall.service` stays enabled (Margine DEFERs
+  GIMP/Inkscape/darktable/OBS + Reaper to it; Reaper cannot be baked), with a
+  `restorecon` ExecStartPre so a bake-lost fallback can't leave a mislabeled
+  repo stub. The install gate (`verify-install-disk.sh`) now asserts the bake
+  LOCATION, and the `check-flatpak-fixes.sh` regression guard (which had
+  inverted to assert the old target) is corrected.
+
 ### Fixed (2026-06-19)
 - **EasyEffects now actually starts hidden.** The autostart used only
   `--service-mode`, which in EasyEffects 8.x (Qt) still pops the window open at

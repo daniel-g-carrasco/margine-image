@@ -80,8 +80,8 @@ OTILING_SHA256="0c4066f7e9af46e71c4db8105df0b8689c50d20d381466a76a3f469a2da0af7d
 # metadata shell-version guard below fails the build with instructions
 # instead of shipping an incompatible extension.
 HIDECURSOR_UUID="hide-cursor@elcste.com"
-HIDECURSOR_VERSION_TAG="69559"   # GNOME 50; resolved 2026-06-12
-HIDECURSOR_SHA256="2fd9ffdaf176d2fba6f998c453ce91908d7e134b841a8e25d35389b60c7b1379"
+HIDECURSOR_VERSION_TAG="72294"   # GNOME 50; resolved 2026-06-29 (auto)
+HIDECURSOR_SHA256="10f79e49c5d812d27033793ee7c89e58e9b0ea176a6ba3bb611f9f3e3f885392"
 
 # Smile's companion GNOME Shell extension — the piece that makes the Smile
 # emoji picker (the it.mijorus.smile Flatpak, already preinstalled and bound to

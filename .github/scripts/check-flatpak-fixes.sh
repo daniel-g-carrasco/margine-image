@@ -21,11 +21,21 @@ if grep -q -- "--filter=.-x security.selinux" "$KS"; then
   bad "install-flatpaks.ks re-introduced the SELinux label-strip filter (breaks the repo on first boot)"
 else ok "no SELinux label-strip filter in install-flatpaks.ks"; fi
 
-# 2) The bake must target the real mounted runtime /var, not only .0/var.
-if grep -q 'mnt/sysimage/var' "$KS"; then
-  ok "install-flatpaks.ks targets the mounted runtime /var"
+# 2) The bake must target the per-deployment stateroot var CHECKOUT
+#    ($deployment.0/var/lib), upstream Bluefin/Aurora parity — NOT the bare
+#    dedicated /var subvol. (take-2 2026-06-28: PR #222's bare-subvol target
+#    was refuted on a live VM; the booted system reads the .0/var checkout.)
+if grep -q 'ostree rev-parse --repo=/mnt/sysimage/ostree/repo ostree/0/1/0' "$KS" \
+   && grep -q 'ostree/deploy/default/deploy/${deployment}.0/var/lib' "$KS"; then
+  ok "install-flatpaks.ks bakes into the per-deployment .0/var checkout (upstream parity)"
 else
-  bad "install-flatpaks.ks no longer targets /mnt/sysimage/var (bake would land in the shadowed .0/var)"
+  bad "install-flatpaks.ks no longer resolves the .0/var deployment checkout (upstream rev-parse target) — flatpaks would be lost on first boot"
+fi
+# 2b) The reverted bare-subvol target must NOT come back.
+if grep -qE 'TARGET="?/mnt/sysimage/var/lib' "$KS"; then
+  bad "install-flatpaks.ks re-introduced the bare /mnt/sysimage/var/lib bake target (PR #222 regression — booted /var is the stateroot checkout, not the bare subvol)"
+else
+  ok "no bare /mnt/sysimage/var/lib bake target (the reverted PR #222 bug)"
 fi
 
 # 3) The two upstream-parity post-scripts must exist AND be %included

@@ -11,10 +11,12 @@ timezone UTC --utc
 network --bootproto=dhcp --activate
 rootpw --plaintext margineci
 
-# Storage: BTRFS autopart, mirroring margine.conf's AUTOMATIC scheme. ostree
-# always carves /var into its own subvol (/ostree/deploy/$sr/var) — exactly
-# what install-flatpaks.ks targets via /mnt/sysimage/var. (No anaconda-webui
-# here on the --cmdline path, so the webui-68 `part`-crash does not apply.)
+# Storage: BTRFS autopart. NOTE this does NOT reproduce margine.conf's
+# dedicated `/var (btrfs)` subvol (a known gate gap), but install-flatpaks.ks
+# now bakes into the per-deployment stateroot checkout ($deployment.0/var/lib),
+# which is the booted runtime var under BOTH layouts — so the bake under test
+# is exercised either way. (No anaconda-webui on the --cmdline path, so the
+# webui-68 `part`-crash does not apply.)
 zerombr
 clearpart --all --initlabel
 autopart --type=btrfs --noswap

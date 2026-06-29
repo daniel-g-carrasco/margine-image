@@ -30,7 +30,10 @@ set -euo pipefail
 #
 # Lists are kept here and copied at build time into:
 #   /usr/share/margine/installer-flatpaks-base
-#       — read by disk_config/iso-gnome.toml kickstart %post --nochroot.
+#       — the BAKE manifest, kept content-identical to live-env/src/flatpaks
+#         (the live ISO bakes that set into /var/lib/flatpak, which
+#         live-env/src/anaconda/post-scripts/install-flatpaks.ks then rsyncs
+#         into the target's per-deployment .0/var/lib at install %post).
 #   /usr/share/flatpak/preinstall.d/margine-defaults.preinstall
 #       — read by flatpak-preinstall.service on first boot.
 #

@@ -64,26 +64,30 @@ fi
 # storage, so every podman step here must be rootful (sudo) and consistent.
 log "Build plan: ${BASE_IMAGE}  ->  ${LIVE_TAG}  ->  ISO (zstd-${ZSTD_LEVEL})"
 
-# 1. Base image into rootful storage. podman storage is PERSISTENT (no expiry),
-#    so once pulled the base is reused build after build. By default we only
-#    fetch it when it is ABSENT locally — repeated builds with an unchanged base
-#    skip the network entirely. Set MARGINE_PULL=always to refresh against the
-#    registry (picks up a new :stable). NOTE: via the GUI (pkexec) the env is
-#    sanitized, so the GUI always uses the cached base; refresh from a terminal.
-if [[ "${MARGINE_PULL:-auto}" == "always" ]] || ! sudo podman image exists "${BASE_IMAGE}"; then
-  log "Pulling base image ${BASE_IMAGE} (rootful)"
-  sudo podman pull "${BASE_IMAGE}"
-else
-  log "Using cached base ${BASE_IMAGE} (already in local storage; MARGINE_PULL=always to refresh)"
-fi
+# 1. Base image into rootful storage. ALWAYS pull: `podman pull` is delta-only
+#    (it fetches just the changed layers, so it's fast when :stable is
+#    unchanged) and it picks up a freshly-rebuilt base. The earlier "skip if
+#    already present" shortcut was REMOVED — it served a stale base for days
+#    (the installer showed an old build date despite a fresh local build).
+log "Pulling base image ${BASE_IMAGE} (rootful; delta-only when unchanged)"
+sudo podman pull "${BASE_IMAGE}"
 
 # 2. Build the live image (identical flags to CI: dracut needs sys_admin,
 #    the Flatpak bake in build.sh needs user namespaces via label=disable).
-log "Building ${LIVE_TAG} from live-env/Containerfile"
+#    LIVEENV_REV = a content hash of live-env/src. src/ is BIND-MOUNTED in the
+#    Containerfile (not COPY'd), so a change to build.sh / anaconda/ / flatpaks
+#    does NOT bust this layer's cache on its own. Passing the hash as a
+#    build-arg forces a rebuild whenever live-env/src actually changed (and
+#    keeps the cache when it didn't) — without it, local rebuilds silently reuse
+#    a stale live image and your live-env edits never reach the ISO.
+LIVEENV_REV="$(find live-env/src -type f -print0 | LC_ALL=C sort -z \
+  | xargs -0 sha256sum | sha256sum | cut -c1-16)"
+log "Building ${LIVE_TAG} from live-env/Containerfile (live-env rev ${LIVEENV_REV})"
 sudo podman build \
   --cap-add sys_admin \
   --security-opt label=disable \
   --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+  --build-arg "LIVEENV_REV=${LIVEENV_REV}" \
   -t "${LIVE_TAG}" \
   -f live-env/Containerfile \
   live-env/

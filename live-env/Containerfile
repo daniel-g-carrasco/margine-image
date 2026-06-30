@@ -27,5 +27,13 @@ FROM ${BASE_IMAGE}
 # (and so live-env/references/ + README stay out of the build). rw because
 # build.sh remounts /proc/sys and writes through /src during the bake.
 # Build context is live-env/, so source=src resolves to live-env/src.
+# Cache-bust: LIVEENV_REV is a content hash of live-env/src passed by the caller
+# (build-iso-local.sh; CI runs on fresh runners so the default is fine). Because
+# src/ is BIND-MOUNTED above (not COPY'd), a change to its content does NOT
+# invalidate this RUN's layer cache on its own — referencing the ARG forces a
+# rebuild whenever src changed, so local rebuilds never silently reuse a stale
+# live image.
+ARG LIVEENV_REV=ci
 RUN --mount=type=bind,source=src,target=/src,rw \
+    echo "live-env rev: ${LIVEENV_REV}" && \
     /src/build.sh

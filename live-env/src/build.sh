@@ -184,18 +184,28 @@ gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 # anaconda-live installs (the primary, Aurora-proven path). Both Icon= the
 # Margine-branded AnacondaInstaller icon installed above. NoDisplay: matcher
 # only (liveinst stays the dock launcher).
-install -Dm0644 /dev/stdin \
-  /usr/share/applications/slitherer.desktop <<'SLITHERERDESK'
+# Ship a basename window-matcher for EACH candidate app_id of the slitherer Qt
+# window — GNOME matches a window to "<app_id>.desktop" by basename:
+#   - "slitherer"                            (the binary name), and
+#   - "org.fedoraproject.AnacondaInstaller"  (slitherer's setDesktopFileName,
+#     which Qt also uses as the Wayland app_id on some stacks).
+# Whichever the real app_id turns out to be, one matches -> Margine icon. Icon=
+# margine-logo directly (it resolves — the live Welcome dialog proves it; no
+# dependency on the AnacondaInstaller icon-name override or the icon cache).
+# NoDisplay: matchers, not launchers (anaconda.desktop stays the dock launcher).
+for _wmid in slitherer org.fedoraproject.AnacondaInstaller anaconda-webui org.fedoraproject.Anaconda; do
+  install -Dm0644 /dev/stdin "/usr/share/applications/${_wmid}.desktop" <<'MATCHERDESK'
 [Desktop Entry]
 Type=Application
 Name=Install Margine
 Comment=Install Margine to your hard disk
 Exec=liveinst
-Icon=org.fedoraproject.AnacondaInstaller
+Icon=margine-logo
 StartupNotify=true
 Terminal=false
 NoDisplay=true
-SLITHERERDESK
+MATCHERDESK
+done
 update-desktop-database /usr/share/applications 2>/dev/null || true
 # Secure Boot notice for the live session (ADR-0008 Phase 6 UX).
 # If the live booted with SB disabled, a one-shot dialog explains that
@@ -335,7 +345,7 @@ mkdir -p /var/lib/rpm-state  # Anaconda WebUI requires it
 # basename-match belt-and-braces.)
 if command -v desktop-file-edit >/dev/null 2>&1 && [ -f /usr/share/applications/liveinst.desktop ]; then
   desktop-file-edit \
-    --set-key=Icon --set-value=org.fedoraproject.AnacondaInstaller \
+    --set-key=Icon --set-value=margine-logo \
     --set-key=StartupWMClass --set-value=slitherer \
     /usr/share/applications/liveinst.desktop || true
   update-desktop-database /usr/share/applications 2>/dev/null || true

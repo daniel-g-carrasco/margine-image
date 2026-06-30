@@ -784,10 +784,19 @@ margine-test-vm ISO="" NAME="" DISK="80":
     case "$real_iso" in *.iso) : ;; *) echo "Note: '$real_iso' doesn't end in .iso — continuing anyway." ;; esac
     if [[ -z "$NAME" ]]; then NAME="margine-test-$(basename "$real_iso" .iso)"; fi
     NAME="$(printf '%s' "$NAME" | tr -c 'a-zA-Z0-9._-' '-')"
+    # Recycle, don't pile up. These VMs are throwaway by definition, and ISOs now
+    # share a stable basename (Margine-Live.iso -> margine-test-Margine-Live), so a
+    # re-run should REFRESH the single test VM rather than erroring out — and, more
+    # importantly, never leave a graveyard of multi-GB qcow2s behind (the exact
+    # "terabytes of artifacts" we're avoiding). Tear the old one down first;
+    # '--remove-all-storage --nvram' reclaims its disk + UEFI vars. Manual VMs you
+    # made in virt-manager are untouched (different names, and on qemu:///system).
     if virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
-      echo "A VM named '$NAME' already exists. Remove it or choose another name:"
-      echo "  ujust margine-test-vm-remove $NAME"
-      exit 1
+      echo "Recreating throwaway VM '$NAME' (removing the previous domain + disk)…"
+      virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
+      if   virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1; then :
+      elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
+      else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
     fi
     echo "Creating '$NAME' (${DISK} GiB, Secure Boot + enrolled MS keys + TPM 2.0) from:"
     echo "  $real_iso"
@@ -828,6 +837,39 @@ margine-test-vm-remove NAME="margine-test-template":
     elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
     else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
     echo "Removed '$NAME' (domain + storage + nvram)."
+
+# Keeps the clone TEMPLATE by default; pass ALL=true to wipe that too. Only
+# touches the rootless qemu:///session VMs this tool creates — your manual
+# virt-manager VMs (on qemu:///system) are never listed here.
+#
+# Remove ALL throwaway 'margine-test-*' VMs at once (domains + disks + nvram).
+[group('Margine')]
+margine-test-vm-clean ALL="false":
+    #!/usr/bin/bash
+    set -uo pipefail
+    CONN="qemu:///session"
+    KEEP="margine-test-template"
+    if ! virsh -c "$CONN" version >/dev/null 2>&1; then echo "Cannot reach libvirt at $CONN."; exit 1; fi
+    mapfile -t all < <(virsh -c "$CONN" list --all --name 2>/dev/null | grep '^margine-test-' || true)
+    cleaned=()
+    for v in "${all[@]}"; do
+      [[ -z "$v" ]] && continue
+      if [[ "{{ ALL }}" != "true" && "$v" == "$KEEP" ]]; then continue; fi
+      cleaned+=("$v")
+    done
+    if [[ ${#cleaned[@]} -eq 0 ]]; then
+      echo "Nothing to remove (no throwaway test VMs$( [[ "{{ ALL }}" != "true" ]] && printf ' besides the template' ))."
+      exit 0
+    fi
+    echo "Removing ${#cleaned[@]} test VM(s): ${cleaned[*]}"
+    for v in "${cleaned[@]}"; do
+      virsh -c "$CONN" destroy "$v" >/dev/null 2>&1 || true
+      if   virsh -c "$CONN" undefine "$v" --nvram --remove-all-storage >/dev/null 2>&1; then :
+      elif virsh -c "$CONN" undefine "$v" --nvram >/dev/null 2>&1; then :
+      else virsh -c "$CONN" undefine "$v" >/dev/null 2>&1 || true; fi
+      echo "  removed $v"
+    done
+    if [[ "{{ ALL }}" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi
 
 # Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
 [group('Apps')]

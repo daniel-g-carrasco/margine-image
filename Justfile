@@ -238,64 +238,24 @@ build-iso tag="stable":
 build-iso-fast tag="stable":
     live-env/build-iso-local.sh {{tag}} 1
 
-# Boot the newest local ISO in a UEFI QEMU VM (fresh disk) for a real install.
+# Delegates to the shipped `ujust margine-test-vm` (SPICE so host<->guest
+# CLIPBOARD works, + Secure Boot + enrolled MS keys + emulated TPM 2.0) — the
+# proven full-featured path, not a bare qemu window.
+# Boot the newest locally-built ISO in a full virt-manager test VM.
 [group('Build Live ISO (local dev)')]
-test-install-vm secure="false" disk_size="40G" mem="6144":
+test-install-vm:
     #!/usr/bin/env bash
     set -euo pipefail
-    secure="{{secure}}"
     ISO="$(ls -t output/*.iso 2>/dev/null | head -1)"
     [[ -n "$ISO" ]] || { echo "No ISO in output/ — run 'just build-iso-fast' first." >&2; exit 1; }
-
-    if [[ "$secure" == "true" ]]; then
-      # Secure path delegated to libvirt/virt-install — the SAME firmware
-      # incantation as `ujust margine-test-vm`, which actually ENFORCES Secure
-      # Boot (raw-qemu SB here did not, despite enrolled OVMF). MS keys + SMM +
-      # emulated TPM 2.0, so the install exercises real MOK enrollment and TPM2
-      # LUKS auto-unlock. Console opens in virt-viewer/virt-manager.
-      command -v virt-install >/dev/null \
-        || { echo "secure=true needs virt-install — or run: ujust margine-test-vm \"$(realpath "$ISO")\"" >&2; exit 1; }
-      ISO_ABS="$(realpath "$ISO")"
-      SDISK="$(realpath output)/test-secure.qcow2"; rm -f "$SDISK"
-      NAME="margine-iso-localtest"
-      FW="firmware=efi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=yes,hd,cdrom,bootmenu.enable=on"
-      virsh --connect qemu:///session destroy  "$NAME" 2>/dev/null || true
-      virsh --connect qemu:///session undefine "$NAME" --nvram 2>/dev/null || true
-      echo "Secure Boot + TPM2 VM via virt-install. Use DEFAULT partitioning; first"
-      echo "boot of the INSTALLED system prompts MokManager (passphrase: margine-os)."
-      exec virt-install --connect qemu:///session --name "$NAME" --transient \
-        --memory "{{mem}}" --vcpus 4 --cpu host-passthrough --machine q35 \
-        --boot "$FW" --features smm.state=on \
-        --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-        --disk path="$SDISK",size="$(printf '%s' '{{disk_size}}' | tr -dc 0-9)",format=qcow2,bus=virtio \
-        --disk path="$ISO_ABS",device=cdrom,bus=sata,readonly=on \
-        --network user,model=virtio --graphics spice --video virtio \
-        --osinfo detect=on,require=off,name=fedora-rawhide
-    fi
-
-    # secure=false (default): quick raw-qemu path, no Secure Boot / TPM.
-    command -v qemu-system-x86_64 >/dev/null \
-      || { echo "qemu-system-x86_64 not found (install qemu / qemu-kvm, or use GNOME Boxes)." >&2; exit 1; }
-    OVMF_CODE=""; OVMF_VARS=""
-    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
-      for n in OVMF_CODE.fd OVMF_CODE.4m.fd; do [[ -f "$d/$n" ]] && OVMF_CODE="$d/$n" && break 2; done; done
-    for d in /usr/share/edk2/ovmf /usr/share/OVMF /usr/share/edk2/x64; do
-      for n in OVMF_VARS.fd OVMF_VARS.4m.fd; do [[ -f "$d/$n" ]] && OVMF_VARS="$d/$n" && break 2; done; done
-    [[ -n "$OVMF_CODE" && -n "$OVMF_VARS" ]] || { echo "OVMF firmware not found (install edk2-ovmf)." >&2; exit 1; }
-    DISK="output/test-install.qcow2"
-    echo "Fresh blank target disk: $DISK ({{disk_size}})"
-    rm -f "$DISK" output/test-ovmf-vars.fd
-    qemu-img create -f qcow2 "$DISK" "{{disk_size}}" >/dev/null
-    cp "$OVMF_VARS" output/test-ovmf-vars.fd
-    QEMU=(qemu-system-x86_64 -m {{mem}} -smp 4 -machine q35)
-    if [[ -e /dev/kvm ]]; then QEMU+=(-accel kvm -cpu host); else echo "::warning:: /dev/kvm absent → slow TCG"; QEMU+=(-cpu max); fi
-    QEMU+=(-drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}")
-    QEMU+=(-drive "if=pflash,format=raw,file=output/test-ovmf-vars.fd")
-    QEMU+=(-drive "file=${DISK},if=virtio,format=qcow2")
-    QEMU+=(-cdrom "$ISO" -boot d -vga virtio -display gtk)
-    QEMU+=(-device virtio-net,netdev=n0 -netdev user,id=n0)
-    echo "Booting $ISO (quick, Secure Boot OFF, RAM {{mem}} MiB). Use DEFAULT partitioning."
-    exec "${QEMU[@]}"
+    command -v ujust >/dev/null \
+      || { echo "ujust not found (run on a Margine host)." >&2; exit 1; }
+    ISO_ABS="$(realpath "$ISO")"
+    echo "Launching a virt-manager test VM (SPICE/clipboard + Secure Boot + TPM2) from:"
+    echo "  $ISO_ABS"
+    echo "Install with the DEFAULT partitioning; the INSTALLED system's first boot"
+    echo "prompts MokManager for Secure Boot (passphrase: margine-os)."
+    exec ujust margine-test-vm "$ISO_ABS"
 
 # Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).
 [group('Build Live ISO (local dev)')]

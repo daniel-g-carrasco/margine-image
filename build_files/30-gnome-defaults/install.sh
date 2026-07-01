@@ -102,6 +102,19 @@ show-desktop=@as []
 [org.gnome.desktop.wm.preferences]
 focus-mode='sloppy'
 auto-raise=false
+
+# virt-manager — show the rootless USER SESSION out of the box (UX, not branding).
+# `ujust margine-test-vm` and the ISO-creator GUI put their throwaway test VMs on
+# qemu:///session (rootless: reads ISOs straight from $HOME, no polkit). But
+# virt-manager's stock default is uris=[] and it only auto-adds qemu:///system on
+# first launch — so those session VMs are INVISIBLE in the default window (Daniel
+# hit this 2026-06-30: 48 GB of test VMs he couldn't see). Seed both connections
+# and autoconnect the session so a fresh Margine surfaces the test VMs the moment
+# virt-manager opens. Only sets the OOTB default; the GUI can still add/remove
+# connections (a user who edits the list just overrides this).
+[org.virt-manager.virt-manager.connections]
+uris=['qemu:///system', 'qemu:///session']
+autoconnect=['qemu:///session']
 OVERRIDE
 
 # Extension preferences use dconf keyfiles rather than gschema

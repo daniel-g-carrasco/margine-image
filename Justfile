@@ -255,6 +255,21 @@ test-install-vm:
     echo "  $ISO_ABS"
     echo "Install with the DEFAULT partitioning; the INSTALLED system's first boot"
     echo "prompts MokManager for Secure Boot (passphrase: margine-os)."
+    # Recycle here too, so a re-run never dead-ends on "a VM named X already
+    # exists". The shipped `ujust margine-test-vm` only learns to recycle after a
+    # base update (PR #239); this dev recipe (what `iso-test-vm` / the GUI button
+    # call) must self-heal NOW. Derive the same name the base recipe does and tear
+    # down any stale same-named session VM (domain + disk + nvram) first.
+    NAME="margine-test-$(basename "$ISO_ABS" .iso)"
+    NAME="$(printf '%s' "$NAME" | tr -c 'a-zA-Z0-9._-' '-')"
+    CONN="qemu:///session"
+    if virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
+      echo "Recreating throwaway VM '$NAME' (removing the previous domain + disk)…"
+      virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
+      virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1 \
+        || virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1 \
+        || virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true
+    fi
     exec ujust margine-test-vm "$ISO_ABS"
 
 # Launch the GTK4 GUI that drives the local ISO builds (dev tool, not shipped).

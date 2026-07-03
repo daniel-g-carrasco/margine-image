@@ -128,6 +128,18 @@ if [[ "$(id -u)" -ne 0 ]]; then
   sudo chown "${REAL_UID}:${REAL_GID}" "${ISO_PATH}" 2>/dev/null || true
 fi
 
+# 7. Sidecar metadata for the ISO Builder GUI's inventory (subtitle fields +
+#    the fresh/STALE badge, which compares liveenv_rev to the current
+#    live-env/src content hash). Best-effort: a metadata failure must never
+#    fail a finished build. Ownership handback: the pkexec path is covered by
+#    the EXIT trap on output/; a direct run writes it as the user already.
+{
+  BASE_DIGEST="$(sudo podman image inspect --format '{{.Digest}}' "${BASE_IMAGE}" 2>/dev/null || echo unknown)"
+  printf '{"built_at": "%s", "zstd_level": %s, "base_image": "%s", "base_digest": "%s", "liveenv_rev": "%s", "builder": "local"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${ZSTD_LEVEL}" "${BASE_IMAGE}" \
+    "${BASE_DIGEST}" "${LIVEENV_REV}" > "${ISO_PATH}.meta.json"
+} || true
+
 log "Done in $((SECONDS / 60))m $((SECONDS % 60))s — Live ISO ready:"
 ls -lh "${ISO_PATH}"
 printf '\nTest it:  just test-install-vm              (quick, Secure Boot off)\n'

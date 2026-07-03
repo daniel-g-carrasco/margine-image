@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import gi
 
@@ -46,7 +47,24 @@ def _detect_repo_slug():
         return None
 
 
+def _detect_gh():
+    """Absolute path of gh. On Bluefin DX gh is typically brew-installed under
+    /home/linuxbrew/.linuxbrew/bin, which a GNOME-launched process never has on
+    PATH — and shells don't help: /etc/profile.d/brew.sh is guarded by
+    `$- == *i*`, so even `bash -lc` (login, non-interactive) skips it. Probe
+    the known locations directly instead of trusting any shell."""
+    candidates = [shutil.which("gh"),
+                  "/home/linuxbrew/.linuxbrew/bin/gh",
+                  os.path.expanduser("~/.local/bin/gh"),
+                  "/usr/bin/gh", "/usr/local/bin/gh"]
+    for cand in candidates:
+        if cand and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
 GH_REPO = _detect_repo_slug()
+GH_BIN = _detect_gh()
 
 GUIDE = """<b>Margine ISO Builder</b> builds the Margine live ISO locally, so you \
 can test install-time and ISO bugs without the ~40 min CI build or an 8.5 GB \
@@ -70,17 +88,27 @@ dedicated /var the shipped ISO uses (the layout where the Flatpak bake matters).
    <tt>flatpak --system list --app | wc -l</tt>  — ~37 baked apps right away
 
 <b>3 · CI (GitHub Actions)</b>
-• <b>Rebuild base</b> — CI builds <tt>:candidate</tt>, QEMU smoke-boots it, and \
-only if green promotes it to <tt>:stable</tt>. You get a notification when \
-<tt>:stable</tt> is live — then <b>Fast test ISO</b> builds from the new base.
-• <b>Publish ISO</b> — full CI ISO (zstd-19) → real-install gate → Internet \
-Archive + site date bump. <b>The gate blocks publishing</b>: a stable ISO that \
-fails a real install never reaches the public mirror.
-• <b>Download &amp; test CI ISO</b> — fetches the newest CI ISO artifact \
-(~9 GB) into <tt>output/ci-&lt;run&gt;/</tt> and boots it in the usual test VM. \
-Use it to verify the EXACT bytes CI built before sharing a link.
-• All three need the GitHub CLI (<tt>gh</tt>) authenticated. Progress arrives \
-as desktop notifications — keep this window open while a CI job is monitored.
+• <b>Rebuild base image</b> — CI builds <tt>:candidate</tt>, QEMU smoke-boots \
+it, and only if green promotes it to <tt>:stable</tt>. You get a notification \
+when <tt>:stable</tt> is live — then <b>Fast test ISO</b> builds from the new base.
+• <b>Publish ISO via CI</b> — full CI ISO (zstd-19) → real-install gate → \
+Internet Archive + site date bump. <b>The gate blocks publishing</b>: a stable \
+ISO that fails a real install never reaches the public mirror. Uses the \
+<b>Base image tag</b> above (<tt>stable</tt> or <tt>nvidia</tt>); if a publish \
+run is already going, the button attaches to it instead of double-publishing.
+• <b>Download + test newest CI ISO</b> — fetches the newest CI ISO artifact \
+(~9 GB) into <tt>output/ci-&lt;run&gt;/</tt>, then offers to boot it in the \
+usual test VM. Use it to verify the EXACT bytes CI built before sharing a link.
+• Progress arrives as toasts + desktop notifications — keep this window open \
+while a CI job is monitored (closing it stops the monitoring, not the CI job).
+
+<b>If the CI rows say “unavailable”</b>
+• <i>gh CLI not found</i> — install it: <tt>brew install gh</tt>. (The app \
+resolves brew's install dir even though GNOME launchers don't have it in PATH.)
+• <i>gh not authenticated</i> — run <tt>gh auth login</tt> in a terminal once, \
+then reopen this app.
+• <i>no GitHub origin remote</i> — the repo folder has no GitHub origin; check \
+<tt>git remote -v</tt>.
 
 <b>Good to know</b>
 • Needs ~30 GB free for the build scratch.
@@ -189,8 +217,10 @@ class BuilderWindow(Adw.ApplicationWindow):
             "Publish ISO via CI",
             "zstd-19 → install gate → Internet Archive + site bump",
             "Publish", self.on_ci_publish)
+        # NB: no raw '&' in row titles — Adw row titles are Pango markup, an
+        # unescaped ampersand silently blanks the whole title.
         self.dl_row, self.dl_btn = _ci_row(
-            "Download & test newest CI ISO",
+            "Download + test newest CI ISO",
             "fetch the margine-live-iso artifact, boot it in the test VM",
             "Download", self.on_ci_download)
 
@@ -199,6 +229,8 @@ class BuilderWindow(Adw.ApplicationWindow):
             self._ci_subtitles[row] = row.get_subtitle()
         if GH_REPO is None:
             self._ci_disable("no GitHub origin remote found")
+        elif GH_BIN is None:
+            self._ci_disable("gh CLI not found — install it (e.g. brew install gh)")
         else:
             self._gh(["auth", "status"], self._on_gh_auth)
 
@@ -360,13 +392,15 @@ class BuilderWindow(Adw.ApplicationWindow):
 
     def _on_gh_auth(self, ok, _out, _err):
         if not ok:
-            self._ci_disable("gh CLI missing or not authenticated (gh auth login)")
+            self._ci_disable("gh not authenticated — run: gh auth login")
 
     def _gh(self, args, cb):
-        """Run `gh` asynchronously; cb(ok, stdout, stderr) on the main loop."""
+        """Run `gh` asynchronously; cb(ok, stdout, stderr) on the main loop.
+        Uses the absolute GH_BIN — brew's bin dir is not on a GNOME-launched
+        process' PATH."""
         try:
             proc = Gio.Subprocess.new(
-                ["gh", *args],
+                [GH_BIN or "gh", *args],
                 Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE)
         except GLib.Error as e:
             GLib.idle_add(cb, False, "", e.message)
@@ -710,7 +744,7 @@ class BuilderWindow(Adw.ApplicationWindow):
         os.makedirs(dest, exist_ok=True)
         try:
             proc = Gio.Subprocess.new(
-                ["gh", "run", "download", str(rid), "--repo", GH_REPO,
+                [GH_BIN or "gh", "run", "download", str(rid), "--repo", GH_REPO,
                  "-n", "margine-live-iso", "-D", dest],
                 Gio.SubprocessFlags.STDERR_PIPE)
         except GLib.Error as e:

@@ -8,9 +8,13 @@
 #                                               │  uploads each artifact
 #                                               │  as GHA workflow artifact
 #                                               ▼
-#                              publish_ia (ISO only)  ──┐
-#                                                       ▼
-#                                                      notify (if: always())
+#   build_iso_titanoboa ──► install_gate (stable only; skipped for nvidia)
+#            │                    │
+#            └────────┬───────────┘  gate green — or skipped (nvidia)
+#                     ▼
+#            publish_ia (ISO only) ──► bump_site ──┐
+#                                                  ▼
+#                                                 notify (if: always())
 #
 # build_disk does the heavy work — bootc-image-builder (~15-17 min) +
 # checksums + upload-artifact. publish_ia downloads the ISO artifact
@@ -499,8 +503,10 @@ jobs:
     # path that broke on the Beelink SER8 (forum 12247) and that no other CI
     # job exercises (smoke-boot uses a qcow2 from the OCI image; the boot-test
     # only boots the live session). Runs whenever the live ISO is built for
-    # stable. Does NOT block publish_ia (a new headless-install gate; surface
-    # first, tighten to blocking once proven).
+    # stable. BLOCKS publish_ia since 2026-07-03 (originally surface-only —
+    # "tighten to blocking once proven" — and it proved itself on the #232
+    # flatpak-bake fix and every stable run since): a stable ISO that fails a
+    # real install must reach neither Internet Archive nor the site date bump.
     needs: build_iso_titanoboa
     if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
     runs-on: ubuntu-24.04
@@ -564,8 +570,16 @@ jobs:
   publish_ia:
     name: Publish ISO (${{ matrix.image }}) to Internet Archive
     # 2026-06-11: publishes the Titanoboa live ISO (ADR-0008 Phase 5).
-    needs: build_iso_titanoboa
-    if: github.event_name != 'pull_request'
+    # 2026-07-03: gated on install_gate for stable — an ISO that fails the
+    # real-install Flatpak gate must not reach the public mirror (nor bump the
+    # site's ISO date downstream). install_gate doesn't run for nvidia, so its
+    # 'skipped' result still publishes; `always()` is required because a plain
+    # needs would ALSO skip publish on a skipped gate.
+    needs: [build_iso_titanoboa, install_gate]
+    if: >-
+      always() && github.event_name != 'pull_request'
+      && needs.build_iso_titanoboa.result == 'success'
+      && (needs.install_gate.result == 'success' || needs.install_gate.result == 'skipped')
     runs-on: ubuntu-24.04
     # 350 = IA upload headroom. Bumped from 180 on 2026-06-09 after run
     # 27166954601's publish_ia hit the 180-min cap mid-upload (IA's S3

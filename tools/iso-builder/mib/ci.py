@@ -716,7 +716,11 @@ class CiPage:
         """Newest-first: first run with a live margine-live-iso artifact wins
         (ISO-less qcow2-only runs and expired artifacts are skipped)."""
         if idx >= len(runs):
-            self._ci_dl_done("no CI run with a live margine-live-iso artifact found")
+            # The multi-GB CI artifacts expire within hours by design — they
+            # only exist to hand the ISO to publish_ia. Once they're gone the
+            # authoritative copy is the PUBLISHED one on Internet Archive,
+            # which is also the exact bytes end users download: fall back.
+            self._ci_dl_ia_fallback()
             return
         rid = runs[idx]["databaseId"]
 
@@ -821,6 +825,110 @@ class CiPage:
 
         # communicate_utf8_async drains stdout/stderr (so a chatty gh can't
         # fill the pipe and stall) and fires `done` when the process exits.
+        proc.communicate_utf8_async(None, None, done)
+
+    # -- CI: Internet Archive fallback (artifact expired) ---------------------
+    def _ci_dl_ia_fallback(self):
+        # Identifier comes from the dashboard derivation (self._ia_link, set
+        # by refresh()); the actual .iso filename is read from IA's metadata
+        # API rather than guessed (nvidia variants name differently).
+        ident = (self._ia_link or "").rsplit("/", 1)[-1]
+        if not ident:
+            self._ci_dl_done("no live CI artifact, and no Archive link derived "
+                             "yet — refresh the Status group above first")
+            return
+        self.dl_row.set_subtitle("CI artifact expired — checking Internet Archive…")
+
+        def got(ok, out, _err):
+            name, size = None, 0
+            if ok and out.strip():
+                try:
+                    for f in json.loads(out).get("files", []):
+                        if str(f.get("name", "")).endswith(".iso"):
+                            name = f["name"]
+                            size = int(f.get("size") or 0)
+                            break
+                except (ValueError, TypeError):
+                    pass
+            if not name:
+                self._ci_dl_done("Archive item has no .iso yet (still deriving?) "
+                                 "— try again in a few minutes")
+                return
+            self._ci_dl_ia_confirm(ident, name, size)
+
+        core.spawn_collect(["curl", "-sSL", "--max-time", "30",
+                            f"https://archive.org/metadata/{ident}"], got)
+
+    def _ci_dl_ia_confirm(self, ident, name, size):
+        dlg = Adw.AlertDialog.new(
+            "Download the published ISO instead?",
+            "The CI artifact has expired (artifacts only live long enough to "
+            f"reach the publisher). {name} — {size / 1e9:.1f} GB — is live on "
+            "Internet Archive: the exact bytes end users download. It lands in "
+            f"output/ia-{ident}/ and can be booted in the test VM right after.")
+        dlg.add_response("cancel", "Cancel")
+        dlg.add_response("go", "Download")
+        dlg.set_response_appearance("go", Adw.ResponseAppearance.SUGGESTED)
+
+        def resp(_d, r):
+            if r == "go":
+                self._ci_dl_ia_start(ident, name, size)
+            else:
+                self._ci_dl_done(None)
+
+        dlg.connect("response", resp)
+        dlg.present(self.win)
+
+    def _ci_dl_ia_start(self, ident, name, size):
+        dest = os.path.join(core.OUTPUT_DIR, f"ia-{ident}")
+        os.makedirs(dest, exist_ok=True)
+        target = os.path.join(dest, name)
+        url = f"https://archive.org/download/{ident}/{name}"
+        # curl writes straight into dest (no TMPDIR staging like gh), so the
+        # same walk-based progress works; -C - resumes a half-downloaded file
+        # instead of restarting an ~9 GB transfer after a hiccup.
+        try:
+            proc = Gio.Subprocess.new(
+                ["curl", "-L", "--fail", "-sS", "-C", "-", "-o", target, url],
+                Gio.SubprocessFlags.STDERR_PIPE)
+        except GLib.Error as e:
+            self._ci_dl_done("download failed to start: " + _errline(e.message))
+            return
+        self.dl_row.set_subtitle("downloading from Internet Archive… 0%")
+        state = {"live": True}
+
+        def progress():
+            if not state["live"]:
+                return GLib.SOURCE_REMOVE
+            have = 0
+            for root_, _dirs, files in os.walk(dest):
+                for f in files:
+                    try:
+                        have += os.path.getsize(os.path.join(root_, f))
+                    except OSError:
+                        pass
+            pct = min(99, int(have * 100 / size)) if size else 0
+            self.dl_row.set_subtitle(
+                f"downloading from Internet Archive… "
+                f"{have / 1e9:.1f} / {size / 1e9:.1f} GB ({pct}%)")
+            return GLib.SOURCE_CONTINUE
+
+        GLib.timeout_add_seconds(2, progress)
+
+        def done(p, res):
+            state["live"] = False
+            try:
+                p.communicate_utf8_finish(res)
+            except GLib.Error:
+                pass
+            if not p.get_successful() or not os.path.exists(target):
+                self._ci_dl_done("Archive download failed — the partial file is "
+                                 "kept; Download again resumes it")
+                return
+            self._ci_dl_done("downloaded: " + _esc(name))
+            self.win.notify("Published ISO downloaded", name)
+            self._ci_dl_offer_test(target)
+
         proc.communicate_utf8_async(None, None, done)
 
     def _ci_dl_offer_test(self, iso):

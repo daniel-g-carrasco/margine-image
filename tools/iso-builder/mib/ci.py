@@ -91,6 +91,14 @@ class CiPage:
         status.add(self.stable_row)
 
         self.pubstat_row = Adw.ActionRow(title="Last publish run", subtitle="—")
+        # "Open" jumps to the run page — the run NUMBER must be inspectable
+        # before trusting a download (Daniel, 2026-07-03: the id was only shown
+        # after pressing Download, inside the confirm dialog).
+        self._pubstat_rid = None
+        self.pubstat_open_btn = Gtk.Button(label="Open",
+                                           valign=Gtk.Align.CENTER, visible=False)
+        self.pubstat_open_btn.connect("clicked", self.on_open_pubstat_run)
+        self.pubstat_row.add_suffix(self.pubstat_open_btn)
         status.add(self.pubstat_row)
         # The verdict subtitle (iso / gate / publish) is dense — let it wrap.
         self.pubstat_row.set_subtitle_lines(2)
@@ -224,24 +232,28 @@ class CiPage:
                 return
             rid = runs[0]["databaseId"]
             created = _fmt_date(runs[0].get("createdAt", ""))
+            self._pubstat_rid = rid
+            self.pubstat_open_btn.set_visible(True)
 
             def viewed(ok2, out2, err2):
                 try:
                     if not ok2:
                         self.pubstat_row.set_subtitle(
-                            f"{created} · run {rid} — " + _errline(err2))
+                            f"run {rid} · {created} — " + _errline(err2))
                         return
                     try:
                         data = json.loads(out2)
                     except ValueError:
                         self.pubstat_row.set_subtitle(
-                            f"{created} · run {rid} — bad gh JSON")
+                            f"run {rid} · {created} — bad gh JSON")
                         return
                     iso = _state(*_job(data, "Build Live ISO"))
                     gate = _state(*_job(data, "Automated install gate"))
                     pub = _state(*_job(data, "Publish ISO"))
+                    # Keep the run id in the HAPPY path too — it's the number a
+                    # tester cross-checks against gh/Actions before downloading.
                     self.pubstat_row.set_subtitle(
-                        f"{created} · iso: {iso} · gate: {gate} · publish: {pub}")
+                        f"run {rid} · {created} · iso: {iso} · gate: {gate} · publish: {pub}")
                 finally:
                     self._done_one()
 
@@ -343,6 +355,15 @@ class CiPage:
             return
         try:
             Gio.AppInfo.launch_default_for_uri(self._pub_url, None)
+        except GLib.Error as e:
+            self.win.toast(_esc(f"Failed to open the run page: {e.message}"))
+
+    def on_open_pubstat_run(self, _btn):
+        if self._pubstat_rid is None:
+            return
+        url = f"https://github.com/{core.GH_REPO}/actions/runs/{self._pubstat_rid}"
+        try:
+            Gio.AppInfo.launch_default_for_uri(url, None)
         except GLib.Error as e:
             self.win.toast(_esc(f"Failed to open the run page: {e.message}"))
 

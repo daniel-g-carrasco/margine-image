@@ -182,8 +182,10 @@ def read_iso_meta(path):
 
 
 def list_isos():
-    """Newest-first inventory of OUTPUT_DIR/*.iso and OUTPUT_DIR/ci-*/**.iso.
-    Each entry: {path, name, size, mtime, meta: dict|None, ci_run: str|None}."""
+    """Newest-first inventory of OUTPUT_DIR/*.iso plus the download dirs
+    (ci-<run>/ from gh artifacts, ia-<identifier>/ from the Internet Archive
+    fallback). Each entry: {path, name, size, mtime, meta: dict|None,
+    ci_run: str|None} — ci_run doubles as the download-source label."""
     found = []  # (path, ci_run)
     try:
         names = os.listdir(OUTPUT_DIR)
@@ -193,13 +195,14 @@ def list_isos():
         p = os.path.join(OUTPUT_DIR, n)
         if n.endswith(".iso") and os.path.isfile(p):
             found.append((p, None))
-        elif n.startswith("ci-") and os.path.isdir(p):
-            # gh run download may nest the artifact — walk the whole ci dir.
-            run = n[len("ci-"):]
+        elif (n.startswith("ci-") or n.startswith("ia-")) and os.path.isdir(p):
+            # Downloads may nest (gh artifact layout, the torrent's root dir) —
+            # walk the whole download dir.
+            src = n[len("ci-"):] if n.startswith("ci-") else n
             for root_, _dirs, files in os.walk(p):
                 for f in files:
                     if f.endswith(".iso"):
-                        found.append((os.path.join(root_, f), run))
+                        found.append((os.path.join(root_, f), src))
     entries = []
     for path, ci_run in found:
         try:

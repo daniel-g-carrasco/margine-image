@@ -186,6 +186,7 @@ class BuildPage:
         for b in (self.fast_btn, self.full_btn, self.tag_row):
             b.set_sensitive(not running)
         self.cancel_btn.set_sensitive(running)
+        self.cancel_btn.set_label("Cancel build")  # reset from "Cancelling…"
         self.status.set_label(status_text)
         if running:
             self.spinner.start()
@@ -279,29 +280,48 @@ class BuildPage:
             self._append(f"\n✗ Build failed (exit {code}){hint}\n")
 
     def on_cancel(self, _btn):
-        if self._proc is None:
+        if self._proc is None or self._cancelling:
             return
-        # The build tree runs as ROOT (pkexec): force_exit() from the
-        # user-owned GUI is EPERM-ignored, which made this button look dead
-        # (Daniel, 2026-07-04: two "[cancelling…]" with the build marching
-        # on). Kill the tree root-side instead — children FIRST, so the
-        # `sudo podman build` underneath aborts too, then the top script,
-        # whose EXIT trap hands .cache//output ownership back to the user.
-        # pkexec will show an auth dialog: stopping a root process is a
-        # privileged action, that prompt is correct.
+        # The build runs as ROOT (pkexec) and the heavy work — mksquashfs /
+        # xorriso — runs inside a Titanoboa podman container that conmon keeps
+        # ALIVE independently of the host process tree (Daniel, 2026-07-04:
+        # force_exit was EPERM-ignored; then the host tree died but xorriso in
+        # the container marched on). So cancel does BOTH, root-side via pkexec:
+        #   1. podman kill the worker container — Titanoboa runs it unnamed
+        #      (`podman run --rm -i … fedora:latest /src/build_iso.sh`), so
+        #      match it by its unique command /src/build_iso.sh.
+        #   2. recursive children-first TERM of the pkexec tree (build-iso-
+        #      local.sh, sudo podman build/pull), whose EXIT trap hands
+        #      .cache//output ownership back. Then a hard sweep by name.
+        # The build stays "running" in the UI until the process actually dies
+        # (_on_build_done) — no premature "Cancelled" with work still going.
         pid = int(self._proc.get_identifier())
-        self._append("\n[stopping the rootful build — authenticate in the "
-                     "polkit dialog…]\n")
-        script = ('k(){ for c in $(pgrep -P "$1"); do k "$c"; done; '
-                  'kill -TERM "$1" 2>/dev/null || true; }; k %d' % pid)
+        script = (
+            'for cid in $(podman ps -q 2>/dev/null); do '
+            'case "$(podman inspect --format "{{.Config.Cmd}}" "$cid" 2>/dev/null)" '
+            'in *build_iso.sh*) podman kill "$cid" 2>/dev/null || true;; esac; done; '
+            'k(){ for c in $(pgrep -P "$1" 2>/dev/null); do k "$c"; done; '
+            'kill -TERM "$1" 2>/dev/null || true; }; k %d; '
+            'sleep 2; pkill -KILL -f build-iso-local.sh 2>/dev/null || true' % pid
+        )
+        self.cancel_btn.set_sensitive(False)     # no double-click while auth pends
+        self.cancel_btn.set_label("Cancelling…")
+        self._append("\n[stopping the rootful build + its container — "
+                     "authenticate in the polkit dialog…]\n")
 
         def sent(ok, _out, err):
             if ok:
+                # Mark, but DON'T reset the UI here: _on_build_done fires when
+                # self._proc (pkexec) actually exits and does the reset — the
+                # real-completion check you asked for.
                 self._cancelling = True
-                self._append("[terminate sent to the build tree]\n")
+                self._append("[terminate + container kill sent — waiting for "
+                             "the build to exit]\n")
             else:
-                last = err.strip().splitlines()[-1] if err.strip() else "auth failed/cancelled"
-                self._append(f"[cancel aborted: {last}]\n")
+                last = err.strip().splitlines()[-1] if err.strip() else "auth cancelled"
+                self._append(f"[cancel aborted: {last} — build still running]\n")
+                self.cancel_btn.set_label("Cancel build")
+                self.cancel_btn.set_sensitive(True)   # build lives → let them retry
 
         core.spawn_collect(["pkexec", "bash", "-c", script], sent)
 

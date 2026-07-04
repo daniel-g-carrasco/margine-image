@@ -135,6 +135,28 @@ case "$ctx" in
   *)           bad "SELinux context '$ctx' wrong — /var/lib/flatpak must be var_lib_t (var_t is NOT enough)" ;;
 esac
 
+# TRUNCATED-INSTALL sensor (2026-07-04 incident). Anaconda copies its logs to
+# the target's var/log/anaconda as one of its LAST acts — so "anaconda logs
+# present AND our bake script logged MARGINE-BAKE-OK inside them" proves the
+# install ran to completion. On the 2026-07-04 VM install, gnome-shell
+# segfaulted, the WebUI viewer died with the session, anaconda (which by
+# design stops when its viewer disappears) was cut mid-bake-rsync: app/
+# present, repo/ empty, NO var/log/anaconda — and this gate would still have
+# PASSED, because the headless gate never runs a GNOME session at all. This
+# assertion detects the truncation CLASS regardless of cause. Search rather
+# than hardcode: the log path follows the same var-layout variance as VARLIB.
+ANALOG="$(find "$MNT" -maxdepth 7 -type d -name anaconda -path '*/var/log/*' 2>/dev/null | head -1)"
+if [[ -n "$ANALOG" ]] && compgen -G "$ANALOG/ks-script-*.log" > /dev/null; then
+  ok "anaconda logs present on target ($ANALOG) — install ran to completion"
+  if grep -hq "MARGINE-BAKE-OK" "$ANALOG"/ks-script-*.log 2>/dev/null; then
+    ok "MARGINE-BAKE-OK in ks-script logs — bake script completed and self-verified"
+  else
+    bad "no MARGINE-BAKE-OK in $ANALOG/ks-script-*.log — bake script died or never ran"
+  fi
+else
+  bad "no var/log/anaconda with ks-script logs on the installed disk — anaconda was cut short (truncated install)"
+fi
+
 echo
 if [[ "$fail" -eq 0 ]]; then echo "MARGINE-INSTALL-FLATPAK: PASS"; else echo "MARGINE-INSTALL-FLATPAK: FAIL"; fi
 exit "$fail"

@@ -52,6 +52,36 @@ the same seconds.
    `update_clock` UAF is upstream GNOME material — coredump stack preserved
    here if we decide to file it.
 
+## Part 2 — the SAME crash also broke the Flatpak bake (found on first boot)
+
+The installed system from this very run booted fine but had NO flatpaks:
+`/var/lib/flatpak` contained `app/` (953 M, timestamps of the ISO build) while
+`repo/`, `runtime/`, `exports/` were EMPTY dirs stamped 18:43 UTC — the crash
+minute — and `/var/log/anaconda` did not exist. Chain, completed:
+
+1. The session died → **slitherer (the WebUI viewer) died with it**.
+2. anaconda's live mode **stops when its viewer disappears** (by design:
+   `_watch_webui_on_live` → PidWatcher → main-loop quit).
+3. That killed the %post chain **mid-rsync of the bake** (alphabetical: app/
+   copied, repo/ and runtime/ never) and before the final copy-logs task —
+   hence no /var/log/anaconda.
+4. `bootc switch` had already completed → the system boots and LOOKS installed.
+5. On first boot `flatpak-preinstall` crash-loops forever: remote-add, repair
+   and the preinstall all die on `opendir(objects)` — the drop-in's existing
+   heals can't fix a repo with no objects/.
+
+**Why the CI gate was green on this exact ISO**: the gate installs headless —
+no GNOME session, no crash, scripts complete. Its blind spot is the truncation
+class, not the bake location.
+
+Follow-up hardening shipped with this note:
+- `flatpak-repo-heal` (new first ExecStartPre): detects the repo-without-
+  objects signature and resets /var/lib/flatpak so the heal chain rebuilds it
+  — turns "broken forever" into "recovers by downloading".
+- Gate: asserts var/log/anaconda + `MARGINE-BAKE-OK` in ks-script logs on the
+  installed disk — the truncated-install sensor, cause-agnostic.
+- This also most likely explains CyberOto's original broken-flatpaks report.
+
 ## Lessons
 
 - "Logout at end of install" had TWO distinct root causes months apart

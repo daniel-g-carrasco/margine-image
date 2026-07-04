@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Reset a structurally-corrupt system flatpak dir so flatpak-preinstall's
+# ExecStartPre heal chain can rebuild it from scratch.
+#
+# "Corrupt" here has ONE precise signature: /var/lib/flatpak/repo exists but
+# has no objects/ underneath. That is what an install truncated mid-bake
+# leaves behind (2026-07-04 incident: gnome-shell segfaulted in the live
+# session, the WebUI browser died with it, and anaconda — which by design
+# stops when its viewer disappears — killed the bake rsync between app/ and
+# repo/). In that state every later heal is useless: `flatpak remote-add`,
+# `flatpak repair` and the preinstall itself all die on
+# `opendir(objects): No such file or directory`, so the unit crash-loops
+# forever and the deferred apps never arrive.
+#
+# The sibling app/ content is unusable without the repo objects it points
+# at, so a full reset loses nothing — after it, remote-add recreates a
+# clean repo and the preinstall set downloads normally.
+#
+# A HEALTHY repo (objects/ present) is never touched.
+set -euo pipefail
+FP=/var/lib/flatpak
+if [ -d "$FP/repo" ] && [ ! -d "$FP/repo/objects" ]; then
+    echo "flatpak-repo-heal: $FP/repo has no objects/ — truncated bake; resetting $FP"
+    rm -rf "$FP"
+    install -d -m 0755 "$FP"
+    restorecon -RF "$FP" 2>/dev/null || true
+fi

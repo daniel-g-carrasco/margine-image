@@ -167,6 +167,32 @@ install_otiling() {
     exit 1
   fi
   assert_shell_compat "${target}"
+
+  # HOTFIX (2026-07-04, pending upstream in oliwebd/o-tiling): v2.9.5's
+  # _show_skip_taskbar_windows() calls global.log() in its two WARNING
+  # branches — an API GNOME removed. On GNOME 50 the guarded internals are
+  # gone, so a WARNING branch is ALWAYS taken → TypeError → the handler
+  # aborts mid-monkey-patch on EVERY skip-taskbar window event. During a
+  # live install (Anaconda spawns exactly such windows while flooding
+  # GSettings via localed) this fired seconds before a gnome-shell SIGSEGV
+  # that killed the whole session (coredump: update_clock →
+  # g_settings_get_enum use-after-free; see docs/notes 2026-07-04).
+  # console.log() is the GNOME 45+ replacement. The post-check makes a
+  # future version bump fail LOUDLY here instead of silently shipping
+  # broken calls again.
+  local n_globallog
+  n_globallog="$(grep -c 'global\.log(' "${target}/extension.js" || true)"
+  if [[ "${n_globallog}" -gt 0 ]]; then
+    sed -i 's/global\.log(/console.log(/g' "${target}/extension.js"
+    log "o-tiling: patched ${n_globallog} global.log() call(s) → console.log()"
+  else
+    log "o-tiling: no global.log() left upstream — drop this hotfix block"
+  fi
+  if grep -q 'global\.log(' "${target}/extension.js"; then
+    log "ERROR: global.log() still present in o-tiling after patch"
+    exit 1
+  fi
+
   if [[ -d "${target}/schemas" ]] && compgen -G "${target}/schemas/*.xml" > /dev/null; then
     glib-compile-schemas --strict "${target}/schemas"
   fi

@@ -809,7 +809,12 @@ class CiPage:
             for root_, _dirs, files in os.walk(dest):
                 for f in files:
                     try:
-                        have += os.path.getsize(os.path.join(root_, f))
+                        # st_blocks (allocated), NOT st_size: torrents write
+                        # pieces at scattered offsets, so the file goes sparse
+                        # with a near-full APPARENT size almost immediately —
+                        # getsize would show ~97% at once and then sit there.
+                        st = os.stat(os.path.join(root_, f))
+                        have += st.st_blocks * 512
                     except OSError:
                         pass
             inst = max(0, have - state["prev"]) / 2.0          # B/s this tick
@@ -955,7 +960,12 @@ class CiPage:
             for root_, _dirs, files in os.walk(dest):
                 for f in files:
                     try:
-                        have += os.path.getsize(os.path.join(root_, f))
+                        # st_blocks (allocated), NOT st_size: torrents write
+                        # pieces at scattered offsets, so the file goes sparse
+                        # with a near-full APPARENT size almost immediately —
+                        # getsize would show ~97% at once and then sit there.
+                        st = os.stat(os.path.join(root_, f))
+                        have += st.st_blocks * 512
                     except OSError:
                         pass
             inst = max(0, have - state["prev"]) / 2.0          # B/s this tick

@@ -272,7 +272,13 @@ host_packages:
         - libswscale-free
       install:
         - ffmpeg
-        - gstreamer1-plugins-bad-freeworld
+        # negativo17's build (epoch 1), NOT RPMFusion's -freeworld: the base
+        # multimedia stack (ffmpeg/x265/ugly) is negativo17, and RPMFusion's
+        # freeworld variant links the OLD libx265.so.215 while negativo17 ships
+        # x265 4.2 (.216) — unresolvable mix that broke the 2026-07-04 base
+        # build. negativo17's gstreamer1-plugins-bad is a superset of freeworld
+        # (bundles libgstx265.so, libgstva.so, nvcodec/msdk/qsv, fdkaac).
+        - gstreamer1-plugins-bad
         - gstreamer1-plugins-ugly
       install_note: >
         Validated against quay.io/fedora/fedora:44 + RPMFusion via

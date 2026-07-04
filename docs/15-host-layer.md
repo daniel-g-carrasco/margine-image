@@ -77,14 +77,18 @@ with the freeworld variants from RPMFusion:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`.
+Plus added: `gstreamer1-plugins-bad` (negativo17's build — a superset of
+RPMFusion's `-freeworld`, consistent with the base's negativo17 ffmpeg/x265;
+the RPMFusion variant conflicts with negativo17's x265 since 2026-07-04),
+`gstreamer1-plugins-ugly`.
 
 Two GStreamer symbols are intentionally **not** listed because on Fedora 44
 they are virtual provides, which `rpm-ostree override` rejects:
 `gstreamer1-libav` (real package is `gstreamer1-plugin-libav`, already in
 the base) and `gstreamer1-vaapi` (merged into
-`gstreamer1-plugins-bad-{free,freeworld}` in F44+). Both capabilities work
-once `gstreamer1-plugins-bad-freeworld` is installed.
+`gstreamer1-plugins-bad-{free,freeworld}` in F44+; negativo17's
+`gstreamer1-plugins-bad` bundles the same). Both capabilities work
+once `gstreamer1-plugins-bad` is installed.
 
 This is the same pattern Bluefin uses (`build_files/base/04-packages.sh`)
 and unlocks: GPU-accelerated H.264/H.265/AV1 decode + encode in browsers,
@@ -306,11 +310,11 @@ Hardware decode in browsers happens automatically once
 
 OBS Studio: enable VA-API output via `Settings → Output → Encoder`
 (pick `H.264 VA-API`). The encoder appears in the list because
-`gstreamer1-plugins-bad-freeworld` (which now bundles the VA-API plugin
-on F44+) and `mesa-va-drivers-freeworld` are present.
+`gstreamer1-plugins-bad` (negativo17's build, which bundles the VA-API
+plugin) and `mesa-va-drivers-freeworld` are present.
 
 darktable / GIMP / Reaper: standard CPU codec paths work end-to-end
-because `ffmpeg` and `gstreamer1-plugins-bad-freeworld` cover the
+because `ffmpeg` and `gstreamer1-plugins-bad` cover the
 patented formats they need.
 
 ### Virtualization: virt-manager and friends

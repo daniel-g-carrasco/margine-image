@@ -111,7 +111,10 @@ codec packages are replaced with the freeworld variants:
 | `mesa-va-drivers` | `mesa-va-drivers-freeworld` |
 | `mesa-vdpau-drivers` | `mesa-vdpau-drivers-freeworld` |
 
-Plus added: `gstreamer1-plugins-bad-freeworld`, `gstreamer1-plugins-ugly`.
+Plus added: `gstreamer1-plugins-bad` (negativo17's build — a superset of
+RPMFusion's `-freeworld`, kept consistent with the base's negativo17
+ffmpeg/x265; the RPMFusion variant conflicts with negativo17's x265 since
+2026-07-04), `gstreamer1-plugins-ugly`.
 On Fedora 44 several symbols are intentionally skipped because they would be
 rejected by `rpm-ostree override` (already provided / already in base):
 `gstreamer1-libav` (virtual; real package is `gstreamer1-plugin-libav`),

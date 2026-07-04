@@ -13,6 +13,7 @@
 import datetime
 import json
 import os
+import shutil
 
 import gi
 
@@ -21,6 +22,18 @@ gi.require_version("Adw", "1")
 from gi.repository import Gtk, Gdk, Adw, Gio, GLib  # noqa: E402
 
 from . import core  # noqa: E402
+
+
+def _find_aria2():
+    """Absolute path of aria2c, or None. Same probing story as gh in core:
+    brew's bin dir is not on a GNOME-launched process' PATH."""
+    for cand in (shutil.which("aria2c"),
+                 "/home/linuxbrew/.linuxbrew/bin/aria2c",
+                 os.path.expanduser("~/.local/bin/aria2c"),
+                 "/usr/bin/aria2c", "/usr/local/bin/aria2c"):
+        if cand and os.access(cand, os.X_OK):
+            return cand
+    return None
 
 _esc = GLib.markup_escape_text
 
@@ -871,12 +884,20 @@ class CiPage:
                             f"https://archive.org/metadata/{ident}"], got)
 
     def _ci_dl_ia_confirm(self, ident, name, size):
+        method = ("Via torrent with aria2: many parallel connections and "
+                  "per-piece hash verification — measured well over the "
+                  "single-connection rate on archive.org."
+                  if _find_aria2() else
+                  "Direct HTTP (archive.org serves ~1 MB/s single-connection; "
+                  "install aria2 for the much faster torrent path: "
+                  "brew install aria2).")
         dlg = Adw.AlertDialog.new(
             "Download the published ISO instead?",
             "The CI artifact has expired (artifacts only live long enough to "
             f"reach the publisher). {name} — {size / 1e9:.1f} GB — is live on "
-            "Internet Archive: the exact bytes end users download. It lands in "
-            f"output/ia-{ident}/ and can be booted in the test VM right after.")
+            "Internet Archive: the exact bytes end users download. "
+            f"{method} It lands in output/ia-{ident}/ and can be booted in "
+            "the test VM right after.")
         dlg.add_response("cancel", "Cancel")
         dlg.add_response("go", "Download")
         dlg.set_response_appearance("go", Adw.ResponseAppearance.SUGGESTED)
@@ -893,19 +914,35 @@ class CiPage:
     def _ci_dl_ia_start(self, ident, name, size):
         dest = os.path.join(core.OUTPUT_DIR, f"ia-{ident}")
         os.makedirs(dest, exist_ok=True)
-        target = os.path.join(dest, name)
-        url = f"https://archive.org/download/{ident}/{name}"
-        # curl writes straight into dest (no TMPDIR staging like gh), so the
-        # same walk-based progress works; -C - resumes a half-downloaded file
-        # instead of restarting an ~9 GB transfer after a hiccup.
+        aria = _find_aria2()
+        if aria:
+            # Torrent route (preferred): IA items ship a webseed torrent, so
+            # aria2 opens many parallel connections, hash-verifies every piece
+            # and resumes via its control file. --file-allocation=none keeps
+            # the walk()-based progress meaningful (falloc would make the file
+            # full-size instantly); --follow-torrent=mem keeps the .torrent
+            # itself off disk; --seed-time=0 exits when the download is done.
+            argv = [aria, "--seed-time=0", "--dir", dest,
+                    "--file-allocation=none", "--follow-torrent=mem",
+                    "--max-connection-per-server=8", "--split=16",
+                    "--console-log-level=warn", "--summary-interval=0",
+                    f"https://archive.org/download/{ident}/{ident}_archive.torrent"]
+            label = "downloading via torrent (aria2)…"
+        else:
+            # curl fallback: single connection (slow on archive.org), but
+            # writes straight into dest so the same progress works; -C -
+            # resumes a half-downloaded file instead of restarting ~9 GB.
+            argv = ["curl", "-L", "--fail", "-sS", "-C", "-",
+                    "-o", os.path.join(dest, name),
+                    f"https://archive.org/download/{ident}/{name}"]
+            label = "downloading from Internet Archive…"
         try:
             proc = Gio.Subprocess.new(
-                ["curl", "-L", "--fail", "-sS", "-C", "-", "-o", target, url],
-                Gio.SubprocessFlags.STDERR_PIPE)
+                argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
         except GLib.Error as e:
             self._ci_dl_done("download failed to start: " + _errline(e.message))
             return
-        self.dl_row.set_subtitle("downloading from Internet Archive… 0%")
+        self.dl_row.set_subtitle(label + " 0%")
         # Speed + ETA in the subtitle: archive.org often serves ~0.5-1 MB/s, so
         # percent alone moves every ~90 s and reads as "stuck" (Daniel,
         # 2026-07-04). prev/EMA over the 2 s ticks smooths the rate.
@@ -932,8 +969,7 @@ class CiPage:
                        if left >= 3600 else f"{int(left // 60)}m")
                 extra = f" · {state['rate'] / 1e6:.1f} MB/s · ~{eta} left"
             self.dl_row.set_subtitle(
-                f"downloading from Internet Archive… "
-                f"{have / 1e9:.2f} / {size / 1e9:.1f} GB ({pct}%){extra}")
+                f"{label} {have / 1e9:.2f} / {size / 1e9:.1f} GB ({pct}%){extra}")
             return GLib.SOURCE_CONTINUE
 
         GLib.timeout_add_seconds(2, progress)
@@ -944,13 +980,20 @@ class CiPage:
                 p.communicate_utf8_finish(res)
             except GLib.Error:
                 pass
-            if not p.get_successful() or not os.path.exists(target):
-                self._ci_dl_done("Archive download failed — the partial file is "
+            # The torrent lands under dest/<identifier>/, curl directly in
+            # dest/ — walk instead of assuming a layout.
+            isos = []
+            if p.get_successful():
+                for root_, _dirs, files in os.walk(dest):
+                    isos += [os.path.join(root_, f)
+                             for f in files if f.endswith(".iso")]
+            if not isos:
+                self._ci_dl_done("Archive download failed — partial data is "
                                  "kept; Download again resumes it")
                 return
-            self._ci_dl_done("downloaded: " + _esc(name))
-            self.win.notify("Published ISO downloaded", name)
-            self._ci_dl_offer_test(target)
+            self._ci_dl_done("downloaded: " + _esc(os.path.basename(isos[0])))
+            self.win.notify("Published ISO downloaded", os.path.basename(isos[0]))
+            self._ci_dl_offer_test(isos[0])
 
         proc.communicate_utf8_async(None, None, done)
 

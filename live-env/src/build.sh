@@ -442,6 +442,18 @@ lock-enabled=false
 sleep-inactive-ac-type='nothing'
 sleep-inactive-battery-type='nothing'
 idle-dim=false
+
+# o-tiling is NOT loaded in the live session (2026-07-04 incident, VM install
+# margine-20260703.iso): during Anaconda's configuration phase its
+# _show_skip_taskbar_windows handler threw on every skip-taskbar window
+# (global.log removed in GNOME 50 — hotfixed at build via
+# build-margine-extensions.sh) seconds before gnome-shell SIGSEGV'd
+# (update_clock/g_settings_get_enum use-after-free) and took the whole
+# session down mid-install. An installer session needs zero tiling
+# acrobatics: run it without the highest-surface extension. The installed
+# system keeps the full zz1 set — this file never leaves the live rootfs.
+[org.gnome.shell]
+enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'hide-cursor@elcste.com', 'caffeine@patapon.info', 'smile-extension@mijorus.it']
 OVERRIDE
 
 # Recompile schemas in case the profile/installer added overrides.

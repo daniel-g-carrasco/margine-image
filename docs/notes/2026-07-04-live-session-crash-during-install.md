@@ -92,11 +92,16 @@ under Anaconda's configuration-phase GSettings storm on its own. The storm's
 single source is anaconda's localization tasks driving the LIVE system's
 locale1 (X11 layout flapping in the journal both runs).
 
-Mitigation shipped: the live env now **masks systemd-localed.service**. It is
-useless in a throwaway live (in-session layout switching goes through
-gnome-shell input-sources, not locale1; the target's keyboard is written via
---root), and with locale1 unreachable the storm cannot start. The o-tiling
-console.log hotfix remains correct on its own merits.
+Mitigation ATTEMPTED then REVERTED (2026-07-05): masking systemd-localed did
+stop the storm's source, but anaconda-webui's KEYBOARD spoke enumerates and
+sets layouts via org.freedesktop.locale1 — masking localed left the
+installer's keyboard picker EMPTY and blocked the install entirely (Daniel).
+So localed masking is OFF the table. The crash's worst consequence — a
+truncated Flatpak bake — already self-heals on first boot (flatpak-repo-heal,
+PR #255), so the interim posture is: crash may recur at end-of-install, but
+the installed system recovers. A verified, targeted fix still owed — get the
+exact coredump backtrace first, do NOT blind-mask services the installer
+needs. The o-tiling console.log hotfix remains correct on its own merits.
 
 Upstream: gnome-shell/gnome-desktop crash reproduced twice with different
 signals (SEGV in update_clock/g_settings_get_enum, then ABRT) — worth filing

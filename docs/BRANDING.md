@@ -290,6 +290,11 @@ built live image, 2026-06-30). With no `<app_id>.desktop` present, nothing match
    `Icon=margine-logo` + `StartupWMClass=slitherer` (the Aurora-proven path; covers
    an XWayland fallback where the app_id would be the binary name `slitherer`).
 
+**VERIFIED WORKING 2026-07-04** — Daniel confirmed the Margine icon on the
+Anaconda WebUI window on the published `margine-20260703.iso` (the multi-matcher
+build). Do not remove any of the three layers above without re-testing on a
+fresh ISO in the SB test VM.
+
 **Gotchas**
 - **Ordering:** the matchers + icon alias run *before* the `dnf install
   anaconda-live anaconda-webui slitherer`. That's currently safe **only because

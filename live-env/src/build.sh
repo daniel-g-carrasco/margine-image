@@ -459,6 +459,21 @@ OVERRIDE
 # Recompile schemas in case the profile/installer added overrides.
 glib-compile-schemas /usr/share/glib-2.0/schemas || true
 
+# MASK systemd-localed in the LIVE env (2026-07-04 incident, part 3 — the
+# root trigger). During Anaconda's configuration phase its localization
+# tasks drive the LIVE system's locale1: the journal shows the X11 layout
+# flapping ('us' → '' → 'us' → '') seconds before gnome-shell dies — first
+# run SIGSEGV in update_clock/g_settings_get_enum (use-after-free under the
+# resulting GSettings change storm), re-test WITHOUT o-tiling SIGABRT at the
+# same phase. Shell dead on Wayland = whole session gone mid-install, and
+# anaconda (which stops when its WebUI viewer disappears) truncates the
+# %post chain — the broken-flatpaks-on-first-boot P0. localed is useless in
+# a throwaway live: in-session layout switching goes through gnome-shell's
+# input-sources (gsettings), not locale1, and the TARGET's keyboard config
+# is written via --root by anaconda. Mask (not disable: it's dbus-activated)
+# so the storm source cannot start at all.
+systemctl mask systemd-localed.service
+
 # Disable services that must not run inside the LIVE session. Margine is
 # Bluefin-DX-based, so it carries the ublue/brew/flatpak-preinstall units
 # plus rpm-ostree timers — all of which are meaningless (or harmful) in a

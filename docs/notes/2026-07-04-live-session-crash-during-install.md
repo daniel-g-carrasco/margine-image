@@ -82,6 +82,26 @@ Follow-up hardening shipped with this note:
   installed disk — the truncated-install sensor, cause-agnostic.
 - This also most likely explains CyberOto's original broken-flatpaks report.
 
+## Part 3 — re-test WITHOUT o-tiling: the shell still dies → localed masked
+
+Re-test on the fixed fast ISO (zz4 confirmed in-VM: o-tiling not loaded, zero
+global.log errors) ended the same way: session gone at the end of the
+install, new gnome-shell coredump — this time **SIGABRT** (21:40:05). So
+o-tiling was an incidental amplifier, not the trigger: gnome-shell 50.2 dies
+under Anaconda's configuration-phase GSettings storm on its own. The storm's
+single source is anaconda's localization tasks driving the LIVE system's
+locale1 (X11 layout flapping in the journal both runs).
+
+Mitigation shipped: the live env now **masks systemd-localed.service**. It is
+useless in a throwaway live (in-session layout switching goes through
+gnome-shell input-sources, not locale1; the target's keyboard is written via
+--root), and with locale1 unreachable the storm cannot start. The o-tiling
+console.log hotfix remains correct on its own merits.
+
+Upstream: gnome-shell/gnome-desktop crash reproduced twice with different
+signals (SEGV in update_clock/g_settings_get_enum, then ABRT) — worth filing
+with both coredumps if masking confirms the trigger.
+
 ## Lessons
 
 - "Logout at end of install" had TWO distinct root causes months apart

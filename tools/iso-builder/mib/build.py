@@ -32,6 +32,7 @@ class BuildPage:
         self.win = win
         self._proc = None    # the running Gio.Subprocess, if any
         self._stream = None  # its stdout pipe (kept referenced while reading)
+        self._cancelling = False  # set only after the root-side TERM was sent
         self._iso_rows = []      # rows currently in the ISOs group
         self._refresh_gen = 0    # discards results of superseded refreshes
 
@@ -247,12 +248,21 @@ class BuildPage:
         try:
             proc.wait_finish(result)
             ok = proc.get_successful()
-            code = proc.get_exit_status()
+            # A cancelled build dies of SIGTERM: get_exit_status() is only
+            # valid for a normal exit, so branch on get_if_exited().
+            code = (proc.get_exit_status() if proc.get_if_exited()
+                    else -(proc.get_term_sig() or 0))
         except GLib.Error as e:
             ok, code = False, -1
             self._append(f"\n[error waiting for process: {e.message}]\n")
         self._proc = None
         self._stream = None
+        if self._cancelling:
+            self._cancelling = False
+            self._set_running(False, "Cancelled")
+            self._append("\n✋ Build cancelled — partial artifacts stay in .cache/ "
+                         "(ownership handed back by the script's EXIT trap).\n")
+            return
         if ok:
             self._set_running(False, "Done")
             iso = self._newest_iso()
@@ -269,9 +279,31 @@ class BuildPage:
             self._append(f"\n✗ Build failed (exit {code}){hint}\n")
 
     def on_cancel(self, _btn):
-        if self._proc is not None:
-            self._append("\n[cancelling…]\n")
-            self._proc.force_exit()
+        if self._proc is None:
+            return
+        # The build tree runs as ROOT (pkexec): force_exit() from the
+        # user-owned GUI is EPERM-ignored, which made this button look dead
+        # (Daniel, 2026-07-04: two "[cancelling…]" with the build marching
+        # on). Kill the tree root-side instead — children FIRST, so the
+        # `sudo podman build` underneath aborts too, then the top script,
+        # whose EXIT trap hands .cache//output ownership back to the user.
+        # pkexec will show an auth dialog: stopping a root process is a
+        # privileged action, that prompt is correct.
+        pid = int(self._proc.get_identifier())
+        self._append("\n[stopping the rootful build — authenticate in the "
+                     "polkit dialog…]\n")
+        script = ('k(){ for c in $(pgrep -P "$1"); do k "$c"; done; '
+                  'kill -TERM "$1" 2>/dev/null || true; }; k %d' % pid)
+
+        def sent(ok, _out, err):
+            if ok:
+                self._cancelling = True
+                self._append("[terminate sent to the build tree]\n")
+            else:
+                last = err.strip().splitlines()[-1] if err.strip() else "auth failed/cancelled"
+                self._append(f"[cancel aborted: {last}]\n")
+
+        core.spawn_collect(["pkexec", "bash", "-c", script], sent)
 
     # -- ISO inventory -------------------------------------------------------------
     def _apply_isos(self, gen, isos, rev):

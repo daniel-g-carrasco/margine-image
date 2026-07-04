@@ -436,13 +436,18 @@ dnf -y install \
   "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
   "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
 
-# gstreamer1-plugins-{bad-freeworld,ugly} complete the codec swap the
-# declarations YAML has specified all along (host_packages.baseline.
-# codec_replacement.install) — ffmpeg full already comes from the base,
-# but these two never shipped, and validate-declared-state rightly
-# FAILed on every system (caught 2026-06-12). They come from the same
-# transient RPMFusion enablement and persist after the repo is scrubbed.
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly' \
+# gstreamer1-plugins-{bad,ugly} complete the codec swap the declarations
+# YAML specifies (host_packages.baseline.codec_replacement.install) —
+# ffmpeg full already comes from the base. BOTH resolve from negativo17
+# (the base's own multimedia family), NOT from the transient RPMFusion
+# enablement above: RPMFusion's bad-freeworld links libx265.so.215 while
+# negativo17 ships x265 4.2 (.216) — since 2026-07-04 the two can no
+# longer coexist and the build died here for 5 straight retries.
+# negativo17's gstreamer1-plugins-bad (epoch 1) is a superset of the
+# freeworld build (verified: bundles libgstx265.so, libgstva.so,
+# nvcodec/msdk/qsv, fdkaac), so the handbook's codec promises hold.
+# RPMFusion stays enabled ONLY for mangohud/goverlay/steam-devices.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad gstreamer1-plugins-ugly' \
   || { err "creator-tier RPM install failed after 5 attempts; aborting"; exit 1; }
 
 # ---------------------------------------------------------------------------

@@ -785,7 +785,9 @@ class CiPage:
             self._ci_dl_done("download failed to start: " + _errline(e.message))
             return
         self.dl_row.set_subtitle("downloading… 0%")
-        state = {"live": True}
+        # Same speed/ETA treatment as the Archive path — percent alone moves
+        # too slowly on multi-GB files to look alive.
+        state = {"live": True, "prev": 0, "rate": 0.0}
 
         def progress():
             if not state["live"]:
@@ -797,9 +799,18 @@ class CiPage:
                         have += os.path.getsize(os.path.join(root_, f))
                     except OSError:
                         pass
+            inst = max(0, have - state["prev"]) / 2.0          # B/s this tick
+            state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
+            state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
+            extra = ""
+            if state["rate"] > 1024:
+                left = (size - have) / state["rate"] if size else 0
+                eta = (f"{int(left // 3600)}h {int(left % 3600 // 60)}m"
+                       if left >= 3600 else f"{int(left // 60)}m")
+                extra = f" · {state['rate'] / 1e6:.1f} MB/s · ~{eta} left"
             self.dl_row.set_subtitle(
-                f"downloading… {have / 1e9:.1f} / {size / 1e9:.1f} GB ({pct}%)")
+                f"downloading… {have / 1e9:.2f} / {size / 1e9:.1f} GB ({pct}%){extra}")
             return GLib.SOURCE_CONTINUE
 
         GLib.timeout_add_seconds(2, progress)
@@ -895,7 +906,10 @@ class CiPage:
             self._ci_dl_done("download failed to start: " + _errline(e.message))
             return
         self.dl_row.set_subtitle("downloading from Internet Archive… 0%")
-        state = {"live": True}
+        # Speed + ETA in the subtitle: archive.org often serves ~0.5-1 MB/s, so
+        # percent alone moves every ~90 s and reads as "stuck" (Daniel,
+        # 2026-07-04). prev/EMA over the 2 s ticks smooths the rate.
+        state = {"live": True, "prev": 0, "rate": 0.0}
 
         def progress():
             if not state["live"]:
@@ -907,10 +921,19 @@ class CiPage:
                         have += os.path.getsize(os.path.join(root_, f))
                     except OSError:
                         pass
+            inst = max(0, have - state["prev"]) / 2.0          # B/s this tick
+            state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
+            state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
+            extra = ""
+            if state["rate"] > 1024:
+                left = (size - have) / state["rate"] if size else 0
+                eta = (f"{int(left // 3600)}h {int(left % 3600 // 60)}m"
+                       if left >= 3600 else f"{int(left // 60)}m")
+                extra = f" · {state['rate'] / 1e6:.1f} MB/s · ~{eta} left"
             self.dl_row.set_subtitle(
                 f"downloading from Internet Archive… "
-                f"{have / 1e9:.1f} / {size / 1e9:.1f} GB ({pct}%)")
+                f"{have / 1e9:.2f} / {size / 1e9:.1f} GB ({pct}%){extra}")
             return GLib.SOURCE_CONTINUE
 
         GLib.timeout_add_seconds(2, progress)

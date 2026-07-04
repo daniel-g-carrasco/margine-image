@@ -313,17 +313,35 @@ class BuildPage:
                 badge.set_tooltip_text("live-env sources unchanged since this build")
             row.add_suffix(badge)
 
-        def add_btn(icon, tip, cb):
-            b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER)
-            b.add_css_class("flat")
-            b.set_tooltip_text(tip)
+        # LABELED buttons, not bare icons: three mute glyphs in a row left
+        # Daniel hunting for "which one boots the VM?" (2026-07-04). The
+        # primary action carries icon+text; USB keeps a text label; only
+        # Delete stays icon-only (trash is unambiguous and destructive
+        # actions shouldn't invite casual clicks).
+        def add_btn(cb, label=None, icon=None, tip=None, css="flat"):
+            if label and icon:
+                inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                inner.append(Gtk.Image.new_from_icon_name(icon))
+                inner.append(Gtk.Label(label=label))
+                b = Gtk.Button(child=inner, valign=Gtk.Align.CENTER)
+            elif label:
+                b = Gtk.Button(label=label, valign=Gtk.Align.CENTER)
+            else:
+                b = Gtk.Button(icon_name=icon, valign=Gtk.Align.CENTER)
+            if css:
+                b.add_css_class(css)
+            if tip:
+                b.set_tooltip_text(tip)
             b.connect("clicked", lambda *_: cb(entry))
             row.add_suffix(b)
 
-        add_btn("computer-symbolic", "Test in VM", self._iso_test_vm)
-        add_btn("drive-removable-media-symbolic", "Write to USB (Impression)",
-                self._iso_write_usb)
-        add_btn("user-trash-symbolic", "Delete", self._iso_delete)
+        add_btn(self._iso_test_vm, label="Test in VM", icon="computer-symbolic",
+                tip="Boot this ISO in the virt-manager test VM "
+                    "(Secure Boot + TPM 2.0 + clipboard)", css=None)
+        add_btn(self._iso_write_usb, label="USB",
+                tip="Write to a USB stick (opens Impression)")
+        add_btn(self._iso_delete, icon="user-trash-symbolic",
+                tip="Delete this ISO")
         return row
 
     def _iso_subtitle(self, entry):

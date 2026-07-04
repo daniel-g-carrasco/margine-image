@@ -56,9 +56,38 @@ command -v git    >/dev/null || die "git is required"
 REAL_UID="${PKEXEC_UID:-${SUDO_UID:-$(id -u)}}"
 REAL_GID="$(getent passwd "${REAL_UID}" | cut -d: -f4)"; REAL_GID="${REAL_GID:-${REAL_UID}}"
 mkdir -p "${OUT}" "${REPO_ROOT}/.cache"
-if [[ "$(id -u)" -eq 0 ]]; then
-  trap 'chown -R "${REAL_UID}:${REAL_GID}" "${OUT}" "${REPO_ROOT}/.cache" 2>/dev/null || true' EXIT
-fi
+
+# A CANCELLED build must not pollute future builds. Titanoboa writes the ISO
+# straight to its output dir, so a cancel/failure would drop a PARTIAL
+# Margine-Live.iso into output/ — which the GUI's "newest ISO" picker would
+# then boot as if real (a prime suspect for a "sparse" test install). So stage
+# the ISO in a hidden per-run dir and publish it to output/ only on SUCCESS
+# (step 6). output/ therefore never holds a half-written ISO, and the GUI
+# inventory (globs output/*.iso, never output/.staging.*) can't see one.
+# First wipe any staging dir a hard-killed (SIGKILL) earlier run left behind,
+# plus orphan .meta.json sidecars whose ISO is gone (a cancelled build could
+# leave one) so the GUI inventory stays truthful.
+rm -rf "${OUT}"/.staging.* 2>/dev/null || true
+for _m in "${OUT}"/*.iso.meta.json; do
+  [[ -e "${_m}" && ! -e "${_m%.meta.json}" ]] && rm -f "${_m}"
+done 2>/dev/null || true
+STAGING="${OUT}/.staging.$$"
+mkdir -p "${STAGING}"
+
+# Clean up on ANY exit, INCLUDING a Cancel: the GUI sends SIGTERM (then SIGKILL
+# after a grace period), so trap TERM/INT to route through the EXIT handler —
+# it removes the partial-ISO staging dir and hands output//.cache ownership
+# back, so the next build is never blocked by root-owned files / git's
+# dubious-ownership guard.
+cleanup() {
+  rm -rf "${STAGING}" 2>/dev/null || true
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown -R "${REAL_UID}:${REAL_GID}" "${OUT}" "${REPO_ROOT}/.cache" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 # Titanoboa's main.sh runs `sudo podman run` and reads the image from ROOTFUL
 # storage, so every podman step here must be rootful (sudo) and consistent.
@@ -117,10 +146,17 @@ sed -i -E "s/-Xcompression-level [0-9]+/-Xcompression-level ${ZSTD_LEVEL}/" \
 log "Building ISO with Titanoboa (the slow part — zstd-${ZSTD_LEVEL} of a ~14 GB rootfs)"
 ISO_PATH="$(env \
   TITANOBOA_CTR_IMAGE="${LIVE_TAG}" \
-  TITANOBOA_OUTPUT_DIR="${OUT}" \
+  TITANOBOA_OUTPUT_DIR="${STAGING}" \
   bash "${CACHE}/main.sh")"
 
 [[ -n "${ISO_PATH}" && -f "${ISO_PATH}" ]] || die "Titanoboa did not produce an ISO"
+
+# Publish the finished ISO from staging to output/ (same filesystem → mv is
+# effectively atomic). Only now does output/ gain the new ISO; a cancel before
+# this line leaves output/ exactly as it was.
+FINAL="${OUT}/$(basename "${ISO_PATH}")"
+mv -f "${ISO_PATH}" "${FINAL}"
+ISO_PATH="${FINAL}"
 
 # 6. On a direct (non-root) run, rootful Titanoboa left the ISO root-owned —
 #    hand it back. The root/pkexec path is handled by the EXIT trap above.

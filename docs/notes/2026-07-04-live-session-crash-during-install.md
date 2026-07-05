@@ -107,6 +107,52 @@ Upstream: gnome-shell/gnome-desktop crash reproduced twice with different
 signals (SEGV in update_clock/g_settings_get_enum, then ABRT) — worth filing
 with both coredumps if masking confirms the trigger.
 
+## Part 4 — coredump confirms an UPSTREAM GNOME bug; decision: ship + upstream
+
+The 2026-07-05 coredump (gnome-shell 50.2, SIGSEGV, on the promoted
+:stable candidate.20260704, o-tiling NOT loaded) nails it:
+
+```
+#0  update_clock              (libgnome-desktop-4.so.2)   <- crash
+#1  g_cclosure_marshal_VOID__STRINGv
+#5  g_settings_real_change_event
+#10 settings_backend_path_changed
+#11 g_settings_backend_invoke_closure
+#12 g_idle_dispatch
+```
+
+`GnomeWallClock.update_clock` (the top-bar clock in libgnome-desktop) derefs
+freed/invalid memory when a GSettings change-event is dispatched to it. This is
+an UPSTREAM GNOME bug, not Margine code — and gnome-desktop3-44.5-1.fc44 is the
+newest build available (no update fixes it).
+
+Trigger (confirmed against anaconda source, pyanaconda/modules/localization/
+installation.py `write_x_configuration`): Anaconda's Configuration queue applies
+language/keyboard/timezone to the LIVE session. For keyboard it does a
+save -> set_layouts(new) -> copy-to-chroot -> set_layouts(restore) dance on the
+live systemd-localed (the journal's 'us' -> '' -> 'us' -> '' flap), which
+storms dconf; one of those change events lands on the wall clock and it crashes.
+
+Why masking localed was the WRONG fix (reverted, #261): anaconda-webui's
+keyboard SPOKE enumerates/sets layouts via the same localed, so masking it left
+the installer's keyboard picker empty and blocked the install.
+
+DECISION (Daniel, 2026-07-05): option A — treat as a cosmetic, self-healing
+upstream bug and SHIP.
+- The crash is at the very END (Configuration phase), AFTER `bootc switch` — the
+  OS is already deployed, so the install is not broken, just ends with a session
+  logout instead of the completion screen.
+- If it truncates the Flatpak bake, flatpak-repo-heal (#255) rebuilds it on first
+  boot; the deferred + baked apps download normally. Net: installed system
+  recovers on its own.
+- File an upstream gnome-shell/gnome-desktop bug with this backtrace + the
+  anaconda set_layouts trigger. Revisit a targeted mitigation (do NOT mask
+  services the installer needs) once upstream responds or a fixed gnome-desktop
+  lands.
+
+Interim user-facing note: a first-boot may spend ~10-15 min populating apps if
+the bake was truncated; that is the self-heal, not a failure.
+
 ## Lessons
 
 - "Logout at end of install" had TWO distinct root causes months apart

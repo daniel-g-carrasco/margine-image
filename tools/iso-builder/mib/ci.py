@@ -60,6 +60,28 @@ def _job(data, prefix):
     return None, ""
 
 
+def _jobdict(data, prefix):
+    for j in (data or {}).get("jobs", []):
+        if j.get("name", "").startswith(prefix):
+            return j
+    return None
+
+
+def _step_frac(job):
+    """Fraction of a job's steps that are completed (0.0-1.0), and the name of
+    the step currently running (or "" ) — used to advance the progress bar on
+    real GitHub data and to detect the opaque long steps we pulse through."""
+    if not job:
+        return 0.0, ""
+    steps = job.get("steps") or []
+    if not steps:
+        return (1.0 if job.get("status") == "completed" else 0.0), ""
+    done = sum(1 for s in steps if s.get("status") == "completed")
+    running = next((s.get("name", "") for s in steps
+                    if s.get("status") == "in_progress"), "")
+    return done / len(steps), running
+
+
 def _state(s, c):
     return c or s or "—"
 
@@ -142,25 +164,34 @@ class CiPage:
                         "CLI authenticated. Keep the window open to be notified.")
         page.add(ci)
 
+        # A thin progress bar per long-running CI row, driven by real job-step
+        # data (pulsed through the opaque long steps like the IA upload). Sits
+        # left of the action button; hidden while idle. id(bar) -> pulse timer.
+        self._pulse_ids = {}
+
         def _ci_row(title, subtitle, btn_label, cb):
             row = Adw.ActionRow(title=title, subtitle=subtitle)
+            bar = Gtk.ProgressBar(valign=Gtk.Align.CENTER, visible=False,
+                                  width_request=150)
+            bar.add_css_class("osd")
+            row.add_suffix(bar)
             btn = Gtk.Button(label=btn_label, valign=Gtk.Align.CENTER)
             btn.connect("clicked", cb)
             row.add_suffix(btn)
             ci.add(row)
-            return row, btn
+            return row, btn, bar
 
-        self.base_row, self.base_btn = _ci_row(
+        self.base_row, self.base_btn, self.base_bar = _ci_row(
             "Rebuild base image",
             "build :candidate → QEMU smoke-boot → promote :stable",
             "Rebuild", self.on_ci_base)
-        self.pub_row, self.pub_btn = _ci_row(
+        self.pub_row, self.pub_btn, self.pub_bar = _ci_row(
             "Publish ISO via CI",
             "zstd-19 → install gate → Internet Archive + site bump",
             "Publish", self.on_ci_publish)
         # NB: no raw '&' in row titles — Adw row titles are Pango markup, an
         # unescaped ampersand silently blanks the whole title.
-        self.dl_row, self.dl_btn = _ci_row(
+        self.dl_row, self.dl_btn, self.dl_bar = _ci_row(
             "Download + test newest CI ISO",
             "fetch the margine-live-iso artifact, boot it in the test VM",
             "Download", self.on_ci_download)
@@ -489,6 +520,35 @@ class CiPage:
 
         ask()
 
+    # -- progress bars -------------------------------------------------------
+    def _bar_frac(self, bar, f):
+        """Show a determinate fraction (stops any pulsing)."""
+        self._bar_stop_pulse(bar)
+        bar.set_visible(True)
+        bar.set_fraction(max(0.0, min(1.0, f)))
+
+    def _bar_pulse(self, bar):
+        """Show an indeterminate, animating bar (for opaque long steps like the
+        IA upload, which GitHub exposes no sub-progress for). A 150ms ticker
+        keeps it lively between the slow 60s poll ticks."""
+        bar.set_visible(True)
+        if id(bar) in self._pulse_ids:
+            return
+        def _p():
+            bar.pulse()
+            return GLib.SOURCE_CONTINUE
+        self._pulse_ids[id(bar)] = GLib.timeout_add(150, _p)
+
+    def _bar_stop_pulse(self, bar):
+        pid = self._pulse_ids.pop(id(bar), 0)
+        if pid:
+            GLib.source_remove(pid)
+
+    def _bar_hide(self, bar):
+        self._bar_stop_pulse(bar)
+        bar.set_fraction(0.0)
+        bar.set_visible(False)
+
     def _watch_run(self, run_id, handler, interval=45):
         """Poll a run's status+jobs until handler(data) returns False.
         data is None on a transient gh error (handler usually keeps going)."""
@@ -548,9 +608,14 @@ class CiPage:
             self._watch_run(run_id, tick)
 
         def tick(data):
-            if data is None or data.get("status") != "completed":
+            if data is None:
+                return True
+            if data.get("status") != "completed":
+                bf, _s = _step_frac(_jobdict(data, ""))  # primary job's steps
+                self._bar_frac(self.base_bar, 0.05 + 0.60 * bf)  # build owns 5-65%
                 return True
             if data.get("conclusion") == "success":
+                self._bar_frac(self.base_bar, 0.65)
                 self.base_row.set_subtitle(":candidate built — waiting for smoke-boot…")
                 self.win.notify("Base :candidate built",
                                 "QEMU smoke-boot runs next; :stable follows if green.")
@@ -572,7 +637,11 @@ class CiPage:
             self._watch_run(run_id, sb_tick, interval=30)
 
         def sb_tick(data):
-            if data is None or data.get("status") != "completed":
+            if data is None:
+                return True
+            if data.get("status") != "completed":
+                sf, _s = _step_frac(_jobdict(data, ""))
+                self._bar_frac(self.base_bar, 0.65 + 0.35 * sf)  # smoke-boot 65-100%
                 return True
             if data.get("conclusion") == "success":
                 self._ci_base_done(":stable promoted")
@@ -588,6 +657,7 @@ class CiPage:
 
     def _ci_base_done(self, text, notify=False):
         self.base_btn.set_sensitive(True)
+        self._bar_hide(self.base_bar)
         # `text` is already Pango-escaped by its callers (gh errors via
         # _errline, otherwise markup-safe literals) and the toast below
         # consumes the same markup — do NOT re-escape here, or a gh error's
@@ -692,6 +762,25 @@ class CiPage:
                     else f"{gate_c.upper()} ✗ — publishing is blocked"))
             if pub_s == "completed" and pub_c == "success":
                 milestone("pub", "ISO published to Internet Archive ✓")
+
+            # Progress bar, weighted by phase on real step data: ISO build owns
+            # 0-50%, gate 50-65%, IA publish 65-100% — and the IA upload step
+            # (opaque, no sub-progress) pulses instead of freezing.
+            if pub_s == "in_progress":
+                pf, pstep = _step_frac(_jobdict(data, "Publish ISO"))
+                if any(k in pstep for k in ("Internet Archive", "Upload", "derive")):
+                    self._bar_pulse(self.pub_bar)
+                else:
+                    self._bar_frac(self.pub_bar, 0.65 + 0.35 * pf)
+            elif iso_s == "completed" and iso_c == "success":
+                gf, _gs = _step_frac(_jobdict(data, "Automated install gate"))
+                self._bar_frac(self.pub_bar, 0.50 + 0.15 * gf)
+            elif iso_s == "in_progress":
+                isf, _is = _step_frac(_jobdict(data, "Build Live ISO"))
+                self._bar_frac(self.pub_bar, 0.50 * isf)
+            else:
+                self._bar_frac(self.pub_bar, 0.02)  # queued
+
             self.pub_row.set_subtitle(
                 f"run {run_id} · iso: {_state(iso_s, iso_c)} · "
                 f"gate: {_state(gate_s, gate_c)} · publish: {_state(pub_s, pub_c)}")
@@ -706,6 +795,7 @@ class CiPage:
 
     def _ci_publish_done(self, text, notify=False, body=""):
         self.pub_btn.set_sensitive(True)
+        self._bar_hide(self.pub_bar)
         # text already markup-escaped by callers (see _ci_base_done)
         self.pub_row.set_subtitle(text)
         if notify:
@@ -821,6 +911,7 @@ class CiPage:
             state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
             state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
+            self._bar_frac(self.dl_bar, (pct or 0) / 100.0)
             extra = ""
             if state["rate"] > 1024:
                 left = (size - have) / state["rate"] if size else 0
@@ -972,6 +1063,7 @@ class CiPage:
             state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
             state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
+            self._bar_frac(self.dl_bar, (pct or 0) / 100.0)
             extra = ""
             if state["rate"] > 1024:
                 left = (size - have) / state["rate"] if size else 0
@@ -1034,5 +1126,6 @@ class CiPage:
 
     def _ci_dl_done(self, text):
         self.dl_btn.set_sensitive(True)
+        self._bar_hide(self.dl_bar)
         # text already markup-escaped by callers (see _ci_base_done)
         self.dl_row.set_subtitle(text if text else self._ci_subtitles[self.dl_row])

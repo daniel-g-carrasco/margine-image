@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+failures=0
+warnings=0
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+ok() {
+  printf 'OK: %s\n' "$1"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  printf 'WARN: %s\n' "$1"
+}
+
+fail() {
+  failures=$((failures + 1))
+  printf 'FAIL: %s\n' "$1"
+}
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+section "Kernel"
+kernel=$(uname -a)
+printf '%s\n' "$kernel"
+
+if printf '%s\n' "$kernel" | grep -Eiq 'cachy|cachyos'; then
+  ok "running kernel appears to be CachyOS"
+else
+  fail "running kernel does not appear to be CachyOS"
+fi
+
+section "Installed CachyOS packages"
+if have_cmd rpm; then
+  cachy_packages=$(rpm -qa | grep -Ei 'cachy|kernel-cachyos' | sort || true)
+  if [[ -n "$cachy_packages" ]]; then
+    printf '%s\n' "$cachy_packages"
+    ok "CachyOS-related RPMs detected"
+  else
+    fail "no CachyOS-related RPMs detected"
+  fi
+else
+  fail "rpm command missing"
+fi
+
+section "COPR repo files"
+repo_matches=$(find /etc/yum.repos.d -maxdepth 1 -type f -iname '*cachy*.repo' -print 2>/dev/null | sort || true)
+if [[ -n "$repo_matches" ]]; then
+  printf '%s\n' "$repo_matches"
+  ok "CachyOS repo file detected"
+else
+  warn "no CachyOS repo file detected in /etc/yum.repos.d"
+fi
+
+section "rpm-ostree status"
+if have_cmd rpm-ostree; then
+  if rpm-ostree status; then
+    ok "rpm-ostree status completed"
+  else
+    fail "rpm-ostree status failed"
+  fi
+else
+  fail "rpm-ostree command missing"
+fi
+
+section "ostree admin status"
+if have_cmd ostree; then
+  if ostree admin status; then
+    ok "ostree admin status completed"
+  else
+    warn "ostree admin status returned non-zero"
+  fi
+else
+  warn "ostree command missing"
+fi
+
+section "Fedora kernel packages in current deployment"
+if have_cmd rpm; then
+  fedora_kernel_packages=$(rpm -qa | grep -E '^kernel(-core|-modules|-modules-core|-modules-extra)?-[0-9]' | sort || true)
+  if [[ -n "$fedora_kernel_packages" ]]; then
+    printf '%s\n' "$fedora_kernel_packages"
+    warn "Fedora kernel packages still visible; if booted into CachyOS check 'rpm-ostree status' and 'uname -a' to confirm active deployment"
+  else
+    ok "Fedora kernel packages are not visible in current deployment"
+  fi
+fi
+
+section "Secure Boot"
+if have_cmd mokutil; then
+  if sb_state=$(mokutil --sb-state 2>&1); then
+    printf '%s\n' "$sb_state"
+    if printf '%s\n' "$sb_state" | grep -qi 'enabled'; then
+      warn "CachyOS kernel is booted with Secure Boot enabled; confirm signing/MOK/trust path is documented"
+    else
+      warn "Secure Boot is not enabled; this CachyOS result is lab-only and not target-compliant"
+    fi
+  else
+    warn "mokutil returned non-zero"
+  fi
+else
+  warn "mokutil not installed; Secure Boot state not checked"
+fi
+
+section "Possible out-of-tree module packages"
+if have_cmd rpm; then
+  oot_packages=$(rpm -qa | grep -Ei '(^akmod|akmods|nvidia|zfs|virtualbox|vbox|wl-kmod)' | sort || true)
+  if [[ -n "$oot_packages" ]]; then
+    printf '%s\n' "$oot_packages"
+    warn "out-of-tree module packages detected; this is outside phase 1 defaults"
+  else
+    ok "no common out-of-tree module packages detected"
+  fi
+fi
+
+section "Failed units"
+if have_cmd systemctl; then
+  systemctl --failed || warn "systemctl --failed returned non-zero"
+else
+  warn "systemctl command missing"
+fi
+
+section "Summary"
+printf 'Warnings: %d\n' "$warnings"
+printf 'Failures: %d\n' "$failures"
+
+if (( failures > 0 )); then
+  exit 1
+fi
+
+exit 0

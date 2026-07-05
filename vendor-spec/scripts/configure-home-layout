@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+"""
+Configure Margine's home layout from declarations.yaml.
+
+What this does:
+  1. Create the home root directories declared in `home.roots`
+     (~/data, ~/dev, ~/scratch) plus any subdirectories referenced
+     by xdg_user_dirs and bookmarks (e.g. ~/data/media/photos).
+  2. Write ~/.config/user-dirs.dirs with the XDG remap.
+  3. Write ~/.config/gtk-3.0/bookmarks and ~/.config/gtk-4.0/bookmarks
+     with the declared Nautilus sidebar entries.
+
+Idempotent: re-running is safe. Existing directories are not touched.
+Bookmark files are rewritten only if the declared contents differ
+from what's already there.
+
+NOT applied here:
+  - folder_icons (require .svg files we don't bundle; remains a manual
+    step — see docs/08-gnome-personal-layer.md)
+  - XDG_PROJECTS_DIR is not a standard XDG key, so it's not written to
+    user-dirs.dirs even though the directory is created.
+
+Usage:
+  margine-configure-home-layout            # dry-run (default)
+  margine-configure-home-layout --apply    # do it
+"""
+import argparse
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required: pip install pyyaml")
+
+
+# Map declarations.yaml short names to standard XDG keys.
+# PROJECTS is intentionally excluded — it's not a real XDG key.
+XDG_KEY_MAP = {
+    "DESKTOP": "XDG_DESKTOP_DIR",
+    "DOWNLOAD": "XDG_DOWNLOAD_DIR",
+    "TEMPLATES": "XDG_TEMPLATES_DIR",
+    "PUBLICSHARE": "XDG_PUBLICSHARE_DIR",
+    "DOCUMENTS": "XDG_DOCUMENTS_DIR",
+    "MUSIC": "XDG_MUSIC_DIR",
+    "PICTURES": "XDG_PICTURES_DIR",
+    "VIDEOS": "XDG_VIDEOS_DIR",
+}
+
+
+def find_declarations() -> Path:
+    env = os.environ.get("MARGINE_DECLARATIONS")
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return p
+    script_dir = Path(__file__).resolve().parent
+    candidate = script_dir.parent / "declarations" / "margine-atomic.yaml"
+    if candidate.is_file():
+        return candidate
+    sys.exit("Could not locate declarations YAML "
+             "(set MARGINE_DECLARATIONS or run from the repo)")
+
+
+def expand_path(raw: str) -> Path:
+    return Path(os.path.expandvars(os.path.expanduser(raw)))
+
+
+def plan_dirs(home_block: dict) -> list[Path]:
+    """Collect every directory we'd want to ensure exists, in order, deduped."""
+    home = Path.home()
+    out: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(p: Path) -> None:
+        if p in seen:
+            return
+        seen.add(p)
+        out.append(p)
+
+    for root in home_block.get("roots", []):
+        add(home / root)
+    for raw in home_block.get("xdg_user_dirs", {}).values():
+        p = expand_path(raw)
+        if p != home:  # skip DESKTOP=$HOME/
+            add(p)
+    for b in home_block.get("bookmarks", []):
+        add(expand_path(b["path"]))
+    return out
+
+
+def render_user_dirs(xdg_user_dirs: dict) -> str:
+    lines = [
+        "# Written by margine-configure-home-layout.",
+        "# Read by xdg-user-dirs-update (session start) and by GTK apps.",
+        "",
+    ]
+    for short, raw in xdg_user_dirs.items():
+        key = XDG_KEY_MAP.get(short)
+        if key is None:
+            continue  # silently skip non-standard keys (e.g. PROJECTS)
+        # Normalize DESKTOP=$HOME/ → $HOME (xdg expects no trailing slash for $HOME)
+        value = "$HOME" if raw in ("$HOME/", "$HOME") else raw
+        lines.append(f'{key}="{value}"')
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_bookmarks(bookmarks: list) -> str:
+    lines = []
+    for b in bookmarks:
+        path = expand_path(b["path"]).resolve()
+        label = b.get("label", "").strip()
+        uri = f"file://{path}"
+        lines.append(f"{uri} {label}" if label else uri)
+    return "\n".join(lines) + "\n"
+
+
+def print_plan(decl_path: Path, home_block: dict) -> tuple:
+    home = Path.home()
+    config_dir = home / ".config"
+    dirs = plan_dirs(home_block)
+    user_dirs_path = config_dir / "user-dirs.dirs"
+    user_dirs_text = render_user_dirs(home_block.get("xdg_user_dirs", {}))
+    gtk3_path = config_dir / "gtk-3.0" / "bookmarks"
+    gtk4_path = config_dir / "gtk-4.0" / "bookmarks"
+    bookmarks_text = render_bookmarks(home_block.get("bookmarks", []))
+
+    print("== Margine home layout ==")
+    print(f"Declarations: {decl_path}")
+    print(f"HOME:         {home}")
+    print()
+    print("Directories to ensure exist:")
+    new_count = 0
+    for d in dirs:
+        if d.exists():
+            print(f"  [exists] {d}")
+        else:
+            print(f"  [NEW]    {d}")
+            new_count += 1
+    print(f"  ({new_count} to create, {len(dirs) - new_count} already present)")
+    print()
+
+    print(f"XDG file: {user_dirs_path}")
+    if user_dirs_path.exists() and user_dirs_path.read_text() == user_dirs_text:
+        print("  [no change]")
+    elif user_dirs_path.exists():
+        print("  [REWRITE] contents differ from declaration")
+    else:
+        print("  [NEW]")
+    for line in user_dirs_text.splitlines():
+        if line and not line.startswith("#"):
+            print(f"    {line}")
+    print()
+
+    for p in (gtk3_path, gtk4_path):
+        print(f"Bookmarks: {p}")
+        if p.exists() and p.read_text() == bookmarks_text:
+            print("  [no change]")
+        elif p.exists():
+            print("  [REWRITE] contents differ from declaration")
+        else:
+            print("  [NEW]")
+    print()
+
+    folder_icons = home_block.get("folder_icons", {})
+    if folder_icons:
+        print(f"Folder icons ({folder_icons.get('mechanism', 'unknown')}): "
+              "NOT applied by this script.")
+        print("  Requires .svg files we don't bundle; do it manually with "
+              "`gio set <path> metadata::custom-icon file:///path/to/icon.svg`.")
+        print()
+
+    return dirs, user_dirs_path, user_dirs_text, gtk3_path, gtk4_path, bookmarks_text
+
+
+def apply(dirs, user_dirs_path, user_dirs_text, gtk3_path, gtk4_path,
+          bookmarks_text) -> None:
+    print("== Applying ==")
+    for d in dirs:
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
+            print(f"  mkdir -p {d}")
+
+    user_dirs_path.parent.mkdir(parents=True, exist_ok=True)
+    if not user_dirs_path.exists() or user_dirs_path.read_text() != user_dirs_text:
+        user_dirs_path.write_text(user_dirs_text)
+        # user-dirs.dirs is conventionally 0700 — owner-only
+        user_dirs_path.chmod(0o700)
+        print(f"  wrote {user_dirs_path}")
+
+    for p in (gtk3_path, gtk4_path):
+        if not p.exists() or p.read_text() != bookmarks_text:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(bookmarks_text)
+            print(f"  wrote {p}")
+
+    # Bluefin MOTD: /etc/profile.d/ublue-motd.sh checks for the marker
+    # ~/.config/no-show-user-motd and skips the banner if present.
+    # Margine disables it by default for existing users; new accounts
+    # get the same via /etc/skel/.config/no-show-user-motd shipped by
+    # the build. Re-running this step is idempotent.
+    motd_marker = Path.home() / ".config" / "no-show-user-motd"
+    if not motd_marker.exists():
+        motd_marker.parent.mkdir(parents=True, exist_ok=True)
+        motd_marker.touch()
+        print(f"  touch {motd_marker}  (silences Bluefin MOTD)")
+
+    # VS Code: Bluefin DX ships its defaults via /etc/skel/.config/Code
+    # (window.titleBarStyle, fontFamily, update.mode=none — updates come
+    # with the image, not from Code's own updater). skel only applies at
+    # account creation, so rebase users and pre-existing homes never get
+    # them. Merge the skel keys into the user's settings.json
+    # NON-destructively: only keys the user does not already have are
+    # added; user values always win. Idempotent.
+    import json
+    skel_settings = Path("/etc/skel/.config/Code/User/settings.json")
+    user_settings = Path.home() / ".config" / "Code" / "User" / "settings.json"
+    if skel_settings.is_file():
+        try:
+            skel = json.loads(skel_settings.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"  (skip VS Code seed: unreadable skel settings: {exc})")
+            skel = {}
+        if skel:
+            try:
+                current = json.loads(user_settings.read_text()) if user_settings.is_file() else {}
+            except (json.JSONDecodeError, OSError):
+                # User file exists but isn't valid JSON (e.g. JSONC with
+                # comments): do NOT touch it — Code tolerates comments,
+                # json.loads doesn't, and rewriting would strip them.
+                print(f"  (skip VS Code seed: {user_settings} is not plain JSON; merge manually)")
+                current = None
+            if current is not None:
+                missing = {k: v for k, v in skel.items() if k not in current}
+                if missing:
+                    current.update(missing)
+                    user_settings.parent.mkdir(parents=True, exist_ok=True)
+                    user_settings.write_text(json.dumps(current, indent=4) + "\n")
+                    print(f"  merged {len(missing)} Bluefin-DX VS Code default(s) into {user_settings}: {sorted(missing)}")
+
+    # Prune stock XDG user directories that no XDG key references
+    # anymore (the Margine remap above points DOCUMENTS/MUSIC/PICTURES
+    # /etc. at ~/data/...). xdg-user-dirs created the stock dirs on
+    # first login and never cleans them up. Margine doesn't want them.
+    # SAFE: only delete dirs that are empty (rmdir, not rm -rf). If
+    # the user has any file inside, the prune is silently skipped so
+    # no data is lost.
+    stock_xdg_names = [
+        # English (any locale where en_US settings landed)
+        "Documents", "Downloads", "Music", "Pictures", "Videos",
+        "Desktop", "Templates", "Public",
+        # Italian (Bluefin install in IT)
+        "Documenti", "Scaricati", "Musica", "Immagini", "Video",
+        "Scrivania", "Modelli", "Pubblici",
+    ]
+    pruned = []
+    skipped = []
+    for name in stock_xdg_names:
+        p = Path.home() / name
+        if not p.is_dir() or p.is_symlink():
+            continue
+        try:
+            p.rmdir()  # only succeeds if empty
+            pruned.append(name)
+        except OSError:
+            skipped.append(name)
+    if pruned:
+        print(f"  pruned empty stock XDG dirs: {', '.join(pruned)}")
+    if skipped:
+        print(f"  kept non-empty stock dirs (move files manually if you want them gone): {', '.join(skipped)}")
+
+    print()
+    print("Done.")
+    print("Note: log out and back in (or restart Nautilus with "
+          "`nautilus -q`) so GTK re-reads the bookmark files.")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument("--apply", action="store_true",
+                    help="apply changes (default: dry-run)")
+    args = ap.parse_args()
+
+    decl_path = find_declarations()
+    decl = yaml.safe_load(decl_path.read_text())
+    home_block = decl.get("home", {})
+    if not home_block:
+        sys.exit("declarations YAML has no `home:` section")
+
+    plan = print_plan(decl_path, home_block)
+    if not args.apply:
+        print("(dry-run; pass --apply to write)")
+        return 0
+    apply(*plan)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

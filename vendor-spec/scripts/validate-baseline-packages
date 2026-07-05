@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+#
+# Validate every package mentioned in host_packages.baseline against a
+# real Fedora 44 + RPMFusion environment, using podman to spin up a
+# clean fedora-toolbox or fedora image and querying dnf.
+#
+# Catches naming drift (renamed packages), virtual provides
+# (rpm-ostree override remove rejects them), and packages that moved to
+# RPMFusion / disappeared upstream. Run this BEFORE editing
+# apply-host-layer or pushing changes to the baseline.
+#
+# Requires podman on the host (works on any distro that has podman; the
+# Fedora image is pulled and discarded).
+#
+# Usage:
+#   validate-baseline-packages              # quick — only baseline lists
+#   validate-baseline-packages --image-tag 44
+#   validate-baseline-packages --keep-image # don't pull fresh on every run
+#
+set -euo pipefail
+
+image="quay.io/fedora/fedora:44"
+keep_image=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [--image-tag TAG] [--keep-image]
+  --image-tag TAG   Fedora image tag (default: 44 — must match the
+                    project's target release)
+  --keep-image      Skip 'podman pull' (reuse local image)
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --image-tag) image="quay.io/fedora/fedora:$2" ; shift 2 ;;
+    --keep-image) keep_image=1 ; shift ;;
+    -h|--help) usage ; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2 ; usage >&2 ; exit 2 ;;
+  esac
+done
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+yaml="${repo_root}/declarations/margine-atomic.yaml"
+
+if ! command -v podman >/dev/null 2>&1; then
+  echo "podman is required" >&2
+  exit 1
+fi
+
+# Collect every package mentioned under host_packages.baseline,
+# including override_remove (these must also exist in F44).
+packages="$(python3 - "$yaml" <<'PY'
+import sys, yaml
+data = yaml.safe_load(open(sys.argv[1]).read())
+b = data["host_packages"]["baseline"]
+lists = []
+cr = b.get("codec_replacement", {})
+for k in ("override_remove", "install"):
+    if isinstance(cr.get(k), list):
+        lists.append(cr[k])
+for k in ("media_diagnostics", "audio_baseline", "virtualization",
+          "hardware_diagnostics", "gnome_tools", "fonts", "creative_apps"):
+    if isinstance(b.get(k), list):
+        lists.append(b[k])
+seen = set()
+for L in lists:
+    for p in L:
+        if p not in seen:
+            seen.add(p)
+            print(p)
+PY
+)"
+
+count="$(printf '%s\n' "$packages" | wc -l)"
+printf '== Validating %d packages against %s + RPMFusion ==\n' "$count" "$image"
+
+if (( ! keep_image )); then
+  podman pull "$image" >/dev/null
+fi
+
+# Run dnf inside the container with both RPMFusion repos enabled.
+# Pass the package list via env var to avoid quoting complexity.
+result="$(podman run --rm -e PKG_LIST="$packages" "$image" bash -c '
+  set -e
+  dnf install -y --quiet \
+    https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm >/dev/null 2>&1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    if dnf --quiet info "$p" >/dev/null 2>&1; then
+      printf "OK    %s\n" "$p"
+    else
+      printf "MISS  %s\n" "$p"
+    fi
+  done <<<"$PKG_LIST"
+' 2>&1)"
+
+ok_count="$(printf '%s\n' "$result" | grep -c '^OK ' || true)"
+miss_count="$(printf '%s\n' "$result" | grep -c '^MISS ' || true)"
+
+printf '%s\n' "$result" | sort
+
+printf '\n== Summary ==\n'
+printf 'OK:    %d\n' "$ok_count"
+printf 'MISS:  %d\n' "$miss_count"
+
+if (( miss_count > 0 )); then
+  printf '\nMissing packages would cause apply-host-layer to fail. Fix the\n'
+  printf 'declarations YAML before running --apply on a Margine host.\n'
+  exit 1
+fi
+
+printf '\nAll baseline packages are available in Fedora %s + RPMFusion.\n' \
+  "$(printf '%s' "$image" | awk -F: '{print $NF}')"
+
+# ----- Resolution check (Silverblue-like state) -----
+# Pre-install the codec base packages (libavcodec-free, mesa-vulkan-drivers,
+# mesa-dri-drivers) to simulate the conflicting state a real Silverblue
+# install has, then test the codec_replacement install with rpm-ostree-like
+# semantics: NO --allowerasing. dnf will fail with the same error rpm-ostree
+# would have on the real host.
+
+printf '\n== Dependency resolution check (Silverblue-like state) ==\n'
+
+install_pkgs="$(python3 - "$yaml" <<'PY'
+import sys, yaml
+data = yaml.safe_load(open(sys.argv[1]).read())
+b = data["host_packages"]["baseline"]
+cr = b.get("codec_replacement", {})
+print(" ".join(cr.get("install", [])))
+PY
+)"
+override_remove_pkgs="$(python3 - "$yaml" <<'PY'
+import sys, yaml
+data = yaml.safe_load(open(sys.argv[1]).read())
+b = data["host_packages"]["baseline"]
+cr = b.get("codec_replacement", {})
+print(" ".join(cr.get("override_remove", [])))
+PY
+)"
+
+printf '  override_remove: %s\n' "$override_remove_pkgs"
+printf '  install:         %s\n' "$install_pkgs"
+
+resolution="$(podman run --rm \
+  -e INSTALL_PKGS="$install_pkgs" \
+  -e REMOVE_PKGS="$override_remove_pkgs" \
+  "$image" bash -c '
+    set -e
+    # Simulate Silverblue stock: install ffmpeg-free (drags in all its split
+    # libav*-free / libsw*-free subpackages) and core Mesa packages.
+    dnf install -y --quiet ffmpeg-free mesa-vulkan-drivers mesa-dri-drivers \
+                            >/dev/null 2>&1 || true
+    # Enable RPMFusion
+    dnf install -y --quiet \
+      https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+      https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm >/dev/null 2>&1
+    # Remove (override_remove equivalent) then install — no --allowerasing
+    # so we get the same depsolve behaviour as rpm-ostree
+    dnf remove -y --quiet $REMOVE_PKGS >/dev/null 2>&1 || true
+    if dnf install -y --setopt=tsflags=test $INSTALL_PKGS 2>&1 | tail -5; then
+      echo "RESOLUTION_OK"
+    else
+      echo "RESOLUTION_FAIL"
+    fi
+  ' 2>&1 | tail -10)"
+
+printf '%s\n' "$resolution"
+if printf '%s' "$resolution" | grep -q RESOLUTION_OK; then
+  printf '\nDependency resolution OK — apply-host-layer should succeed.\n'
+  exit 0
+else
+  printf '\nDependency resolution FAILED — apply-host-layer will fail.\n'
+  printf 'Look at the dnf output above to see which packages conflict;\n'
+  printf 'add the conflicting base packages to override_remove, or\n'
+  printf 'drop the install candidate that requires a downgrade.\n'
+  exit 2
+fi

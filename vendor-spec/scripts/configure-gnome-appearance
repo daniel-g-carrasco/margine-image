@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+Configure GNOME and Forge appearance from declarations/margine-atomic.yaml.
+
+This is intentionally user-state only: it writes gsettings keys for GNOME
+interface preferences and Forge appearance. It does not install packages,
+enable extensions, or modify rpm-ostree deployments.
+
+Usage:
+    configure-gnome-appearance            # dry-run: print the plan
+    configure-gnome-appearance --apply    # write via gsettings
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("python3 PyYAML is required")
+
+REPO = Path(__file__).resolve().parent.parent
+YAML = REPO / "declarations" / "margine-atomic.yaml"
+FORGE_SCHEMA = "org.gnome.shell.extensions.forge"
+
+
+def load() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    if not YAML.is_file():
+        sys.exit(f"declarations file not found: {YAML}")
+    data = yaml.safe_load(YAML.read_text())
+    try:
+        gnome = data["gnome"]
+    except (KeyError, TypeError):
+        sys.exit("gnome section missing from declarations")
+
+    settings = gnome.get("settings", {}) or {}
+    forge = ((gnome.get("forge", {}) or {}).get("settings", {}) or {})
+    return settings, forge
+
+
+def gvariant(value: Any) -> str:
+    # Order matters: bool is a subclass of int in Python, check it first
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return "[" + ", ".join(json.dumps(item) for item in value) + "]"
+    raise TypeError(f"unsupported gsettings value: {value!r}")
+
+
+def schema_keys(schema: str) -> set[str] | None:
+    if not shutil.which("gsettings"):
+        return None
+    result = subprocess.run(
+        ["gsettings", "list-keys", schema],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return set()
+    return set(result.stdout.splitlines())
+
+
+def run(cmd: list[str], dry: bool) -> None:
+    print("  $ " + " ".join(cmd))
+    if dry:
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        err = (result.stderr or "").strip().splitlines()
+        first = err[0] if err else f"exit {result.returncode}"
+        print(f"    (skipped: {first})")
+
+
+def apply_schema(schema: str, values: dict[str, Any], dry: bool) -> None:
+    print(f"\n== {schema} ==")
+    available = schema_keys(schema)
+    if available == set():
+        print("  (skip: schema not available)")
+        return
+
+    for key, value in values.items():
+        if key == "note" or key.endswith("-candidates"):
+            print(f"  (skip metadata: {key})")
+            continue
+        if available is not None and key not in available:
+            print(f"  (skip unknown key: {key})")
+            continue
+        run(["gsettings", "set", schema, key, gvariant(value)], dry)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write changes via gsettings (default: dry-run)",
+    )
+    args = parser.parse_args()
+    dry = not args.apply
+
+    if not dry and not shutil.which("gsettings"):
+        sys.exit("gsettings not found in PATH")
+
+    settings, forge = load()
+
+    for schema, values in settings.items():
+        apply_schema(schema, values or {}, dry)
+
+    if forge:
+        apply_schema(FORGE_SCHEMA, forge, dry)
+
+    if dry:
+        print("\ndry-run only: no settings were changed")
+        print(f"apply with: {sys.argv[0]} --apply")
+    else:
+        print("\nApplied. Log out / log back in if GNOME Shell does not refresh immediately.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

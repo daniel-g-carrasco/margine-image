@@ -145,10 +145,13 @@ upstream bug and SHIP.
 - If it truncates the Flatpak bake, flatpak-repo-heal (#255) rebuilds it on first
   boot; the deferred + baked apps download normally. Net: installed system
   recovers on its own.
-- File an upstream gnome-shell/gnome-desktop bug with this backtrace + the
-  anaconda set_layouts trigger. Revisit a targeted mitigation (do NOT mask
-  services the installer needs) once upstream responds or a fixed gnome-desktop
-  lands.
+- UPSTREAM TRACKED (2026-07-05): this is gnome-desktop#225 (open since
+  2023-07-26, same g_settings_get_enum/clock-format corrupted-instance
+  signature). Daniel commented with our two 2026 stacks and the reliable
+  anaconda/localed reproducer:
+  https://gitlab.gnome.org/GNOME/gnome-desktop/-/issues/225
+  Revisit a targeted mitigation (do NOT mask services the installer needs)
+  once upstream responds or a fixed gnome-desktop lands.
 
 Interim user-facing note: a first-boot may spend ~10-15 min populating apps if
 the bake was truncated; that is the self-heal, not a failure.

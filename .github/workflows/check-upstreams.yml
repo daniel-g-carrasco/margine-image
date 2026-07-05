@@ -1,8 +1,12 @@
 ---
-# Monthly cron that runs scripts/check-upstreams.sh and, if any of the
-# upstream projects we inherit from / borrow patterns from has new
-# commits since our last review, opens (or updates) a single tracking
-# issue with the full report.
+# Monthly cron that runs check-upstreams.sh and, if any of the upstream
+# projects we inherit from / borrow patterns from has new commits since
+# our last review, opens (or updates) a single tracking issue with the
+# full report.
+#
+# Migrated 2026-07 from the companion margine-fedora-atomic repo into
+# margine-image (the spec now lives here under docs/spec/). The script
+# is the vendored copy at build_files/40-spec-scripts/scripts/.
 #
 # Why not just rely on GitHub Watch notifications: those drown in
 # noise from upstreams like Bluefin (5+ commits/week typical). The
@@ -10,9 +14,9 @@
 # for us. The cron is the trigger to do that review, not to read
 # every commit.
 #
-# The companion script docs/upstream-inspirations.md has a "Last
-# reviewed" date per upstream. The script counts commits since that
-# date; this workflow surfaces the result as an issue.
+# docs/spec/upstream-inspirations.md has a "Last reviewed" date per
+# upstream. The script counts commits since that date; this workflow
+# surfaces the result as an issue.
 
 name: Check upstream activity
 
@@ -64,7 +68,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          OUT="$(bash scripts/check-upstreams.sh)"
+          # The vendored script resolves docs/upstream-inspirations.md
+          # relative to its OWN directory ($(dirname)/../docs/...). It now
+          # lives at build_files/40-spec-scripts/scripts/, while the doc
+          # lives at docs/spec/upstream-inspirations.md — bridge the two
+          # with a symlink so the script runs unmodified.
+          ln -sfn ../../docs/spec build_files/40-spec-scripts/docs
+          OUT="$(bash build_files/40-spec-scripts/scripts/check-upstreams.sh)"
           # Print to the job log unconditionally for traceability.
           echo "$OUT"
           # Persist for downstream steps + the issue body.
@@ -103,9 +113,9 @@ jobs:
 
           ---
 
-          _Auto-opened by [\`check-upstreams.yml\`](../.github/workflows/check-upstreams.yml) run #${{ github.run_id }}._
-          _Re-run the script locally with \`bash scripts/check-upstreams.sh\`._
-          _When you've reviewed and the upstream changes are accounted for, bump the "Last reviewed" date in \`docs/upstream-inspirations.md\` and close this issue._
+          _Auto-opened by [\`check-upstreams.yml\`](.github/workflows/check-upstreams.yml) run #${{ github.run_id }}._
+          _Re-run the script locally with \`bash build_files/40-spec-scripts/scripts/check-upstreams.sh\`._
+          _When you've reviewed and the upstream changes are accounted for, bump the "Last reviewed" date in \`docs/spec/upstream-inspirations.md\` and close this issue._
           EOF
           )
 
@@ -137,5 +147,5 @@ jobs:
             -H "Priority: low" \
             -H "Tags: bookmark_tabs,construction" \
             -H "Click: ${RUN_URL}" \
-            -d "Open the new issue on margine-fedora-atomic for the full report." \
+            -d "Open the new issue on margine-image for the full report." \
             "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"

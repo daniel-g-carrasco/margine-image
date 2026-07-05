@@ -75,14 +75,6 @@ jobs:
           printf '%s' "$MOK_CERT" > /tmp/margine-secrets/MOK.pem
           chmod 600 /tmp/margine-secrets/*
 
-      - name: Resolve margine-fedora-atomic spec ref
-        id: specref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          SHA="$(gh api repos/${{ github.repository_owner }}/margine-fedora-atomic/commits/main --jq .sha)"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-
       - name: Build NVIDIA variant (build-arg ENABLE_NVIDIA=1)
         run: |
           set -euo pipefail
@@ -91,7 +83,6 @@ jobs:
             --file ./Containerfile \
             --format docker \
             --layers \
-            --build-arg "MARGINE_REF=${{ steps.specref.outputs.sha }}" \
             --build-arg "ENABLE_NVIDIA=1" \
             --build-arg "NVIDIA_KMOD=${{ inputs.nvidia_kmod }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \

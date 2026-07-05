@@ -17,7 +17,7 @@ Report privately through GitHub's private vulnerability reporting:
 - **Build pipeline / published image** —
   <https://github.com/daniel-g-carrasco/margine-image/security/advisories/new>
 - **Spec / configuration / validators** —
-  <https://github.com/daniel-g-carrasco/margine-fedora-atomic/security/advisories/new>
+  <https://github.com/daniel-g-carrasco/margine-image/security/advisories/new>
 
 If you cannot use GitHub Security Advisories, email **ai@danielgrasso.com**
 with `[margine-security]` in the subject (PGP available on request).

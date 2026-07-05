@@ -8,7 +8,7 @@ set -euo pipefail
 
 # 4. Margine visual branding (logo, wallpaper, Plymouth, /etc/issue, fastfetch)
 # ---------------------------------------------------------------------------
-# Fetch the branding assets from margine-fedora-atomic and install them in
+# Install the branding assets vendored under 50-branding/assets/ and install them in
 # the standard system locations so user-facing surfaces (About panel,
 # desktop wallpaper, login screen, boot splash, console, fastfetch) all
 # show Margine identity instead of inheriting Bluefin's.
@@ -29,9 +29,11 @@ log "Installing Margine visual branding"
 #       — other consumers like systemd-logo, /etc/issue tooling)
 # Both use the square margine-m source asset.
 mkdir -p /usr/share/icons/hicolor/scalable/apps /usr/share/pixmaps
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo-square.svg" /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
+cp /ctx/50-branding/assets/margine-logo-square.svg /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
+[[ -s /usr/share/icons/hicolor/scalable/apps/margine-logo.svg ]] || { log "FATAL: required branding asset is empty: /usr/share/icons/hicolor/scalable/apps/margine-logo.svg"; exit 1; }
 chmod 0644 /usr/share/icons/hicolor/scalable/apps/margine-logo.svg
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-logo-square.png" /usr/share/pixmaps/margine-logo.png
+cp /ctx/50-branding/assets/margine-logo-square.png /usr/share/pixmaps/margine-logo.png
+[[ -s /usr/share/pixmaps/margine-logo.png ]] || { log "FATAL: required branding asset is empty: /usr/share/pixmaps/margine-logo.png"; exit 1; }
 chmod 0644 /usr/share/pixmaps/margine-logo.png
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
@@ -41,7 +43,7 @@ log "Installed margine-logo: hicolor/scalable/apps SVG + pixmaps PNG (About pane
 # (b) Wallpaper → /usr/share/backgrounds/margine/ + dconf override so it's
 #     the default desktop background (light + dark).
 mkdir -p /usr/share/backgrounds/margine
-retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/wallpaper-margine.png" /usr/share/backgrounds/margine/margine.png
+cp /ctx/50-branding/assets/wallpaper-margine.png /usr/share/backgrounds/margine/margine.png
 chmod 0644 /usr/share/backgrounds/margine/margine.png
 # Backwards-compat shim: pre-2026-05-30 images shipped this file as
 # `autumn-leaves.png` and users' dconf may still point there. Keep a
@@ -80,7 +82,7 @@ dnf -y install plymouth-plugin-script
 
 mkdir -p /usr/share/plymouth/themes/margine
 for f in margine.plymouth margine.script watermark.png ; do
-  retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/plymouth/${f}" "/usr/share/plymouth/themes/margine/${f}"
+  cp "/ctx/50-branding/assets/plymouth/${f}" "/usr/share/plymouth/themes/margine/${f}"
 done
 chmod 0644 /usr/share/plymouth/themes/margine/*
 log "Installed: /usr/share/plymouth/themes/margine/"
@@ -204,8 +206,10 @@ log "fedora-logo-icon now carries the Margine mark (fedora-welcome + gnome-initi
 # can-shrink=false: intrinsic pixel size == logical size, so the assets
 # are 256×64 (Fedora's originals are 250×102) — 1200×300 rendered 5×
 # oversized and blurry at 200% scale.
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-dark.png"  /usr/share/pixmaps/fedora_logo_med.png
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/margine-wordmark-light.png" /usr/share/pixmaps/fedora_whitelogo_med.png
+cp /ctx/50-branding/assets/margine-wordmark-dark.png  /usr/share/pixmaps/fedora_logo_med.png
+[[ -s /usr/share/pixmaps/fedora_logo_med.png ]] || { log "FATAL: required branding asset is empty: /usr/share/pixmaps/fedora_logo_med.png"; exit 1; }
+cp /ctx/50-branding/assets/margine-wordmark-light.png /usr/share/pixmaps/fedora_whitelogo_med.png
+[[ -s /usr/share/pixmaps/fedora_whitelogo_med.png ]] || { log "FATAL: required branding asset is empty: /usr/share/pixmaps/fedora_whitelogo_med.png"; exit 1; }
 chmod 0644 /usr/share/pixmaps/fedora_logo_med.png /usr/share/pixmaps/fedora_whitelogo_med.png
 log "About-panel distributor logo set to the Margine wordmark (dark=light-theme, white=dark-theme)"
 
@@ -243,7 +247,7 @@ log "Installed: /etc/issue"
 # (f) Fastfetch config + margine-fetch wrapper.
 # Fetch the ASCII logo and use it as fastfetch's --logo source.
 mkdir -p /usr/share/fastfetch /usr/share/margine
-retry_curl "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/ascii-logo.txt" /usr/share/margine/ascii-logo.txt
+cp /ctx/50-branding/assets/ascii-logo.txt /usr/share/margine/ascii-logo.txt
 chmod 0644 /usr/share/margine/ascii-logo.txt
 
 # margine.jsonc + the margine-fetch wrapper ship as tracked files via
@@ -317,7 +321,8 @@ cat >"$SCHEDULER_ICON" <<'SCHEDULER_ICON_SVG'
   <path d="M74 18 L36 70 H58 L54 110 L92 58 H70 Z" fill="url(#m-sched-bolt)" stroke="#ffe0b0" stroke-opacity="0.5" stroke-width="2" stroke-linejoin="round"/>
 </svg>
 SCHEDULER_ICON_SVG
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/icons/margine-documentation.svg" "$DOCS_ICON"
+cp /ctx/50-branding/assets/icons/margine-documentation.svg "$DOCS_ICON"
+[[ -s "$DOCS_ICON" ]] || { log "FATAL: required branding asset is empty: $DOCS_ICON"; exit 1; }
 # Ship the offline-docs builder in the image so the runtime refresh
 # service (margine-docs-refresh.timer -> /usr/libexec/margine/docs-refresh)
 # can rebuild the mirror into /var/lib/margine/offline-docs with the
@@ -347,7 +352,8 @@ rm -f /usr/share/icons/hicolor/scalable/places/ublue-discourse.svg \
 # with its mascot glyph. Replace it with a real path-based symbolic
 # Margine glyph; GTK4 symbolic icons do not accept embedded raster
 # <image> nodes.
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/assets/branding/start-here-symbolic.svg" /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+cp /ctx/50-branding/assets/start-here-symbolic.svg /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+[[ -s /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg ]] || { log "FATAL: required branding asset is empty: /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg"; exit 1; }
 chmod 0644 /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
 if grep -Eiq '<image[[:space:]>]|data:image/' /usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg; then
   log "FATAL: start-here-symbolic.svg contains an embedded raster image; GTK4 symbolic icons require path/circle/rect primitives"

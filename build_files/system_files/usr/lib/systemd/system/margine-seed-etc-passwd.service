@@ -1,6 +1,6 @@
 [Unit]
 Description=Margine: seed /etc/passwd + /etc/group from /usr/lib if stripped
-Documentation=https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
+Documentation=https://github.com/daniel-g-carrasco/margine-image/blob/main/docs/spec/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
 DefaultDependencies=no
 # Run only AFTER local-fs-pre.target (so /etc exists as the overlay
 # upper layer is mounted) and BEFORE systemd-sysusers / systemd-tmpfiles

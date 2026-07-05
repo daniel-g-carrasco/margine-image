@@ -12,7 +12,7 @@
 #   1  one or more checks failed — DO NOT reboot, investigate first
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-staged-deployment | bash
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/build_files/40-spec-scripts/scripts/validate-staged-deployment | bash
 # or after `git clone`:
 #   scripts/validate-staged-deployment
 

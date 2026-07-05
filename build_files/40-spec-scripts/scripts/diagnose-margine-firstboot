@@ -10,7 +10,7 @@
 # Outputs a single tarball under /tmp ready to scp back.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/diagnose-margine-firstboot | bash
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/build_files/40-spec-scripts/scripts/diagnose-margine-firstboot | bash
 #   # or:
 #   bash diagnose-margine-firstboot
 #

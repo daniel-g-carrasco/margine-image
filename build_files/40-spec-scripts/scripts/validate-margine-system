@@ -10,7 +10,7 @@
 # signature, no failed services, branding assets in place, etc.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-margine-system | bash
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/build_files/40-spec-scripts/scripts/validate-margine-system | bash
 # or after `git clone`:
 #   scripts/validate-margine-system
 #

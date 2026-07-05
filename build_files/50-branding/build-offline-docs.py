@@ -61,7 +61,25 @@ SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOT
 BASE_RE = re.compile(r"<base\b[^>]*>", re.IGNORECASE)
 ATTR_RE_TEMPLATE = r"""\b{attr}\s*=\s*(['"])(.*?)\1"""
 URL_ATTR_RE = re.compile(r"""\b(?P<attr>href|src)\s*=\s*(?P<quote>['"])(?P<url>.*?)(?P=quote)""", re.IGNORECASE)
+# <img srcset> and <source srcset> — a comma-separated list of
+# "url [descriptor]" candidates. Astro's <picture> serves avif/webp
+# here with the <img src> as the fallback, so a mirror that ignores
+# srcset shows nothing: the browser picks a (broken, remote) source
+# before ever reaching the localized <img src>.
+SRCSET_ATTR_RE = re.compile(r"""\bsrcset\s*=\s*(?P<quote>['"])(?P<val>.*?)(?P=quote)""", re.IGNORECASE | re.DOTALL)
 CSS_URL_RE = re.compile(r"""url\(\s*(?P<quote>['"]?)(?P<url>/[^)'"]+)(?P=quote)\s*\)""", re.IGNORECASE)
+
+# A URL is an asset to download (not a page to link) when its path ends
+# in a media/font extension or lives under one of the site's asset dirs.
+ASSET_EXT_RE = re.compile(
+    r"\.(?:png|jpe?g|webp|avif|gif|svg|ico|bmp|woff2?|ttf|otf|eot|mp4|webm|ogg|oga|mp3|wav|pdf)(?:[?#]|$)",
+    re.IGNORECASE,
+)
+ASSET_DIRS = ("/_astro/", "/assets/", "/screenshots/", "/fonts/", "/img/", "/images/", "/media/")
+
+# abs_url -> mirror file path (str) once downloaded, or None if the fetch
+# failed. Screenshots repeat across pages, so download each asset once.
+_asset_cache: dict[str, str | None] = {}
 
 
 def attr_value(tag: str, attr: str) -> str | None:
@@ -69,15 +87,14 @@ def attr_value(tag: str, attr: str) -> str | None:
     return match.group(2) if match else None
 
 
-def fetch_text(url: str, retries: int = 5) -> str:
+def fetch_bytes(url: str, retries: int = 5) -> bytes:
     last_error: Exception | None = None
     request = Request(url, headers={"User-Agent": "margine-image-offline-docs/1.0"})
 
     for attempt in range(1, retries + 1):
         try:
             with urlopen(request, timeout=30) as response:
-                data = response.read()
-            return data.decode("utf-8")
+                return response.read()
         except Exception as exc:  # noqa: BLE001 - build helper should retry broad network failures.
             last_error = exc
             if attempt == retries:
@@ -87,6 +104,10 @@ def fetch_text(url: str, retries: int = 5) -> str:
             time.sleep(sleep_s)
 
     raise RuntimeError(f"failed to fetch {url}: {last_error}")
+
+
+def fetch_text(url: str, retries: int = 5) -> str:
+    return fetch_bytes(url, retries).decode("utf-8")
 
 
 def output_path_for_route(output_dir: Path, route: str) -> Path:
@@ -107,23 +128,55 @@ def normalize_docs_path(path: str) -> str | None:
     return None
 
 
-def rewrite_css_urls(css: str, base_url: str) -> str:
+def looks_like_asset(path: str) -> bool:
+    return bool(ASSET_EXT_RE.search(path)) or path.startswith(ASSET_DIRS)
+
+
+def localize_asset(path: str, output_dir: Path, base_url: str, current_dir: Path) -> str | None:
+    """Download a same-host asset into the mirror once, mirroring its
+    server path (/screenshots/x.png -> <output_dir>/screenshots/x.png),
+    and return the path relative to current_dir. Returns None if the
+    fetch fails, so the caller keeps the original URL (page still works
+    online, just that one asset is remote)."""
+    clean = path.split("#", 1)[0].split("?", 1)[0]
+    if not clean.startswith("/"):
+        return None
+    abs_url = base_url + clean
+    if abs_url not in _asset_cache:
+        dest = output_dir / clean.lstrip("/")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(fetch_bytes(abs_url))
+            _asset_cache[abs_url] = str(dest)
+            print(f"[offline-docs]   asset {abs_url} -> {dest}")
+        except Exception as exc:  # noqa: BLE001 - a missing asset must not fail the whole build.
+            print(f"[offline-docs]   asset fetch failed for {abs_url}: {exc}", file=sys.stderr)
+            _asset_cache[abs_url] = None
+    dest_str = _asset_cache[abs_url]
+    if dest_str is None:
+        return None
+    return os.path.relpath(dest_str, current_dir).replace(os.sep, "/")
+
+
+def rewrite_css_urls(css: str, base_url: str, output_dir: Path, current_dir: Path) -> str:
     def replace(match: re.Match[str]) -> str:
         quote = match.group("quote") or ""
         url = match.group("url")
-        return f"url({quote}{urljoin(base_url, url)}{quote})"
+        local = localize_asset(url, output_dir, base_url, current_dir)
+        target = local if local is not None else urljoin(base_url, url)
+        return f"url({quote}{target}{quote})"
 
     return CSS_URL_RE.sub(replace, css)
 
 
-def inline_or_remove_link(match: re.Match[str], base_url: str) -> str:
+def inline_or_remove_link(match: re.Match[str], base_url: str, output_dir: Path, current_dir: Path) -> str:
     tag = match.group(0)
     rel = (attr_value(tag, "rel") or "").lower()
     href = attr_value(tag, "href")
 
     if "stylesheet" in rel and href:
         css_url = urljoin(base_url, href)
-        css = rewrite_css_urls(fetch_text(css_url), base_url)
+        css = rewrite_css_urls(fetch_text(css_url), base_url, output_dir, current_dir)
         return f'<style data-margine-offline="stylesheet">\n{css}\n</style>'
 
     if "modulepreload" in rel or "preload" in rel or "prefetch" in rel or "preconnect" in rel:
@@ -132,10 +185,17 @@ def inline_or_remove_link(match: re.Match[str], base_url: str) -> str:
     if href and href.startswith("/assets/"):
         return ""
 
+    # A <link rel="icon"/"apple-touch-icon"/…> points at a real image;
+    # keep it and localize the file so the favicon works offline too.
+    if href and looks_like_asset(href):
+        local = localize_asset(urlsplit(urljoin(base_url, href)).path, output_dir, base_url, current_dir)
+        if local is not None:
+            return re.sub(ATTR_RE_TEMPLATE.format(attr="href"), f'href="{local}"', tag, count=1, flags=re.IGNORECASE)
+
     return tag
 
 
-def rewrite_url(url: str, route: str, output_dir: Path, base_url: str) -> str:
+def rewrite_url(url: str, route: str, output_dir: Path, base_url: str, current_dir: Path, attr: str = "href") -> str:
     if not url or url.startswith("#") or url.startswith(("mailto:", "tel:", "data:", "blob:")):
         return url
 
@@ -145,33 +205,70 @@ def rewrite_url(url: str, route: str, output_dir: Path, base_url: str) -> str:
         return url
 
     path = parsed.path if parsed.scheme or parsed.netloc else urlsplit(urljoin(base_url, url)).path
+
+    # Same-host asset (image, font, media, PDF): download + link locally.
+    # Checked before the docs-route branch so a hashed /_astro/*.png is
+    # never mistaken for a page. src/srcset are always assets; an <a
+    # href> only when it points at a file.
+    if path.startswith("/") and (attr != "href" or looks_like_asset(path)):
+        local = localize_asset(path, output_dir, base_url, current_dir)
+        if local is not None:
+            return local
+
+    # Mirrored doc/handbook page -> local relative page.
     docs_route = normalize_docs_path(path)
     if docs_route:
-        current = output_path_for_route(output_dir, route).parent
         target = output_path_for_route(output_dir, docs_route)
-        relative = os.path.relpath(target, current).replace(os.sep, "/")
+        relative = os.path.relpath(target, current_dir).replace(os.sep, "/")
         if parsed.fragment:
             relative = f"{relative}#{parsed.fragment}"
         return relative
 
+    # Site root -> the mirror's redirect index, so the logo/home link
+    # lands on the offline docs instead of a dead absolute URL.
+    if path in ("", "/"):
+        target = output_dir / "index.html"
+        return os.path.relpath(target, current_dir).replace(os.sep, "/")
+
+    # Any other same-host page (e.g. /status) is not mirrored; it needs
+    # the network by nature, so keep it absolute.
     if url.startswith("/"):
         return urljoin(base_url, url)
 
     return url
 
 
-def rewrite_links(html_text: str, route: str, output_dir: Path, base_url: str) -> str:
+def rewrite_links(html_text: str, route: str, output_dir: Path, base_url: str, current_dir: Path) -> str:
     def replace(match: re.Match[str]) -> str:
-        return f"{match.group('attr')}={match.group('quote')}{rewrite_url(match.group('url'), route, output_dir, base_url)}{match.group('quote')}"
+        attr = match.group("attr")
+        new_url = rewrite_url(match.group("url"), route, output_dir, base_url, current_dir, attr)
+        return f"{attr}={match.group('quote')}{new_url}{match.group('quote')}"
 
     return URL_ATTR_RE.sub(replace, html_text)
 
 
+def rewrite_srcset(html_text: str, route: str, output_dir: Path, base_url: str, current_dir: Path) -> str:
+    def replace(match: re.Match[str]) -> str:
+        candidates = []
+        for part in match.group("val").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            bits = part.split(None, 1)
+            new_url = rewrite_url(bits[0], route, output_dir, base_url, current_dir, "src")
+            candidates.append(f"{new_url} {bits[1]}" if len(bits) > 1 else new_url)
+        return f"srcset={match.group('quote')}{', '.join(candidates)}{match.group('quote')}"
+
+    return SRCSET_ATTR_RE.sub(replace, html_text)
+
+
 def rewrite_html(html_text: str, route: str, output_dir: Path, base_url: str) -> str:
+    current_dir = output_path_for_route(output_dir, route).parent
     html_text = BASE_RE.sub("", html_text)
     html_text = SCRIPT_RE.sub("", html_text)
-    html_text = LINK_RE.sub(lambda match: inline_or_remove_link(match, base_url), html_text)
-    html_text = rewrite_links(html_text, route, output_dir, base_url)
+    html_text = LINK_RE.sub(lambda match: inline_or_remove_link(match, base_url, output_dir, current_dir), html_text)
+    html_text = rewrite_links(html_text, route, output_dir, base_url, current_dir)
+    html_text = rewrite_srcset(html_text, route, output_dir, base_url, current_dir)
     return html_text
 
 
@@ -228,6 +325,7 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True)
+    _asset_cache.clear()
 
     routes = discover_routes(base_url)
     for route in routes:
@@ -237,6 +335,10 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
         print(f"[offline-docs] {source_url} -> {destination}")
         html_text = fetch_text(source_url)
         destination.write_text(rewrite_html(html_text, route, output_dir, base_url), encoding="utf-8")
+
+    downloaded = sum(1 for v in _asset_cache.values() if v is not None)
+    failed = sum(1 for v in _asset_cache.values() if v is None)
+    print(f"[offline-docs] localized {downloaded} asset(s); {failed} failed")
 
     write_redirect_index(output_dir)
     (output_dir / "manifest.txt").write_text("\n".join(routes) + "\n", encoding="utf-8")

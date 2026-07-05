@@ -164,21 +164,26 @@ class CiPage:
                         "CLI authenticated. Keep the window open to be notified.")
         page.add(ci)
 
-        # A thin progress bar per long-running CI row, driven by real job-step
-        # data (pulsed through the opaque long steps like the IA upload). Sits
-        # left of the action button; hidden while idle. id(bar) -> pulse timer.
+        # A full-width progress bar UNDER each long-running CI row, driven by
+        # real job-step data. show_text carries "NN% · phase · ~ETA": the ETA
+        # comes from the measured pace of THIS run (fraction/elapsed), never a
+        # made-up timer, and the opaque IA-upload step pulses with an honest
+        # "elapsed" instead of a fake percent. First cut was a 150px "osd"
+        # sliver in the suffix — unreadable (Daniel, 2026-07-05).
+        # id(bar) -> pulse-timer source; id(bar) -> {t0, f0} pace state.
         self._pulse_ids = {}
+        self._bar_state = {}
 
         def _ci_row(title, subtitle, btn_label, cb):
             row = Adw.ActionRow(title=title, subtitle=subtitle)
-            bar = Gtk.ProgressBar(valign=Gtk.Align.CENTER, visible=False,
-                                  width_request=150)
-            bar.add_css_class("osd")
-            row.add_suffix(bar)
             btn = Gtk.Button(label=btn_label, valign=Gtk.Align.CENTER)
             btn.connect("clicked", cb)
             row.add_suffix(btn)
             ci.add(row)
+            bar = Gtk.ProgressBar(show_text=True, hexpand=True, visible=False,
+                                  margin_start=12, margin_end=12,
+                                  margin_top=2, margin_bottom=8)
+            ci.add(bar)
             return row, btn, bar
 
         self.base_row, self.base_btn, self.base_bar = _ci_row(
@@ -521,17 +526,50 @@ class CiPage:
         ask()
 
     # -- progress bars -------------------------------------------------------
-    def _bar_frac(self, bar, f):
-        """Show a determinate fraction (stops any pulsing)."""
-        self._bar_stop_pulse(bar)
-        bar.set_visible(True)
-        bar.set_fraction(max(0.0, min(1.0, f)))
+    @staticmethod
+    def _fmt_dur(seconds):
+        m = int(seconds // 60)
+        return f"{m // 60}h {m % 60}m" if m >= 60 else f"{m}m"
 
-    def _bar_pulse(self, bar):
-        """Show an indeterminate, animating bar (for opaque long steps like the
-        IA upload, which GitHub exposes no sub-progress for). A 150ms ticker
-        keeps it lively between the slow 60s poll ticks."""
+    def _bar_pace(self, bar, f=None):
+        """Per-bar pace state: first call (or re-show) stamps t0 and the
+        starting fraction, so the ETA reflects THIS run's measured speed."""
+        st = self._bar_state.get(id(bar))
+        if st is None or not bar.get_visible():
+            st = {"t0": GLib.get_monotonic_time() / 1e6,
+                  "f0": f if f is not None else 0.0}
+            self._bar_state[id(bar)] = st
+        return st, GLib.get_monotonic_time() / 1e6 - st["t0"]
+
+    def _bar_frac(self, bar, f, label=""):
+        """Determinate bar with rich in-bar text: 'NN% · label · pace'.
+        The ETA is extrapolated from this run's own progress rate — shown only
+        once there's enough signal (>=90s and >=3% advanced) to be honest."""
+        st, elapsed = self._bar_pace(bar, f)
+        self._bar_stop_pulse(bar)
+        f = max(0.0, min(1.0, f))
+        txt = f"{int(f * 100)}%"
+        if label:
+            txt += f" · {label}"
+        adv = f - st["f0"]
+        if elapsed >= 90 and adv >= 0.03 and f < 0.995:
+            eta = (1.0 - f) * (elapsed / adv)
+            txt += f" · {self._fmt_dur(elapsed)} elapsed · ~{self._fmt_dur(eta)} left"
+        elif elapsed >= 60:
+            txt += f" · {self._fmt_dur(elapsed)} elapsed"
         bar.set_visible(True)
+        bar.set_fraction(f)
+        bar.set_text(txt)
+
+    def _bar_pulse(self, bar, label=""):
+        """Indeterminate, animating bar for opaque long steps (the IA upload:
+        GitHub exposes no sub-progress). The text says so honestly — phase +
+        elapsed — and a 150ms ticker keeps it alive between the 60s polls."""
+        st, elapsed = self._bar_pace(bar)
+        bar.set_visible(True)
+        if label:
+            bar.set_text(f"{label} · {self._fmt_dur(elapsed)} elapsed"
+                         if elapsed >= 60 else label)
         if id(bar) in self._pulse_ids:
             return
         def _p():
@@ -546,6 +584,7 @@ class CiPage:
 
     def _bar_hide(self, bar):
         self._bar_stop_pulse(bar)
+        self._bar_state.pop(id(bar), None)
         bar.set_fraction(0.0)
         bar.set_visible(False)
 
@@ -612,10 +651,11 @@ class CiPage:
                 return True
             if data.get("status") != "completed":
                 bf, _s = _step_frac(_jobdict(data, ""))  # primary job's steps
-                self._bar_frac(self.base_bar, 0.05 + 0.60 * bf)  # build owns 5-65%
+                self._bar_frac(self.base_bar, 0.05 + 0.60 * bf,
+                               "building :candidate")  # build owns 5-65%
                 return True
             if data.get("conclusion") == "success":
-                self._bar_frac(self.base_bar, 0.65)
+                self._bar_frac(self.base_bar, 0.65, "waiting for smoke-boot")
                 self.base_row.set_subtitle(":candidate built — waiting for smoke-boot…")
                 self.win.notify("Base :candidate built",
                                 "QEMU smoke-boot runs next; :stable follows if green.")
@@ -641,7 +681,8 @@ class CiPage:
                 return True
             if data.get("status") != "completed":
                 sf, _s = _step_frac(_jobdict(data, ""))
-                self._bar_frac(self.base_bar, 0.65 + 0.35 * sf)  # smoke-boot 65-100%
+                self._bar_frac(self.base_bar, 0.65 + 0.35 * sf,
+                               "smoke-boot + promote")  # smoke-boot 65-100%
                 return True
             if data.get("conclusion") == "success":
                 self._ci_base_done(":stable promoted")
@@ -769,17 +810,18 @@ class CiPage:
             if pub_s == "in_progress":
                 pf, pstep = _step_frac(_jobdict(data, "Publish ISO"))
                 if any(k in pstep for k in ("Internet Archive", "Upload", "derive")):
-                    self._bar_pulse(self.pub_bar)
+                    self._bar_pulse(self.pub_bar,
+                                    "uploading to Internet Archive (no % from GitHub)")
                 else:
-                    self._bar_frac(self.pub_bar, 0.65 + 0.35 * pf)
+                    self._bar_frac(self.pub_bar, 0.65 + 0.35 * pf, "publishing")
             elif iso_s == "completed" and iso_c == "success":
                 gf, _gs = _step_frac(_jobdict(data, "Automated install gate"))
-                self._bar_frac(self.pub_bar, 0.50 + 0.15 * gf)
+                self._bar_frac(self.pub_bar, 0.50 + 0.15 * gf, "install gate")
             elif iso_s == "in_progress":
                 isf, _is = _step_frac(_jobdict(data, "Build Live ISO"))
-                self._bar_frac(self.pub_bar, 0.50 * isf)
+                self._bar_frac(self.pub_bar, 0.50 * isf, "building ISO (zstd-19)")
             else:
-                self._bar_frac(self.pub_bar, 0.02)  # queued
+                self._bar_frac(self.pub_bar, 0.02, "queued")  # queued
 
             self.pub_row.set_subtitle(
                 f"run {run_id} · iso: {_state(iso_s, iso_c)} · "
@@ -911,7 +953,7 @@ class CiPage:
             state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
             state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
-            self._bar_frac(self.dl_bar, (pct or 0) / 100.0)
+            self._bar_frac(self.dl_bar, (pct or 0) / 100.0, "downloading")
             extra = ""
             if state["rate"] > 1024:
                 left = (size - have) / state["rate"] if size else 0
@@ -1063,7 +1105,7 @@ class CiPage:
             state["rate"] = (0.7 * state["rate"] + 0.3 * inst) if state["prev"] else inst
             state["prev"] = have
             pct = min(99, int(have * 100 / size)) if size else 0
-            self._bar_frac(self.dl_bar, (pct or 0) / 100.0)
+            self._bar_frac(self.dl_bar, (pct or 0) / 100.0, "downloading")
             extra = ""
             if state["rate"] > 1024:
                 left = (size - have) / state["rate"] if size else 0

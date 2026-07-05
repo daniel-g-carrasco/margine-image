@@ -1,0 +1,11 @@
+# Funnel: bug reports live HERE as issues (one searchable place instead of
+# forum threads, Bluefin discussions and Lemmy comments scattered around).
+# Questions and chat stay on the community channels below.
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and general discussion
+    url: https://universal-blue.discourse.group/t/12247
+    about: Not a bug? Ask on the Universal Blue forum thread.
+  - name: Documentation and handbook
+    url: https://margine.the-empty.place/docs/
+    about: Install guide, Secure Boot / MOK enrollment, troubleshooting.

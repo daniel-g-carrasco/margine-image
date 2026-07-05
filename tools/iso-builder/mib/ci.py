@@ -692,7 +692,8 @@ class CiPage:
                 self._bar_frac(self.base_bar, 0.65, "waiting for smoke-boot")
                 self.base_row.set_subtitle(":candidate built — waiting for smoke-boot…")
                 self.win.notify("Base :candidate built",
-                                "QEMU smoke-boot runs next; :stable follows if green.")
+                                "QEMU smoke-boot runs next; :stable follows if green.",
+                                tag="ci-base")
                 now = datetime.datetime.now(datetime.timezone.utc).timestamp()
                 self._find_dispatch_run("smoke-boot.yml", now - 60, sb_found,
                                         attempts=30, event="workflow_run")
@@ -721,7 +722,8 @@ class CiPage:
             if data.get("conclusion") == "success":
                 self._ci_base_done(":stable promoted")
                 self.win.notify("Base :stable updated",
-                                "Fast test ISO now builds from the new base.")
+                                "Fast test ISO now builds from the new base.",
+                                tag="ci-base")
             else:
                 self._ci_base_done("smoke-boot FAILED — :candidate NOT promoted",
                                    notify=True)
@@ -739,7 +741,8 @@ class CiPage:
         # '&' double-escapes to '&amp;' in the row subtitle.
         self.base_row.set_subtitle(text)
         if notify:
-            self.win.notify("Base rebuild: " + text)
+            self.win.notify("Base rebuild: " + text, tag="ci-base",
+                            failure=("fail" in text.lower() or "not" in text.lower()))
         # a finished rebuild moves the Base :stable dashboard row
         self.refresh()
 
@@ -814,10 +817,15 @@ class CiPage:
         self.win.append_log(f"\n[CI] publish run {run_id} — monitoring\n")
         seen = set()
 
-        def milestone(key, title, body=""):
+        def milestone(key, title, body="", failure=False):
+            # One self-updating notification card for the whole publish flow
+            # (fixed tag → GNOME replaces instead of stacking three stale
+            # milestone cards in the tray).
             if key not in seen:
                 seen.add(key)
-                self.win.notify(title, body)
+                self.win.notify(title, body, tag="ci-publish",
+                                url=f"https://github.com/{core.GH_REPO}/actions/runs/{run_id}",
+                                failure=failure)
 
         def tick(data):
             if data is None:
@@ -830,11 +838,12 @@ class CiPage:
                     milestone("iso", "CI ISO built ✓",
                               "You can already download & test it (third CI row).")
                 else:
-                    milestone("isofail", "CI ISO build failed ✗")
+                    milestone("isofail", "CI ISO build failed ✗", failure=True)
             if gate_s == "completed" and gate_c:
                 milestone("gate", "Install gate: " + (
                     "PASS ✓" if gate_c == "success"
-                    else f"{gate_c.upper()} ✗ — publishing is blocked"))
+                    else f"{gate_c.upper()} ✗ — publishing was blocked"),
+                    failure=(gate_c != "success"))
             if pub_s == "completed" and pub_c == "success":
                 milestone("pub", "ISO published to Internet Archive ✓")
 
@@ -875,7 +884,11 @@ class CiPage:
         # text already markup-escaped by callers (see _ci_base_done)
         self.pub_row.set_subtitle(text)
         if notify:
-            self.win.notify("Publish: " + text, body)
+            # body used to carry a RAW run URL pasted into the card — ugly
+            # (Daniel, 2026-07-05). It rides an Open-run button instead now.
+            self.win.notify("Publish: " + text,
+                            tag="ci-publish", url=body or None,
+                            failure=("fail" in text or "cancelled" in text))
         # a finished publish changes the dashboard (last run, IA link, changelog)
         self.refresh()
 
@@ -1016,7 +1029,8 @@ class CiPage:
                 self._ci_dl_done("no .iso inside the artifact?")
                 return
             self._ci_dl_done("downloaded: " + _esc(os.path.basename(isos[0])))
-            self.win.notify("CI ISO downloaded", os.path.basename(isos[0]))
+            self.win.notify("CI ISO downloaded", os.path.basename(isos[0]),
+                            tag="ci-download")
             self._ci_dl_offer_test(isos[0])
 
         # communicate_utf8_async drains stdout/stderr (so a chatty gh can't
@@ -1170,7 +1184,8 @@ class CiPage:
                                  "kept; Download again resumes it")
                 return
             self._ci_dl_done("downloaded: " + _esc(os.path.basename(isos[0])))
-            self.win.notify("Published ISO downloaded", os.path.basename(isos[0]))
+            self.win.notify("Published ISO downloaded", os.path.basename(isos[0]),
+                            tag="ci-download")
             self._ci_dl_offer_test(isos[0])
 
         proc.communicate_utf8_async(None, None, done)

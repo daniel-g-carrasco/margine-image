@@ -1,0 +1,52 @@
+name: Bug report
+description: Something in Margine does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Tip: on an installed Margine, run
+        `ujust margine-report` in a terminal. It collects the info below
+        into one file you can paste here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: iso
+    attributes:
+      label: ISO or image version
+      description: ISO file name/date, or the output of `rpm-ostree status -b | head -3`
+      placeholder: margine-20260705.iso
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How did you get Margine on this machine
+      options:
+        - Fresh install from the ISO
+        - Rebase from Bluefin or another bootc image
+        - Update of an existing Margine install
+    validations:
+      required: true
+  - type: dropdown
+    id: sb
+    attributes:
+      label: Secure Boot
+      options:
+        - Enabled, Margine key enrolled
+        - Enabled, key NOT enrolled (or not sure)
+        - Disabled
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and details
+      description: Paste the relevant part of `journalctl -b`, the `ujust margine-report` output, or a photo/screenshot of the error.
+      render: text

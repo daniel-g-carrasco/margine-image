@@ -148,10 +148,17 @@ esac
 ANALOG="$(find "$MNT" -maxdepth 7 -type d -name anaconda -path '*/var/log/*' 2>/dev/null | head -1)"
 if [[ -n "$ANALOG" ]] && compgen -G "$ANALOG/ks-script-*.log" > /dev/null; then
   ok "anaconda logs present on target ($ANALOG) — install ran to completion"
-  if grep -hq "MARGINE-BAKE-OK" "$ANALOG"/ks-script-*.log 2>/dev/null; then
-    ok "MARGINE-BAKE-OK in ks-script logs — bake script completed and self-verified"
+  # The bake script logs to its OWN file (%post --log=/mnt/sysimage/var/log/
+  # anaconda-post-flatpak-bake.log), NOT to ks-script-*.log — the first
+  # version of this sensor grepped only ks-script logs and FALSE-FAILED a
+  # perfectly good install (run 28735501082: 37 apps on disk, marker present
+  # in the dedicated log). Check the dedicated log first, ks-script as a
+  # fallback in case the --log redirection ever goes away.
+  BAKELOG="${ANALOG%/anaconda}/anaconda-post-flatpak-bake.log"
+  if grep -hq "MARGINE-BAKE-OK" "$BAKELOG" "$ANALOG"/ks-script-*.log 2>/dev/null; then
+    ok "MARGINE-BAKE-OK found ($(grep -lh "MARGINE-BAKE-OK" "$BAKELOG" "$ANALOG"/ks-script-*.log 2>/dev/null | head -1)) — bake completed and self-verified"
   else
-    bad "no MARGINE-BAKE-OK in $ANALOG/ks-script-*.log — bake script died or never ran"
+    bad "no MARGINE-BAKE-OK in $BAKELOG nor $ANALOG/ks-script-*.log — bake script died or never ran"
   fi
 else
   bad "no var/log/anaconda with ks-script logs on the installed disk — anaconda was cut short (truncated install)"

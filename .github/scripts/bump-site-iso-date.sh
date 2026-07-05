@@ -45,6 +45,15 @@ if [[ -n "${NEW_FILE:-}" ]]; then
   fi
 fi
 
+# Keep the file prettier-clean: the site lints with prettier and a raw
+# sed edit has left index.tsx unformatted before (site PR #151 had to
+# hand-fix it). Best effort — a formatting hiccup must not block a
+# release bump. Pinned to the site's devDependency version.
+if command -v npx >/dev/null 2>&1; then
+  npx --yes prettier@3.8.4 --write src/routes/index.tsx \
+    || echo "::warning::prettier pass failed — committing the raw edit"
+fi
+
 # If a PR for the same target date already exists on the head branch
 # (re-dispatch on same UTC day), skip — don't churn.
 # Commit the bump straight to main and push — do NOT open a PR.

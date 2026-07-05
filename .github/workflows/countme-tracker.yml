@@ -1,0 +1,55 @@
+name: Countme tracker
+
+# Refreshes the site's /status "Devices running Margine" chart from
+# Fedora's public Count Me dataset (see publish-countme-json.sh for the
+# counting model). Fedora's weeks close on Sunday and the published
+# totals settle a day or two later, hence the Tuesday cron. Same
+# SITE_BUMP_TOKEN publish pattern as status-json.yml.
+
+on:
+  schedule:
+    - cron: "43 7 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: countme-tracker
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout margine-image (producer script)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Check SITE_BUMP_TOKEN
+        id: tok
+        env:
+          T: ${{ secrets.SITE_BUMP_TOKEN }}
+        run: |
+          if [ -z "$T" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::SITE_BUMP_TOKEN not set — cannot publish countme.json."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout website repo
+        if: steps.tok.outputs.skip != 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: daniel-g-carrasco/margine-os-1084ca72
+          token: ${{ secrets.SITE_BUMP_TOKEN }}
+          path: site
+          fetch-depth: 1
+
+      - name: Refresh + publish countme.json
+        if: steps.tok.outputs.skip != 'true'
+        working-directory: site
+        run: ../.github/scripts/publish-countme-json.sh

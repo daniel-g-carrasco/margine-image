@@ -81,7 +81,7 @@ operations.
 | 🎮 **Optional gaming layer (two flavours)** | `ujust margine-gaming` installs **gamescope** + **vkBasalt** as `rpm-ostree` layered RPMs and **Steam**, **Lutris**, **Heroic**, **Bottles**, **Protontricks**, **ProtonPlus**, **RetroArch** as Flatpaks. One command, a reboot, gaming is on. For maximum Proton/Wine compatibility (anti-cheat titles, VR, NVIDIA proprietary side-by-side) `ujust margine-gaming-native` instead layers Steam + Lutris + RetroArch as **native RPMs** — better compatibility at the cost of +30-60s per update (the daily auto-update and `ujust margine-update` both re-apply the layer). `ujust margine-gaming{,-native}-remove` rolls either variant back. |
 | 🤖 **Optional AI workflow** | `ujust margine-ai` installs [**Alpaca**](https://flathub.org/apps/com.jeffser.Alpaca) — a Flatpak GUI for local LLMs that bundles its own Ollama backend, no host install or daemon-running required. Pick a model from inside Alpaca on first launch (recommended starters: `llama3.1:8b` for general use, `qwen2.5-coder:7b` for code, `phi3.5:3.8b` for CPU-only). Power users who want the [RamaLama](https://github.com/containers/ramalama) CLI in a sandbox get instructions printed by the recipe. `ujust margine-ai-remove` undoes it. |
 | ☁️ **Rootless app helpers** | `ujust install-koofr` (alias `ujust koofr`) installs the [**Koofr**](https://koofr.eu/) Desktop sync client natively in `$HOME` — no Flatpak/RPM/Distrobox, because Koofr ships only a self-updating tarball, so it stays out of the read-only image and updates itself. It autostarts **hidden to the system tray** at login (the binary's `-silent` flag), while launching it from the applications menu opens the window normally. `ujust install-koofr remove` uninstalls it. |
-| 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/07-secure-boot-tpm2.md`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/07-secure-boot-tpm2.md). |
+| 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/spec/07-secure-boot-tpm2.md`](docs/spec/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
 | 📚 **Online + offline documentation** | Activities -> **"Margine documentation"** opens the live docs when the site health check passes and falls back to the local mirror at `/usr/share/margine/offline-docs/` when the machine is offline. The current install recommendation lives at <https://margine.the-empty.place/docs/install-status>. |
 | 🗂 **Organized application folders** | GNOME's activities grid is organized into six folders: Office, Graphics, Photography, Audio, Video, System. High-frequency apps (browser, mail, files, terminal, code editor) stay at the top level for one-click access. Editable in the declarative spec. |
@@ -316,7 +316,7 @@ top of [`.github/workflows/build.yml`](.github/workflows/build.yml)
 for the full rationale.
 
 **Titanoboa migration:** complete since 2026-06-11 (ADR-0008 Phase 5); see
-[`margine-fedora-atomic` ADR-0008](https://github.com/daniel-g-carrasco/margine-fedora-atomic/blob/main/docs/adr/0008-titanoboa-migration-plan.md).
+[ADR-0008](docs/spec/adr/0008-titanoboa-migration-plan.md).
 Pin: `daniel-g-carrasco/titanoboa@cce73fc` (our fork of upstream `ublue-os/titanoboa@5c457c3d` + 3 carried patches; see `.github/workflows/build-disk.yml`).
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
@@ -356,16 +356,15 @@ boot menu or `bootc rollback`.
 ## For developers
 
 The declarative spec, configuration helpers, and validators live in
-[`margine-fedora-atomic`](https://github.com/daniel-g-carrasco/margine-fedora-atomic).
-This repo (`margine-image`) is only the build pipeline: Containerfile,
+[`docs/spec/`](docs/spec/) and [`build_files/40-spec-scripts/`](build_files/40-spec-scripts/).
+This repo (`margine-image`) is also the build pipeline: Containerfile,
 build scripts, CI workflows. To change *what* Margine ships — which
 apps, which extensions, which keybindings — edit
 `declarations/margine-atomic.yaml` in the spec repo. The build picks
 up the new versions automatically.
 
 Architectural decisions, postmortems, and the roadmap are documented
-under [`docs/`](https://github.com/daniel-g-carrasco/margine-fedora-atomic/tree/main/docs)
-in the spec repo.
+under [`docs/spec/`](docs/spec/) in this repo.
 
 ## Credits
 

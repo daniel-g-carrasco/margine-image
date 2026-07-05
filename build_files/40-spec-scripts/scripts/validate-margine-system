@@ -1,0 +1,894 @@
+#!/usr/bin/env bash
+# Margine runtime acceptance test.
+#
+# Run this on a booted Margine system to photograph the current state
+# and compare it against the canonical expected state. Catches drift
+# that the build-time Layer A checks and the pre-reboot
+# validate-staged-deployment cannot see: GNOME settings as actually
+# applied by GDM/Shell, Flatpaks really installed (not just declared),
+# system users present at runtime (Bug 6 post-rebase), running kernel
+# signature, no failed services, branding assets in place, etc.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-image/main/build_files/40-spec-scripts/scripts/validate-margine-system | bash
+# or after `git clone`:
+#   scripts/validate-margine-system
+#
+# Context (MARGINE_VALIDATE_CONTEXT environment variable):
+#   install     (default) booted system installed from the live ISO —
+#               everything runs, including the Anaconda BAKE cross-check.
+#   smoke-boot| booted system from a bootc-image-builder qcow2 (CI Layer
+#   qcow2|      B/C, manual VM tests) — BAKE check is skipped because no
+#   non-iso     Anaconda %post ever ran there.
+#   image       the build container itself (`podman run --rm -e
+#               MARGINE_VALIDATE_CONTEXT=image $IMG margine-validate-margine-system`)
+#               — only filesystem-level checks run; anything that needs a
+#               booted system (running kernel, bootc status, EFI/mokutil,
+#               dconf/gsettings, systemd state, installed Flatpaks) is
+#               skipped with an info line instead of false-failing.
+#
+# Exit code:
+#   0  all required checks passed (warnings allowed)
+#   1  at least one required check failed
+
+set -u
+
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,40p' "${BASH_SOURCE[0]:-/usr/bin/margine-validate-margine-system}" 2>/dev/null \
+      || echo "Margine acceptance test. See script header for MARGINE_VALIDATE_CONTEXT values."
+    exit 0
+    ;;
+esac
+
+CONTEXT="${MARGINE_VALIDATE_CONTEXT:-install}"
+# IS_LIVE=0 inside a build container: the filesystem is the real image,
+# but there is no booted deployment, no PID-1 systemd, no display, no
+# EFI variables — runtime checks would false-fail or vacuously pass.
+case "$CONTEXT" in
+  image) IS_LIVE=0 ;;
+  *)     IS_LIVE=1 ;;
+esac
+
+FAIL=0
+WARN=0
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+bad()  { printf '  \033[31m✗\033[0m FAIL: %s\n' "$1"; FAIL=$((FAIL+1)); }
+warn() { printf '  \033[33m!\033[0m WARN: %s\n' "$1"; WARN=$((WARN+1)); }
+info() { printf '  %s\n' "$1"; }
+hdr()  { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+
+if [[ $(id -u) -eq 0 ]]; then
+  SUDO=()
+else
+  SUDO=(sudo)
+  echo "Running as $USER — privileged checks will use sudo (one prompt)."
+fi
+
+# Expected values — canonical Margine state.
+# Keep in sync with declarations/margine-atomic.yaml and build.sh.
+EXPECTED_OS_NAME="Margine"
+# os-release(5): ID is the family (we use "fedora", same as Bluefin's own
+# upstream now does, so bootc-image-builder can find its distro definition);
+# VARIANT_ID is the specific spin within the family. Margine identifies as
+# the latter — matches Fedora's own convention for Workstation/Silverblue/
+# Kinoite. The change happened on 2026-06-01 alongside the first ISO build;
+# pre-2026-06-01 images had ID=margine.
+EXPECTED_OS_ID="fedora"
+EXPECTED_OS_VARIANT_ID="margine"
+EXPECTED_KERNEL_PATTERN="cachyos"
+EXPECTED_PLYMOUTH_THEME="margine"
+EXPECTED_WALLPAPER="file:///usr/share/backgrounds/margine/margine.png"
+EXPECTED_GDM_LOGO=""   # empty: no logo in greeter, by design (see lessons-learned Bug 7)
+EXPECTED_GHCR_IMAGE="ghcr.io/daniel-g-carrasco/margine"
+
+# Expected Flatpaks are read from the preinstall file the image itself
+# ships (generated at build time by margine-image 20-flatpaks from the
+# canonical list). A hardcoded copy lived here until 2026-06-12 and had
+# silently rotted 9 apps behind the shipped list — never sync by hand
+# what the system can tell you itself.
+PREINSTALL_FILE=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
+EXPECTED_FLATPAKS=()
+if [[ -f "$PREINSTALL_FILE" ]]; then
+  mapfile -t EXPECTED_FLATPAKS < <(
+    sed -n 's/^\[Flatpak Preinstall \(.*\)\]$/\1/p' "$PREINSTALL_FILE" | sort -u
+  )
+fi
+
+EXPECTED_EXTENSIONS=(
+  appindicatorsupport@rgcjonas.gmail.com
+  bazaar-integration@kolunmi.github.io
+  dash-to-dock@micxgx.gmail.com
+  gradia-integration@alexandervanhee.github.io
+  gsconnect@andyholmes.github.io
+  hide-cursor@elcste.com
+  caffeine@patapon.info
+  o-tiling@oliwebd.github.com
+  smile-extension@mijorus.it
+)
+# search-light@icedman.github.com was dropped from the default enable set
+# 2026-06-14 (GNOME-50 crash class; replaced by GNOME-native search). smile
+# was added 2026-06-13. blur-my-shell@aunetx was dropped 2026-06-16 (dynamic
+# per-frame Gaussian blur janked the 120Hz HiDPI iGPU — its own transitions
+# AND o-tiling animations — plus 3 unfixed-upstream GNOME-50 bugs). All three
+# stay INSTALLED but are not in the enabled set. Keep this list in lockstep
+# with the enabled-extensions line in build_files/30-gnome-defaults/install.sh
+# (zz1-margine override).
+# NOTE: tilingshell@ferrarodomenico.com is installed but NOT in the
+# default enable list (superseded by o-tiling on 2026-05-31).
+
+EXPECTED_MARGINE_HELPERS=(
+  margine-fetch
+  margine-install-user-extensions
+)
+
+# Services that are expected to fail and are NOT counted as
+# regressions. Empty list since 2026-05-31: systemd-remount-fs.service
+# (Bug 8 — overlay rejects reconfigure) is now masked at build time
+# so it never starts. If it ever shows up as failed again, that's a
+# real regression worth investigating.
+EXPECTED_FAILED_SERVICES=()
+
+# ---------------------------------------------------------------------------
+hdr "1. OS identity"
+# ---------------------------------------------------------------------------
+NAME=$(grep -E '^NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
+ID=$(grep -E '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+VARIANT_ID=$(grep -E '^VARIANT_ID=' /etc/os-release | cut -d= -f2- | tr -d '"')
+info "os-release NAME=$NAME ID=$ID VARIANT_ID=$VARIANT_ID"
+[[ "$NAME"       == "$EXPECTED_OS_NAME"        ]] && ok "NAME == $EXPECTED_OS_NAME"               || bad "NAME is '$NAME', expected '$EXPECTED_OS_NAME'"
+[[ "$ID"         == "$EXPECTED_OS_ID"          ]] && ok "ID == $EXPECTED_OS_ID"                   || bad "ID is '$ID', expected '$EXPECTED_OS_ID'"
+[[ "$VARIANT_ID" == "$EXPECTED_OS_VARIANT_ID"  ]] && ok "VARIANT_ID == $EXPECTED_OS_VARIANT_ID"   || bad "VARIANT_ID is '$VARIANT_ID', expected '$EXPECTED_OS_VARIANT_ID'"
+
+# ---------------------------------------------------------------------------
+hdr "2. Kernel and boot integrity"
+# ---------------------------------------------------------------------------
+if (( ! IS_LIVE )); then
+  # Container: uname reports the host/runner kernel; check the image's
+  # shipped kernel tree instead.
+  KMOD_DIR=$(compgen -G "/usr/lib/modules/*${EXPECTED_KERNEL_PATTERN}*" | head -1 || true)
+  if [[ -n "$KMOD_DIR" && -f "$KMOD_DIR/vmlinuz" ]]; then
+    ok "image ships a '$EXPECTED_KERNEL_PATTERN' kernel tree ($KMOD_DIR)"
+  else
+    bad "no /usr/lib/modules/*${EXPECTED_KERNEL_PATTERN}* kernel tree in the image"
+  fi
+  info "running-kernel and bootc checks skipped (image context)"
+fi
+
+if (( IS_LIVE )); then
+KVER=$(uname -r)
+info "running kernel: $KVER"
+[[ "$KVER" =~ $EXPECTED_KERNEL_PATTERN ]] \
+  && ok "kernel matches '$EXPECTED_KERNEL_PATTERN' (CachyOS)" \
+  || bad "kernel doesn't match '$EXPECTED_KERNEL_PATTERN'"
+
+if command -v bootc >/dev/null; then
+  BOOTED_IMAGE=$("${SUDO[@]}" bootc status --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+img = data.get("status", {}).get("booted", {}).get("image", {}).get("image", {}).get("image", "")
+print(img)
+' 2>/dev/null)
+  info "booted image: $BOOTED_IMAGE"
+  if [[ -z "$BOOTED_IMAGE" ]]; then
+    # `bootc status` needs root and a real booted deployment. Run without
+    # privilege (or in an image/container context, e.g. ujust margine-doctor),
+    # it returns nothing — that's "can't determine", not "wrong image".
+    warn "couldn't read the booted image (need root + a booted deployment; e.g. 'sudo $0')"
+  elif [[ "$BOOTED_IMAGE" == ${EXPECTED_GHCR_IMAGE}* ]]; then
+    ok "booted from $EXPECTED_GHCR_IMAGE"
+  else
+    bad "booted from '$BOOTED_IMAGE' (expected $EXPECTED_GHCR_IMAGE*)"
+  fi
+else
+  warn "bootc command not found — cannot verify booted image"
+fi
+fi  # IS_LIVE (section 2 runtime half)
+
+# ---------------------------------------------------------------------------
+hdr "3. System users and groups (Bug 6 post-rebase guardrail)"
+# ---------------------------------------------------------------------------
+PASSWD_N=$(wc -l < /etc/passwd)
+GROUP_N=$(wc -l < /etc/group)
+info "/etc/passwd entries: $PASSWD_N  /etc/group entries: $GROUP_N"
+(( PASSWD_N >= 30 )) && ok "/etc/passwd has system users ($PASSWD_N >= 30)" \
+  || bad "/etc/passwd has only $PASSWD_N entries — Bug 6 regression"
+(( GROUP_N >= 50 )) && ok "/etc/group has system groups ($GROUP_N >= 50)" \
+  || bad "/etc/group has only $GROUP_N entries — Bug 6 regression"
+for g in audio disk kvm tty utmp tss dbus polkitd; do
+  getent group "$g" >/dev/null 2>&1 \
+    && ok "group '$g' resolves" \
+    || bad "group '$g' MISSING"
+done
+
+# Wheel-user group membership. Margine inherits bluefin-dx-groups.service
+# from Bluefin DX, which at boot should add every wheel-group member to
+# docker, incus-admin, and libvirt (one-shot). On the 2026-06-04 fresh
+# install daniel saw "[FAILED] Failed to start bluefin-dx-groups.service"
+# at boot — the service has Restart=on-failure RestartSec=30 so it usually
+# succeeds on retry, but this check verifies the END STATE (the user IS
+# in those groups) rather than trusting "service eventually succeeded".
+# A failure here means the user has to manually `sudo usermod -aG ...`
+# or stay sudo-bound for docker/incus/libvirt commands.
+if (( ! IS_LIVE )); then
+  info "wheel-membership check skipped (image context — bluefin-dx-groups applies it at boot)"
+elif WHEEL_USERS=$(getent group wheel 2>/dev/null | cut -d: -f4 | tr ',' ' '); [[ -z "${WHEEL_USERS// /}" ]]; then
+  warn "wheel group is empty — no admin users to check group membership for"
+else
+  info "wheel-group admin users: ${WHEEL_USERS// /, }"
+  for u in $WHEEL_USERS; do
+    # id -nG is robust (uses NSS, sees both /etc/group and /etc/passwd
+    # secondary groups, plus any LDAP/SSSD source on enterprise installs).
+    USER_GROUPS=" $(id -nG "$u" 2>/dev/null) "
+    for required in docker incus-admin libvirt; do
+      if [[ "$USER_GROUPS" == *" $required "* ]]; then
+        ok "user '$u' is in group '$required' (bluefin-dx-groups effect OK)"
+      else
+        bad "user '$u' is NOT in group '$required' — bluefin-dx-groups.service may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
+      fi
+    done
+  done
+fi
+
+# ---------------------------------------------------------------------------
+hdr "4. Boot security (Secure Boot, MOK)"
+# ---------------------------------------------------------------------------
+if (( ! IS_LIVE )); then
+  info "skipped (image context — no EFI variables in a container)"
+elif command -v mokutil >/dev/null; then
+  SB_STATE=$(mokutil --sb-state 2>&1 | head -1)
+  info "$SB_STATE"
+  if [[ "$SB_STATE" =~ enabled ]]; then
+    ok "Secure Boot is enabled"
+    if "${SUDO[@]}" mokutil --list-enrolled 2>/dev/null | grep -qiE 'margine|daniel'; then
+      ok "Margine MOK is enrolled"
+    else
+      bad "Margine MOK NOT enrolled — CachyOS kernel will not load on next boot if SB stays on"
+    fi
+  else
+    warn "Secure Boot is disabled — running unsigned kernel without verification"
+  fi
+else
+  warn "mokutil not present — cannot verify Secure Boot state"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "5. Margine branding assets"
+# ---------------------------------------------------------------------------
+[[ -f /usr/share/pixmaps/margine-logo.png ]] && ok "margine-logo.png present" \
+  || bad "/usr/share/pixmaps/margine-logo.png missing"
+[[ -f /usr/share/backgrounds/margine/margine.png ]] && ok "wallpaper present" \
+  || bad "/usr/share/backgrounds/margine/margine.png missing"
+[[ -d /usr/share/plymouth/themes/margine ]] && ok "Plymouth theme dir present" \
+  || bad "/usr/share/plymouth/themes/margine missing"
+[[ -f /usr/share/margine/ascii-logo.txt ]] && ok "fastfetch ASCII logo present" \
+  || warn "fastfetch ASCII logo missing (cosmetic)"
+
+# os-release(5) LOGO key — GNOME About panel reads it to render the
+# distro logo. Without LOGO=, GNOME falls back to the inherited Bluefin
+# asset → wrong logo. Fixed 2026-06-02 (commit f40d793 margine-image).
+LOGO_KEY=$(grep -E '^LOGO=' /etc/os-release | cut -d= -f2- | tr -d '"')
+[[ "$LOGO_KEY" == "margine-logo" ]] \
+  && ok "os-release LOGO=margine-logo (GNOME About will find /usr/share/pixmaps/margine-logo.png)" \
+  || bad "os-release LOGO='$LOGO_KEY' (expected 'margine-logo') — GNOME About will show wrong distro logo"
+
+# /etc/fastfetch/config.jsonc is the system-wide default config that
+# vanilla `fastfetch` (no --config flag) picks up. Without it,
+# fastfetch falls back to its built-in default → Fedora ASCII +
+# generic modules instead of Margine ASCII. Fixed 2026-06-02
+# (commit f40d793 margine-image). margine-fetch wrapper still works
+# regardless because it explicitly passes --config.
+[[ -f /etc/fastfetch/config.jsonc ]] \
+  && ok "/etc/fastfetch/config.jsonc present (vanilla fastfetch → Margine config)" \
+  || warn "/etc/fastfetch/config.jsonc missing — vanilla fastfetch will show Fedora default (cosmetic)"
+
+# Plymouth watermark dimensions — Margine ships at 480x120 (≈25% of a
+# 1080p viewport, consistent with Fedora/Bluefin stock).
+# Pre-2026-06-02 was 720x180 (too big, daniel flagged it).
+if command -v identify >/dev/null 2>&1 && [[ -f /usr/share/plymouth/themes/margine/watermark.png ]]; then
+  PLY_DIM=$(identify -format '%wx%h' /usr/share/plymouth/themes/margine/watermark.png 2>/dev/null)
+  [[ "$PLY_DIM" == "480x120" ]] \
+    && ok "Plymouth watermark = 480x120 (expected)" \
+    || warn "Plymouth watermark = '$PLY_DIM' (expected 480x120; cosmetic)"
+fi
+
+# start-here-symbolic.svg — Bluefin overrides this Adwaita icon with
+# a mascot glyph that bleeds through into gnome-initial-setup's
+# Language page header. Margine overlays a path-based symbolic 'm'
+# glyph. GTK4 symbolic icons reject embedded raster <image> payloads,
+# so validate the SVG shape rather than using a file-size heuristic.
+START_HERE=/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg
+if [[ -f "$START_HERE" ]]; then
+  if grep -Eiq '<image[[:space:]>]|data:image/' "$START_HERE"; then
+    bad "start-here-symbolic.svg embeds a raster image — GTK4 symbolic renderer will show a broken icon"
+  elif grep -Eiq '<(path|circle|rect)[[:space:]>]' "$START_HERE"; then
+    ok "start-here-symbolic.svg is path-based symbolic SVG"
+  else
+    bad "start-here-symbolic.svg has no path/circle/rect primitives"
+  fi
+fi
+
+if command -v plymouth-set-default-theme >/dev/null; then
+  CUR_PLY=$(plymouth-set-default-theme 2>/dev/null | tr -d '\n')
+  [[ "$CUR_PLY" == "$EXPECTED_PLYMOUTH_THEME" ]] \
+    && ok "Plymouth default theme = $EXPECTED_PLYMOUTH_THEME" \
+    || bad "Plymouth default theme is '$CUR_PLY', expected '$EXPECTED_PLYMOUTH_THEME'"
+fi
+
+# Bluefin leftover that we deliberately stripped at image build time
+# (commits f239ad5, d120e8d). If any of these come back, something
+# undid the strip step (rebase to an unfixed parent, manual install,
+# etc.) and the user will see Bluefin app menu items / wallpaper
+# carousel entries / mascots again.
+hdr "5b. Bluefin leftover absence (post-strip guardrail)"
+# Filesystem-level Bluefin leftover that build.sh's section 4.bis
+# strips. If any of these come back, something undid the strip step
+# (rebase to an unfixed parent, manual cp, RPM update reinstalling
+# what was rm'd).
+declare -A BLUEFIN_LEFTOVER_PATHS=(
+  # App-menu entries pointing at projectbluefin
+  ['app menu — discourse']='/usr/share/applications/discourse.desktop'
+  ['app menu — Bluefin docs']='/usr/share/applications/documentation.desktop'
+  ['app menu — Bluefin system update']='/usr/share/applications/system-update.desktop'
+  # Branding-only assets
+  ['Bluefin wallpapers']='/usr/share/backgrounds/bluefin'
+  ['Bluefin mascots']='/usr/share/ublue-os/bluefin-logos'
+  ['Bluefin docs']='/usr/share/doc/bluefin'
+  ['Bluefin Firefox config']='/usr/share/ublue-os/firefox-config'
+  ['Bluefin fastfetch config']='/usr/share/ublue-os/fastfetch.jsonc'
+  ['Bazaar carousel wallpapers']='/usr/etc/bazaar/01-bluefin-day.jxl'
+  # /usr/bin orphan helpers (not RPM-owned, dropped by image-build scripts).
+  # ublue-motd specifically spammed Bluefin tipline at every shell login.
+  ['ublue-motd binary']='/usr/bin/ublue-motd'
+  ['ublue-fastfetch binary']='/usr/bin/ublue-fastfetch'
+  ['ublue-bling binary']='/usr/bin/ublue-bling'
+  ['ublue-bling-fastfetch binary']='/usr/bin/ublue-bling-fastfetch'
+  ['ublue-privileged-setup binary']='/usr/bin/ublue-privileged-setup'
+  ['ublue-system-setup binary']='/usr/bin/ublue-system-setup'
+  ['ublue-user-setup binary']='/usr/bin/ublue-user-setup'
+  # NOT listed: /usr/bin/bluefin-dx-groups — deliberately KEPT since
+  # 2026-06-04 (margine-image 50-branding/install.sh): the inherited
+  # bluefin-dx-groups.service calls it at boot to put wheel users into
+  # docker/incus-admin/libvirt (section 3 checks that effect). Listing
+  # it here made every margine system false-FAIL section 5b for 8 days.
+  # /etc/profile.d/ shell init files (caused fastfetch / login errors
+  # in commit 40a6392's pre-state when ublue-fastfetch / ublue-motd
+  # were deleted but the alias / autorun files remained)
+  ['profile.d ublue-fastfetch aliases']='/etc/profile.d/ublue-fastfetch.sh'
+  ['profile.d ublue-motd autorun']='/etc/profile.d/ublue-motd.sh'
+  ['profile.d Bluefin aliases']='/etc/profile.d/91-bluefin-aliases.sh'
+  ['profile.d Bluefin starship']='/etc/profile.d/90-bluefin-starship.sh'
+  # /etc/dconf/db/distro.d/ overrides that hijack desktop defaults
+  ['dconf Bluefin app-folders']='/etc/dconf/db/distro.d/01-bluefin-folders'
+  ['dconf Bluefin keybindings']='/etc/dconf/db/distro.d/02-bluefin-keybindings'
+  ['dconf Bluefin Ptyxis palette']='/etc/dconf/db/distro.d/03-bluefin-ptyxis-palette'
+  ['dconf Bluefin logomenu config']='/etc/dconf/db/distro.d/04-bluefin-logomenu-extension'
+  ['dconf Bluefin searchlight config']='/etc/dconf/db/distro.d/05-bluefin-searchlight-extension'
+  ['dconf Bluefin locks']='/etc/dconf/db/distro.d/locks/01-bluefin-locked-settings'
+)
+for label in "${!BLUEFIN_LEFTOVER_PATHS[@]}"; do
+  p=${BLUEFIN_LEFTOVER_PATHS[$label]}
+  if [[ -e "$p" ]]; then
+    bad "$label still present at $p (strip step regression)"
+  else
+    ok "$label removed ($p absent)"
+  fi
+done
+
+# Behavioural checks — file presence isn't enough, the runtime behaviour
+# has to match too. Catches the case where a file is correctly removed
+# but its effect (alias, autorun) lingers via shell init caches.
+echo
+info "Behavioural checks (alias state + login banner)"
+
+# Vanilla `fastfetch` (no flag) must not error out. The previous
+# regression was 'ublue-fastfetch: command not found' from the
+# alias in /etc/profile.d/ublue-fastfetch.sh. We test by running it
+# in a fresh login shell so /etc/profile.d/ is re-sourced.
+if FF=$(bash -lc 'fastfetch --pipe 2>&1 | head -5') && [[ -n "$FF" ]] && ! echo "$FF" | grep -qiE "command not found|comando non trovato"; then
+  ok "fastfetch runs cleanly (no leftover alias to deleted binary)"
+else
+  bad "fastfetch broken — alias likely still resolves to a removed ublue-fastfetch / ublue-motd"
+fi
+
+# The Margine logo PNG must exist where os-release's LOGO key
+# resolves it (i.e. /usr/share/pixmaps/<LOGO>.png).
+RESOLVED_LOGO="/usr/share/pixmaps/${LOGO_KEY:-margine-logo}.png"
+[[ -f "$RESOLVED_LOGO" ]] \
+  && ok "LOGO=$LOGO_KEY resolves to $RESOLVED_LOGO" \
+  || bad "$RESOLVED_LOGO missing — GNOME About panel will fall back to a generic logo"
+
+# Extension Manager (Margine's chosen GUI for GNOME Shell extensions).
+# Margine preinstalls com.mattjakeman.ExtensionManager via the flatpak
+# preinstall API (commit 517b520). On a fresh-rebased system this
+# triggers async at first user login; warn if absent rather than
+# bad-fail, since it may still be queued.
+if (( IS_LIVE )) && command -v flatpak >/dev/null 2>&1; then
+  if flatpak info com.mattjakeman.ExtensionManager >/dev/null 2>&1; then
+    ok "Extension Manager (com.mattjakeman.ExtensionManager) installed"
+  else
+    warn "Extension Manager not installed — flatpak preinstall may still be running, or the user removed it"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+hdr "6. GDM greeter overrides (Bug 7 guardrail)"
+# ---------------------------------------------------------------------------
+# Resolved wallpaper path is shared by sections 6 and 7 — compute it
+# outside the live-only gate so section 7 never sees it unset.
+exp_path="${EXPECTED_WALLPAPER#file://}"
+exp_real=$(readlink -f "$exp_path" 2>/dev/null || echo "$exp_path")
+if (( ! IS_LIVE )); then
+  info "skipped (image context — gsettings needs a dconf service; would read empty values and false-fail)"
+else
+GDM_LOGO=$(DCONF_PROFILE=gdm gsettings get org.gnome.login-screen logo 2>/dev/null | tr -d "'")
+GDM_BG=$(DCONF_PROFILE=gdm gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
+info "GDM logo: $GDM_LOGO"
+info "GDM bg:   $GDM_BG"
+[[ "$GDM_LOGO" == "$EXPECTED_GDM_LOGO" ]] \
+  && ok "GDM logo is empty (no logo rendered, by design)" \
+  || bad "GDM logo is '$GDM_LOGO' (expected '$EXPECTED_GDM_LOGO' = empty) — Bug 7 regression"
+
+# Compare resolved paths, not raw strings: the wallpaper compat
+# symlink (autumn-leaves.png -> margine.png) means the dconf path
+# may still say "autumn-leaves" but resolves to the new file. The
+# visual rendering is correct; only string-comparison was failing.
+gdm_bg_path="${GDM_BG#file://}"
+gdm_bg_real=$(readlink -f "$gdm_bg_path" 2>/dev/null || echo "$gdm_bg_path")
+if [[ "$gdm_bg_real" == "$exp_real" ]]; then
+  if [[ "$GDM_BG" == "$EXPECTED_WALLPAPER" ]]; then
+    ok "GDM background uses Margine wallpaper"
+  else
+    ok "GDM background resolves to Margine wallpaper via symlink (dconf still references the old path)"
+  fi
+else
+  bad "GDM background resolves to '$gdm_bg_real' (expected '$exp_real')"
+fi
+fi  # IS_LIVE (section 6)
+
+# ---------------------------------------------------------------------------
+hdr "7. GNOME Shell defaults (user session)"
+# ---------------------------------------------------------------------------
+# This needs the user's dconf, not root's. Skip if we are root (curl|sudo bash)
+# or in a build container (no session dconf at all).
+if (( ! IS_LIVE )); then
+  info "skipped (image context — no user session)"
+elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  CUR_EXTS=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null | tr -d "[](),'" | tr ' ' '\n' | grep . | sort)
+  EXP_EXTS=$(printf '%s\n' "${EXPECTED_EXTENSIONS[@]}" | sort)
+  MISSING=$(comm -23 <(echo "$EXP_EXTS") <(echo "$CUR_EXTS"))
+  EXTRA=$(comm -13   <(echo "$EXP_EXTS") <(echo "$CUR_EXTS"))
+  if [[ -z "$MISSING" && -z "$EXTRA" ]]; then
+    ok "enabled-extensions matches Margine canonical set"
+  else
+    [[ -n "$MISSING" ]] && bad "extensions MISSING: $(echo $MISSING)"
+    [[ -n "$EXTRA"   ]] && warn "extensions EXTRA (user-added?): $(echo $EXTRA)"
+  fi
+
+  # Per-extension schema visibility check. On the 2026-06-04 fresh
+  # install search-light was enabled in dconf but its gschema XML
+  # never made it into the compiled /usr/share/glib-2.0/schemas/
+  # gschemas.compiled — so `gsettings get
+  # org.gnome.shell.extensions.search-light shortcut-search`
+  # returned "Schema inesistente". Extension loads but keybindings
+  # have no effect. Check each Margine-enabled extension's gsettings
+  # schema is registered, when it's reasonable to expect one.
+  # blur-my-shell + search-light were REMOVED from the image (2026-06-16), so
+  # their schemas are intentionally absent — not listed here.
+  EXT_SCHEMA_MAP=(
+    "dash-to-dock@micxgx.gmail.com=org.gnome.shell.extensions.dash-to-dock"
+    "caffeine@patapon.info=org.gnome.shell.extensions.caffeine"
+    "o-tiling@oliwebd.github.com=org.gnome.shell.extensions.o-tiling"
+  )
+  REGISTERED_SCHEMAS=$(gsettings list-schemas 2>/dev/null)
+  for entry in "${EXT_SCHEMA_MAP[@]}"; do
+    uuid=${entry%%=*}
+    schema=${entry#*=}
+    if echo "$REGISTERED_SCHEMAS" | grep -qxF "$schema"; then
+      ok "schema $schema registered (extension $uuid configurable via gsettings)"
+    else
+      bad "schema $schema NOT registered — extension $uuid loads but its settings (keybindings, prefs) cannot be read/applied. Build-time glib-compile-schemas didn't pick it up."
+    fi
+  done
+
+  CUR_ACCENT=$(gsettings get org.gnome.desktop.interface accent-color 2>/dev/null | tr -d "'")
+  [[ "$CUR_ACCENT" == "yellow" ]] && ok "GNOME accent-color = yellow" \
+    || warn "accent-color is '$CUR_ACCENT' (expected 'yellow') — user may have customized"
+
+  CUR_BG=$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d "'")
+  cur_bg_real=$(readlink -f "${CUR_BG#file://}" 2>/dev/null || echo "${CUR_BG#file://}")
+  if [[ "$cur_bg_real" == "$exp_real" ]]; then
+    if [[ "$CUR_BG" == "$EXPECTED_WALLPAPER" ]]; then
+      ok "desktop wallpaper = Margine default"
+    else
+      ok "desktop wallpaper resolves to Margine via symlink (dconf still references old path)"
+    fi
+  else
+    warn "desktop wallpaper resolves to '$cur_bg_real' (expected '$exp_real'; user may have changed)"
+  fi
+
+  # 10 workspaces — Margine ships fixed (not dynamic) workspaces so the
+  # Hyprland-style SUPER+1..0 keybinds land on stable targets. Set by
+  # zz1-margine.gschema.override.
+  CUR_NW=$(gsettings get org.gnome.desktop.wm.preferences num-workspaces 2>/dev/null)
+  [[ "$CUR_NW" == "5" ]] \
+    && ok "num-workspaces = 5 (Margine fixed-workspaces layout — Daniel's standing preference)" \
+    || bad "num-workspaces = $CUR_NW (expected 5) — zz1-margine override missing or shadowed"
+
+  CUR_DYN=$(gsettings get org.gnome.mutter dynamic-workspaces 2>/dev/null)
+  [[ "$CUR_DYN" == "false" ]] \
+    && ok "dynamic-workspaces disabled (required for SUPER+N binds)" \
+    || bad "dynamic-workspaces = $CUR_DYN (expected false) — SUPER+1..0 binds will misbehave"
+else
+  warn "running as root — skipping GNOME session-level gsettings checks"
+fi
+
+# Margine-branded replacements for the 3 Bluefin app-menu entries we
+# stripped (system-update, documentation). Reasonable Margine should
+# offer its own versions in their place rather than leaving holes in
+# the app menu.
+declare -A MARGINE_DESKTOP_REPLACEMENTS=(
+  ['Margine System Update']='/usr/share/applications/margine-system-update.desktop'
+  ['Margine Documentation']='/usr/share/applications/margine-documentation.desktop'
+)
+for label in "${!MARGINE_DESKTOP_REPLACEMENTS[@]}"; do
+  p=${MARGINE_DESKTOP_REPLACEMENTS[$label]}
+  if [[ -f "$p" ]]; then
+    ok "$label present at $p"
+  else
+    warn "$label missing ($p) — stripped Bluefin entry has no Margine replacement in app menu"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+hdr "8. Default Flatpak applications (Bug 9 guardrail)"
+# ---------------------------------------------------------------------------
+[[ -f "$PREINSTALL_FILE" ]] \
+  && ok "preinstall file present: $PREINSTALL_FILE (${#EXPECTED_FLATPAKS[@]} apps declared)" \
+  || bad "preinstall file MISSING — Bug 9 regression (system-flatpaks.list is legacy)"
+if [[ -f "$PREINSTALL_FILE" ]] && (( ${#EXPECTED_FLATPAKS[@]} < 30 )); then
+  bad "preinstall file declares only ${#EXPECTED_FLATPAKS[@]} apps (expected >= 30) — generator regression"
+fi
+
+if (( ! IS_LIVE )); then
+  info "installed-state checks skipped (image context — Flatpaks install at first boot)"
+  INSTALLED=""
+else
+INSTALLED=$(flatpak list --system --columns=application 2>/dev/null | sort)
+MISSING_FP=""
+for app in "${EXPECTED_FLATPAKS[@]}"; do
+  if echo "$INSTALLED" | grep -qxF "$app"; then
+    ok "$app installed"
+  else
+    bad "$app NOT installed"
+    MISSING_FP="$MISSING_FP $app"
+  fi
+done
+fi  # IS_LIVE (section 8 installed-state half)
+
+# Kickstart-BAKE list cross-check. Apps in
+# /usr/share/margine/installer-flatpaks-base (and -gaming) are
+# supposed to be installed at Anaconda %post time. On the
+# 2026-06-04 fresh install all 22 BAKE apps were silently missing
+# (kickstart %post --nochroot ran but flatpak install probably
+# OOM'd in installer-env tmpfs). PR #N+1 added belt+suspenders
+# by duplicating BAKE entries in margine-defaults.preinstall so
+# flatpak-preinstall.service catches them at first boot. This
+# check independently verifies each BAKE app is in fact installed.
+# MARGINE_VALIDATE_CONTEXT switches the BAKE check between two modes:
+#   default ("install"): real install from ISO. BAKE apps must be present
+#                        at first boot; missing app = FAIL.
+#   "smoke-boot":        running on a qcow2 produced by bootc-image-builder
+#                        (no Anaconda %post bake, no kickstart rsync of
+#                        /var/lib/flatpak). BAKE apps physically cannot
+#                        be present; report INFO, do not FAIL.
+# Audit §8 rec #19 prep — validate-margine-system can now be invoked
+# from inside smoke-boot.yml without false-positives.
+case "$CONTEXT" in
+  smoke-boot|qcow2|non-iso|image)
+    info "BAKE check skipped (MARGINE_VALIDATE_CONTEXT=${CONTEXT})"
+    info "  qcow2/container builds have no Anaconda %post; BAKE app presence is not validatable here."
+    ;;
+  *)
+    # Gaming variant was retired 2026-06-06 — only the -base list now.
+    bake_file=/usr/share/margine/installer-flatpaks-base
+    if [[ -f "$bake_file" ]]; then
+      info "BAKE list: $bake_file"
+      while IFS= read -r line; do
+        app=$(echo "$line" | sed -E 's/#.*$//' | xargs)
+        [[ -z "$app" ]] && continue
+        if echo "$INSTALLED" | grep -qxF "$app"; then
+          ok "BAKE app installed: $app"
+        else
+          bad "BAKE app NOT installed: $app — kickstart %post bake silently failed AND preinstall fallback hasn't caught it yet"
+        fi
+      done < "$bake_file"
+    fi
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+hdr "9. Margine helpers and ujust recipes"
+# ---------------------------------------------------------------------------
+for bin in "${EXPECTED_MARGINE_HELPERS[@]}"; do
+  if [[ -x "/usr/bin/$bin" ]]; then
+    ok "/usr/bin/$bin present"
+  else
+    warn "/usr/bin/$bin missing (helper may not be required, but spec advertises it)"
+  fi
+done
+
+if command -v ujust >/dev/null; then
+  UJUST_MARGINE=$(ujust --list 2>/dev/null | grep -c '^[[:space:]]*margine-' || true)
+  if (( UJUST_MARGINE > 0 )); then
+    ok "ujust has $UJUST_MARGINE margine-* recipe(s)"
+  else
+    warn "ujust has no margine-* recipes — check /usr/share/ublue-os/just/60-custom.just (must use this name; 00-entry.just only \`import?\`s 60-custom.just)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9a. GNOME extensions: filesystem presence (A.3 guardrail)"
+# ---------------------------------------------------------------------------
+# Section 7 verified gsettings sees enabled-extensions matching the
+# expected set, and that 5 extensions' schemas are registered. That
+# is necessary but not sufficient: the extension code itself has to
+# live on disk under /usr/share/gnome-shell/extensions/<uuid>/ for
+# GNOME Shell to actually load it. If the UUID is in
+# enabled-extensions but the dir is missing, the extension silently
+# does nothing (GNOME 47/48 logs a warning but never surfaces it).
+# This check runs without gsettings (system-wide), so it works under
+# root and under curl|bash.
+EXT_DIR_BASE=/usr/share/gnome-shell/extensions
+if [[ -d "$EXT_DIR_BASE" ]]; then
+  for uuid in "${EXPECTED_EXTENSIONS[@]}"; do
+    if [[ -d "$EXT_DIR_BASE/$uuid" ]]; then
+      ok "extension $uuid installed at $EXT_DIR_BASE/$uuid"
+    else
+      bad "extension $uuid LISTED IN enabled-extensions BUT NOT INSTALLED at $EXT_DIR_BASE/$uuid — GNOME Shell will silently skip it"
+    fi
+  done
+else
+  bad "$EXT_DIR_BASE does not exist — no system-wide GNOME extensions on this image"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9b1. First-boot autostart wiring (A.4 guardrail)"
+# ---------------------------------------------------------------------------
+# Two .desktop files in /etc/xdg/autostart/ drive the Margine first-boot
+# user experience:
+#   - margine-first-boot.desktop          → ujust margine-bootstrap unattended
+#   - margine-first-boot-status.desktop   → /usr/libexec/margine-first-boot-status
+#                                            (posts the "background Flatpak
+#                                            installation in progress" toast)
+# Until 2026-06-06 the second one was missing, so the libexec script
+# was shipped but never invoked — daniel saw no notification on first
+# login while flatpak-preinstall.service was downloading GIMP/Inkscape/
+# darktable/OBS/Reaper in the background. Add a guardrail for both.
+for entry in margine-first-boot.desktop margine-first-boot-status.desktop; do
+  if [[ -f /etc/xdg/autostart/$entry ]]; then
+    ok "/etc/xdg/autostart/$entry present"
+  else
+    bad "/etc/xdg/autostart/$entry MISSING — autostart chain broken"
+  fi
+done
+if [[ -x /usr/libexec/margine-first-boot-status ]]; then
+  ok "/usr/libexec/margine-first-boot-status executable"
+else
+  bad "/usr/libexec/margine-first-boot-status missing or not executable — status notifier cannot run"
+fi
+
+# (Former section 9b2 — org.gnome.shell.app-grid icon-size coherence —
+# removed 2026-06-12: that schema does not exist in GNOME 47/48, so the
+# probe emitted a permanent WARN on every healthy system. CI dropped
+# its twin check earlier with the same rationale.)
+
+# ---------------------------------------------------------------------------
+hdr "9b. Bootstrap effects on user state (the configure-* chain ran)"
+# ---------------------------------------------------------------------------
+# Bootstrap orchestration (Bug 11): without these, the distro ships
+# with the right specs but the user session never applied them.
+if (( ! IS_LIVE )); then
+  info "skipped (image context — no user accounts or session state)"
+elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  # Marker dropped by `ujust margine-bootstrap` (autostart or manual)
+  if [[ -f "$HOME/.config/margine/bootstrapped" ]]; then
+    ok "user bootstrap marker present ($(cat "$HOME/.config/margine/bootstrapped" 2>/dev/null))"
+  else
+    warn "no ~/.config/margine/bootstrapped marker — bootstrap never ran on this account"
+  fi
+
+  # Home layout (Margine-specific directories created)
+  for d in data dev scratch; do
+    # "~/" below is display text in the log line, not a path to expand;
+    # the test itself uses $HOME.
+    # shellcheck disable=SC2088
+    [[ -d "$HOME/$d" ]] && ok "~/$d exists" || bad "~/$d missing (configure-home-layout didn't run)"
+  done
+
+  # Dark theme — Margine canonical default
+  CUR_SCHEME=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | tr -d "'")
+  [[ "$CUR_SCHEME" == "prefer-dark" ]] \
+    && ok "color-scheme = prefer-dark" \
+    || bad "color-scheme is '$CUR_SCHEME' (expected 'prefer-dark') — configure-gnome-appearance didn't run"
+
+  # o-tiling extension — system-wide since 2026-06-03 PR A (was
+  # ~/.local/share/gnome-shell/extensions/ before, but per-user
+  # install caused shadow/race bugs documented in margine-image
+  # PR #20). Check system-wide first, then fall back to user-dir.
+  OT_SYS="/usr/share/gnome-shell/extensions/o-tiling@oliwebd.github.com"
+  OT_USER="$HOME/.local/share/gnome-shell/extensions/o-tiling@oliwebd.github.com"
+  if [[ -d "$OT_SYS" ]]; then
+    ok "o-tiling installed system-wide (PR A pattern)"
+    # SHADOW (the recurring "tiling toggle doesn't work" root cause,
+    # 2026-06-16): a user-level copy shadows the system one — GNOME loads
+    # ~/.local and refuses /usr/share ("...will not be loaded"), so every
+    # system-side fix (version bumps, schema registration, the session-only
+    # toggle patch) is invisible. It also re-appears nowhere now that o-tiling
+    # is removed_user_install, so once cleared it stays cleared.
+    if [[ -d "$OT_USER" ]]; then
+      bad "o-tiling USER SHADOW present at ~/.local — it masks the system copy and breaks the tiling toggle. Remove with: rm -rf '$OT_USER' (then log out/in). It will NOT come back."
+    fi
+    # Session-only toggle marker (margine-image PR #165): the toggle must not
+    # persist tile-by-default into the user dconf layer. Assert it on the copy
+    # GNOME actually loads (system, now that the shadow is gone).
+    if grep -q 'margine: session-only toggle' "$OT_SYS/extension.js" 2>/dev/null; then
+      ok "o-tiling session-only toggle patch present (no dconf foot-gun)"
+    else
+      warn "o-tiling session-only toggle patch NOT in the loaded extension.js — pre-#165 image, or a copy that missed the patch"
+    fi
+  elif [[ -d "$OT_USER" ]]; then
+    warn "o-tiling installed under ~/.local (pre-PR-A legacy location)"
+  else
+    bad "o-tiling NOT installed — system-wide install at OCI build time failed"
+  fi
+  # Stale Tiling Shell warning (was Margine default until 2026-06-02).
+  if compgen -G "$HOME/.local/share/gnome-shell/extensions/tilingshell@*" >/dev/null; then
+    warn "Tiling Shell present under ~/.local — stale (removed from Margine defaults 2026-06-02). Remove with: rm -rf ~/.local/share/gnome-shell/extensions/tilingshell@ferrarodomenico.com"
+  fi
+
+  # App folders configured (Margine canonical set vs empty/Bluefin default).
+  # 2026-06-07: split the previous "System & Utilities" folder into
+  # four semantically distinct folders — Apps / Dev / System / Utilities.
+  # Still accept the older Italian names (Grafica / Foto / Sistema) and
+  # the older single-System name until all in-the-wild deployments have
+  # been re-bootstrapped past the rename.
+  CUR_FOLDERS=$(gsettings get org.gnome.desktop.app-folders folder-children 2>/dev/null)
+  if echo "$CUR_FOLDERS" | grep -qE "'(Office|Graphics|Photography|Audio|Video|Apps|Dev|System|Utilities|Grafica|Foto|Sistema)'"; then
+    ok "app folders configured by Margine (Office/Graphics/Photography/Audio/Video/Apps/Dev/System/Utilities)"
+  else
+    warn "app folders not Margine-configured: $CUR_FOLDERS (configure-gnome-app-folders may have failed)"
+  fi
+
+  # Nautilus bookmarks under ~/.config/gtk-3.0/bookmarks
+  if [[ -f "$HOME/.config/gtk-3.0/bookmarks" ]] && grep -q "$HOME/data" "$HOME/.config/gtk-3.0/bookmarks"; then
+    ok "Nautilus bookmarks include Margine ~/data"
+  else
+    warn "Nautilus bookmarks don't reference ~/data (configure-home-layout incomplete?)"
+  fi
+else
+  warn "running as root — skipping user-state bootstrap effect checks"
+fi
+
+# ---------------------------------------------------------------------------
+hdr "9c. Gaming layer (opt-in — checks only run if the layer was installed)"
+# ---------------------------------------------------------------------------
+# Margine gaming layer = `ujust margine-gaming` (Margine Gaming OCI
+# variant + ISO retired 2026-06-06 in favour of this single opt-in
+# path). Installs ~2 layered RPMs (gamescope + vkBasalt, the only
+# strictly gaming-only ones — everything else like mangohud/goverlay/
+# steam-devices/gamemode is already in base) + 7 Flatpaks. Detection
+# via "any gaming-specific RPM layered on top of base" — the heuristic
+# is reliable now that none of those RPMs ship in base.
+# Two installation paths exist (60-custom.just):
+#   ujust margine-gaming         → RPMs gamescope+vkBasalt, 7 Flatpaks
+#                                  (incl. Steam/Lutris/RetroArch as Flatpak)
+#   ujust margine-gaming-native  → RPMs steam+lutris+retroarch+gamescope+
+#                                  vkBasalt, 4 Flatpaks (the launchers
+#                                  without an official RPM)
+# Until 2026-06-12 only the Flatpak path was modeled, so native users got
+# 3 false FAILs and partial states got 8 misleading ones.
+GAMING_CORE_RPMS=(gamescope vkBasalt)
+GAMING_FLATPAKS_COMMON=(
+  com.heroicgameslauncher.hgl
+  com.usebottles.bottles
+  com.github.Matoking.protontricks
+  com.vysp3r.ProtonPlus
+)
+GAMING_FLATPAKS_FPPATH=(
+  com.valvesoftware.Steam
+  net.lutris.Lutris
+  org.libretro.RetroArch
+)
+
+core_present=0
+for r in "${GAMING_CORE_RPMS[@]}"; do
+  rpm -q "$r" >/dev/null 2>&1 && core_present=$((core_present + 1))
+done
+
+check_gaming_rpm() {
+  rpm -q "$1" >/dev/null 2>&1 \
+    && ok "rpm-layered: $1" \
+    || bad "rpm-layered $1 MISSING — gaming-layer install was partial; re-run '$2'"
+}
+check_gaming_flatpak() {
+  flatpak info --system "$1" >/dev/null 2>&1 \
+    && ok "flatpak: $1" \
+    || bad "flatpak $1 MISSING — gaming-layer install was partial; re-run '$2'"
+}
+
+if rpm -q steam >/dev/null 2>&1; then
+  # steam as an RPM only arrives via the native recipe.
+  info "Gaming layer detected (NATIVE variant) — validating native set"
+  for r in steam lutris retroarch "${GAMING_CORE_RPMS[@]}"; do
+    check_gaming_rpm "$r" "ujust margine-gaming-native"
+  done
+  for fp in "${GAMING_FLATPAKS_COMMON[@]}"; do
+    check_gaming_flatpak "$fp" "ujust margine-gaming-native"
+  done
+elif flatpak info --system com.valvesoftware.Steam >/dev/null 2>&1 || (( core_present == 2 )); then
+  info "Gaming layer detected (Flatpak variant) — validating full set"
+  for r in "${GAMING_CORE_RPMS[@]}"; do
+    check_gaming_rpm "$r" "ujust margine-gaming"
+  done
+  for fp in "${GAMING_FLATPAKS_FPPATH[@]}" "${GAMING_FLATPAKS_COMMON[@]}"; do
+    check_gaming_flatpak "$fp" "ujust margine-gaming"
+  done
+elif (( core_present == 1 )); then
+  warn "gaming remnants: only one of gamescope/vkBasalt is layered — neither layer is complete. Converge with 'ujust margine-gaming' or clean up with 'ujust margine-gaming-remove'"
+else
+  info "Gaming layer not installed — skipping (run 'ujust margine-gaming' to install)"
+fi
+
+if rpm -q steam >/dev/null 2>&1 || flatpak info --system com.valvesoftware.Steam >/dev/null 2>&1 || (( core_present == 2 )); then
+  # Behavioural: the host binaries layered above must actually be on PATH
+  # after reboot. If they exist on disk but aren't on $PATH the layer
+  # hasn't been booted into yet.
+  for bin in gamescope mangohud gamemoded goverlay; do
+    if command -v "$bin" >/dev/null 2>&1; then
+      ok "$bin on PATH"
+    else
+      warn "$bin not on PATH — did you reboot after 'ujust margine-gaming'?"
+    fi
+  done
+  # tuned daemon present + a profile is active
+  if systemctl is-active tuned >/dev/null 2>&1; then
+    TUNED_PROFILE=$(tuned-adm active 2>/dev/null | awk -F': ' '/Current active profile/ {print $2}')
+    ok "tuned active (profile: ${TUNED_PROFILE:-unknown})"
+  else
+    warn "tuned.service not active — gaming layer installed but service disabled"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+hdr "10. Failed services (regression detector)"
+# ---------------------------------------------------------------------------
+if (( ! IS_LIVE )); then
+  info "skipped (image context — no PID-1 systemd; an empty list here would be a vacuous pass)"
+  FAILED_NOW=""
+elif FAILED_NOW=$("${SUDO[@]}" systemctl list-units --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -F . | grep -v '^$' || true); [[ -z "$FAILED_NOW" ]]; then
+  ok "no failed system units"
+else
+  for unit in $FAILED_NOW; do
+    if printf '%s\n' "${EXPECTED_FAILED_SERVICES[@]}" | grep -qxF "$unit"; then
+      ok "$unit failed (known noise, Bug 8 — ignored)"
+    else
+      bad "$unit failed (unexpected — investigate)"
+    fi
+  done
+fi
+
+# ---------------------------------------------------------------------------
+hdr "11. Verdict"
+# ---------------------------------------------------------------------------
+if (( FAIL == 0 )); then
+  printf "\n\033[1;32m✓✓✓ Margine acceptance test PASSED (%d warnings).\033[0m\n" "$WARN"
+  exit 0
+else
+  printf "\n\033[1;31m✗✗✗ %d CHECK(S) FAILED (%d warnings).\033[0m\n" "$FAIL" "$WARN"
+  printf "    Investigate the FAIL lines above. If a fix exists in the\n"
+  printf "    margine-image build, try 'sudo bootc upgrade && systemctl reboot'\n"
+  printf "    to pull a newer image and re-validate.\n"
+  exit 1
+fi

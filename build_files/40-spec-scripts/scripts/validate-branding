@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# margine-validate-branding — assert the distro logo actually resolves
+# everywhere it is consumed. Born from the 2026-06-11/12 debugging
+# session: the welcome dialogs hardcode the icon NAME fedora-logo-icon
+# (anaconda-live's fedora-welcome, gnome-initial-setup maps ID=fedora
+# to it) and gnome-control-center hardcodes the two pixmap PATHS — a
+# build can pass every file-exists check and still render broken
+# placeholders if a name stops resolving or the variants regress.
+set -euo pipefail
+
+fail=0
+ok()  { printf '  ok: %s\n' "$*"; }
+err() { printf 'FAIL: %s\n' "$*"; fail=1; }
+
+# 1. os-release LOGO
+LOGO="$(. /etc/os-release; echo "${LOGO:-}")"
+if [[ "$LOGO" == "margine-logo" ]]; then ok "os-release LOGO=margine-logo"
+else err "os-release LOGO='$LOGO' (expected margine-logo)"; fi
+
+# 2a. Icon files on disk — display-independent, runs everywhere
+#     (build container, headless smoke probe, live session).
+for n in margine-logo fedora-logo-icon; do
+  if compgen -G "/usr/share/icons/hicolor/*/apps/${n}.*" >/dev/null \
+     || [[ -f "/usr/share/pixmaps/${n}.png" || -f "/usr/share/pixmaps/${n}.svg" ]]; then
+    ok "icon file present: $n"
+  else
+    err "icon file MISSING: $n (no hicolor or pixmaps candidate)"
+  fi
+done
+
+# 2b. Icon-theme resolution — the same GTK4 lookup the welcome dialogs
+#     and gnome-initial-setup use. Gtk.init() aborts when there is no
+#     display (build container, root systemd unit in smoke-boot), so a
+#     non-zero gjs exit means "cannot probe here", NOT "icon broken" —
+#     skip instead of emitting a false FAIL (2026-06-12, found when the
+#     Layer C GUI probe ran this as a displayless root unit).
+if command -v gjs >/dev/null 2>&1; then
+  if RES="$(gjs -c 'imports.gi.versions.Gtk="4.0"; const {Gtk}=imports.gi; Gtk.init(); const t=new Gtk.IconTheme(); t.set_search_path(["/usr/share/icons","/usr/share/pixmaps"]); t.set_theme_name("hicolor"); for (const n of ["margine-logo","fedora-logo-icon"]) print(n+"="+t.has_icon(n));' 2>/dev/null)"; then
+    for n in margine-logo fedora-logo-icon; do
+      if grep -q "${n}=true" <<<"$RES"; then ok "icon resolves: $n"
+      else err "icon does NOT resolve: $n (welcome dialogs would show a broken placeholder)"; fi
+    done
+  else
+    echo "  skip: no display — GTK icon lookup not probed (file presence checked above)"
+  fi
+else
+  echo "  skip: gjs unavailable, icon lookup not probed"
+fi
+
+# 3. About-panel pixmaps: present, logical size sane (g-c-c renders
+#    intrinsic px as logical px — >320 wide means a giant logo), and
+#    the dark/light variants must actually differ.
+python3 - <<'PY' || fail=1
+import struct, sys
+def png_size(path):
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a png")
+    w, h = struct.unpack(">II", head[16:24])
+    return w, h
+bad = False
+paths = ["/usr/share/pixmaps/fedora_logo_med.png",
+         "/usr/share/pixmaps/fedora_whitelogo_med.png"]
+for p in paths:
+    try:
+        w, h = png_size(p)
+        if w > 320:
+            print(f"FAIL: {p} is {w}x{h} px — renders {w}px wide LOGICAL in About")
+            bad = True
+        else:
+            print(f"  ok: {p} {w}x{h}")
+    except Exception as e:
+        print(f"FAIL: {p}: {e}")
+        bad = True
+try:
+    if open(paths[0], "rb").read() == open(paths[1], "rb").read():
+        print("FAIL: About wordmark dark/light variants are byte-identical")
+        bad = True
+    else:
+        print("  ok: wordmark variants differ")
+except Exception:
+    pass
+sys.exit(1 if bad else 0)
+PY
+
+# 4. Plymouth theme: the three files are present and the (script-based) theme
+#    passes a cheap sanity gate. There is NO offline Plymouth-Script linter, so
+#    a balance + callback-presence check is the only build-time guard against a
+#    theme edit silently breaking the WHOLE boot splash — it otherwise surfaces
+#    only at boot, after promotion to :stable.
+PTHEME=/usr/share/plymouth/themes/margine
+for f in margine.plymouth margine.script watermark.png; do
+  if [[ -f "$PTHEME/$f" ]]; then ok "plymouth theme file: $f"
+  else err "plymouth theme file MISSING: $f"; fi
+done
+if [[ -f "$PTHEME/margine.script" ]]; then
+  python3 - "$PTHEME/margine.script" <<'PY' || fail=1
+import sys, re
+s = open(sys.argv[1]).read()
+code = re.sub(r'//.*', '', s)          # strip line comments
+code = re.sub(r'"[^"]*"', '""', code)  # strip string literals
+bad = False
+for o, c, name in (('{', '}', 'braces'), ('(', ')', 'parens'), ('[', ']', 'brackets')):
+    if code.count(o) != code.count(c):
+        print(f"FAIL: margine.script unbalanced {name}: {code.count(o)} open vs {code.count(c)} close")
+        bad = True
+for cb in ("Plymouth.SetRefreshFunction", "Plymouth.SetDisplayPasswordFunction"):
+    if cb not in s:
+        print(f"FAIL: margine.script no longer registers {cb}")
+        bad = True
+if not bad:
+    print("  ok: margine.script balanced + registers refresh/password callbacks")
+sys.exit(1 if bad else 0)
+PY
+fi
+
+if [[ "$fail" -ne 0 ]]; then
+  echo "margine-validate-branding: FAIL"
+  exit 1
+fi
+echo "margine-validate-branding: PASS"

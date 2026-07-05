@@ -1,0 +1,145 @@
+<div align="center">
+
+<img src="assets/branding/margine-logo-wide.png" alt="Margine" width="420">
+
+### The *what* of Margine.
+
+Bomb-proof by design, fast on the CachyOS kernel, with a GNOME re-wired for
+tiling, every codec and driver already in place, and a curated set of creator
+tools that make it ready for work from minute one. This repository holds the
+**declarative spec, configuration helpers, and system-state validators** for
+the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
+
+<p>
+  <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+  <a href="https://margine.the-empty.place/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
+</p>
+
+> **Curious how all of this is put together?** The [atomic distro
+> handbook](https://margine.the-empty.place/handbook) — authored in this
+> repo as [docs/atomic-distro-handbook.md](docs/atomic-distro-handbook.md) —
+> documents the whole build of Margine, from the bootc model to kernel
+> signing, ISOs, CI and updates, and doubles as a generic guide to building
+> your own atomic distribution.
+
+[**🌐 Website**](https://margine.the-empty.place/) ·
+[**📥 Install Margine**](https://margine.the-empty.place/#install) ·
+[**📖 Documentation**](docs/README.md) ·
+[**📋 Roadmap**](docs/roadmap.md) ·
+[**🛠 Build pipeline**](https://github.com/daniel-g-carrasco/margine-image)
+
+<br>
+
+⚡ **Snappier under load** — Margine's signed CachyOS/BORE kernel does **up to ~1.8× the scheduling throughput** and **40–55% lower median / average latency** than the stock Fedora kernel, measured on the **same laptop**.
+
+<img src="assets/perf-kernel.svg" alt="Margine CachyOS/BORE kernel vs stock Fedora kernel — scheduler benchmark chart" width="92%">
+
+<sub>Median of 4 runs · Framework Laptop 13 (Ryzen 5 7640U) · governor performance · scx off · <a href="https://github.com/daniel-g-carrasco/margine-image/tree/main/tools/bench/results/2026-06-16">how this was measured →</a></sub>
+
+</div>
+
+---
+
+> **Looking for the distro itself?** Go to
+> [margine-image](https://github.com/daniel-g-carrasco/margine-image)
+> — that repo's README has *what Margine is*, screenshots, the current
+> install recommendation ([fresh install from the live ISO, Titanoboa
+> since 2026-06-11](https://margine.the-empty.place/docs/install-status)), the
+> one-command gaming layer, and the optional AI workflow. This repo is
+> the *source code* of everything the distro applies to the system.
+
+## What this repo is for
+
+Margine isn't "a folder of dotfiles copied by hand". It's a **distribution
+built by a CI pipeline**, and that pipeline (in
+[`margine-image`](https://github.com/daniel-g-carrasco/margine-image))
+needs to know:
+
+- **What** we want on the system (which extensions, apps, keybinds,
+  app folders, default applications, home layout, opt-in gaming and AI
+  workflows, …)
+- **How** to apply it (idempotent scripts that read the spec)
+- **How to verify it** (read-only validators that report "OK" or "drift")
+
+This repo is exactly that "what + how + verify".
+
+| Directory | Contents |
+| --- | --- |
+| `declarations/` | The **declarative spec** (`margine-atomic.yaml`). Single source of truth for GNOME extensions, app folders, keybinds, gsettings, preinstalled apps, home layout, and opt-in gaming / AI workflows. |
+| `scripts/configure-*` | Idempotent helpers that read the spec and apply. Default to dry-run; pass `--apply` to act. Become `/usr/bin/margine-configure-*` in the image. |
+| `scripts/validate-*` | Read-only validators (atomic layout, CachyOS kernel, hardware/media stack, gaming runtime, end-to-end acceptance test). Become `/usr/bin/margine-validate-*`. |
+| `scripts/install-user-extensions` | Installs the non-RPM GNOME extensions (o-tiling, Hide Cursor, Search Light) under `~/.local/share/gnome-shell/extensions/`. Also prunes anything listed under `removed_user_install` in the spec (Tiling Shell, dropped 2026-06-02 in favour of o-tiling). |
+| `docs/` | Architecture, ADRs, install lab, lessons-learned, validation runbook, roadmap. |
+| `assets/branding/` | Logos, wallpaper, Plymouth theme. |
+| `files/margine-fetch/` | `margine-fetch` script + fastfetch config + ASCII logo. |
+
+## Quick check on a deployed system
+
+```sh
+margine-validate-atomic-layout          # ostree, mounts, Secure Boot, TPM2
+margine-validate-cachyos-kernel         # version, signature, MOK
+margine-validate-hardware-media-stack   # Mesa/Vulkan/VA-API/PipeWire
+margine-validate-gaming-runtime         # gaming runtime
+margine-collect-diagnostics             # snapshot for troubleshooting
+```
+
+Plus there's `scripts/validate-margine-system` (end-to-end acceptance
+test with a single PASS/FAIL verdict line) used both in CI and after a
+manual `bootc upgrade`. It currently runs **11 sections** of checks
+including (post-2026-06-05):
+
+- **system users + groups** (Bug 6 post-rebase guardrail) + per-wheel-
+  user check that they're in `docker` / `incus-admin` / `libvirt`
+  (catches `bluefin-dx-groups.service` failures at boot)
+- **gnome extension schemas registered** in `/usr/share/glib-2.0/
+  schemas/gschemas.compiled` for each Margine-shipped extension
+  (search-light, blur-my-shell, dash-to-dock, caffeine, o-tiling) —
+  catches the case where the extension loads but its preferences /
+  keybindings are inert because the schema XML was only compiled in
+  the per-extension dir
+- **BAKE Flatpak presence** — cross-checks every app listed in
+  `/usr/share/margine/installer-flatpaks-base` (the `-gaming` list
+  was retired 2026-06-06 with the gaming ISO variant)
+  against `flatpak list`. Catches the case where the kickstart
+  install-time BAKE silently fails AND the
+  `flatpak-preinstall.service` belt+suspenders fallback hasn't yet
+  caught up
+
+Run it via:
+```sh
+curl -fsSL https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic/main/scripts/validate-margine-system | bash
+```
+
+## Documentation
+
+Full index: [**docs/README.md**](docs/README.md). To get started:
+
+| Doc | What it covers |
+| --- | --- |
+| [00-goals](docs/00-goals.md) | Goals, non-goals, working hypotheses |
+| [01-architecture](docs/01-architecture.md) | bootc / composefs / rpm-ostree model |
+| [04-validation](docs/04-validation.md) | Read-only validators + acceptance test |
+| [09-declarative-model](docs/09-declarative-model.md) | How the spec drives the helpers |
+| [18-observability](docs/18-observability.md) | ntfy + staleness check + post-upgrade notify |
+| [19-iso-distribution](docs/19-iso-distribution.md) | ISO pipeline via Internet Archive |
+| [roadmap](docs/roadmap.md) | Current state of the project phases |
+| [adr/](docs/adr) | Architectural decisions |
+| [lessons-learned/](docs/lessons-learned) | Operational postmortems |
+
+## Contributing
+
+To change *what* Margine does = edit
+[`declarations/margine-atomic.yaml`](declarations/margine-atomic.yaml).
+PR welcome. On every run of the build pipeline (in `margine-image`),
+the new versions of spec and helpers are picked up automatically.
+
+To change *how* it does it = edit a script in `scripts/`. All are
+Python or shell, all idempotent, all with `--apply` to distinguish
+dry-run from actual change.
+
+To change *how it's verified* = add a check to one of the `validate-*`,
+or a new validator if we're covering new surface area.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

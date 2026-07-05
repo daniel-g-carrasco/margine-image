@@ -57,15 +57,6 @@ RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
     env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" /ctx/custom-kernel/install.sh
 
 # ----- Margine modifications (GNOME settings, branding, flatpaks, etc.) -----
-# MARGINE_REF pins every spec-repo fetch (scripts, declarations,
-# branding) done by build.sh and friends. CI passes the commit SHA it
-# resolves at build start (build.yml `specref` step), so the image can
-# only fetch the exact spec state already stamped in its OCI label —
-# closing the ~25-min TOCTOU window a moving `main` had (review P2.1).
-# Local builds keep the `main` default. Declared AFTER the kernel layer
-# on purpose: the kernel RUN doesn't fetch from the spec repo, and an
-# earlier ARG would invalidate its 25-min cache on every spec bump.
-ARG MARGINE_REF=main
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \

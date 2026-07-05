@@ -75,7 +75,7 @@ done
 
 # Known repo-relative paths to the HiDPI artifacts (single source of truth).
 GFXMODE_REL="build_files/system_files/usr/lib/bootupd/grub2-static/configs.d/05_margine-gfxmode.cfg"
-PLYMOUTH_SCRIPT_REL=""   # lives in the SEPARATE margine-fedora-atomic (site) repo
+PLYMOUTH_SCRIPT_REL="build_files/50-branding/assets/plymouth/margine.script"  # now vendored in-repo (was the separate margine-fedora-atomic site repo)
 GNOME_OVERRIDE_REL="build_files/30-gnome-defaults/install.sh"
 DCONF_DIR_REL="build_files/30-gnome-defaults/dconf"
 
@@ -244,17 +244,13 @@ if [[ -r "$LIVE_PLYMOUTH_THEME_DIR/margine.script" ]]; then
 else
   miss "live: $LIVE_PLYMOUTH_THEME_DIR/margine.script absent."
 fi
-# The script SOURCE lives in the separate (site) repo margine-fedora-atomic,
-# fetched at build time. Audit it too if a sibling checkout is present.
-if [[ -z "$PLYMOUTH_SCRIPT_REL" ]]; then
-  for sib in \
-    "${MARGINE_SITE_DIR:-}" \
-    "$(dirname "$REPO_DIR" 2>/dev/null)/margine-fedora-atomic" \
-    "$(dirname "$SELF_DIR")/margine-fedora-atomic"; do
-    [[ -n "$sib" && -r "$sib/assets/branding/plymouth/margine.script" ]] || continue
-    audit_plymouth_script "$sib/assets/branding/plymouth/margine.script" "site-repo"
-    break
-  done
+# The script SOURCE now lives IN this repo at
+# build_files/50-branding/assets/plymouth/margine.script (it used to live in
+# the separate margine-fedora-atomic site repo, fetched at build time — the
+# sibling-checkout search below was retired when the assets were vendored).
+# Audit the in-repo copy directly.
+if [[ -n "$REPO_DIR" && -r "$REPO_DIR/$PLYMOUTH_SCRIPT_REL" ]]; then
+  audit_plymouth_script "$REPO_DIR/$PLYMOUTH_SCRIPT_REL" "repo-source"
 fi
 
 # ---------------------------------------------------------------------------

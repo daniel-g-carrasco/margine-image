@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+
+umask 077
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+out_dir="${repo_root}/diagnostics/${timestamp}"
+archive="${repo_root}/diagnostics/${timestamp}.tar.gz"
+
+mkdir -p "$out_dir"
+
+capture() {
+  local name=$1
+  shift
+  {
+    printf '$'
+    printf ' %q' "$@"
+    printf '\n\n'
+    "$@"
+  } >"${out_dir}/${name}" 2>&1 || true
+}
+
+capture_shell() {
+  local name=$1
+  local script=$2
+  {
+    printf '$ bash -c %q\n\n' "$script"
+    bash -c "$script"
+  } >"${out_dir}/${name}" 2>&1 || true
+}
+
+capture os-release.txt cat /etc/os-release
+capture uname.txt uname -a
+capture date-utc.txt date -u
+capture rpm-ostree-status.txt rpm-ostree status
+capture rpm-ostree-status-v.txt rpm-ostree status -v
+capture rpm-ostree-status-json.txt rpm-ostree status --json
+capture ostree-admin-status.txt ostree admin status
+capture findmnt.txt findmnt
+capture findmnt-root.txt findmnt /
+capture findmnt-usr.txt findmnt /usr
+capture findmnt-var.txt findmnt /var
+capture findmnt-var-home.txt findmnt /var/home
+capture findmnt-sysroot.txt findmnt /sysroot
+capture findmnt-boot.txt findmnt /boot
+capture findmnt-boot-efi.txt findmnt /boot/efi
+capture lsblk-f.txt lsblk -f
+capture crypttab.txt cat /etc/crypttab
+capture systemctl-failed.txt systemctl --failed
+capture journal-warnings.txt journalctl -b -p warning..alert --no-pager
+capture flatpak-list.txt flatpak list
+capture flatpak-remotes.txt flatpak remotes --show-details
+capture toolbox-list.txt toolbox list
+capture distrobox-list.txt distrobox list
+capture_shell uupd-state.txt "if command -v uupd >/dev/null 2>&1; then uupd --version 2>&1 || true; fi; if command -v systemctl >/dev/null 2>&1; then systemctl status uupd.timer --no-pager 2>/dev/null || true; systemctl list-timers uupd.timer --no-pager 2>/dev/null || true; fi"
+capture_shell pci-graphics-audio.txt "if command -v lspci >/dev/null 2>&1; then lspci -k | sed -n '/VGA compatible controller/,+6p;/3D controller/,+6p;/Display controller/,+6p;/Audio device/,+6p'; fi"
+capture_shell kernel-media-modules.txt "if command -v lsmod >/dev/null 2>&1; then lsmod | grep -E 'amdgpu|i915|xe|nvidia|nouveau|virtio_gpu|snd|snd_hda|snd_sof|kvm' || true; fi"
+capture_shell hardware-media-rpms.txt "if command -v rpm >/dev/null 2>&1; then rpm -qa | grep -Ei 'mesa|vulkan|libva|intel|rocm|opencl|clinfo|pipewire|wireplumber|alsa|easyeffects|gstreamer|ffmpeg|openh264|dav1d|libavif|libheif|aom|radeontop' | sort || true; fi"
+capture_shell pipewire-services.txt "if command -v systemctl >/dev/null 2>&1; then systemctl --user status pipewire.service pipewire-pulse.service wireplumber.service --no-pager; fi"
+capture_shell pactl-info.txt "if command -v pactl >/dev/null 2>&1; then pactl info; fi"
+capture_shell wpctl-status.txt "if command -v wpctl >/dev/null 2>&1; then wpctl status; fi"
+capture_shell ffmpeg-hwaccels.txt "if command -v ffmpeg >/dev/null 2>&1; then ffmpeg -hide_banner -hwaccels; fi"
+capture_shell gst-va.txt "if command -v gst-inspect-1.0 >/dev/null 2>&1; then gst-inspect-1.0 va; fi"
+capture_shell glxinfo-B.txt "if command -v glxinfo >/dev/null 2>&1; then glxinfo -B; fi"
+capture_shell eglinfo-B.txt "if command -v eglinfo >/dev/null 2>&1; then eglinfo -B; fi"
+capture_shell vulkaninfo-summary.txt "if command -v vulkaninfo >/dev/null 2>&1; then vulkaninfo --summary; fi"
+capture_shell vainfo.txt "if command -v vainfo >/dev/null 2>&1; then vainfo; fi"
+capture_shell clinfo.txt "if command -v clinfo >/dev/null 2>&1; then clinfo; fi"
+capture_shell rocminfo.txt "if command -v rocminfo >/dev/null 2>&1; then rocminfo; fi"
+capture_shell darktable-cltest.txt "if command -v darktable-cltest >/dev/null 2>&1; then darktable-cltest; fi"
+capture_shell hardware-media-journal.txt "if command -v journalctl >/dev/null 2>&1; then journalctl -b --no-pager | grep -Ei 'drm|gpu|amdgpu|i915|xe|virtio_gpu|pipewire|wireplumber|snd_hda|snd_sof' || true; fi"
+capture_shell flatpak-gaming-apps.txt "if command -v flatpak >/dev/null 2>&1; then flatpak list | grep -Ei 'Steam|Lutris|Heroic|Bottles|Proton|RetroArch|RetroDECK|Cartridges' || true; fi"
+capture_shell steam-flatpak-info.txt "if command -v flatpak >/dev/null 2>&1 && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then flatpak info com.valvesoftware.Steam; flatpak info --show-permissions com.valvesoftware.Steam; fi"
+capture_shell gaming-host-rpms.txt "if command -v rpm >/dev/null 2>&1; then rpm -qa | grep -Ei 'gamescope|mangohud|vkbasalt|gamemode|steam-devices|obs.*capture|goverlay|lact|wine|lutris|protontricks' | sort || true; fi"
+capture_shell gaming-commands.txt "for cmd in gamescope mangohud vkbasalt gamemoded goverlay; do printf '== %s ==\\n' \"\$cmd\"; command -v \"\$cmd\" || true; done"
+capture_shell gaming-vulkan-layers.txt "for dir in /usr/share/vulkan /etc/vulkan \"${HOME}/.local/share/vulkan\"; do printf '== %s ==\\n' \"\$dir\"; find \"\$dir\" -maxdepth 3 -type f 2>/dev/null | sort || true; done"
+capture_shell gaming-split-lock.txt "cat /proc/sys/kernel/split_lock_mitigate 2>/dev/null || true; grep -RHsnE '^[[:space:]]*kernel\\.split_lock_mitigate[[:space:]]*=[[:space:]]*0' /etc/sysctl.d /usr/lib/sysctl.d 2>/dev/null || true"
+capture_shell gsettings-interface.txt "if command -v gsettings >/dev/null 2>&1; then for key in color-scheme accent-color font-name monospace-font-name gtk-theme icon-theme; do printf '%s=' \"\$key\"; gsettings get org.gnome.desktop.interface \"\$key\"; done; fi"
+capture_shell xdg-user-dirs.txt "cat \"${HOME}/.config/user-dirs.dirs\" 2>/dev/null || true"
+capture_shell gtk-bookmarks.txt "for file in \"${HOME}/.config/gtk-3.0/bookmarks\" \"${HOME}/.config/gtk-4.0/bookmarks\"; do printf '== %s ==\\n' \"\$file\"; sed -n '1,160p' \"\$file\" 2>/dev/null || true; done"
+capture_shell folder-icon-metadata.txt "if command -v gio >/dev/null 2>&1; then for path in \"${HOME}/data\" \"${HOME}/data/library\" \"${HOME}/data/work\" \"${HOME}/data/media\" \"${HOME}/dev\" \"${HOME}/scratch\"; do [[ -e \"\$path\" ]] && gio info -a metadata::custom-icon \"\$path\"; done; fi"
+capture_shell font-matches.txt "if command -v fc-match >/dev/null 2>&1; then for font in 'IBM Plex Sans' 'Atkinson Hyperlegible Next' 'JetBrains Mono' 'Source Code Pro' 'Adwaita Sans'; do printf '== %s ==\\n' \"\$font\"; fc-match \"\$font\"; done; fi"
+capture mokutil-sb-state.txt mokutil --sb-state
+capture bootctl-status.txt bootctl status
+capture systemd-cryptenroll-tpm2-list.txt systemd-cryptenroll --tpm2-device=list
+capture_shell dracut-conf-files.txt "find /etc/dracut.conf.d -maxdepth 1 -type f -print -exec sed -n '1,160p' {} \\; 2>/dev/null || true"
+capture_shell rpm-kernel-cachy.txt "rpm -qa | grep -Ei 'cachy|kernel' | sort || true"
+capture_shell repo-files.txt "find /etc/yum.repos.d -maxdepth 1 -type f -print -exec sed -n '1,160p' {} \\; 2>/dev/null || true"
+
+if command -v btrfs >/dev/null 2>&1; then
+  capture btrfs-filesystem-show.txt btrfs filesystem show
+  capture btrfs-filesystem-usage-sysroot.txt btrfs filesystem usage /sysroot
+  capture btrfs-subvolume-list.txt btrfs subvolume list /sysroot
+fi
+
+tar -C "${repo_root}/diagnostics" -czf "$archive" "$timestamp"
+
+printf 'Diagnostics directory: %s\n' "$out_dir"
+printf 'Diagnostics archive: %s\n' "$archive"
+printf 'Treat this bundle as local diagnostic data; it may contain hostnames, usernames, paths, and journal excerpts.\n'

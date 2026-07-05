@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_path="${HOME}/.config/fastfetch/config.jsonc"
+logo_path="${HOME}/.config/fastfetch/margine-ascii.txt"
+
+if ! command -v fastfetch >/dev/null 2>&1; then
+  printf 'error: fastfetch is not installed\n' >&2
+  exit 127
+fi
+
+if [[ -r "$config_path" ]]; then
+  exec fastfetch --config "$config_path" "$@"
+fi
+
+if [[ -r "$logo_path" ]]; then
+  exec fastfetch --logo "$logo_path" --logo-type file "$@"
+fi
+
+exec fastfetch "$@"

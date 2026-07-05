@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Margine spec-drift detector.
+
+Reads the canonical declarative spec (`declarations/margine-atomic.yaml`)
+and compares it against what the **running system** actually has. The
+goal is *not* to be a comprehensive system audit (`validate-margine-
+system` already does that with hard-coded expectations) — the goal is
+to make `declarations/margine-atomic.yaml` *load-bearing*: an item in
+the spec that disappears from the system, or vice-versa, is a signal
+worth surfacing.
+
+Sections checked:
+
+  * `host_packages.baseline.creator_tier.install` — every package in
+    that list should be `rpm -q`-installable.
+  * `host_packages.baseline.codec_replacement.install` — same.
+  * `flatpaks.default_apps.*` — every app-id should be in
+    `flatpak list --system --app --columns=application`.
+  * `gnome.extensions.*` (each subsection: `system_install` and
+    `user_install`) — should be present in `/usr/share/gnome-shell/
+    extensions/<uuid>` for system_install, or in `~/.local/share/
+    gnome-shell/extensions/<uuid>` for user_install.
+
+Exit code:
+  0  every required check passed (warnings OK)
+  1  at least one required check failed
+
+This script can run on a deployed system OR be invoked from a CI smoke
+test as `margine-validate-declared-state --json` for machine-readable
+output (TODO: --json flag).
+
+Audit §4.1 + recommendation #18.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Iterable
+
+try:
+    import yaml
+except ImportError:
+    print("ERROR: PyYAML not installed. On Margine: `flatpak run org.gnome.Terminal` "
+          "then `sudo dnf install python3-pyyaml` (transient layer) or use the "
+          "bundled spec at /usr/declarations/margine-atomic.yaml.", file=sys.stderr)
+    sys.exit(2)
+
+
+# --------------------------------------------------------------------- I/O
+
+
+CSI = ""
+
+def _color(c: str) -> str:
+    return f"\033[{c}m" if sys.stdout.isatty() else ""
+
+
+GREEN = _color("32")
+RED = _color("31")
+YELLOW = _color("33")
+BOLD = _color("1")
+RESET = _color("0")
+
+
+class Counters:
+    def __init__(self) -> None:
+        self.fail = 0
+        self.warn = 0
+        self.ok = 0
+
+
+C = Counters()
+
+
+def ok(msg: str) -> None:
+    print(f"  {GREEN}✓{RESET} {msg}")
+    C.ok += 1
+
+
+def bad(msg: str) -> None:
+    print(f"  {RED}✗{RESET} FAIL: {msg}")
+    C.fail += 1
+
+
+def warn(msg: str) -> None:
+    print(f"  {YELLOW}!{RESET} WARN: {msg}")
+    C.warn += 1
+
+
+def info(msg: str) -> None:
+    print(f"  {msg}")
+
+
+def hdr(msg: str) -> None:
+    print(f"\n{BOLD}== {msg} =={RESET}")
+
+
+# --------------------------------------------------------------------- helpers
+
+
+def find_spec() -> Path:
+    """Look up the canonical spec file.
+
+    Priority:
+      1. $MARGINE_SPEC env var (CI / dev override)
+      2. /usr/declarations/margine-atomic.yaml — the symlink margine-image
+         installs (build.sh section 3).
+      3. /usr/share/margine/declarations.yaml — the file behind that symlink.
+      4. ../declarations/margine-atomic.yaml relative to this script (dev tree).
+    """
+    env = os.environ.get("MARGINE_SPEC")
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return p
+    candidates = [
+        Path("/usr/declarations/margine-atomic.yaml"),
+        Path("/usr/share/margine/declarations.yaml"),
+        Path(__file__).resolve().parent.parent / "declarations" / "margine-atomic.yaml",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    raise SystemExit(
+        "ERROR: cannot find margine-atomic.yaml. Tried "
+        + ", ".join(str(c) for c in candidates)
+        + " — set MARGINE_SPEC=<path> to override."
+    )
+
+
+def have(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
+
+def run(args: list[str], check: bool = False) -> subprocess.CompletedProcess:
+    return subprocess.run(args, check=check, capture_output=True, text=True)
+
+
+# --------------------------------------------------------------------- checks
+
+
+def check_rpm_packages(packages: Iterable[str], section_name: str) -> None:
+    """Every package in `packages` must be `rpm -q`-installable."""
+    hdr(f"RPM packages — {section_name}")
+    if not have("rpm"):
+        warn("rpm not available — skipping (running off-Fedora?)")
+        return
+    for pkg in packages:
+        cp = run(["rpm", "-q", "--whatprovides", pkg])
+        if cp.returncode == 0:
+            ok(f"{pkg}: installed")
+        else:
+            bad(f"{pkg}: NOT installed (rpm -q --whatprovides returned nonzero)")
+
+
+def check_flatpaks(apps: Iterable[str], section_name: str) -> None:
+    """Every Flatpak app-id should be in `flatpak list --system`."""
+    hdr(f"Flatpaks — {section_name}")
+    if not have("flatpak"):
+        warn("flatpak not available — skipping")
+        return
+    cp = run(["flatpak", "list", "--system", "--app", "--columns=application"])
+    installed = {line.strip() for line in cp.stdout.splitlines() if line.strip()}
+    for app in apps:
+        if app in installed:
+            ok(f"{app}: installed (system flatpak)")
+        else:
+            warn(f"{app}: not in system flatpak list (may be in DEFER queue still)")
+
+
+def check_gnome_extensions(extensions: list[dict], section_name: str) -> None:
+    """Each extension entry should declare a uuid; check the install location."""
+    hdr(f"GNOME extensions — {section_name}")
+    system_dir = Path("/usr/share/gnome-shell/extensions")
+    user_dir = Path.home() / ".local" / "share" / "gnome-shell" / "extensions"
+    for ext in extensions:
+        if not isinstance(ext, dict):
+            continue
+        uuid = ext.get("uuid") or ext.get("id")
+        if not uuid:
+            warn(f"extension entry without uuid: {ext}")
+            continue
+        if (system_dir / uuid).is_dir():
+            ok(f"{uuid}: present in /usr/share/gnome-shell/extensions/")
+        elif (user_dir / uuid).is_dir():
+            ok(f"{uuid}: present in ~/.local/share/gnome-shell/extensions/")
+        else:
+            bad(f"{uuid}: not found in system or user extension dirs")
+
+
+# --------------------------------------------------------------------- driver
+
+
+def collect(d: dict | list | None, path: list[str], acc: list[str]) -> None:
+    """Walk `d` and collect leaf-string values whose containers match `path`.
+
+    Used for things like 'every string under flatpaks.default_apps.*' where
+    we don't know the second-level keys (categories) ahead of time.
+    """
+    if d is None:
+        return
+    if isinstance(d, list):
+        for item in d:
+            if isinstance(item, str):
+                acc.append(item)
+            else:
+                collect(item, path, acc)
+    elif isinstance(d, dict):
+        for v in d.values():
+            collect(v, path, acc)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Margine spec-drift detector"
+    )
+    parser.add_argument("--spec", default=None,
+                        help="path to declarations/margine-atomic.yaml (overrides MARGINE_SPEC)")
+    args = parser.parse_args()
+
+    spec_path = Path(args.spec) if args.spec else find_spec()
+    info(f"Spec: {spec_path}")
+    spec = yaml.safe_load(spec_path.read_text())
+
+    # ---- Host packages: creator_tier
+    creator = (spec.get("host_packages", {})
+                   .get("baseline", {})
+                   .get("creator_tier", {})
+                   .get("install", []))
+    if creator:
+        check_rpm_packages(creator, "host_packages.baseline.creator_tier")
+
+    # ---- Host packages: codec_replacement.install
+    codec = (spec.get("host_packages", {})
+                  .get("baseline", {})
+                  .get("codec_replacement", {})
+                  .get("install", []))
+    if codec:
+        check_rpm_packages(codec, "host_packages.baseline.codec_replacement")
+
+    # ---- Flatpaks: default_apps.* (all categories merged)
+    flatpaks_def = (spec.get("flatpaks", {}).get("default_apps", {}))
+    apps: list[str] = []
+    collect(flatpaks_def, [], apps)
+    if apps:
+        check_flatpaks(apps, "flatpaks.default_apps")
+
+    # ---- GNOME extensions
+    extensions_root = spec.get("gnome", {}).get("extensions", {})
+    for subkey in ("system_install", "user_install"):
+        ext_list = extensions_root.get(subkey)
+        if isinstance(ext_list, list) and ext_list:
+            check_gnome_extensions(ext_list, f"gnome.extensions.{subkey}")
+
+    # ---- Summary
+    print()
+    summary = f"{GREEN}{C.ok} OK{RESET}, {YELLOW}{C.warn} WARN{RESET}, {RED}{C.fail} FAIL{RESET}"
+    if C.fail:
+        print(f"{BOLD}VERDICT: drift detected.{RESET} {summary}")
+        return 1
+    print(f"{BOLD}VERDICT: spec ↔ system aligned.{RESET} {summary}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

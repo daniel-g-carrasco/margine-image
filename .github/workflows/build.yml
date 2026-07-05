@@ -199,29 +199,6 @@ jobs:
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           echo "ymd=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
 
-      - name: Resolve margine-fedora-atomic spec ref to SHA
-        # build.sh fetches scripts + declarations + branding from
-        # https://raw.githubusercontent.com/.../margine-fedora-atomic/<ref>/.
-        # `MARGINE_REF` defaults to "main" inside the script. Resolve
-        # that to the actual commit SHA at build-START time and stamp it
-        # as an OCI label so consumers (and future audits) can tell
-        # which spec-repo state produced the image. Audit §3.3 (hermetic
-        # branding) + recommendation #8/#15.
-        id: specref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          REF="${MARGINE_REF:-main}"
-          SHA="$(gh api repos/${{ github.repository_owner }}/margine-fedora-atomic/commits/${REF} --jq .sha)"
-          if [[ -z "$SHA" ]]; then
-            echo "::error::could not resolve margine-fedora-atomic@${REF}"
-            exit 1
-          fi
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
-          echo "Resolved margine-fedora-atomic@${REF} → ${SHA}"
-
       - name: Image metadata
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         id: metadata
@@ -248,8 +225,8 @@ jobs:
             io.artifacthub.package.license=Apache-2.0
             io.artifacthub.package.prerelease=false
             containers.bootc=1
-            place.the-empty.margine.spec-ref=${{ steps.specref.outputs.sha }}
-            place.the-empty.margine.spec-ref-name=${{ steps.specref.outputs.ref }}
+            place.the-empty.margine.spec-ref=${{ github.sha }}
+            place.the-empty.margine.spec-ref-name=${{ github.sha }}
             org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
             org.opencontainers.image.base.name=ghcr.io/ublue-os/bluefin-dx:stable
           sep-tags: " "
@@ -295,15 +272,10 @@ jobs:
             LABEL_ARGS+=(--label "$line")
           done <<< "${{ steps.metadata.outputs.labels }}"
 
-          # MARGINE_REF: the spec-repo SHA resolved by the specref step.
-          # Until 2026-06-12 the SHA was only stamped as a label while
-          # the build itself kept fetching the moving `main` — the
-          # label could lie. Now the fetches and the label agree.
           sudo -E buildah build \
             --file ./Containerfile \
             --format docker \
             --layers \
-            --build-arg "MARGINE_REF=${{ steps.specref.outputs.sha }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
             "${TAG_ARGS[@]}" \

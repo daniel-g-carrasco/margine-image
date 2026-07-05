@@ -147,7 +147,7 @@ Fields that matter for branding:
 **Mechanism** (`build_files/50-branding/install.sh`):
 - Installs `plymouth-plugin-script` (the script-based theme needs
   `libply-splash-graphics.so`).
-- Fetches the three theme files from the `margine-fedora-atomic` repo.
+- Copies the three theme files from in-repo `build_files/50-branding/assets/plymouth/`.
 - `plymouth-set-default-theme margine`.
 - **Regenerates the initramfs** with `dracut --force --zstd --add ostree` for every
   kernel — the theme is embedded in the initramfs, so this is mandatory at build.

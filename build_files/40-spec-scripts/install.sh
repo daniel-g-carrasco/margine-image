@@ -13,29 +13,11 @@ set -euo pipefail
 #   margine-configure-keybindings --apply
 # from any terminal post-install.
 #
-# The scripts live in the margine-fedora-atomic repo, fetched at build
-# time. CI pins MARGINE_REF to a commit SHA via --build-arg (resolved
-# by build.yml's specref step, same value as the OCI label), so CI
-# images are reproducible; local builds default to `main`.
-log "Fetching Margine configure-* scripts"
-
-# (var defined in 00-common.sh)
-# (var defined in 00-common.sh)
-
-# Preflight: confirm we can reach the spec repo before fetching anything.
-# Without this, individual silent-skip fallbacks (the previous pattern)
-# masked real connectivity / repo-visibility bugs and shipped incomplete
-# images. Fail loud + fail early.
-err() { printf '[margine-build] ERROR: %s\n' "$*" >&2; }
-
-log "Preflight: probing spec repo at ${MARGINE_REPO}/${MARGINE_REF}/"
-if ! curl --fail --silent --show-error --head -L \
-     "${MARGINE_REPO}/${MARGINE_REF}/README.md" >/dev/null; then
-  err "cannot reach the Margine spec repo (${MARGINE_REPO}/${MARGINE_REF}/)."
-  err "Check that the repo is PUBLIC on GitHub and that the runner has network access."
-  exit 1
-fi
-log "Preflight OK"
+# The scripts are vendored into this image tree under
+# 40-spec-scripts/scripts/. The ctx stage COPYs build_files/ to the
+# image root mounted at /ctx, so we install them straight from
+# /ctx/40-spec-scripts/scripts/ instead of fetching over the network.
+log "Installing Margine configure-* / validate-* scripts"
 
 for s in \
     configure-default-applications \
@@ -54,18 +36,12 @@ for s in \
     validate-declared-state \
     validate-branding \
     collect-diagnostics ; do
-  # _strict: a 200-with-empty-body must not install a zero-byte
-  # EXECUTABLE silently (review P2.2 — the strict variant existed but
-  # only the branding assets used it).
-  retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/scripts/${s}" \
-             "/usr/bin/margine-${s}"
-  chmod 0755 "/usr/bin/margine-${s}"
+  install -Dm0755 "/ctx/40-spec-scripts/scripts/${s}" "/usr/bin/margine-${s}"
   log "Installed: /usr/bin/margine-${s}"
 done
 
-# Also pull the declarations YAML the scripts read.
-mkdir -p /usr/share/margine
-retry_curl_strict "${MARGINE_REPO}/${MARGINE_REF}/declarations/margine-atomic.yaml" /usr/share/margine/declarations.yaml
+# Also install the declarations YAML the scripts read.
+install -Dm0644 /ctx/40-spec-scripts/declarations/margine-atomic.yaml /usr/share/margine/declarations.yaml
 log "Installed: /usr/share/margine/declarations.yaml"
 
 # Compat symlink: 6 of the 7 configure-* scripts compute

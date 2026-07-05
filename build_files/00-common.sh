@@ -83,5 +83,3 @@ retry() {
 # every sub-script gets the same value without recomputing.
 export FEDORA_VER="${FEDORA_VER:-$(rpm -E %fedora 2>/dev/null || echo 44)}"
 export BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%d)}"
-export MARGINE_REPO="${MARGINE_REPO:-https://raw.githubusercontent.com/daniel-g-carrasco/margine-fedora-atomic}"
-export MARGINE_REF="${MARGINE_REF:-main}"

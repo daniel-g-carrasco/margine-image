@@ -153,6 +153,16 @@ upstream bug and SHIP.
 Interim user-facing note: a first-boot may spend ~10-15 min populating apps if
 the bake was truncated; that is the self-heal, not a failure.
 
+## Part 5 — o-tiling re-enabled in the live (2026-07-05)
+
+With the root cause pinned upstream (part 4) and o-tiling's own global.log bug
+hotfixed at build, the live-session exclusion of o-tiling bought nothing: the
+re-test crashed identically without it. Removed the zz4 [org.gnome.shell]
+override — the live keeps the full zz1 extension set again (the live session
+is the demo; the tiling is part of Margine's identity). The 20260705 published
+ISO predates this and ships the live without o-tiling — cosmetic, live-only,
+resolves with the next ISO.
+
 ## Lessons
 
 - "Logout at end of install" had TWO distinct root causes months apart

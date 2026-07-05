@@ -443,17 +443,15 @@ sleep-inactive-ac-type='nothing'
 sleep-inactive-battery-type='nothing'
 idle-dim=false
 
-# o-tiling is NOT loaded in the live session (2026-07-04 incident, VM install
-# margine-20260703.iso): during Anaconda's configuration phase its
-# _show_skip_taskbar_windows handler threw on every skip-taskbar window
-# (global.log removed in GNOME 50 — hotfixed at build via
-# build-margine-extensions.sh) seconds before gnome-shell SIGSEGV'd
-# (update_clock/g_settings_get_enum use-after-free) and took the whole
-# session down mid-install. An installer session needs zero tiling
-# acrobatics: run it without the highest-surface extension. The installed
-# system keeps the full zz1 set — this file never leaves the live rootfs.
-[org.gnome.shell]
-enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'bazaar-integration@kolunmi.github.io', 'dash-to-dock@micxgx.gmail.com', 'gradia-integration@alexandervanhee.github.io', 'gsconnect@andyholmes.github.io', 'hide-cursor@elcste.com', 'caffeine@patapon.info', 'smile-extension@mijorus.it']
+# NOTE (2026-07-05): an [org.gnome.shell] enabled-extensions override briefly
+# lived here excluding o-tiling from the live session, as a mitigation for the
+# end-of-install gnome-shell crash. DISPROVEN and removed: the re-test without
+# o-tiling crashed identically (root cause: upstream GnomeWallClock
+# use-after-free under Anaconda's localed-driven GSettings storm — see
+# docs/notes/2026-07-04-live-session-crash-during-install.md). o-tiling's own
+# real bug (global.log removed in GNOME 50) is hotfixed at build in
+# build-margine-extensions.sh, so the live keeps the FULL zz1 extension set —
+# the live session is Margine's demo, and the tiling is part of its identity.
 OVERRIDE
 
 # Recompile schemas in case the profile/installer added overrides.

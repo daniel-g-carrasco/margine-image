@@ -164,27 +164,61 @@ class CiPage:
                         "CLI authenticated. Keep the window open to be notified.")
         page.add(ci)
 
-        # A full-width progress bar UNDER each long-running CI row, driven by
-        # real job-step data. show_text carries "NN% · phase · ~ETA": the ETA
-        # comes from the measured pace of THIS run (fraction/elapsed), never a
-        # made-up timer, and the opaque IA-upload step pulses with an honest
-        # "elapsed" instead of a fake percent. First cut was a 150px "osd"
-        # sliver in the suffix — unreadable (Daniel, 2026-07-05).
+        # Each long-running CI row embeds ITS OWN full-width progress bar,
+        # inside the row (under title+subtitle) so ownership is unambiguous.
+        # v2 lesson: PreferencesGroup appends non-row widgets AFTER its boxed
+        # list, so a plain ci.add(bar) rendered every bar at the bottom of the
+        # group, detached from its button (Daniel, 2026-07-05). ActionRow has a
+        # fixed layout, so these are custom Adw.PreferencesRows that mimic its
+        # look (title / dim caption subtitle / suffix button) + the bar line.
+        # show_text carries "NN% · phase · Xm elapsed · ~Ym left": the ETA is
+        # measured from THIS run's pace, never a made-up timer, and the opaque
+        # IA-upload step pulses with an honest "elapsed".
         # id(bar) -> pulse-timer source; id(bar) -> {t0, f0} pace state.
         self._pulse_ids = {}
         self._bar_state = {}
 
+        class _CiRow:
+            """ActionRow-look row with an embedded progress bar; exposes the
+            set_subtitle/get_subtitle the existing flows already call (markup
+            semantics match ActionRow: callers pass Pango-escaped text)."""
+            def __init__(self, title, subtitle, btn_label, cb):
+                self._subtitle = subtitle
+                self.row = Adw.PreferencesRow(activatable=False, focusable=False)
+                v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4,
+                            margin_top=10, margin_bottom=10,
+                            margin_start=12, margin_end=12)
+                h = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+                labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2,
+                                 hexpand=True, valign=Gtk.Align.CENTER)
+                t = Gtk.Label(label=title, xalign=0, wrap=True)
+                self._sub = Gtk.Label(xalign=0, wrap=True)
+                self._sub.add_css_class("dim-label")
+                self._sub.add_css_class("caption")
+                self._sub.set_markup(subtitle)
+                labels.append(t)
+                labels.append(self._sub)
+                self.btn = Gtk.Button(label=btn_label, valign=Gtk.Align.CENTER)
+                self.btn.connect("clicked", cb)
+                h.append(labels)
+                h.append(self.btn)
+                self.bar = Gtk.ProgressBar(show_text=True, hexpand=True,
+                                           visible=False, margin_top=4)
+                v.append(h)
+                v.append(self.bar)
+                self.row.set_child(v)
+
+            def set_subtitle(self, text):
+                self._subtitle = text
+                self._sub.set_markup(text)
+
+            def get_subtitle(self):
+                return self._subtitle
+
         def _ci_row(title, subtitle, btn_label, cb):
-            row = Adw.ActionRow(title=title, subtitle=subtitle)
-            btn = Gtk.Button(label=btn_label, valign=Gtk.Align.CENTER)
-            btn.connect("clicked", cb)
-            row.add_suffix(btn)
-            ci.add(row)
-            bar = Gtk.ProgressBar(show_text=True, hexpand=True, visible=False,
-                                  margin_start=12, margin_end=12,
-                                  margin_top=2, margin_bottom=8)
-            ci.add(bar)
-            return row, btn, bar
+            r = _CiRow(title, subtitle, btn_label, cb)
+            ci.add(r.row)
+            return r, r.btn, r.bar
 
         self.base_row, self.base_btn, self.base_bar = _ci_row(
             "Rebuild base image",

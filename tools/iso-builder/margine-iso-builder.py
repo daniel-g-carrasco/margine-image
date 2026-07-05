@@ -124,15 +124,28 @@ class BuilderWindow(Adw.ApplicationWindow):
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast.new(text))
 
-    def notify(self, title, body=""):
+    def notify(self, title, body="", tag=None, url=None, failure=False):
         """Toast + desktop notification (survives the window being on another
-        workspace — CI jobs take up to an hour)."""
+        workspace — CI jobs take up to an hour).
+
+        tag:    stable id per FLOW ("ci-publish", "ci-base", …). GNOME
+                REPLACES a notification re-sent with the same id, so one flow
+                shows a single, self-updating card instead of piling three
+                stale milestones in the tray (Daniel, 2026-07-05).
+        url:    adds an "Open run" button instead of dumping a raw link in
+                the body.
+        failure: urgent priority, so reds stand out from milestones."""
         self.toast(title)
         n = Gio.Notification.new(title)
         if body:
             n.set_body(body)
+        if url:
+            n.add_button("Open run", Gio.Action.print_detailed_name(
+                "app.open-url", GLib.Variant.new_string(url)))
+        n.set_priority(Gio.NotificationPriority.URGENT if failure
+                       else Gio.NotificationPriority.NORMAL)
         try:
-            self.get_application().send_notification(None, n)
+            self.get_application().send_notification(tag, n)
         except Exception:
             pass
 
@@ -165,6 +178,17 @@ class BuilderApp(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,
                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+        # Target of the notification "Open run" button (win.notify url=…).
+        act = Gio.SimpleAction.new("open-url", GLib.VariantType.new("s"))
+        act.connect("activate", self._on_open_url)
+        self.add_action(act)
+
+    @staticmethod
+    def _on_open_url(_action, param):
+        try:
+            Gio.AppInfo.launch_default_for_uri(param.get_string(), None)
+        except GLib.Error:
+            pass
 
     def do_activate(self):
         win = self.props.active_window or BuilderWindow(self)

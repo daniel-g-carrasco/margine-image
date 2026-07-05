@@ -911,6 +911,44 @@ margine-test-vm-clean ALL="false":
     done
     if [[ "{{ ALL }}" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi
 
+# Enable GPU OpenCL in the darktable Flatpak (Mesa rusticl). Two switches are
+# needed and both ship off: the Flatpak needs RUSTICL_ENABLE for its rusticl
+# driver, and darktable keeps rusticl blocklisted until two prefs are flipped.
+# Verified on AMD (Radeon 760M): after this, darktable-cltest reports
+# "opencl ... is AVAILABLE and ENABLED". Works on Polaris (RX 560) too via
+# rusticl, which does not need ROCm. Restart darktable to pick it up.
+[group('Apps')]
+margine-darktable-opencl:
+    #!/usr/bin/bash
+    set -uo pipefail
+    DT=org.darktable.Darktable
+    if ! flatpak info "$DT" >/dev/null 2>&1; then
+      echo "darktable is not installed. Install it first, then re-run:"
+      echo "  flatpak install --system flathub $DT"
+      exit 1
+    fi
+    if pgrep -x darktable >/dev/null 2>&1; then
+      echo "NOTE: darktable is running. Close it first, or it will overwrite these"
+      echo "      settings on exit. Re-run this after closing it."
+    fi
+    # Pick the rusticl driver for the GPU vendor.
+    if lspci 2>/dev/null | grep -qiE "VGA.*(AMD|ATI)|3D.*(AMD|ATI)|Display.*(AMD|ATI)"; then DRV=radeonsi
+    elif lspci 2>/dev/null | grep -qiE "VGA.*Intel|Display.*Intel|3D.*Intel"; then DRV=iris
+    else DRV=radeonsi; fi
+    echo "==> rusticl driver for your GPU: $DRV"
+    # 1. enable rusticl for the darktable Flatpak (per-user, persistent)
+    flatpak override --user --env=RUSTICL_ENABLE="$DRV" "$DT"
+    # 2. flip darktable's prefs: enable OpenCL + un-blocklist the rusticl platform
+    RC="$HOME/.var/app/$DT/config/darktable/darktablerc"
+    mkdir -p "$(dirname "$RC")"; touch "$RC"
+    for kv in opencl=TRUE clplatform_rusticl=TRUE; do
+      k="${kv%%=*}"
+      if grep -qE "^${k}=" "$RC"; then sed -i "s|^${k}=.*|${kv}|" "$RC"; else echo "$kv" >> "$RC"; fi
+    done
+    echo "==> darktable GPU OpenCL enabled (rusticl / $DRV)."
+    echo "    Start (or restart) darktable. Preferences > Processing should show your GPU."
+    echo "    Verify from a terminal: flatpak run --command=darktable-cltest $DT"
+
 # Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
 [group('Apps')]
 install-koofr ACTION="install":

@@ -7,6 +7,61 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-07-05)
+- **One repo.** `margine-fedora-atomic` (the spec: the `configure-*` /
+  `validate-*` scripts, `declarations.yaml`, branding assets, ADRs, and the
+  handbook) was merged into `margine-image` with its full history preserved,
+  then archived read-only. The build no longer fetches anything at build
+  time: scripts and declarations install from `build_files/40-spec-scripts/`,
+  branding from `build_files/50-branding/assets/`, and the spec docs live in
+  `docs/spec/`. `MARGINE_REPO` / `MARGINE_REF`, the build-start "resolve spec
+  ref to SHA" step, the `--build-arg MARGINE_REF`, and the `spec-ref` OCI
+  label are gone. Every image is now byte-reproducible from the single
+  `margine-image` commit it was built from (`org.opencontainers.image.revision`).
+  This fixes two long-standing problems: forks could not build (CI resolved
+  `<owner>/margine-fedora-atomic` and 404'd on a fork), and every change used
+  to need coordinated PRs across two repos. The archived companion stays
+  readable at its old URL, so already-installed systems' `DOCUMENTATION_URL`
+  keeps resolving.
+
+### Added (2026-07-06)
+- **`ujust margine-darktable-opencl`** enables GPU OpenCL in the preinstalled
+  darktable Flatpak via the host Mesa `rusticl` driver (no ROCm/CUDA). Opt-in,
+  idempotent, per-user.
+- **`ujust margine-report`** collects a diagnostic bundle (image version,
+  hardware, Secure Boot, Flatpak health, this boot's errors) into
+  `~/margine-report.txt` and opens the GitHub issue chooser, so bug reports
+  land in one searchable place.
+- **`ujust margine-netflix-1080p`** installs the AMO-signed "Netflix 1080p UA"
+  extension into the Zen Browser profile (opt-in) so Netflix serves 1080p on
+  Linux. Widevine already works on Margine's Zen; this only presents an
+  Opera-on-Linux user agent to Netflix.
+- **/status "Devices running Margine"** chart, sourced weekly from Fedora's
+  public Count Me dataset (Margine ships `VARIANT_ID=margine`, so it appears
+  there with no telemetry of our own).
+
+### Fixed (2026-07-06)
+- **The offline manual now shows its images.** The offline-docs scraper
+  rewrote page links but never downloaded the referenced assets, so
+  screenshots, fonts and favicons were blank offline. It now localizes
+  `<img>`, `srcset` and CSS `url()` assets into the mirror (build seed and the
+  runtime refresh both, since they share the scraper).
+- **Security audit remediation.** Closed a path-traversal in the offline-docs
+  scraper (a hostile or MITM'd docs origin could make the root-run build-time
+  writer place a file outside the mirror); SHA-pinned the grype installer and
+  the MoreWaita icon fetch, pinned `internetarchive` in the IA-credential jobs,
+  added input validation to the `scheduler-apply` pkexec helper, made
+  recipe-argument handling injection-safe (`$`-exported params, quoting), and
+  removed a stray committed `.pyc` that shipped into `/usr/libexec`.
+- **The ISO publish no longer hangs on a wedged upload.** The Internet Archive
+  step used `ia upload`, whose retries only fire on error responses, so a dead
+  socket blocked a multi-GB upload until the job timed out. It now uses a
+  stall-aware `curl` uploader (aborts a transfer that sits under 10 KB/s,
+  retries on a fresh connection, HEAD size+md5 verify so re-runs resume) that
+  also waits out a global Internet Archive rationing event within a wall-clock
+  budget. `build-disk` concurrency now queues same-variant dispatches instead
+  of cancelling an in-flight publish.
+
 ### Fixed (2026-06-28)
 - **Fresh-install Flatpaks were empty on every real install (take 2, reverses
   PR #222).** The installer baked the default Flatpaks into the bare dedicated

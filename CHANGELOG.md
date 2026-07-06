@@ -36,6 +36,10 @@ stable release is cut.
   extension into the Zen Browser profile (opt-in) so Netflix serves 1080p on
   Linux. Widevine already works on Margine's Zen; this only presents an
   Opera-on-Linux user agent to Netflix.
+- **`ujust margine-blender-gpu`** turns on GPU (HIP) rendering in the
+  preinstalled Blender Flatpak on AMD by exposing the host's ROCm runtime
+  (which the Flatpak lacks) to Blender's library path. Verified on a Radeon
+  760M: a Cycles GPU render completes, no HSA override needed.
 - **/status "Devices running Margine"** chart, sourced weekly from Fedora's
   public Count Me dataset (Margine ships `VARIANT_ID=margine`, so it appears
   there with no telemetry of our own).

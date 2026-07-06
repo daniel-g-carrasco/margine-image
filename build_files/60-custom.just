@@ -1216,3 +1216,69 @@ margine-netflix-1080p $ACTION="status":
     echo "Note: this only changes how Netflix identifies the browser. It does not"
     echo "provide Widevine (Zen downloads that itself) and cannot guarantee 1080p for"
     echo "every title, plan or network. Remove with: ujust margine-netflix-1080p remove"
+
+
+# Enable GPU (HIP) rendering in the preinstalled Blender Flatpak on AMD.
+#
+# The org.blender.Blender Flatpak does not ship the ROCm/HIP runtime, so
+# Cycles cannot see an AMD GPU out of the box (HIPEW fails to load
+# libamdhip64). Margine's host DOES ship ROCm (Bluefin DX brings
+# libamdhip64), and the Blender Flatpak already has host filesystem
+# access, so this puts the host ROCm libraries on Blender's library path
+# and selects HIP in Cycles. Verified on Radeon 760M (gfx1103): ROCm 7.x
+# supports it natively (no HSA_OVERRIDE, which would cause an INVALID_ISA
+# abort), and a Cycles GPU render completes. status / enable / disable.
+[group('Apps')]
+margine-blender-gpu $ACTION="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+    APP="org.blender.Blender"
+    if ! flatpak info "$APP" >/dev/null 2>&1; then
+      echo "Blender ($APP) is not installed."
+      exit 1
+    fi
+    HOST_HIP="$(ls /usr/lib64/libamdhip64.so* 2>/dev/null | head -1)"
+    CUR_LDP="$(flatpak info -m "$APP" 2>/dev/null | sed -n 's/^LD_LIBRARY_PATH=//p')"
+    NEW_LDP="${CUR_LDP:+${CUR_LDP}:}/run/host/usr/lib64"
+    OVR="$(flatpak override --user --show "$APP" 2>/dev/null | grep -c 'run/host/usr/lib64' || true)"
+    if [ "$ACTION" = "status" ]; then
+      echo "Blender:   installed"
+      echo "Host ROCm: ${HOST_HIP:-not found (no AMD ROCm runtime on host)}"
+      [ "${OVR:-0}" -gt 0 ] && echo "Override:  set (host ROCm is on Blender's library path)" || echo "Override:  not set"
+      echo -n "HIP probe: "
+      flatpak run --env=LD_LIBRARY_PATH="$NEW_LDP" --command=blender "$APP" --background --factory-startup --python-expr "import bpy; p=bpy.context.preferences.addons['cycles'].preferences; p.compute_device_type='HIP'; p.refresh_devices(); print('->', [d.name for d in p.devices if d.type=='HIP'] or 'no HIP device')" 2>/dev/null | sed -n 's/^-> //p'
+      exit 0
+    fi
+    if [ "$ACTION" = "disable" ]; then
+      flatpak override --user --unset-env=LD_LIBRARY_PATH "$APP"
+      echo "Reverted. Blender is back to its default library path; Cycles HIP will no longer see the AMD GPU."
+      echo "(Your Cycles preference stays HIP but will find no device; switch it back to CPU in Preferences if you like.)"
+      exit 0
+    fi
+    if [ "$ACTION" != "enable" ]; then
+      echo "usage: ujust margine-blender-gpu [status|enable|disable]"
+      exit 2
+    fi
+    if [ -z "$HOST_HIP" ]; then
+      echo "No AMD ROCm runtime (libamdhip64) on the host, so there is nothing to expose."
+      echo "This recipe targets AMD GPUs; NVIDIA uses CUDA/OptiX and Intel uses oneAPI (separate paths)."
+      exit 1
+    fi
+    if flatpak ps --columns=application 2>/dev/null | grep -qx "$APP"; then
+      echo "Blender is running. Quit it first (it rewrites its preferences on exit), then re-run."
+      exit 1
+    fi
+    flatpak override --user --env=LD_LIBRARY_PATH="$NEW_LDP" "$APP"
+    echo "Exposed the host ROCm runtime to Blender's library path."
+    if flatpak run --env=LD_LIBRARY_PATH="$NEW_LDP" --command=blender "$APP" --background --python-expr "import bpy; p=bpy.context.preferences.addons['cycles'].preferences; p.compute_device_type='HIP'; p.refresh_devices(); [setattr(d,'use',d.type=='HIP') for d in p.devices]; bpy.ops.wm.save_userpref(); print('SAVED')" 2>/dev/null | grep -q SAVED; then
+      echo "Selected HIP and enabled the GPU in Blender's preferences."
+    else
+      echo "WARN: could not persist the Cycles preference; set it by hand in Preferences > System > Cycles Render Devices."
+    fi
+    DEV="$(flatpak run --env=LD_LIBRARY_PATH="$NEW_LDP" --command=blender "$APP" --background --factory-startup --python-expr "import bpy; p=bpy.context.preferences.addons['cycles'].preferences; p.compute_device_type='HIP'; p.refresh_devices(); print('->', [d.name for d in p.devices if d.type=='HIP'] or 'none')" 2>/dev/null | sed -n 's/^-> //p')"
+    echo
+    echo "Verified HIP device: ${DEV:-NONE FOUND}"
+    echo "Open Blender, then in each project set Render Properties > Device > GPU Compute."
+    echo "This only puts the host's ROCm libraries on Blender's search path (Blender already"
+    echo "has host access) and needs no HSA override; ROCm 7.x supports this GPU natively."
+    echo "Revert with: ujust margine-blender-gpu disable"

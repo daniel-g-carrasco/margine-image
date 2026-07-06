@@ -1206,7 +1206,10 @@ margine-netflix-1080p $ACTION="status":
     fi
     echo
     echo "Installed. Now:"
-    echo "  1. Start Zen. If it asks to approve 'Netflix 1080p UA' in about:addons, allow it."
+    echo "  1. Fully quit Zen and start it again. A freshly sideloaded extension's"
+    echo "     background only activates on a clean restart, so the very first Netflix"
+    echo "     page may still show the native UA (reloading the tab is not enough)."
+    echo "     Approve 'Netflix 1080p UA' in about:addons if Zen asks."
     echo "  2. Open Netflix, play a compatible title, press Ctrl+Shift+Alt+D."
     echo "     The overlay Playing bitrate / resolution is the real proof: look for 1920x1080."
     echo

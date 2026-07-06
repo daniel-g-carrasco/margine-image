@@ -36,6 +36,17 @@ sched="$action"
 conf_mode="${2:-Auto}"
 cli_mode="${3:-auto}"
 
+# Defence in depth: this helper runs as root via pkexec, so it must not
+# trust its argv even though the GUI/ujust callers already validate. The
+# values below are written into a root config file and passed to scxctl;
+# a name with quotes/newlines/spaces could corrupt config.toml. Whitelist
+# to the shapes scx actually uses (scheduler = lowercase alnum e.g.
+# "lavd"/"p2dq"; conf mode = PascalCase letters; cli mode = lowercase
+# letters) and refuse anything else.
+[[ "$sched"     =~ ^[a-z0-9]+$ ]] || { echo "scheduler-apply: invalid scheduler name" >&2; exit 2; }
+[[ "$conf_mode" =~ ^[A-Za-z]+$ ]] || { echo "scheduler-apply: invalid conf mode" >&2; exit 2; }
+[[ "$cli_mode"  =~ ^[a-z]+$ ]]    || { echo "scheduler-apply: invalid cli mode" >&2; exit 2; }
+
 install -d -m 0755 /etc/scx_loader
 # default_sched / default_mode are what scx_loader restores on boot. Casing is
 # what it expects: scx_ prefix on the scheduler, PascalCase mode.

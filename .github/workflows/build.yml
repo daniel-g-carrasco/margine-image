@@ -526,13 +526,14 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          # Pinned installer + pinned grype version. The previous
-          # `curl | sh` from anchore's moving `main` ran inside the job
-          # that holds the cosign key and wrote to a PATH dir that
-          # precedes cosign's — an unpinned write there is exactly the
+          # SHA-pinned installer + pinned grype version. This runs inside
+          # the job that holds the cosign key and writes to a PATH dir
+          # that precedes cosign's, so the installer itself must be
+          # immutable: a moving `v0.114.0` tag (or `main`) is exactly the
           # supply-chain shape this repo's SHA-pin policy exists to
-          # prevent (review P2.3).
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/v0.114.0/install.sh \
+          # prevent (review P2.3). ef8e65a = the commit tag v0.114.0
+          # points at; the -b arg still names the release to download.
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/ef8e65adb2dec760f1f923e635da4c7696d3c295/install.sh \
             | sh -s -- -b /usr/local/bin v0.114.0 >/dev/null
           SBOM_FILE="$(ls *.spdx.json sbom*.json 2>/dev/null | head -1)"
           [[ -n "$SBOM_FILE" ]] || { echo "::warning::no SBOM file found for grype"; exit 0; }

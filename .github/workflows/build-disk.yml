@@ -667,7 +667,11 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v ia >/dev/null; then
-            python3 -m pip install --user --quiet internetarchive
+            # Pin: this job exports the IA S3 keys, so a trojaned
+            # `internetarchive` release must not be auto-pulled. 5.9.0 is
+            # the version this pipeline's CLI-surface notes were verified
+            # against.
+            python3 -m pip install --user --quiet internetarchive==5.9.0
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
           ~/.local/bin/ia --version || ia --version

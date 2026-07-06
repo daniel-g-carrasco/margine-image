@@ -1100,3 +1100,116 @@ margine-sunshine-remove:
       sudo firewall-cmd --reload >/dev/null 2>&1 || true
     fi
     echo "Done. (uinput stays enabled, which is harmless.)"
+
+# Netflix 1080p on Zen Browser: install the AMO-signed "Netflix 1080p UA"
+# extension into the Zen (Flatpak) profile and keep DRM/Widevine on.
+#
+# Why a recipe and not a shipped default: Zen is a Flatpak. Its enterprise
+# policy file (distribution/policies.json) lives in read-only /app and is
+# wiped on every `flatpak update`, so a durable policy-based auto-install
+# is not viable. Sideloading is disabled by default. Shipping a niche UA
+# spoofer enabled for every user is also the wrong default. So this is
+# opt-in and per-user, the same pattern as the other Margine recipes.
+#
+# Honesty: this does NOT bypass or provide Widevine. It only makes Netflix
+# see an Opera-on-Linux user agent (the one condition Netflix uses to
+# unlock 1080p on Linux). 1080p also depends on the title, your plan and
+# the network. Verify with the Netflix overlay: Ctrl+Shift+Alt+D.
+[group('Apps')]
+margine-netflix-1080p $ACTION="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+    APP="app.zen_browser.zen"
+    EXT_ID="{221ca73e-12bd-11f1-b1cd-2cf05d5d458e}"
+    # Pinned to the reviewed v2.0 XPI; Zen auto-updates it from AMO afterwards.
+    XPI_URL="https://addons.mozilla.org/firefox/downloads/file/4724248/netflix_1080p_ua-2.0.xpi"
+    XPI_SHA="24dc19cbd2272a9a16cdeec4038385f8692b88b708b7bcc21daa724aa7925492"
+    ZEN_HOME="$HOME/.var/app/$APP/.zen"
+    if ! flatpak info "$APP" >/dev/null 2>&1; then
+      echo "Zen Browser ($APP) is not installed."
+      exit 1
+    fi
+    PROFILE="$(ls -1dt "$ZEN_HOME"/*.[dD]efault* 2>/dev/null | head -1)"
+    if [ "$ACTION" = "status" ]; then
+      echo "Zen:       installed"
+      if [ -z "$PROFILE" ]; then
+        echo "Profile:   none yet (launch Zen once)"
+        exit 0
+      fi
+      echo "Profile:   $PROFILE"
+      if [ -f "$PROFILE/extensions/${EXT_ID}.xpi" ]; then
+        echo "Extension: installed"
+      else
+        echo "Extension: not installed"
+      fi
+      if ls -d "$PROFILE/gmp-widevinecdm"/*/ >/dev/null 2>&1; then
+        echo "Widevine:  present ($(ls "$PROFILE/gmp-widevinecdm" 2>/dev/null | tail -1))"
+      else
+        echo "Widevine:  not downloaded yet (Zen fetches it on first DRM playback)"
+      fi
+      echo
+      echo "Verify actual resolution during playback with Ctrl+Shift+Alt+D."
+      exit 0
+    fi
+    if [ -z "$PROFILE" ]; then
+      echo "No Zen profile under $ZEN_HOME."
+      echo "Launch Zen Browser once so it creates a profile, then re-run."
+      exit 1
+    fi
+    EXT_DIR="$PROFILE/extensions"
+    USER_JS="$PROFILE/user.js"
+    if [ "$ACTION" = "remove" ] || [ "$ACTION" = "uninstall" ]; then
+      rm -f "$EXT_DIR/${EXT_ID}.xpi"
+      if [ -f "$USER_JS" ]; then
+        sed -i '/margine-netflix-1080p managed block/,/margine-netflix-1080p end managed block/d' "$USER_JS"
+      fi
+      echo "Removed the Netflix 1080p UA extension. Restart Zen."
+      echo "(The DRM/EME setting is left as-is: harmless, shared with other streaming sites.)"
+      exit 0
+    fi
+    if [ "$ACTION" != "install" ]; then
+      echo "usage: ujust margine-netflix-1080p [status|install|remove]"
+      exit 2
+    fi
+    # Precise: match the running Flatpak app id exactly, not any process
+    # whose command line merely contains the string (an editor, a shell).
+    if flatpak ps --columns=application 2>/dev/null | grep -qx "$APP"; then
+      echo "Zen is running. Quit it first (it rewrites its config on exit and would drop"
+      echo "these changes), then re-run."
+      exit 1
+    fi
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    echo "Downloading the AMO-signed extension (v2.0)..."
+    curl -fL --retry 3 -o "$TMP/nf.xpi" "$XPI_URL"
+    if ! echo "${XPI_SHA}  ${TMP}/nf.xpi" | sha256sum -c - >/dev/null 2>&1; then
+      echo "ERROR: checksum mismatch on the downloaded XPI, refusing to install."
+      echo "  expected $XPI_SHA"
+      echo "  got      $(sha256sum "$TMP/nf.xpi" | cut -d' ' -f1)"
+      echo "AMO may have published a newer version; update XPI_URL + XPI_SHA in this recipe."
+      exit 1
+    fi
+    mkdir -p "$EXT_DIR"
+    install -m0644 "$TMP/nf.xpi" "$EXT_DIR/${EXT_ID}.xpi"
+    # Managed prefs: keep DRM/EME on (Widevine), and let a profile-dropped
+    # extension enable itself. autoDisableScopes is a bitmask of scopes whose
+    # sideloaded add-ons stay disabled; 14 clears the PROFILE bit (1) only, so
+    # the app/user/system scopes stay locked. The profile dir is the user's
+    # own, so this does not widen who can add an extension.
+    if ! grep -q "margine-netflix-1080p" "$USER_JS" 2>/dev/null; then
+      {
+        echo '// margine-netflix-1080p managed block'
+        echo 'user_pref("media.eme.enabled", true);'
+        echo 'user_pref("extensions.autoDisableScopes", 14);'
+        echo '// margine-netflix-1080p end managed block'
+      } >> "$USER_JS"
+    fi
+    echo
+    echo "Installed. Now:"
+    echo "  1. Start Zen. If it asks to approve 'Netflix 1080p UA' in about:addons, allow it."
+    echo "  2. Open Netflix, play a compatible title, press Ctrl+Shift+Alt+D."
+    echo "     The overlay Playing bitrate / resolution is the real proof: look for 1920x1080."
+    echo
+    echo "Note: this only changes how Netflix identifies the browser. It does not"
+    echo "provide Widevine (Zen downloads that itself) and cannot guarantee 1080p for"
+    echo "every title, plan or network. Remove with: ujust margine-netflix-1080p remove"

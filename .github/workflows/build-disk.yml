@@ -90,8 +90,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
-  cancel-in-progress: true
+  # One group per (event, variant): a stable dispatch and a nvidia
+  # dispatch never collide, and a NEW dispatch of the same variant
+  # QUEUES behind the running one instead of cancelling a multi-hour
+  # ISO build mid-publish (cancelled publishes are how half-finished
+  # IA items happen). Only PR runs cancel their superseded selves.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', inputs.image_tag || 'stable') || (github.ref || github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build_disk:
@@ -581,12 +586,15 @@ jobs:
       && needs.build_iso_titanoboa.result == 'success'
       && (needs.install_gate.result == 'success' || needs.install_gate.result == 'skipped')
     runs-on: ubuntu-24.04
-    # 350 = IA upload headroom. Bumped from 180 on 2026-06-09 after run
-    # 27166954601's publish_ia hit the 180-min cap mid-upload (IA's S3
-    # ingest for a ~9 GB ISO ran past 3 h) and the job was cancelled. GHA
-    # job hard-cap is 6 h; 350 leaves margin for the upload + the 25-min
-    # derive wait. If a run still times out, IA ingest is degraded — re-run
-    # just this job (the build_disk split exists precisely for that).
+    # 350 = IA upload headroom for a SLOW-BUT-MOVING ingest (2026-06-09:
+    # a ~9 GB ISO legitimately took >3 h). A STALLED transfer no longer
+    # burns this budget: ia-upload-iso.sh aborts an attempt when the
+    # rate sits under 10 KB/s for 5 min and retries on a fresh
+    # connection (run 28758416337 sat 5h50m on a dead socket before
+    # this). If the job still times out, IA ingest is degraded across
+    # attempts — re-run just this job (the build_disk split exists
+    # precisely for that; the verify short-circuit makes the re-run
+    # skip anything already ingested).
     timeout-minutes: 350
     strategy:
       fail-fast: false
@@ -600,6 +608,11 @@ jobs:
       identifier: ${{ steps.ia_upload.outputs.identifier }}
       iso_file: ${{ steps.disk.outputs.artifact_basename }}
     steps:
+      - name: Checkout repo (for the hardened upload script)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 1
+
       - name: Download ISO artifact (${{ matrix.image }})
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -659,12 +672,20 @@ jobs:
           fi
           ~/.local/bin/ia --version || ia --version
 
-      - name: Upload to Internet Archive (torrent-first distribution)
+      - name: Create IA item (metadata + SHA256SUMS)
         # IA auto-generates a BitTorrent .torrent + magnet + 3 HTTP
         # mirrors for everything we upload, and seeds it forever. This
         # is the same pattern Bluefin/Bazzite use to avoid Cloudflare
         # TOS (no large binary content served from origin) and to keep
         # our home-server upload bandwidth free.
+        #
+        # SPLIT (2026-07-06): this step moves only the TINY pieces —
+        # item creation, metadata, SHA256SUMS — through the ia CLI,
+        # whose --retries handles S3 503s fine at this size and whose
+        # --metadata escaping is battle-tested. The multi-GB ISO goes
+        # through ia-upload-iso.sh in the NEXT step: ia's --retries
+        # only fires on error RESPONSES, so a hung connection blocked
+        # a 5.5 GB upload for 5h50m (run 28758416337) with no retry.
         #
         # ia 5.x CLI surface (verified against the installed pip
         # internetarchive==5.9.0, run #26789968571):
@@ -678,18 +699,14 @@ jobs:
         #     "invalid choice: 'info' (choose from 'upload', …)".
         #   - `-d` / `--debug` at the top level enables verbose stderr
         #     logging — that's the actual knob for "show progress".
-        # --retries 5 (default 3): IA's S3 endpoint returns 503 under
-        #            load; 3 retries isn't always enough for a multi-GB
-        #            multi-part upload.
-        # --sleep 60 (default 30): be a better neighbour to IA during
-        #            backoff.
+        # --checksum: a re-run (or same-day re-publish) skips files IA
+        #            already has with the same md5 instead of clobbering.
         env:
           IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
           IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
         run: |
           set -euo pipefail
           OUTDIR="${{ steps.disk.outputs.outdir }}"
-          ARTIFACT="${{ steps.disk.outputs.artifact }}"
           # Reuse the SAME date the ISO was renamed with (the IA upload between
           # can be long enough to cross UTC midnight — review blocker).
           DATE_TAG="${{ steps.disk.outputs.date_tag }}"
@@ -719,8 +736,9 @@ jobs:
           # don't need IA's clobber-history — replace cleanly. Prune existing
           # history with the ia-prune-history.yml workflow.
           ia --config-file "$IA_CONFIG_FILE" --debug upload "$IDENTIFIER" \
-            "$ARTIFACT" "$OUTDIR/SHA256SUMS" \
+            "$OUTDIR/SHA256SUMS" \
             --no-backup \
+            --checksum \
             --retries 5 \
             --sleep 60 \
             --metadata="mediatype:software" \
@@ -731,8 +749,23 @@ jobs:
             --metadata="creator:daniel-g-carrasco" \
             --metadata="licenseurl:https://www.apache.org/licenses/LICENSE-2.0"
           echo "identifier=$IDENTIFIER" >> "$GITHUB_OUTPUT"
-          echo "Uploaded as https://archive.org/details/$IDENTIFIER"
         id: ia_upload
+
+      - name: Upload ISO (stall-aware, verify short-circuit)
+        # The fragile transfer, isolated: curl PUT with a real stall
+        # detector (<10 KB/s for 5 min aborts the attempt), bounded
+        # retries on fresh connections, and a HEAD size+md5 verify that
+        # makes retries and re-runs skip already-ingested files. See
+        # .github/scripts/ia-upload-iso.sh for the full failure-mode
+        # rationale; tested against a mock S3 (stall, happy, preloaded).
+        env:
+          IA_S3_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
+          IA_S3_SECRET: ${{ secrets.IA_SECRET_KEY }}
+          IDENTIFIER: ${{ steps.ia_upload.outputs.identifier }}
+        run: |
+          set -euo pipefail
+          .github/scripts/ia-upload-iso.sh "$IDENTIFIER" "${{ steps.disk.outputs.artifact }}"
+          echo "Uploaded as https://archive.org/details/$IDENTIFIER"
 
       - name: Wait for IA to derive (gen torrent + mirrors)
         timeout-minutes: 25

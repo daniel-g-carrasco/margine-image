@@ -122,6 +122,11 @@ MIRRORED_PREFIXES = ("/docs", "/handbook")
 
 def normalize_docs_path(path: str) -> str | None:
     clean = path.rstrip("/")
+    # A routes.json entry like /docs/../../usr starts with /docs/ but must
+    # never be treated as a mirrored route (it would write a page outside
+    # the mirror). Reject any traversal segment up front.
+    if ".." in clean.split("/"):
+        return None
     for prefix in MIRRORED_PREFIXES:
         if clean == prefix or clean.startswith(prefix + "/"):
             return clean
@@ -130,6 +135,20 @@ def normalize_docs_path(path: str) -> str | None:
 
 def looks_like_asset(path: str) -> bool:
     return bool(ASSET_EXT_RE.search(path)) or path.startswith(ASSET_DIRS)
+
+
+def _within(target: Path, root: Path) -> bool:
+    """True only if target resolves inside root. This writer runs as root
+    at image build and fetches paths from a remote site; a hostile or
+    MITM'd origin could reference `/../../etc/x` (in a link, an <img>/CSS
+    url, or a routes.json entry) to escape the mirror and plant a
+    root-owned file anywhere. pathlib does NOT collapse `..`, so every
+    write target is resolved and checked against this before it is used."""
+    try:
+        target.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def localize_asset(path: str, output_dir: Path, base_url: str, current_dir: Path) -> str | None:
@@ -144,14 +163,18 @@ def localize_asset(path: str, output_dir: Path, base_url: str, current_dir: Path
     abs_url = base_url + clean
     if abs_url not in _asset_cache:
         dest = output_dir / clean.lstrip("/")
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(fetch_bytes(abs_url))
-            _asset_cache[abs_url] = str(dest)
-            print(f"[offline-docs]   asset {abs_url} -> {dest}")
-        except Exception as exc:  # noqa: BLE001 - a missing asset must not fail the whole build.
-            print(f"[offline-docs]   asset fetch failed for {abs_url}: {exc}", file=sys.stderr)
+        if not _within(dest, output_dir):
+            print(f"[offline-docs]   refusing out-of-tree asset path {clean}", file=sys.stderr)
             _asset_cache[abs_url] = None
+        else:
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(fetch_bytes(abs_url))
+                _asset_cache[abs_url] = str(dest)
+                print(f"[offline-docs]   asset {abs_url} -> {dest}")
+            except Exception as exc:  # noqa: BLE001 - a missing asset must not fail the whole build.
+                print(f"[offline-docs]   asset fetch failed for {abs_url}: {exc}", file=sys.stderr)
+                _asset_cache[abs_url] = None
     dest_str = _asset_cache[abs_url]
     if dest_str is None:
         return None
@@ -331,6 +354,9 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
     for route in routes:
         source_url = f"{base_url}{route}/"
         destination = output_path_for_route(output_dir, route)
+        if not _within(destination, output_dir):
+            print(f"[offline-docs] skipping out-of-tree route {route}", file=sys.stderr)
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         print(f"[offline-docs] {source_url} -> {destination}")
         html_text = fetch_text(source_url)

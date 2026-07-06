@@ -328,9 +328,16 @@ cp /ctx/50-branding/assets/icons/margine-documentation.svg "$DOCS_ICON"
 # can rebuild the mirror into /var/lib/margine/offline-docs with the
 # exact same fetch/rewrite logic that bakes this /usr seed.
 install -Dm0755 /ctx/50-branding/build-offline-docs.py /usr/libexec/margine/build-offline-docs
-python3 /usr/libexec/margine/build-offline-docs \
+# Best-effort seed: don't couple a ~28-min image build to the docs
+# site's uptime. If the site is unreachable past its retries the seed
+# is left empty (or partial) and margine-docs-refresh.service rebuilds
+# the mirror from the network on first boot. Failing the build here
+# would brick it on a transient website blip for no durable gain.
+if ! python3 /usr/libexec/margine/build-offline-docs \
   --base-url "$MARGINE_DOCS_BASE_URL" \
-  --output-dir "$OFFLINE_DOCS_DIR"
+  --output-dir "$OFFLINE_DOCS_DIR"; then
+  log "WARN: offline-docs seed failed (site unreachable?) — runtime docs-refresh will backfill the mirror"
+fi
 chmod 0644 "$SCHEDULER_ICON" "$DOCS_ICON"
 chmod -R a+rX "$OFFLINE_DOCS_DIR"
 

@@ -5,11 +5,11 @@
 
 # Apply the full Margine user-state (home, GNOME, keybinds, apps) in one shot.
 [group('Margine')]
-margine-bootstrap MODE="interactive":
+margine-bootstrap $MODE="interactive":
     #!/usr/bin/bash
     set -uo pipefail
     UNATTENDED=0
-    case "{{ MODE }}" in
+    case "$MODE" in
       unattended|--unattended|noninteractive|silent) UNATTENDED=1 ;;
     esac
 
@@ -171,7 +171,9 @@ margine-gaming:
     # input-remapper, tuned, tuned-ppd, scx-scheds) is already in
     # base Margine — see custom-kernel/install.sh + build_files/build.sh.
     # rom-properties-gtk was dropped in 2026-05 (no F44 build available).
-    sudo rpm-ostree install \
+    # --idempotent: a re-run (common: "did it install?") must not abort
+    # under set -e when the package is already layered.
+    sudo rpm-ostree install --idempotent \
         gamescope \
         vkBasalt
 
@@ -278,7 +280,8 @@ margine-gaming-native:
     PKGLIST=/usr/share/margine/gaming-native-packages.txt
     [ -r "$PKGLIST" ] || { echo "Missing $PKGLIST — bad image?" >&2; exit 1; }
     mapfile -t GAMING_PKGS < <(grep -vE '^[[:space:]]*(#|$)' "$PKGLIST")
-    sudo rpm-ostree install "${GAMING_PKGS[@]}"
+    # --idempotent: safe to re-run without aborting on already-layered pkgs.
+    sudo rpm-ostree install --idempotent "${GAMING_PKGS[@]}"
 
     echo
     echo "== Ensuring full (unfiltered) Flathub at system level =="
@@ -341,11 +344,12 @@ margine-gaming-native-remove:
 #   ujust margine-scheduler off      # stop scx_loader, return to BORE
 # Switch the CPU scheduler (sched_ext/BPF): status, off, or a scxctl name.
 [group('Performance')]
-margine-scheduler MODE="status":
+margine-scheduler $MODE="status":
     #!/usr/bin/bash
     set -uo pipefail
 
-    MODE="{{ MODE }}"
+    # MODE arrives as an exported env var ($ on the param), not raw just
+    # text substitution, so a hostile argument stays inert data.
     SERVICE="scx_loader.service"
 
     require_scxctl() {
@@ -668,7 +672,7 @@ margine-autologin ACTION="status" USER="":
 # TPM2 LUKS auto-unlock for the encrypted root (status/enable/disable).
 [group('Margine')]
 margine-tpm-unlock ACTION="status" PCRS="7":
-    sudo /usr/bin/margine-tpm-unlock {{ ACTION }} {{ PCRS }}
+    sudo /usr/bin/margine-tpm-unlock "{{ ACTION }}" "{{ PCRS }}"
 
 # Re-apply the HiDPI GRUB font + grub.cfg now (safe, idempotent).
 [group('Margine')]
@@ -884,7 +888,7 @@ margine-test-vm-remove NAME="margine-test-template":
 #
 # Remove ALL throwaway 'margine-test-*' VMs at once (domains + disks + nvram).
 [group('Margine')]
-margine-test-vm-clean ALL="false":
+margine-test-vm-clean $ALL="false":
     #!/usr/bin/bash
     set -uo pipefail
     CONN="qemu:///session"
@@ -894,11 +898,11 @@ margine-test-vm-clean ALL="false":
     cleaned=()
     for v in "${all[@]}"; do
       [[ -z "$v" ]] && continue
-      if [[ "{{ ALL }}" != "true" && "$v" == "$KEEP" ]]; then continue; fi
+      if [[ "$ALL" != "true" && "$v" == "$KEEP" ]]; then continue; fi
       cleaned+=("$v")
     done
     if [[ ${#cleaned[@]} -eq 0 ]]; then
-      echo "Nothing to remove (no throwaway test VMs$( [[ "{{ ALL }}" != "true" ]] && printf ' besides the template' ))."
+      echo "Nothing to remove (no throwaway test VMs$( [[ "$ALL" != "true" ]] && printf ' besides the template' ))."
       exit 0
     fi
     echo "Removing ${#cleaned[@]} test VM(s): ${cleaned[*]}"
@@ -909,7 +913,7 @@ margine-test-vm-clean ALL="false":
       else virsh -c "$CONN" undefine "$v" >/dev/null 2>&1 || true; fi
       echo "  removed $v"
     done
-    if [[ "{{ ALL }}" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi
+    if [[ "$ALL" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi
 
 # Enable GPU OpenCL in the darktable Flatpak (Mesa rusticl). Two switches are
 # needed and both ship off: the Flatpak needs RUSTICL_ENABLE for its rusticl

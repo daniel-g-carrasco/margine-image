@@ -160,18 +160,26 @@ fi
 # crisp at any DPI without touching the user's icon theme. No
 # tar download, no theme switch, no behaviour change anywhere
 # else in the desktop.
-MOREWAITA_RAW="https://raw.githubusercontent.com/somepaulo/MoreWaita/main/scalable/legacy/system-software-update.svg"
+# Pinned to a MoreWaita commit + sha256-verified. This is a third-party
+# asset baked into the image, so a moving `main` (or a compromise of it)
+# must not be able to silently swap the shipped SVG. Bump SHA + checksum
+# together when refreshing the icon.
+MOREWAITA_SHA="53bc2ba9c2cdc1f26ef822fcdd8a95e01cce5d58"
+MOREWAITA_SHA256="5ad21425761a7b22feaa5e8ff2681dc6743dffee76fcaab97220ae7d91ea8753"
+MOREWAITA_RAW="https://raw.githubusercontent.com/somepaulo/MoreWaita/${MOREWAITA_SHA}/scalable/legacy/system-software-update.svg"
 SYSUPDATE_TARGET="/usr/share/icons/Adwaita/scalable/apps/system-software-update.svg"
 log "Downloading high-res system-software-update.svg from MoreWaita → $SYSUPDATE_TARGET"
-mkdir -p "$(dirname "$SYSUPDATE_TARGET")"
-if curl -fL --retry 5 --retry-delay 10 -sS -o "$SYSUPDATE_TARGET" "$MOREWAITA_RAW"; then
-  chmod 0644 "$SYSUPDATE_TARGET"
+MOREWAITA_TMP="$(mktemp)"
+if curl -fL --retry 5 --retry-delay 10 -sS -o "$MOREWAITA_TMP" "$MOREWAITA_RAW" \
+   && echo "${MOREWAITA_SHA256}  ${MOREWAITA_TMP}" | sha256sum -c - >/dev/null 2>&1; then
+  install -Dm0644 "$MOREWAITA_TMP" "$SYSUPDATE_TARGET"
   # Refresh Adwaita icon cache so gtk apps see the new SVG.
   gtk-update-icon-cache -q -t -f /usr/share/icons/Adwaita || true
   log "system-software-update.svg installed ($(stat -c %s "$SYSUPDATE_TARGET") bytes)"
 else
-  log "WARN: failed to download system-software-update.svg — launcher icon stays blurry"
+  log "WARN: system-software-update.svg download/verify failed — launcher icon stays blurry"
 fi
+rm -f "$MOREWAITA_TMP"
 
 # Copy every GNOME extension's schema XML from its extension dir to the
 # global /usr/share/glib-2.0/schemas/ before compiling. Runtime

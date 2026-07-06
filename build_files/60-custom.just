@@ -1171,7 +1171,9 @@ margine-netflix-1080p $ACTION="status":
       echo "usage: ujust margine-netflix-1080p [status|install|remove]"
       exit 2
     fi
-    if pgrep -f "$APP" >/dev/null 2>&1; then
+    # Precise: match the running Flatpak app id exactly, not any process
+    # whose command line merely contains the string (an editor, a shell).
+    if flatpak ps --columns=application 2>/dev/null | grep -qx "$APP"; then
       echo "Zen is running. Quit it first (it rewrites its config on exit and would drop"
       echo "these changes), then re-run."
       exit 1

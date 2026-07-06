@@ -72,7 +72,16 @@ already_uploaded() {
   size="$(printf '%s' "$headers" | tr -d '\r' | awk 'tolower($1)=="content-length:" {print $2}' | tail -1)"
   etag="$(printf '%s' "$headers" | tr -d '\r' | awk 'tolower($1)=="etag:" {gsub(/"/, "", $2); print $2}' | tail -1)"
   [ "$size" = "$SIZE" ] || return 1
-  if [ -n "$etag" ] && [ "$etag" != "$MD5" ]; then return 1; fi
+  # IA stores a large file with a MULTIPART etag (e.g. "<hash>-<parts>"),
+  # not the plain content md5, so the etag is only authoritative when it IS
+  # a 32-hex md5. Otherwise trust the size match (a truncated upload changes
+  # the size). Without this, a multi-GB ISO uploads fine but the verify never
+  # matches and the job false-fails even though the ISO published (run
+  # 28779615535, 2026-07-06: the 8.9 GB stable ISO landed + IA derived the
+  # torrent, yet the publish job went red and the site bump never ran).
+  if printf '%s' "$etag" | grep -qE '^[0-9a-f]{32}$' && [ "$etag" != "$MD5" ]; then
+    return 1
+  fi
   return 0
 }
 

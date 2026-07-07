@@ -34,6 +34,16 @@ on:
         description: "image tag to push (experimental; :nvidia is what the ISO/selector consume)"
         default: nvidia
         type: string
+  schedule:
+    # Sun 05:00 UTC — the same weekly cadence as the stable image (build.yml,
+    # Sun 04:00), offset so the two heavy builds don't compete for runners.
+    # This build goes straight from the Containerfile on the bluefin-dx base
+    # (it does NOT layer on margine:stable), so it needs no ordering with the
+    # 04:00 run — the weekly rebuild just keeps :nvidia tracking upstream at
+    # the same rhythm. build-disk.yml's workflow_run trigger then rebuilds +
+    # publishes the nvidia ISO once this run succeeds.
+    # (Scheduled runs have no inputs, so the steps default to nvidia-open/:nvidia.)
+    - cron: '0 5 * * 0'
 
 permissions:
   contents: read
@@ -84,18 +94,18 @@ jobs:
             --format docker \
             --layers \
             --build-arg "ENABLE_NVIDIA=1" \
-            --build-arg "NVIDIA_KMOD=${{ inputs.nvidia_kmod }}" \
+            --build-arg "NVIDIA_KMOD=${{ inputs.nvidia_kmod || 'nvidia-open' }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
-            --tag "${IMG}:${{ inputs.tag }}" \
+            --tag "${IMG}:${{ inputs.tag || 'nvidia' }}" \
             .
-          sudo buildah images "${IMG}:${{ inputs.tag }}"
+          sudo buildah images "${IMG}:${{ inputs.tag || 'nvidia' }}"
 
       - name: Push experimental tag
         run: |
           IMG="ghcr.io/${{ github.repository_owner }}/margine"
-          sudo buildah push "${IMG}:${{ inputs.tag }}"
-          echo "Pushed ${IMG}:${{ inputs.tag }} — EXPERIMENTAL, not validated on real NVIDIA hardware."
+          sudo buildah push "${IMG}:${{ inputs.tag || 'nvidia' }}"
+          echo "Pushed ${IMG}:${{ inputs.tag || 'nvidia' }} — EXPERIMENTAL, not validated on real NVIDIA hardware."
 
       - name: Wipe staged secrets
         if: always()

@@ -95,11 +95,10 @@ env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"
   BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905"
-  # osbuild/bootc-image-builder-action@v0.0.2 still declares Node 20,
-  # which GitHub deprecates and force-switches to Node 24 on
-  # 2026-06-16. No newer release exists (checked 2026-06-10). Opt in
-  # to Node 24 NOW so any breakage shows up while it is still our
-  # choice — if a run fails on this, the variable is the rollback.
+  # Originally added for osbuild/bootc-image-builder-action (Node 20,
+  # deprecated). That action was replaced with a direct podman run on
+  # 2026-07-08; the opt-in stays as a general guard so any remaining
+  # Node-20 action breaks while it is still our choice to roll back.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
@@ -153,6 +152,26 @@ jobs:
         with:
           remove-codeql: true
 
+      - name: Mount container storage on a BTRFS loopback
+        # Same fix the Titanoboa ISO job below has carried since 2026-06:
+        # the ~15 GB base image in rootful storage + osbuild's working
+        # tree (the BIB container's overlay) + the raw->qcow2 conversion
+        # peak no longer fit the runner's / even after the reclaim step.
+        # First hit 2026-07-07 (run 28900160440: qemu-img convert died
+        # ENOSPC mid-qcow2) once the stable image grew past the margin
+        # that had held all of 2026-07-06. Back rootful podman storage
+        # with a compressed 80G BTRFS loopback on the ~70 GB ephemeral
+        # /mnt SSD instead of hoping the margin holds.
+        run: |
+          set -euo pipefail
+          sudo truncate -s 80G /mnt/podman-storage.img
+          sudo mkfs.btrfs -f /mnt/podman-storage.img
+          sudo podman system reset --force || true
+          sudo systemctl stop podman.service podman.socket 2>/dev/null || true
+          sudo mount -o compress-force=zstd:2 /mnt/podman-storage.img /var/lib/containers/storage
+          sudo systemctl start podman.socket 2>/dev/null || true
+          sudo df -h / /var/lib/containers/storage
+
       - name: Prepare environment
         run: |
           USER_UID=$(id -u)
@@ -200,25 +219,52 @@ jobs:
       # straight from the base image.)
       - name: Build disk image
         id: build
-        # SHA-pinned for supply-chain safety (audit §6.3). v0.0.2 is the
-        # latest release tag at time of pin; main has had only Dependabot
-        # bumps since (last verified 2026-06-06). Bump deliberately when
-        # the action ships a new release; review changelog first.
-        uses: osbuild/bootc-image-builder-action@019bb59c5100ecec4e78c9e94e18a840110f7a0b  # v0.0.2
-        with:
-          builder-image: ${{ env.BIB_IMAGE }}
-          config-file: './disk_config/disk.toml'
-          image: ${{ format('{0}/{1}:{2}', env.IMAGE_REGISTRY, env.IMAGE_NAME, env.DEFAULT_TAG) }}
-          chown: ${{ env.USER_UID }}:${{ env.USER_GID }}
-          types: ${{ matrix.disk-type }}
-          # Margine's :stable inherits from Bluefin DX, which doesn't
-          # set the `containers.bootc.rootfs` OCI label; without an
-          # explicit rootfs here bootc-image-builder errors out with
-          # "DefaultRootFs missing". Bluefin's own ISO uses btrfs and
-          # so does Margine's Anaconda installer config (Btrfs default
-          # in Anaconda).
-          rootfs: btrfs
-          additional-args: --use-librepo=True
+        # Direct `podman run` of bootc-image-builder, replacing
+        # osbuild/bootc-image-builder-action (2026-07-08). Two reasons:
+        # 1. The action's first move is `sudo rm -rf
+        #    /var/lib/containers/storage`, which is incompatible with the
+        #    BTRFS-loopback-backed storage mounted above (EBUSY on the
+        #    mountpoint failed the step even though the build itself ran
+        #    on: run 28902818755) AND silently wiped the resilient
+        #    pre-pull of BIB_IMAGE two steps up, re-pulling from quay
+        #    with no retry logic — tonight quay flaked exactly there.
+        # 2. The action is pinned to v0.0.2 (last release), declares
+        #    Node 20 (deprecated) and only ever ran this same podman
+        #    command anyway. smoke-boot.yml has always invoked BIB
+        #    directly; this mirrors it.
+        # The command below is byte-for-byte what the action ran (see any
+        # pre-2026-07-08 green run), with the same output contract:
+        # artifacts under ./output, `output-directory` step output.
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          # The action also pulled the TARGET image into root's storage
+          # before invoking BIB; BIB inspects it in LOCAL storage and
+          # errors "image not known" otherwise (run 28905057914). The
+          # image is public, so no auth needed for root's podman.
+          for attempt in 1 2 3; do
+            sudo podman pull "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}" && break
+            [ "$attempt" = 3 ] && { echo "::error::cannot pull ${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}"; exit 1; }
+            sleep $((attempt * 30))
+          done
+          # --rootfs btrfs: Margine's :stable inherits from Bluefin DX,
+          # which doesn't set the `containers.bootc.rootfs` OCI label;
+          # without an explicit rootfs bootc-image-builder errors out
+          # with "DefaultRootFs missing". Bluefin's own ISO uses btrfs
+          # and so does Margine's Anaconda installer config.
+          sudo podman run --rm --privileged \
+            --security-opt label=type:unconfined_t \
+            --volume /var/lib/containers/storage:/var/lib/containers/storage \
+            --volume "$(pwd)/output:/output" \
+            --volume "$(pwd)/disk_config/disk.toml:/config.toml:ro" \
+            "${BIB_IMAGE}" \
+            build --output /output \
+            --chown "${USER_UID}:${USER_GID}" \
+            --rootfs btrfs \
+            --use-librepo=True \
+            --type "${DISK_TYPE}" \
+            "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}"
+          echo "output-directory=$(pwd)/output" >> "$GITHUB_OUTPUT"
 
       - name: List + sha256 outputs
         # Step id was `outputs` previously — that collides with GHA's

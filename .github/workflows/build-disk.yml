@@ -238,6 +238,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
+          # The action also pulled the TARGET image into root's storage
+          # before invoking BIB; BIB inspects it in LOCAL storage and
+          # errors "image not known" otherwise (run 28905057914). The
+          # image is public, so no auth needed for root's podman.
+          for attempt in 1 2 3; do
+            sudo podman pull "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}" && break
+            [ "$attempt" = 3 ] && { echo "::error::cannot pull ${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}"; exit 1; }
+            sleep $((attempt * 30))
+          done
           # --rootfs btrfs: Margine's :stable inherits from Bluefin DX,
           # which doesn't set the `containers.bootc.rootfs` OCI label;
           # without an explicit rootfs bootc-image-builder errors out

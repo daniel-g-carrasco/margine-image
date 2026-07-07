@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# Apply Margine defaults to Zen Browser (Flatpak `app.zen_browser.zen`).
+# Apply Margine defaults to Zen Browser (Flatpak `app.zen_browser.zen`):
+#   - DuckDuckGo as the default search engine (via user.js),
+#   - uBlock Origin installed and auto-enabled (the signed XPI baked into
+#     the image is dropped into the profile, and extensions.autoDisableScopes
+#     is set so a profile-installed extension enables itself instead of
+#     waiting for a manual click).
 #
-# Best-effort, single concern: set DuckDuckGo as the default search
-# engine via `user.js` in the profile directory.
+# Why this works where policies.json did not: the Zen Flatpak's policy
+# path lives in read-only /app, but the profile's extensions/ dir is
+# user-writable and Firefox/Zen load a correctly-named signed XPI from
+# there. This is the same mechanism `ujust margine-netflix-1080p` uses.
 #
-# Limitations (by design — keep this script simple):
-#   - Requires Zen to have been launched at least once so the profile
-#     directory exists. If no profile is found, log and skip.
-#   - uBlock Origin (or any extension) is NOT installed automatically.
-#     Flatpak isolation makes the Mozilla `policies.json` path messy;
-#     user installs manually from addons.mozilla.org in one click.
+# Requires Zen to have been launched at least once so the profile exists
+# (if none, log and skip; margine-bootstrap re-runs this).
 #
 # Usage:
 #   configure-zen-browser              # dry-run
-#   configure-zen-browser --apply      # actually write user.js
+#   configure-zen-browser --apply      # write user.js + install uBlock
 #
-# Idempotent: re-running on a profile that already has the DDG pref
-# does nothing.
+# Idempotent.
 
 set -euo pipefail
 
@@ -27,6 +29,8 @@ case "${1:-}" in
 esac
 
 ZEN_HOME="${HOME}/.var/app/app.zen_browser.zen/.zen"
+UBLOCK_ID="uBlock0@raymondhill.net"
+UBLOCK_XPI="/usr/share/margine/zen-extensions/${UBLOCK_ID}.xpi"
 
 if [[ ! -d "$ZEN_HOME" ]]; then
   echo "Zen profile root not found at $ZEN_HOME"
@@ -35,8 +39,7 @@ if [[ ! -d "$ZEN_HOME" ]]; then
 fi
 
 # Find profile dir. Zen names them like xxxxxxx.default or
-# xxxxxxx.Default (User) — pick the largest by mtime (most recently
-# used). If none, bail.
+# xxxxxxx.Default (User); pick the most recently used.
 PROFILE=$(ls -1dt "$ZEN_HOME"/*.default* "$ZEN_HOME"/*.Default* 2>/dev/null | head -1 || true)
 if [[ -z "$PROFILE" ]]; then
   echo "No Zen profile under $ZEN_HOME — has Zen completed first-run?"
@@ -46,9 +49,7 @@ fi
 echo "Profile: $PROFILE"
 
 USER_JS="$PROFILE/user.js"
-# The managed-block marker is spelled out literally at every use site
-# (awk range, embedded-python regex, heredoc) — a shell variable cannot
-# reach the python anyway, so there is deliberately no MARKER var.
+EXT_DEST="$PROFILE/extensions/${UBLOCK_ID}.xpi"
 
 prefs=$(cat <<'EOF'
 // margine-configure-zen-browser — managed block
@@ -59,24 +60,39 @@ user_pref("browser.urlbar.placeholderName", "DuckDuckGo");
 user_pref("browser.urlbar.placeholderName.private", "DuckDuckGo");
 // Disable Pocket suggestions in URL bar (no Margine value, just noise).
 user_pref("browser.urlbar.suggest.pocket", false);
+// Auto-enable a profile-installed extension (uBlock Origin) instead of
+// leaving it disabled pending a manual click. 14 keeps the profile scope
+// (bit 1) enabled and disables the rest.
+user_pref("extensions.autoDisableScopes", 14);
 // margine-configure-zen-browser — end managed block
 EOF
 )
 
+# What is already in place?
+block_current=0
 if [[ -f "$USER_JS" ]] && grep -q "margine-configure-zen-browser" "$USER_JS"; then
-  echo "user.js already has Margine block — checking if up to date..."
   current=$(awk '/margine-configure-zen-browser — managed block/,/margine-configure-zen-browser — end managed block/' "$USER_JS")
-  if [[ "$current" == "$prefs" ]]; then
-    echo "  ✓ no change needed"
-    exit 0
-  fi
-  echo "  (Margine block out of date; will rewrite)"
-  if [[ $DRY_RUN -eq 1 ]]; then
-    echo "  [dry-run] would rewrite block"
-    exit 0
-  fi
-  # Strip the old block, append new
-  python3 - "$USER_JS" <<'PY'
+  [[ "$current" == "$prefs" ]] && block_current=1
+fi
+ublock_present=0;   [[ -f "$EXT_DEST" ]]   && ublock_present=1
+ublock_available=0; [[ -f "$UBLOCK_XPI" ]] && ublock_available=1
+
+if [[ $block_current -eq 1 && ( $ublock_present -eq 1 || $ublock_available -eq 0 ) ]]; then
+  echo "  ✓ no change needed (DuckDuckGo set; uBlock $([[ $ublock_present -eq 1 ]] && echo installed || echo 'not shipped'))"
+  exit 0
+fi
+
+if [[ $DRY_RUN -eq 1 ]]; then
+  [[ $block_current -eq 0 ]] && echo "[dry-run] would set DuckDuckGo + Pocket-off + autoDisableScopes in $USER_JS"
+  [[ $ublock_available -eq 1 && $ublock_present -eq 0 ]] && echo "[dry-run] would install uBlock Origin: $UBLOCK_XPI -> $EXT_DEST"
+  echo "Apply with: $0 --apply"
+  exit 0
+fi
+
+# Apply: user.js managed block.
+if [[ $block_current -eq 0 ]]; then
+  if [[ -f "$USER_JS" ]] && grep -q "margine-configure-zen-browser" "$USER_JS"; then
+    python3 - "$USER_JS" <<'PY'
 import re, sys
 path = sys.argv[1]
 text = open(path).read()
@@ -84,24 +100,23 @@ pattern = r'// margine-configure-zen-browser — managed block.*?// margine-conf
 text = re.sub(pattern, '', text, flags=re.DOTALL)
 open(path, 'w').write(text.rstrip() + '\n')
 PY
+  fi
+  {
+    [[ -f "$USER_JS" ]] && cat "$USER_JS"
+    echo "$prefs"
+  } > "$USER_JS.new"
+  mv "$USER_JS.new" "$USER_JS"
+  echo "  ✓ wrote $USER_JS (DuckDuckGo default)"
 fi
 
-if [[ $DRY_RUN -eq 1 ]]; then
-  echo "[dry-run] would append managed block to $USER_JS:"
-  echo "$prefs" | sed 's/^/  | /'
-  echo
-  echo "Apply with: $0 --apply"
-  exit 0
+# Apply: install uBlock Origin (signed XPI) into the profile.
+if [[ $ublock_available -eq 1 && $ublock_present -eq 0 ]]; then
+  install -Dm0644 "$UBLOCK_XPI" "$EXT_DEST"
+  echo "  ✓ installed uBlock Origin -> $EXT_DEST"
+elif [[ $ublock_available -eq 0 ]]; then
+  echo "  (uBlock XPI not shipped at $UBLOCK_XPI — skipping)"
 fi
 
-# Append the managed block. Idempotent thanks to the check above.
-{
-  [[ -f "$USER_JS" ]] && cat "$USER_JS"
-  echo "$prefs"
-} > "$USER_JS.new"
-mv "$USER_JS.new" "$USER_JS"
-echo "  ✓ wrote $USER_JS"
 echo
-echo "Restart Zen Browser to pick up the new search engine default."
-echo "uBlock Origin: install manually from addons.mozilla.org (one click,"
-echo "Flatpak isolation makes auto-install via policies.json messy)."
+echo "Fully restart Zen Browser to pick up DuckDuckGo and uBlock Origin."
+echo "(A freshly installed extension's background only activates on a clean restart.)"

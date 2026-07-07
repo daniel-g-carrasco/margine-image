@@ -51,6 +51,10 @@ on:
 # close together must not race their promotions — queue, never cancel
 # (a cancelled run mid-`skopeo copy` could leave the three stable tags
 # pointing at two different digests).
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; the smoke_boot job declares its own contents:read+packages:write.
+permissions: {}
+
 concurrency:
   group: smoke-boot
   cancel-in-progress: false

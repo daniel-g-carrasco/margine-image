@@ -29,9 +29,9 @@ on:
     - cron: "23 6 * * 1" # Mondays 06:23 UTC
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; the single job below elevates to exactly what it needs.
+permissions: {}
 
 concurrency:
   group: ego-extensions-pin-update
@@ -45,6 +45,9 @@ jobs:
   check-and-pr:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write        # createCommitOnBranch on the pin branch
+      pull-requests: write   # open/update the pin PR
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 

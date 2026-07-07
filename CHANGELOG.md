@@ -43,6 +43,10 @@ stable release is cut.
 - **/status "Devices running Margine"** chart, sourced weekly from Fedora's
   public Count Me dataset (Margine ships `VARIANT_ID=margine`, so it appears
   there with no telemetry of our own).
+- **Shared bash history across terminal windows** (issue #278): a
+  `/etc/profile.d` drop-in appends each command to the history file and pulls
+  in other sessions' lines, so up-arrow works across multiple Ptyxis windows
+  instead of each keeping a private, clobbered history.
 
 ### Fixed (2026-07-06)
 - **The offline manual now shows its images.** The offline-docs scraper

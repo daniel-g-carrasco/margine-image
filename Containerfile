@@ -77,5 +77,10 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     /ctx/build-margine-extensions.sh
 
-# ----- Lint: verify final image is a valid bootc container -----
-RUN bootc container lint
+# ----- Build-residue sweep + lint: verify final image is a valid bootc container -----
+# 99-cleanup.sh removes the /var state the build's dnf/rpm transactions
+# leave behind (dead weight on installed systems — bootc only uses image
+# /var as a first-boot seed). Chained into the same RUN so the lint
+# always judges the cleaned tree.
+RUN --mount=type=bind,from=ctx,source=/99-cleanup.sh,target=/ctx/99-cleanup.sh \
+    /ctx/99-cleanup.sh && bootc container lint

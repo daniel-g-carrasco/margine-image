@@ -421,13 +421,28 @@ class BuildPage:
         return GLib.markup_escape_text(" · ".join(parts))
 
     def _iso_test_vm(self, entry):
+        # Preflight: the path can go stale between the scan and the click
+        # (2026-07-07: the old recycle deleted the ISO out from under this
+        # handler and it still toasted success). Fail loudly, then rescan.
+        if not os.path.exists(entry["path"]):
+            self.win.toast("That ISO no longer exists on disk — rescanning")
+            self.refresh()
+            return
         name = core.VM_PREFIX + _slug(entry["name"])
         self._append(f"\n$ ujust margine-test-vm {entry['name']} {name}\n")
-        err = core.bash_fire(core.vm_test_script(entry["path"], name))
-        if err:
-            self.win.toast(GLib.markup_escape_text(f"Failed to launch the VM: {err}"))
-        else:
-            self.win.toast("Launching the test VM (clipboard + Secure Boot + TPM 2.0)")
+
+        def done(ok, out, err):
+            if ok:
+                return
+            tail = [ln for ln in ((out or "") + "\n" + (err or "")).splitlines()
+                    if ln.strip()]
+            for ln in tail[-8:]:
+                self._append(ln + "\n")
+            msg = tail[-1] if tail else "unknown error"
+            self.win.toast(GLib.markup_escape_text(f"VM launch failed: {msg}"))
+
+        core.bash_collect(core.vm_test_script(entry["path"], name), done)
+        self.win.toast("Launching the test VM (clipboard + Secure Boot + TPM 2.0)")
 
     def _iso_write_usb(self, entry):
         path = entry["path"]

@@ -832,15 +832,23 @@ margine-test-vm ISO="" NAME="" DISK="80":
     # share a stable basename (Margine-Live.iso -> margine-test-Margine-Live), so a
     # re-run should REFRESH the single test VM rather than erroring out — and, more
     # importantly, never leave a graveyard of multi-GB qcow2s behind (the exact
-    # "terabytes of artifacts" we're avoiding). Tear the old one down first;
-    # '--remove-all-storage --nvram' reclaims its disk + UEFI vars. Manual VMs you
+    # "terabytes of artifacts" we're avoiding). Tear the old one down first, but
+    # NEVER with 'undefine --remove-all-storage': that deletes EVERY attached
+    # volume, including the cdrom ISO the old domain booted from — and since
+    # rebuilds reuse the same ISO path, it ate a freshly built Margine-Live.iso
+    # on 2026-07-07 (the ISO dir was a session storage pool, so the file
+    # resolved as a managed volume). Collect the writable-disk paths, undefine
+    # with --nvram only, then delete just those scratch disks. Manual VMs you
     # made in virt-manager are untouched (different names, and on qemu:///system).
     if virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
       echo "Recreating throwaway VM '$NAME' (removing the previous domain + disk)…"
+      vols="$(virsh -c "$CONN" domblklist "$NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk" && $NF!="-" {print $NF}')"
       virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
-      if   virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1; then :
-      elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
-      else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
+      virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1 \
+        || virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true
+      for v in $vols; do
+        virsh -c "$CONN" vol-delete "$v" >/dev/null 2>&1 || rm -f -- "$v"
+      done
     fi
     echo "Creating '$NAME' (${DISK} GiB, Secure Boot + enrolled MS keys + TPM 2.0) from:"
     echo "  $real_iso"
@@ -876,11 +884,16 @@ margine-test-vm-remove NAME="margine-test-template":
       echo "List test VMs:  virsh -c $CONN list --all"
       exit 1
     fi
+    # Delete only the writable disks, never cdrom media (an attached ISO must
+    # survive — 'undefine --remove-all-storage' ate a fresh build on 2026-07-07).
+    vols="$(virsh -c "$CONN" domblklist "$NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk" && $NF!="-" {print $NF}')"
     virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
-    if   virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1; then :
-    elif virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1; then :
-    else virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true; fi
-    echo "Removed '$NAME' (domain + storage + nvram)."
+    virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1 \
+      || virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true
+    for v in $vols; do
+      virsh -c "$CONN" vol-delete "$v" >/dev/null 2>&1 || rm -f -- "$v"
+    done
+    echo "Removed '$NAME' (domain + scratch disks + nvram)."
 
 # Keeps the clone TEMPLATE by default; pass ALL=true to wipe that too. Only
 # touches the rootless qemu:///session VMs this tool creates — your manual
@@ -907,10 +920,15 @@ margine-test-vm-clean $ALL="false":
     fi
     echo "Removing ${#cleaned[@]} test VM(s): ${cleaned[*]}"
     for v in "${cleaned[@]}"; do
+      # Only the writable disks — never cdrom media (an attached ISO must
+      # survive; '--remove-all-storage' ate a fresh build on 2026-07-07).
+      vols="$(virsh -c "$CONN" domblklist "$v" --details 2>/dev/null | awk '$1=="file" && $2=="disk" && $NF!="-" {print $NF}')"
       virsh -c "$CONN" destroy "$v" >/dev/null 2>&1 || true
-      if   virsh -c "$CONN" undefine "$v" --nvram --remove-all-storage >/dev/null 2>&1; then :
-      elif virsh -c "$CONN" undefine "$v" --nvram >/dev/null 2>&1; then :
-      else virsh -c "$CONN" undefine "$v" >/dev/null 2>&1 || true; fi
+      virsh -c "$CONN" undefine "$v" --nvram >/dev/null 2>&1 \
+        || virsh -c "$CONN" undefine "$v" >/dev/null 2>&1 || true
+      for d in $vols; do
+        virsh -c "$CONN" vol-delete "$d" >/dev/null 2>&1 || rm -f -- "$d"
+      done
       echo "  removed $v"
     done
     if [[ "$ALL" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi

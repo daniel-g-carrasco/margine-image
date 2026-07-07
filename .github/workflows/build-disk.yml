@@ -153,6 +153,26 @@ jobs:
         with:
           remove-codeql: true
 
+      - name: Mount container storage on a BTRFS loopback
+        # Same fix the Titanoboa ISO job below has carried since 2026-06:
+        # the ~15 GB base image in rootful storage + osbuild's working
+        # tree (the BIB container's overlay) + the raw->qcow2 conversion
+        # peak no longer fit the runner's / even after the reclaim step.
+        # First hit 2026-07-07 (run 28900160440: qemu-img convert died
+        # ENOSPC mid-qcow2) once the stable image grew past the margin
+        # that had held all of 2026-07-06. Back rootful podman storage
+        # with a compressed 80G BTRFS loopback on the ~70 GB ephemeral
+        # /mnt SSD instead of hoping the margin holds.
+        run: |
+          set -euo pipefail
+          sudo truncate -s 80G /mnt/podman-storage.img
+          sudo mkfs.btrfs -f /mnt/podman-storage.img
+          sudo podman system reset --force || true
+          sudo systemctl stop podman.service podman.socket 2>/dev/null || true
+          sudo mount -o compress-force=zstd:2 /mnt/podman-storage.img /var/lib/containers/storage
+          sudo systemctl start podman.socket 2>/dev/null || true
+          sudo df -h / /var/lib/containers/storage
+
       - name: Prepare environment
         run: |
           USER_UID=$(id -u)

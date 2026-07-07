@@ -342,7 +342,10 @@ declare -A BLUEFIN_LEFTOVER_PATHS=(
   # ublue-motd specifically spammed Bluefin tipline at every shell login.
   ['ublue-motd binary']='/usr/bin/ublue-motd'
   ['ublue-fastfetch binary']='/usr/bin/ublue-fastfetch'
-  ['ublue-bling binary']='/usr/bin/ublue-bling'
+  # NOT listed: /usr/bin/ublue-bling — deliberately KEPT since 2026-07-07
+  # (issue #291). The Bluefin `bluefin-cli` recipe runs `@ublue-bling`;
+  # deleting it broke `ujust bluefin-cli` with "command not found". We keep
+  # the toggle + bling.sh; only ublue-bling-fastfetch stays stripped.
   ['ublue-bling-fastfetch binary']='/usr/bin/ublue-bling-fastfetch'
   ['ublue-privileged-setup binary']='/usr/bin/ublue-privileged-setup'
   ['ublue-system-setup binary']='/usr/bin/ublue-system-setup'

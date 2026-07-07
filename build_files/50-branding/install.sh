@@ -417,8 +417,16 @@ rm -f /usr/etc/bazaar/*-bluefin-*.jxl /etc/bazaar/*-bluefin-*.jxl
 # For the ones we DO delete (ublue-system-setup, ublue-user-setup,
 # etc.): also delete their systemd .service units so we don't hit the
 # same 203/EXEC retry-loop. See "(j.bis)" block below.
-rm -f /usr/bin/ublue-bling \
-      /usr/bin/ublue-bling-fastfetch \
+#
+# ublue-bling KEPT (un-deleted 2026-07-07, issue #291): the Bluefin
+# `bluefin-cli` recipe (/usr/share/ublue-os/just/system.just) runs
+# `@ublue-bling`, and we keep that recipe + bling.sh + the bling tools
+# (brew installs eza/atuin/zoxide via cli.Brewfile). ublue-bling is just
+# the toggle that appends `source .../bling.sh` to the user's shell rc;
+# it needs only gum (present). Deleting the binary while keeping the
+# recipe made `ujust bluefin-cli` fail with "ublue-bling: command not
+# found". We still drop ublue-bling-fastfetch (fastfetch branding).
+rm -f /usr/bin/ublue-bling-fastfetch \
       /usr/bin/ublue-fastfetch \
       /usr/bin/ublue-motd \
       /usr/bin/ublue-privileged-setup \

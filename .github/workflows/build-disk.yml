@@ -49,6 +49,19 @@ on:
         description: "Image tag to build the ISO from: 'stable' = the normal ISO; 'nvidia' = the experimental NVIDIA variant (run build-nvidia.yml first to push :nvidia). NVIDIA ISO publishes as margine-nvidia-iso-<date> and does NOT bump the site's stable date."
         default: stable
         type: string
+  # Auto-refresh the experimental NVIDIA ISO whenever the NVIDIA image is
+  # (re)built (build-nvidia.yml: weekly Sun 05:00 + on demand). On its success
+  # this rebuilds + publishes the nvidia ISO so testers always get the latest
+  # Margine. Every decision point below resolves a workflow_run event to
+  # image_tag 'nvidia' (inputs are EMPTY on workflow_run — a bare
+  # `inputs.image_tag || 'stable'` would silently build the STABLE ISO and
+  # bump the site): the qcow2 job and the GPU-less QEMU boot-test are
+  # skipped, publish goes to margine-nvidia-iso-<date>, the site's stable
+  # date is NOT bumped.
+  workflow_run:
+    workflows: ["Build Margine NVIDIA variant (experimental)"]
+    types: [completed]
+    branches: [main]
   pull_request:
     # `labeled` included so adding the iso-test label triggers a run
     # immediately (without it, the label did nothing until the next
@@ -101,6 +114,9 @@ concurrency:
 jobs:
   build_disk:
     name: Build disk (${{ matrix.image }} / ${{ matrix.disk-type }})
+    # The weekly NVIDIA auto-refresh (workflow_run) only needs the nvidia
+    # ISO — don't burn 45 runner-minutes rebuilding the stable qcow2.
+    if: github.event_name != 'workflow_run'
     runs-on: ubuntu-24.04
     # BIB is ~15-17 min, sha256 + artifact upload ~1-3 min. 45 is a
     # comfortable cap for the build half of the pipeline.
@@ -279,7 +295,12 @@ jobs:
     # validated end-to-end in a VM (live GNOME session + Anaconda WebUI).
     # On PRs it still only runs with the iso-test label (the build is
     # ~40 min); on dispatch it always runs and publish_ia picks it up.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
+    # On workflow_run (weekly NVIDIA auto-refresh) it runs only when the
+    # upstream build-nvidia run actually succeeded.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: read
       # write: pushes the run-scoped margine-live tag + prunes old ones.
@@ -297,9 +318,10 @@ jobs:
       - name: Prepare environment
         run: |
           # ISO_TAG selects which published image the live ISO is built from.
-          # Defaults to 'stable' (current behaviour); 'nvidia' builds the
-          # experimental NVIDIA-variant ISO. Empty on non-dispatch triggers.
-          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
+          # Defaults to 'stable'; 'nvidia' builds the experimental NVIDIA
+          # variant. inputs are EMPTY on workflow_run (the weekly NVIDIA
+          # auto-refresh), which must resolve to 'nvidia', never 'stable'.
+          ISO_TAG="${{ github.event_name == 'workflow_run' && 'nvidia' || inputs.image_tag || 'stable' }}"
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "${GITHUB_ENV}"
           echo "ISO_TAG=${ISO_TAG}" >> "${GITHUB_ENV}"
           echo "LIVE_TAG=${IMAGE_REGISTRY,,}/margine-live:ci-run-${{ github.run_id }}" >> "${GITHUB_ENV}"
@@ -408,7 +430,9 @@ jobs:
         # marks it experimental, validated on real hardware. Skipping the gate
         # for it lets the ISO publish for bare-metal testing instead of the job
         # timing out in the boot wait (run 27753036929). Stable keeps the gate.
-        if: inputs.image_tag == '' || inputs.image_tag == 'stable'
+        # workflow_run == the weekly NVIDIA auto-refresh (inputs empty there,
+        # so the tag check alone would wrongly boot-test it as 'stable').
+        if: github.event_name != 'workflow_run' && (inputs.image_tag == '' || inputs.image_tag == 'stable')
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -640,10 +664,17 @@ jobs:
           # — instead of the generic margine-live.iso. Same UTC day as the IA
           # identifier (both derived in this job).
           DATE_TAG="$(date -u +%Y%m%d)"
-          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
+          # workflow_run = weekly NVIDIA auto-refresh (inputs empty there).
+          ISO_TAG="${{ github.event_name == 'workflow_run' && 'nvidia' || inputs.image_tag || 'stable' }}"
           VFILE="margine"
           [[ "$ISO_TAG" != "stable" ]] && VFILE="margine-${ISO_TAG}"
           NEWBASE="${VFILE}-${DATE_TAG}.iso"
+          # Weekly auto-refresh replaces ONE fixed file in ONE fixed IA item
+          # (see the identifier step below) instead of minting a dated item
+          # per week: 52 multi-GB items/year with only a MANUAL prune
+          # workflow would just pile up. --no-backup makes the re-upload a
+          # clean replace, and testers get one stable download URL.
+          [[ "${{ github.event_name }}" == "workflow_run" ]] && NEWBASE="margine-nvidia-latest.iso"
           if [[ "$(basename "$ARTIFACT")" != "$NEWBASE" ]]; then
             mv -- "$ARTIFACT" "$(dirname "$ARTIFACT")/$NEWBASE"
             ARTIFACT="$(dirname "$ARTIFACT")/$NEWBASE"
@@ -715,12 +746,21 @@ jobs:
           # can be long enough to cross UTC midnight — review blocker).
           DATE_TAG="${{ steps.disk.outputs.date_tag }}"
           # Variant-aware identifier: stable -> margine-live-iso-<date> (unchanged);
-          # nvidia -> margine-nvidia-iso-<date>, titled "Margine NVIDIA".
-          ISO_TAG="${{ inputs.image_tag || 'stable' }}"
+          # nvidia dispatch -> margine-nvidia-iso-<date>, titled "Margine NVIDIA".
+          # workflow_run (weekly NVIDIA auto-refresh; inputs empty there) -> ONE
+          # fixed item, margine-nvidia-iso-weekly, whose margine-nvidia-latest.iso
+          # is replaced in place each week (--no-backup): a stable URL for
+          # testers and no pile of dated multi-GB items on IA.
+          ISO_TAG="${{ github.event_name == 'workflow_run' && 'nvidia' || inputs.image_tag || 'stable' }}"
           if [[ "$ISO_TAG" == "stable" ]]; then VSLUG="live"; VLABEL=""; else VSLUG="$ISO_TAG"; VLABEL=" ${ISO_TAG^^}"; fi
           IDENTIFIER="${{ matrix.image }}-${VSLUG}-iso-${DATE_TAG}"
           TITLE="Margine${VLABEL} Linux ISO ${DATE_TAG}"
           DESCRIPTION="Margine${VLABEL} live ISO (Titanoboa) — bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            IDENTIFIER="${{ matrix.image }}-nvidia-iso-weekly"
+            TITLE="Margine NVIDIA Linux ISO (weekly auto-refresh)"
+            DESCRIPTION="Margine NVIDIA live ISO (Titanoboa), experimental — refreshed automatically every week; margine-nvidia-latest.iso is replaced in place, check SHA256SUMS for the current build. Bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + NVIDIA driver + Margine deltas. Source: https://github.com/${{ github.repository }}"
+          fi
           SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
           export IA_CONFIG_FILE=/tmp/ia.ini
           cat > "$IA_CONFIG_FILE" <<EOF
@@ -877,7 +917,10 @@ jobs:
     # PR events skip this step entirely. Only the stable ISO bumps the site's
     # LATEST_ISO_DATE — the experimental NVIDIA ISO must not move the default
     # download date (it gets its own constant when it's validated + wired).
-    if: success() && github.event_name != 'pull_request' && (inputs.image_tag == '' || inputs.image_tag == 'stable')
+    # workflow_run == the weekly NVIDIA auto-refresh: inputs are empty there,
+    # so WITHOUT the explicit event guard the tag check would pass and the
+    # nvidia refresh would bump the stable date. Never bump on workflow_run.
+    if: success() && github.event_name != 'pull_request' && github.event_name != 'workflow_run' && (inputs.image_tag == '' || inputs.image_tag == 'stable')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -947,11 +990,21 @@ jobs:
           fi
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
+          # Weekly NVIDIA auto-refresh where the upstream build failed:
+          # every job skipped, nothing happened — don't ping about it
+          # (build-nvidia's own run is the signal for that failure).
+          if [[ "$BUILD_RESULT" == "skipped" && "$ISO_RESULT" == "skipped" ]]; then
+            echo "Nothing ran (upstream workflow_run not a success) — no notification."
+            exit 0
+          fi
+
           # Decision matrix — the partial-success cases are the
           # interesting ones: each names the exact cheap retry. Until
           # 2026-06-12 the live-ISO job's result wasn't inspected at
           # all, so a release-ISO failure arrived as a generic shrug.
-          if [[ "$BUILD_RESULT" == "success" && "$ISO_RESULT" == "success" && "$PUBLISH_RESULT" == "success" ]]; then
+          # build_disk 'skipped' counts as OK: it is skipped by design on
+          # the weekly NVIDIA auto-refresh (workflow_run).
+          if [[ ("$BUILD_RESULT" == "success" || "$BUILD_RESULT" == "skipped") && "$ISO_RESULT" == "success" && "$PUBLISH_RESULT" == "success" ]]; then
             TITLE="Disk images built + ISO on Internet Archive"
             PRIO="default"
             TAGS="cd,white_check_mark"

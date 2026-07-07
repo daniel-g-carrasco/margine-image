@@ -31,6 +31,15 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    # workflow_run "completed" also fires for cancelled/skipped upstream runs
+    # (superseded merge bursts, smoke-boot's no-new-digest skips). Those carry
+    # no state change worth refreshing and just spawn a duplicate run that the
+    # concurrency group cancels — skip them. success AND failure both refresh
+    # (a failed build IS a status change the page should reflect).
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion != 'cancelled' &&
+       github.event.workflow_run.conclusion != 'skipped')
     steps:
       - name: Checkout margine-image (producer scripts)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

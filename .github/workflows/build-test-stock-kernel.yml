@@ -20,6 +20,10 @@ env:
   IMAGE_NAME: margine
   TEST_TAG: test-stock-kernel
 
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; the build_push job declares its own contents:read+packages:write.
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true

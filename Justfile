@@ -265,10 +265,17 @@ test-install-vm:
     CONN="qemu:///session"
     if virsh -c "$CONN" dominfo "$NAME" >/dev/null 2>&1; then
       echo "Recreating throwaway VM '$NAME' (removing the previous domain + disk)…"
+      # Only the writable disks — never cdrom media: '--remove-all-storage'
+      # deleted the freshly built ISO this very recipe was about to boot
+      # (2026-07-07; output/ is a session storage pool, so the ISO resolved
+      # as a managed volume).
+      vols="$(virsh -c "$CONN" domblklist "$NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk" && $NF!="-" {print $NF}')"
       virsh -c "$CONN" destroy "$NAME" >/dev/null 2>&1 || true
-      virsh -c "$CONN" undefine "$NAME" --nvram --remove-all-storage >/dev/null 2>&1 \
-        || virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1 \
+      virsh -c "$CONN" undefine "$NAME" --nvram >/dev/null 2>&1 \
         || virsh -c "$CONN" undefine "$NAME" >/dev/null 2>&1 || true
+      for v in $vols; do
+        virsh -c "$CONN" vol-delete "$v" >/dev/null 2>&1 || rm -f -- "$v"
+      done
     fi
     exec ujust margine-test-vm "$ISO_ABS"
 

@@ -48,6 +48,21 @@ stable release is cut.
   in other sessions' lines, so up-arrow works across multiple Ptyxis windows
   instead of each keeping a private, clobbered history.
 
+### Fixed (2026-07-07)
+- **`ujust bluefin-cli` works again** (issue #291): the branding strip was
+  deleting `/usr/bin/ublue-bling` together with Bluefin's fastfetch binaries,
+  but the inherited `bluefin-cli` recipe still calls it, so it failed with
+  "command not found". The bling toggle now stays (only the fastfetch branding
+  is stripped) and the strip validator no longer flags it.
+- **Recycling a test VM no longer deletes the ISO it booted from.** Every
+  `margine-test-*` teardown (the `margine-test-vm` recycle,
+  `margine-test-vm-remove`, `margine-test-vm-clean`, the dev Justfile and the
+  ISO-builder GUI) used `virsh undefine --remove-all-storage`, which removes
+  every attached volume including the cdrom ISO. Since rebuilds reuse the
+  same `output/Margine-Live.iso` path (a session storage pool), re-testing a
+  fresh build deleted it. Teardowns now remove only the VM's writable scratch
+  disks; the GUI also reports a failed VM launch instead of toasting success.
+
 ### Fixed (2026-07-06)
 - **The offline manual now shows its images.** The offline-docs scraper
   rewrote page links but never downloaded the referenced assets, so

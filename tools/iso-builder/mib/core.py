@@ -97,6 +97,14 @@ def bash_fire(script):
     return spawn_fire(["bash", "-lc", script])
 
 
+def bash_collect(script, cb):
+    """Run a bash script asynchronously; cb(ok, stdout, stderr) on the main
+    loop. Unlike bash_fire, a script that starts fine but exits non-zero
+    reports back — bash_fire's silent late failure is how a broken VM
+    launch once toasted success (2026-07-07)."""
+    spawn_collect(["bash", "-lc", script], cb)
+
+
 def gh(args, cb):
     """Run `gh` asynchronously; cb(ok, stdout, stderr) on the main loop.
     Uses the absolute GH_BIN — brew's bin dir is not on a GNOME-launched
@@ -234,17 +242,40 @@ def dir_size(path):
 
 
 # -- VM test ----------------------------------------------------------------------
+def vm_teardown_script():
+    """Bash lines that tear down the domain named in $N safely.
+
+    NEVER `undefine --remove-all-storage`: libvirt deletes every attached
+    volume, INCLUDING cdrom media. output/ is a session storage pool
+    (virt-install auto-created it), so the ISO the old domain booted from
+    resolves as a managed volume — and since rebuilds reuse the same
+    Margine-Live.iso path, --remove-all-storage deleted a freshly built
+    ISO on 2026-07-07. Instead: collect the writable-disk paths first,
+    undefine with --nvram only, then delete just those scratch disks.
+
+    Expects bash vars: CONN (connection URI) and N (domain name).
+    """
+    return (
+        '  _vols=$(virsh -c "$CONN" domblklist "$N" --details 2>/dev/null'
+        " | awk '$1==\"file\" && $2==\"disk\" && $NF!=\"-\" {print $NF}')\n"
+        '  virsh -c "$CONN" destroy "$N" >/dev/null 2>&1 || true\n'
+        '  virsh -c "$CONN" undefine "$N" --nvram >/dev/null 2>&1 \\\n'
+        '    || virsh -c "$CONN" undefine "$N" >/dev/null 2>&1 || true\n'
+        '  for _v in $_vols; do\n'
+        '    virsh -c "$CONN" vol-delete "$_v" >/dev/null 2>&1 || rm -f -- "$_v"\n'
+        '  done\n')
+
+
 def vm_test_script(iso, name):
     # Recycle inline: the SHIPPED margine-test-vm recipe errors on an
     # existing same-named domain until the next base update ships PR #239's
     # recycle — same prelude the dev Justfile's test-install-vm uses.
+    # (Once the base recipe DOES recycle, this teardown has already removed
+    # the domain, so the shipped recycle stays a no-op.)
     return (
         f"CONN={QEMU_CONN}\n"
         f"N={shlex.quote(name)}\n"
         'if virsh -c "$CONN" dominfo "$N" >/dev/null 2>&1; then\n'
-        '  virsh -c "$CONN" destroy "$N" >/dev/null 2>&1 || true\n'
-        '  virsh -c "$CONN" undefine "$N" --nvram --remove-all-storage >/dev/null 2>&1 \\\n'
-        '    || virsh -c "$CONN" undefine "$N" --nvram >/dev/null 2>&1 \\\n'
-        '    || virsh -c "$CONN" undefine "$N" >/dev/null 2>&1 || true\n'
+        + vm_teardown_script() +
         "fi\n"
         f"exec ujust margine-test-vm {shlex.quote(iso)} \"$N\"\n")

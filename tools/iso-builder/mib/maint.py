@@ -275,19 +275,13 @@ class MaintPage:
         if not names:
             return
         self.clean_btn.set_sensitive(False)
-        # --remove-all-storage / --nvram are rejected in some domain states
-        # (storage already gone, nvram-less domain) — fall through
-        # progressively, the same chain core.vm_test_script's recycle uses.
+        # Same safe teardown as core.vm_test_script's recycle: delete only
+        # the domain's writable disks, never cdrom media (an attached ISO
+        # must survive — `--remove-all-storage` ate a fresh build on
+        # 2026-07-07).
         lines = [f"CONN={shlex.quote(core.QEMU_CONN)}"]
         for n in names:
-            q = shlex.quote(n)
-            lines += [
-                f'virsh -c "$CONN" destroy {q} >/dev/null 2>&1 || true',
-                f'virsh -c "$CONN" undefine {q} --nvram --remove-all-storage'
-                ' >/dev/null 2>&1'
-                f' || virsh -c "$CONN" undefine {q} --nvram >/dev/null 2>&1'
-                f' || virsh -c "$CONN" undefine {q} >/dev/null 2>&1 || true',
-            ]
+            lines += [f"N={shlex.quote(n)}", core.vm_teardown_script()]
 
         def done(_ok, _out, _err):
             self.win.toast(GLib.markup_escape_text(toast_text))

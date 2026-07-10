@@ -45,9 +45,9 @@ on:
     # (Scheduled runs have no inputs, so the steps default to nvidia-open/:nvidia.)
     - cron: '0 5 * * 0'
 
-permissions:
-  contents: read
-  packages: write
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; the single job below elevates to exactly what it needs.
+permissions: {}
 
 concurrency:
   group: build-nvidia
@@ -57,6 +57,9 @@ jobs:
   build-nvidia:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write   # push the :nvidia tag to GHCR
     steps:
       - name: Free disk space (nvidia + CUDA userland is large)
         run: |

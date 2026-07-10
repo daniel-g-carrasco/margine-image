@@ -121,6 +121,10 @@ env:
   IMAGE_KEYWORDS: "bootc,ublue,bluefin,cachyos,margine"
   CANDIDATE_TAG: "candidate"
 
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; every job below declares exactly what it needs.
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true

@@ -484,7 +484,6 @@ flatpaks:
       - org.audacityteam.Audacity
       - com.obsproject.Studio
       - com.github.wwmm.easyeffects
-      - fm.reaper.Reaper
       - com.rafaelmardojai.Blanket
     system_utilities:
       - com.ranfdev.DistroShelf
@@ -993,7 +992,6 @@ gnome:
           - com.github.neithern.g4music.desktop
           - org.audacityteam.Audacity.desktop
           - com.github.wwmm.easyeffects.desktop
-          - fm.reaper.Reaper.desktop
         categories:
           - Audio
           - Music

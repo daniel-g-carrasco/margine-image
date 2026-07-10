@@ -6,7 +6,7 @@
 # ~22 fundamental Flatpaks into /var/lib/flatpak at install time
 # (kickstart Bazzite-pattern, see disk_config/iso-gnome.toml), so
 # the visible-on-day-one set IS there. But a separate ~12 deferred
-# Flatpaks (GIMP, Inkscape, OBS, Reaper, ...) are scheduled by
+# Flatpaks (GIMP, Inkscape, OBS, darktable, ...) are scheduled by
 # flatpak-preinstall.service to download in the background at first
 # boot. That takes 5-15 minutes depending on Flathub speed, and
 # without UX feedback the user thinks the system is broken.
@@ -85,7 +85,7 @@ case "$initial" in
       --urgency=low \
       --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
       "Margine is installing some extra apps" \
-      "GIMP, Inkscape, darktable, OBS, Reaper and more are arriving in the background. ~5-15 minutes. Keep the network up — you'll get another notification when it's done."
+      "GIMP, Inkscape, darktable, OBS and more are arriving in the background. ~5-15 minutes. Keep the network up — you'll get another notification when it's done."
     log "posted START notification"
 
     # Poll for completion. Cap at 60 min so we don't sit here forever

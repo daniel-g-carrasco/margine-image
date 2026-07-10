@@ -668,7 +668,7 @@ hdr "9b1. First-boot autostart wiring (A.4 guardrail)"
 # Until 2026-06-06 the second one was missing, so the libexec script
 # was shipped but never invoked — daniel saw no notification on first
 # login while flatpak-preinstall.service was downloading GIMP/Inkscape/
-# darktable/OBS/Reaper in the background. Add a guardrail for both.
+# darktable/OBS in the background. Add a guardrail for both.
 for entry in margine-first-boot.desktop margine-first-boot-status.desktop; do
   if [[ -f /etc/xdg/autostart/$entry ]]; then
     ok "/etc/xdg/autostart/$entry present"

@@ -22,7 +22,7 @@ VAR_DIR="/var/lib/margine/offline-docs"
 SEED_DIR="/usr/share/margine/offline-docs"
 # Same override its sibling docs-refresh honors — the two used to
 # disagree (refresh respected MARGINE_DOCS_BASE_URL, this hardcoded).
-BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
+BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.dev}"
 ONLINE_URL="${BASE_URL}/docs"
 
 if [[ -f "${VAR_DIR}/docs/index.html" ]]; then

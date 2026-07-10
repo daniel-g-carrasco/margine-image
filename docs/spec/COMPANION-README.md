@@ -11,19 +11,19 @@ tools that make it ready for work from minute one. This repository holds the
 the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 
 <p>
-  <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
-  <a href="https://margine.the-empty.place/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
+  <a href="https://margine.dev/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+  <a href="https://margine.dev/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
 </p>
 
 > **Curious how all of this is put together?** The [atomic distro
-> handbook](https://margine.the-empty.place/handbook) — authored in this
+> handbook](https://margine.dev/handbook) — authored in this
 > repo as [docs/atomic-distro-handbook.md](docs/atomic-distro-handbook.md) —
 > documents the whole build of Margine, from the bootc model to kernel
 > signing, ISOs, CI and updates, and doubles as a generic guide to building
 > your own atomic distribution.
 
-[**🌐 Website**](https://margine.the-empty.place/) ·
-[**📥 Install Margine**](https://margine.the-empty.place/#install) ·
+[**🌐 Website**](https://margine.dev/) ·
+[**📥 Install Margine**](https://margine.dev/#install) ·
 [**📖 Documentation**](docs/README.md) ·
 [**📋 Roadmap**](docs/roadmap.md) ·
 [**🛠 Build pipeline**](https://github.com/daniel-g-carrasco/margine-image)
@@ -44,7 +44,7 @@ the [Margine distribution](https://github.com/daniel-g-carrasco/margine-image).
 > [margine-image](https://github.com/daniel-g-carrasco/margine-image)
 > — that repo's README has *what Margine is*, screenshots, the current
 > install recommendation ([fresh install from the live ISO, Titanoboa
-> since 2026-06-11](https://margine.the-empty.place/docs/install-status)), the
+> since 2026-06-11](https://margine.dev/docs/install-status)), the
 > one-command gaming layer, and the optional AI workflow. This repo is
 > the *source code* of everything the distro applies to the system.
 

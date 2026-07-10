@@ -297,7 +297,7 @@ rm -f /usr/share/applications/discourse.desktop
 SCHEDULER_ICON="/usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg"
 DOCS_ICON="/usr/share/icons/hicolor/scalable/apps/margine-documentation.svg"
 OFFLINE_DOCS_DIR="/usr/share/margine/offline-docs"
-MARGINE_DOCS_BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
+MARGINE_DOCS_BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.dev}"
 
 # Lightning-bolt app icon for the CPU scheduler — ties to Margine's perf /
 # "snappier under load" theme, shipped locally instead of a generic MoreWaita

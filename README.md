@@ -11,12 +11,12 @@ tools that make it ready for work from minute one. Built on
 [CachyOS](https://cachyos.org/) kernel.
 
 <p>
-  <a href="https://margine.the-empty.place/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
-  <a href="https://margine.the-empty.place/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
+  <a href="https://margine.dev/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+  <a href="https://margine.dev/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
 </p>
 
 > **Curious how all of this is put together?** The [atomic distro
-> handbook](https://margine.the-empty.place/handbook) documents the whole
+> handbook](https://margine.dev/handbook) documents the whole
 > build, from this repo's code: kernel replacement and Secure Boot signing,
 > Flatpak strategies, rechunking, CI with the QEMU smoke gate, ISOs,
 > updates — plus every production lesson we learned the hard way. It doubles
@@ -26,13 +26,13 @@ tools that make it ready for work from minute one. Built on
   <a href="https://github.com/daniel-g-carrasco/margine-image/actions/workflows/smoke-boot.yml"><img alt="Smoke-boot" src="https://img.shields.io/github/actions/workflow/status/daniel-g-carrasco/margine-image/smoke-boot.yml?branch=main&label=smoke-boot&logo=qemu"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/daniel-g-carrasco/margine-image"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/daniel-g-carrasco/margine-image/badge"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io margine" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
-  <a href="https://margine.the-empty.place/#install"><img alt="Install" src="https://img.shields.io/badge/install-from%20ISO-D97757"></a>
+  <a href="https://margine.dev/#install"><img alt="Install" src="https://img.shields.io/badge/install-from%20ISO-D97757"></a>
   <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-4D9F4A"></a>
 </p>
 
-[**🌐 Website**](https://margine.the-empty.place/) ·
-[**📥 Install**](https://margine.the-empty.place/#install) ·
+[**🌐 Website**](https://margine.dev/) ·
+[**📥 Install**](https://margine.dev/#install) ·
 [What it is](#what-it-is) ·
 [What you get](#what-you-get) ·
 [Install](#install) ·
@@ -83,7 +83,7 @@ operations.
 | ☁️ **Rootless app helpers** | `ujust install-koofr` (alias `ujust koofr`) installs the [**Koofr**](https://koofr.eu/) Desktop sync client natively in `$HOME` — no Flatpak/RPM/Distrobox, because Koofr ships only a self-updating tarball, so it stays out of the read-only image and updates itself. It autostarts **hidden to the system tray** at login (the binary's `-silent` flag), while launching it from the applications menu opens the window normally. `ujust install-koofr remove` uninstalls it. |
 | 🔒 **Disk encryption and TPM2** | Anaconda installs default to LUKS2 with a strong passphrase. After install, TPM2 unlock can be enrolled with `systemd-cryptenroll`, keeping the passphrase as recovery. Procedure documented in [`docs/spec/07-secure-boot-tpm2.md`](docs/spec/07-secure-boot-tpm2.md). |
 | 🧪 **Verified build pipeline** | Every release passes three checks before it can be installed: image-internals inspection (a "candidate" tag is published first), boot test in QEMU, and only then promotion to the public `:stable` tag. A release that doesn't boot in a virtual machine never becomes the one your computer pulls. |
-| 📚 **Online + offline documentation** | Activities -> **"Margine documentation"** opens the live docs when the site health check passes and falls back to the local mirror at `/usr/share/margine/offline-docs/` when the machine is offline. The current install recommendation lives at <https://margine.the-empty.place/docs/install-status>. |
+| 📚 **Online + offline documentation** | Activities -> **"Margine documentation"** opens the live docs when the site health check passes and falls back to the local mirror at `/usr/share/margine/offline-docs/` when the machine is offline. The current install recommendation lives at <https://margine.dev/docs/install-status>. |
 | 🗂 **Organized application folders** | GNOME's activities grid is organized into six folders: Office, Graphics, Photography, Audio, Video, System. High-frequency apps (browser, mail, files, terminal, code editor) stay at the top level for one-click access. Editable in the declarative spec. |
 
 ## Screenshots
@@ -110,7 +110,7 @@ it, then install from the desktop with the graphical installer. The
 ISO is built with [Titanoboa](https://github.com/ublue-os/titanoboa)
 (ADR-0008) and was validated end to end in a VM. Rebasing from
 Bluefin DX remains fully supported as the alternative. Current status:
-<https://margine.the-empty.place/docs/install-status>.
+<https://margine.dev/docs/install-status>.
 
 Gaming is a one-command layer on top — `ujust margine-gaming` after
 first boot installs gamescope + vkBasalt and the seven gaming Flatpaks
@@ -125,7 +125,7 @@ parts.
 
 ### Option A — Install from the live ISO (recommended)
 
-1. Open the [Margine site Install section](https://margine.the-empty.place/#install)
+1. Open the [Margine site Install section](https://margine.dev/#install)
    for the latest dated identifier, or browse the full
    [Internet Archive collection](https://archive.org/search?query=creator%3A%22daniel-g-carrasco%22+AND+title%3A%22Margine%22&sort=-date)
    directly. Each release is available as a `.torrent` (recommended)
@@ -151,7 +151,7 @@ parts.
    GNOME Shell.
 
 Step-by-step walkthrough with screenshots:
-<https://margine.the-empty.place/docs/install-iso>.
+<https://margine.dev/docs/install-iso>.
 
 ### Option B — Rebase from Bluefin DX
 
@@ -174,7 +174,7 @@ After the reboot, two more one-time steps:
    this point on the kernel boots normally under Secure Boot and you
    will not see this screen again. Full walkthrough with the exact
    screen-by-screen flow is at
-   <https://margine.the-empty.place/docs/install-iso>.
+   <https://margine.dev/docs/install-iso>.
 2. Run **`ujust margine-bootstrap`**.
 
 

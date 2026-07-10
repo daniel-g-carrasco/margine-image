@@ -1247,7 +1247,7 @@ Same hardware, same userspace, same governor (`performance`), no `scx` scheduler
 
 **Thermal control matters on a thin-and-light.** Under sustained all-core load this hardware hits its ~100 °C limit and throttles, both kernels equally. A hotter *start* throttles sooner and looks worse, so each side is run several times at varied start temperatures and the *median start temp is matched* (the comparer enforces the 8 °C rule). Every run ends at the thermal limit, so the absolute numbers are conservative; the relative gap is fair.
 
-**Result (median of 4, Framework Laptop 13 / AMD Ryzen 5 7640U, 2026-06-16):** CachyOS/BORE does ~1.8× the context-switch throughput, +54% thread throughput, and 40–55% lower median / average scheduling latency than the stock Fedora kernel, at a ~10% cost to *tail* latency (p95/p99). That common-case-for-tail trade is BORE's design, and the fact that it shows up (rather than a clean sweep) is a sign the measurement is honest rather than cherry-picked. Raw per-run data, the chart, and a provenance README are committed under `margine-image` `tools/bench/results/2026-06-16/`; the user-facing write-up is the [Kernel performance](https://margine.the-empty.place/docs/kernel-performance) doc.
+**Result (median of 4, Framework Laptop 13 / AMD Ryzen 5 7640U, 2026-06-16):** CachyOS/BORE does ~1.8× the context-switch throughput, +54% thread throughput, and 40–55% lower median / average scheduling latency than the stock Fedora kernel, at a ~10% cost to *tail* latency (p95/p99). That common-case-for-tail trade is BORE's design, and the fact that it shows up (rather than a clean sweep) is a sign the measurement is honest rather than cherry-picked. Raw per-run data, the chart, and a provenance README are committed under `margine-image` `tools/bench/results/2026-06-16/`; the user-facing write-up is the [Kernel performance](https://margine.dev/docs/kernel-performance) doc.
 
 ## Alternatives & other distros
 
@@ -2417,7 +2417,7 @@ The service is a tightly sandboxed oneshot: `ProtectSystem=strict` with writes c
 if [[ -f "${VAR_DIR}/docs/index.html" ]]; then
   exec xdg-open "file://${VAR_DIR}/docs/index.html"
 fi
-if curl -fsS --max-time 3 "https://margine.the-empty.place/healthz" >/dev/null 2>&1; then
+if curl -fsS --max-time 3 "https://margine.dev/healthz" >/dev/null 2>&1; then
   exec xdg-open "$ONLINE_URL"
 fi
 if [[ -f "${SEED_DIR}/docs/index.html" ]]; then
@@ -4062,7 +4062,7 @@ Hard-won `ia` 5.x CLI facts encoded in the workflow comments: `ia upload --verbo
 
 ## 11.3 The website pipeline is part of the product
 
-The download page is not hand-maintained. The site (`margine-os-1084ca72`, served at `margine.the-empty.place`) hardcodes four release URLs (IA details page, `.torrent`, direct HTTP, SHA256SUMS) derived from a single constant `LATEST_ISO_DATE` in `src/routes/index.tsx`. After `publish_ia` succeeds, a `bump_site` job in the same workflow opens, and auto-merges, a PR against the site repo:
+The download page is not hand-maintained. The site (`margine-os-1084ca72`, served at `margine.dev`) hardcodes four release URLs (IA details page, `.torrent`, direct HTTP, SHA256SUMS) derived from a single constant `LATEST_ISO_DATE` in `src/routes/index.tsx`. After `publish_ia` succeeds, a `bump_site` job in the same workflow opens, and auto-merges, a PR against the site repo:
 
 ```bash
 # margine-image/.github/workflows/build-disk.yml — bump_site

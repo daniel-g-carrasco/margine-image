@@ -8,7 +8,7 @@ set -uo pipefail
 
 IMAGE="ghcr.io/daniel-g-carrasco/margine:stable"
 BLUEFIN="ghcr.io/ublue-os/bluefin-dx:stable"
-SITE="https://margine.the-empty.place/status"
+SITE="https://margine.dev/status"
 
 if [ -t 1 ]; then
   c_reset=$'\e[0m'; c_dim=$'\e[2m'; c_grn=$'\e[32m'; c_ylw=$'\e[33m'; c_ember=$'\e[38;5;208m'

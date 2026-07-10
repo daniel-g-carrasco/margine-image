@@ -7,6 +7,15 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-07-11)
+- **The project domain is now margine.dev.** Every living reference moved
+  over: os-release URLs, margine-status/update, the docs-open helper, the
+  offline-docs mirror source (verified live: 35 pages + 89 assets, zero
+  failures), the CI publishers (status.json, countme.json, ISO date bump),
+  README/SECURITY/issue templates and the spec docs. Historical entries
+  keep the old margine.the-empty.place URLs; a 301 redirect keeps them
+  working.
+
 ### Added (2026-07-10)
 - **Update watchdog + `ujust margine-update-unblock`.** Extra-data Flatpaks
   (Reaper) download their real binary from the vendor at update time;

@@ -1,6 +1,6 @@
 [Unit]
 Description=Margine: refresh the offline documentation mirror in /var/lib/margine
-Documentation=https://margine.the-empty.place/docs
+Documentation=https://margine.dev/docs
 Wants=network-online.target
 After=network-online.target
 

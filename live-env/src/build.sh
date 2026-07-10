@@ -225,7 +225,7 @@ command -v zenity  >/dev/null 2>&1 || exit 0
 if mokutil --sb-state 2>/dev/null | grep -qi 'enabled'; then
   exit 0
 fi
-zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.the-empty.place/docs/first-boot" || true
+zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.dev/docs/first-boot" || true
 SBNOTICE
 chmod 0755 /usr/libexec/margine-live-sb-notice
 

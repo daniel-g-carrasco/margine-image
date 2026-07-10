@@ -38,7 +38,7 @@ if [ "$OLD_NORM" = "$NEW_NORM" ]; then
 fi
 
 cp "$SRC" "$TARGET"
-git config user.email "noreply@margine.the-empty.place"
+git config user.email "noreply@margine.dev"
 git config user.name "margine-status-bot"
 git add "$TARGET"
 git commit -m "chore(status): refresh status.json"

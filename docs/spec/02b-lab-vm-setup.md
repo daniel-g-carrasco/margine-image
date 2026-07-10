@@ -200,7 +200,7 @@ rotated 2026-06-06 from the original 24-char base64 to a short
 human-typable string — same pattern as Bazzite's `ublue-os`). Reboot.
 
 User-facing walkthrough with screenshots: see
-<https://margine.the-empty.place/docs/first-boot>.
+<https://margine.dev/docs/first-boot>.
 
 Third boot → Margine is now booted under Secure Boot with the
 CachyOS kernel.

@@ -958,7 +958,7 @@ jobs:
     #   Stored as Actions secret SITE_BUMP_TOKEN in this repo
     #   (margine-image). Without it the job no-ops with a clear message
     #   instead of failing the workflow.
-    name: Auto-bump LATEST_ISO_DATE on margine.the-empty.place repo
+    name: Auto-bump LATEST_ISO_DATE on margine.dev repo
     needs: publish_ia
     # PR events skip this step entirely. Only the stable ISO bumps the site's
     # LATEST_ISO_DATE — the experimental NVIDIA ISO must not move the default

@@ -376,7 +376,7 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="https://margine.the-empty.place")
+    parser.add_argument("--base-url", default="https://margine.dev")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
 

@@ -398,7 +398,7 @@ const SchedulerWindow = GObject.registerClass(
         application_icon: "margine-scheduler",
         version: pretty.replace(/^Margine\s*/, "") || "alpha",
         developer_name: "Margine",
-        website: "https://margine.the-empty.place",
+        website: "https://margine.dev",
         issue_url: "https://github.com/daniel-g-carrasco/margine-image/issues",
         license_type: Gtk.License.APACHE_2_0,
         comments:

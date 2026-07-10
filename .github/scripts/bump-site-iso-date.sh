@@ -67,7 +67,7 @@ fi
 # robust path: it always lands, and the push triggers build-site.yml to
 # redeploy in ~2-3 min. The OLD==NEW guard above keeps it idempotent on a
 # same-day re-dispatch.
-git config user.email "noreply@margine.the-empty.place"
+git config user.email "noreply@margine.dev"
 git config user.name "margine-bump-bot"
 git add src/routes/index.tsx
 git commit -m "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}

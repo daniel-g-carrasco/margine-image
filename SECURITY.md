@@ -49,7 +49,7 @@ the declarative spec and configuration helpers, and the live ISO.
   passphrase only authorizes enrolling the *already-built, already-signed*
   Margine key on the local machine during a physically-present reboot — it
   is not a secret and grants no remote capability. See the
-  [handbook](https://margine.the-empty.place/handbook) for the threat model.
+  [handbook](https://margine.dev/handbook) for the threat model.
 - Issues in upstream components shipped unchanged (Fedora, Bluefin DX, the
   CachyOS kernel, Flatpak apps): please report those to the respective
   upstreams. Margine picks up their fixes on the next rebuild.

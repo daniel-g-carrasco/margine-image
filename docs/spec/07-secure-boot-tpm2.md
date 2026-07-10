@@ -347,7 +347,7 @@ kernel in both environments rather than a separate signed live kernel.
 
 1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
 2. The user reboots again. The firmware presents the **MOK Manager** screen.
-3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.the-empty.place/docs/first-boot>.
+3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.dev/docs/first-boot>.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
 ### Recovery if MOK enrollment is missed

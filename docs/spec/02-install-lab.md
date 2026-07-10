@@ -6,7 +6,7 @@
 > [margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
 > As of 2026-06-08, fresh Margine ISOs are tester media while the
 > installer path is being hardened; the live status page is
-> <https://margine.the-empty.place/docs/install-status>.
+> <https://margine.dev/docs/install-status>.
 > The procedure below is the **phase-0 Silverblue lab path** that produced
 > this spec; it is preserved for completeness and for users who explicitly
 > want to start from stock Silverblue + `apply-host-layer` rather than the
@@ -38,7 +38,7 @@ systemctl reboot
 # 5. Reboot a second time: confirm enrollment in the MOK Manager screen
 #    (firmware UI) — passphrase is `margine-os`. The CachyOS kernel
 #    then boots under Secure Boot. Full walkthrough:
-#    https://margine.the-empty.place/docs/first-boot
+#    https://margine.dev/docs/first-boot
 
 # 6. After login, run the one-shot user-state bootstrap:
 ujust margine-bootstrap

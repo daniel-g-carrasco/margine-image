@@ -22,7 +22,7 @@
 #      sync_in); offline -> keep current copy, exit 0 (not a failure).
 set -euo pipefail
 
-BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.the-empty.place}"
+BASE_URL="${MARGINE_DOCS_BASE_URL:-https://margine.dev}"
 STATE_DIR="${STATE_DIRECTORY:-/var/lib/margine}"
 SEED_DIR="/usr/share/margine/offline-docs"
 DOCS_DIR="${STATE_DIR}/offline-docs"

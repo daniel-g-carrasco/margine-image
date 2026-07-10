@@ -68,7 +68,7 @@ if [ "$OLD_NORM" = "$NEW_NORM" ]; then
 fi
 
 cp "$TMP/countme.json" "$TARGET"
-git config user.email "noreply@margine.the-empty.place"
+git config user.email "noreply@margine.dev"
 git config user.name "margine-countme-bot"
 git add "$TARGET"
 git commit -m "chore(countme): refresh weekly device data"

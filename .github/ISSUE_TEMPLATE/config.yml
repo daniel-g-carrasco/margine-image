@@ -7,5 +7,5 @@ contact_links:
     url: https://universal-blue.discourse.group/t/12247
     about: Not a bug? Ask on the Universal Blue forum thread.
   - name: Documentation and handbook
-    url: https://margine.the-empty.place/docs/
+    url: https://margine.dev/docs/
     about: Install guide, Secure Boot / MOK enrollment, troubleshooting.

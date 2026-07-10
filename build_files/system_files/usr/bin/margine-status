@@ -30,13 +30,21 @@ fi
 # `ujust margine-gaming-native`) `bootc status` omits booted.image, so the
 # digest+version above come back empty — which previously read as a network
 # failure. rpm-ostree still records the base image manifest digest; use it.
+# MUST select booted==true: deployments[0] is the STAGED deployment when an
+# update is pending, and reading it here made this tool claim "up to date"
+# for a version the machine was NOT running (2026-07-10, daniel's laptop:
+# booted 20260706, staged 20260707, status showed 20260707 as booted).
 ros="$(rpm-ostree status --json 2>/dev/null || echo '{}')"
 if [ -z "$booted_digest" ]; then
-  booted_digest="$(printf '%s' "$ros" | jq -r '.deployments[0]."base-commit-meta"."ostree.manifest-digest" // ""' 2>/dev/null)"
+  booted_digest="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.booted==true)][0]."base-commit-meta"."ostree.manifest-digest" // ""' 2>/dev/null)"
 fi
 if [ -z "$booted_ver" ] || [ "$booted_ver" = "null" ]; then
-  booted_ver="$(printf '%s' "$ros" | jq -r '.deployments[0].version // "unknown"' 2>/dev/null || echo unknown)"
+  booted_ver="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.booted==true)][0].version // "unknown"' 2>/dev/null || echo unknown)"
 fi
+# A STAGED deployment applies at next boot: surface it instead of letting
+# the user believe nothing is pending.
+staged_ver="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.staged==true)][0].version // ""' 2>/dev/null)"
+staged_digest="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.staged==true)][0]."base-commit-meta"."ostree.manifest-digest" // ""' 2>/dev/null)"
 kernel="$(uname -r)"
 
 # --- latest published :stable + lineage ---
@@ -55,18 +63,38 @@ elif [ -z "$booted_digest" ]; then
   verdict="${c_dim}? local digest unknown${c_reset}"; state=nolocal
 elif [ "$booted_digest" = "$latest_digest" ]; then
   verdict="${c_grn}✓ up to date${c_reset}"; state=current
+elif [ -n "$staged_digest" ] && [ "$staged_digest" = "$latest_digest" ]; then
+  verdict="${c_ylw}⟳ staged, reboot to apply${c_reset}"; state=staged
 else
   verdict="${c_ylw}↑ update available${c_reset}"; state=behind
 fi
 
+# --- unattended-updates health ---
+# Surface the two silent failure modes of the update flow: uupd's last
+# run timed out (a wedged step, killed by our drop-in), and apps the
+# watchdog excluded from unattended updates. Empty when all is well.
+uupd_result="$(systemctl show uupd.service -p Result --value 2>/dev/null || true)"
+blocked_file=/var/lib/margine/update-watchdog/blocked
+blocked_apps=""
+[ -s "$blocked_file" ] && blocked_apps="$(awk '{printf "%s%s", sep, $1; sep=", "}' "$blocked_file" 2>/dev/null)"
+
 printf '\n'
 printf '  %-15s %s%s%s   %s← your deployment%s\n' "Margine OS"     "$c_ember" "$booted_ver" "$c_reset" "$c_dim" "$c_reset"
+[ -n "$staged_ver" ] && \
+printf '  %-15s %s   %s(applies at next boot)%s\n' "Staged"        "$staged_ver" "$c_dim" "$c_reset"
 printf '  %-15s %s   %s\n'                          "Latest :stable" "$latest_ver" "$verdict"
 printf '  %-15s Fedora %s → Bluefin %s → Margine\n' "Chain"          "$fedora_ver" "$blu_ver"
 printf '  %-15s %s  %s(CachyOS / BORE)%s\n'         "Kernel"         "$kernel" "$c_dim" "$c_reset"
+if [ "$uupd_result" = "timeout" ]; then
+  printf '  %-15s %slast unattended run hung and was killed; retries daily at 04:00%s\n' "Updates" "$c_ylw" "$c_reset"
+fi
+if [ -n "$blocked_apps" ]; then
+  printf '  %-15s %s%s%s excluded from unattended updates %s(ujust margine-update-unblock)%s\n' "Excluded" "$c_ylw" "$blocked_apps" "$c_reset" "$c_dim" "$c_reset"
+fi
 printf '\n'
 case "$state" in
   current)  printf "  You're current — nothing to do.\n" ;;
+  staged)   printf "  The latest is already staged: reboot when it suits you to finish updating.\n" ;;
   behind)   printf "  Run %sujust margine-update%s to stage the latest for next boot.\n" "$c_ember" "$c_reset" ;;
   noremote) printf "  Couldn't reach the registry to compare — check your network.\n" ;;
   nolocal)  printf "  Couldn't read the booted image digest locally — compare skipped (deployment is fine).\n" ;;

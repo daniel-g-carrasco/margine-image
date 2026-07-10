@@ -7,5 +7,8 @@ PartOf=graphical-session.target
 Type=oneshot
 ExecStart=/usr/libexec/margine-upgrade-notify
 
+# graphical-session.target, NOT default.target: default.target comes up
+# before the session's notification daemon, so the toast fired into the
+# void and (pre-2026-07-10) the script then recorded it as delivered.
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Margine: nudge the user when a staged deployment has been waiting.
+# Margine: session-side visibility for the update flow.
 #
-# rpm-ostree/uupd stage updates silently; nothing tells the user a
-# reboot would apply them. Real incident (2026-06-11): a gnome-shell
-# crash fix sat STAGED on disk for two days while the user kept
-# hitting the crash on the booted, unpatched deployment. This timer
-# turns "staged and forgotten" into a daily, low-urgency notification.
+# Three silent situations become desktop toasts:
+#   1. a NEW deployment just got staged: one notice per staged checksum,
+#      at the next timer tick ("reboot whenever it suits you");
+#   2. a staged deployment has been WAITING for days: daily low-urgency
+#      nag (real incident 2026-06-11: a gnome-shell crash fix sat staged
+#      for two days while the user kept hitting the crash);
+#   3. margine-update-watchdog EXCLUDED an app from unattended updates
+#      (extra-data app whose vendor download kept wedging uupd,
+#      2026-06-28 and 2026-07-08): one notice per app, with the
+#      recovery command.
 #
 # Runs from a user timer (margine-staged-update-notify.timer):
 # rpm-ostree status is daemon-mediated and read-only for users.
@@ -16,28 +21,64 @@ command -v notify-send >/dev/null 2>&1 || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
 MIN_AGE_DAYS=2
-
-STAGED_TS="$(rpm-ostree status --json 2>/dev/null \
-  | jq -r '[.deployments[] | select(.staged == true)][0].timestamp // empty')"
-[[ -n "$STAGED_TS" ]] || exit 0
-
-AGE_DAYS=$(( ($(date +%s) - STAGED_TS) / 86400 ))
-(( AGE_DAYS >= MIN_AGE_DAYS )) || exit 0
-
-# At most one notification per day. The stamp is written AFTER a
-# successful notify-send: writing it first consumed the day's slot
-# even when no notification daemon was around to show it (e.g. the
-# timer firing in an SSH-spawned user manager).
 STAMP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/margine"
-STAMP="$STAMP_DIR/staged-notify.stamp"
 mkdir -p "$STAMP_DIR"
-TODAY="$(date +%F)"
-[[ "$(cat "$STAMP" 2>/dev/null)" == "$TODAY" ]] && exit 0
 
-notify-send \
-  --app-name="Margine" \
-  --icon="margine-logo" \
-  --urgency=normal \
-  "Update staged for ${AGE_DAYS} days" \
-  "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version." \
-  && printf '%s\n' "$TODAY" > "$STAMP"
+ROS="$(rpm-ostree status --json 2>/dev/null || echo '{}')"
+STAGED_JSON="$(printf '%s' "$ROS" | jq -c '[.deployments[]? | select(.staged == true)][0] // empty')"
+
+if [[ -n "$STAGED_JSON" ]]; then
+  STAGED_SUM="$(printf '%s' "$STAGED_JSON" | jq -r '.checksum // empty')"
+  STAGED_VER="$(printf '%s' "$STAGED_JSON" | jq -r '.version // "a newer Margine"')"
+  STAGED_TS="$(printf '%s' "$STAGED_JSON" | jq -r '.timestamp // empty')"
+
+  # (1) First sight of THIS staged update: tell the user right away.
+  # Stamp written only AFTER a successful notify-send, so a tick that
+  # fires with no notification daemon around (SSH-spawned user manager)
+  # doesn't burn the notice.
+  SEEN="$STAMP_DIR/staged-seen"
+  if [[ -n "$STAGED_SUM" && "$(cat "$SEEN" 2>/dev/null)" != "$STAGED_SUM" ]]; then
+    notify-send \
+      --app-name="Margine" \
+      --icon="margine-logo" \
+      --urgency=normal \
+      "Update ready" \
+      "Margine ${STAGED_VER} is downloaded and staged. Reboot whenever it suits you to apply it." \
+      && printf '%s\n' "$STAGED_SUM" > "$SEEN"
+  fi
+
+  # (2) Staged and forgotten: daily nag once it has been waiting.
+  # .timestamp is the image build time, a good-enough age proxy.
+  if [[ -n "$STAGED_TS" ]]; then
+    AGE_DAYS=$(( ($(date +%s) - STAGED_TS) / 86400 ))
+    STAMP="$STAMP_DIR/staged-notify.stamp"
+    TODAY="$(date +%F)"
+    if (( AGE_DAYS >= MIN_AGE_DAYS )) && [[ "$(cat "$STAMP" 2>/dev/null)" != "$TODAY" ]]; then
+      notify-send \
+        --app-name="Margine" \
+        --icon="margine-logo" \
+        --urgency=normal \
+        "Update staged for ${AGE_DAYS} days" \
+        "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version." \
+        && printf '%s\n' "$TODAY" > "$STAMP"
+    fi
+  fi
+fi
+
+# (3) Watchdog exclusions: one notice per excluded app.
+BLOCKED=/var/lib/margine/update-watchdog/blocked
+if [[ -s "$BLOCKED" ]]; then
+  NOTIFIED="$STAMP_DIR/blocked-notified"
+  touch "$NOTIFIED"
+  while read -r app when _reason; do
+    [[ -n "$app" ]] || continue
+    grep -qx "$app" "$NOTIFIED" && continue
+    notify-send \
+      --app-name="Margine" \
+      --icon="margine-logo" \
+      --urgency=normal \
+      "$app excluded from automatic updates" \
+      "Its vendor download kept hanging unattended updates (since $when). Update it when you want with: ujust margine-update-unblock $app" \
+      && printf '%s\n' "$app" >> "$NOTIFIED"
+  done < "$BLOCKED"
+fi

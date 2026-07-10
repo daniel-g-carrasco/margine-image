@@ -7,6 +7,46 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-07-10)
+- **Update watchdog + `ujust margine-update-unblock`.** Extra-data Flatpaks
+  (Reaper) download their real binary from the vendor at update time;
+  flatpak's fetch has no timeout, and a dropped CDN connection wedged the
+  nightly uupd run and the system flatpak lock (Bazaar included) for days,
+  twice in 12 days (2026-06-28, 2026-07-08). The existing 30-min kill only
+  bounded each cycle (and only in awake time: systemd timeouts freeze across
+  suspend), so the retry loop persisted (73 cycles observed). Now uupd's
+  OnFailure= fires `margine-update-watchdog`: it identifies the in-flight
+  extra-data app from the journal and, at 2 strikes in 7 days, `flatpak
+  mask`s it so unattended updates complete again. The user gets a session
+  notification and `ujust margine-update-unblock` updates the app in the
+  foreground and re-includes it. OS updates were never starved: uupd stages
+  the system image before touching flatpaks.
+
+### Fixed (2026-07-10)
+- **`margine-status` no longer lies on systems with a pending update.** The
+  layered-deployment fallback read `deployments[0]`, which is the STAGED
+  deployment, so the tool showed the staged version as "your deployment, up
+  to date" while the machine was running the previous one. It now selects
+  `booted==true`, shows a `Staged (applies at next boot)` line, a
+  "staged, reboot to apply" verdict, unattended-update health and any
+  watchdog-excluded apps.
+- **Update notifications now actually reach the user.** The post-reboot
+  "Now running: X" toast ran at `default.target` (before the session's
+  notification daemon exists) and recorded itself as delivered even when
+  notify-send failed; it also crashed on layered deployments (bootc omits
+  `booted.image` there). Moved to `graphical-session.target`, state advances
+  only after a successful notify, rpm-ostree fallback added. The staged-
+  update timer only counted monotonic time (frozen across suspend, so it
+  effectively never fired on a laptop); it now fires on the wall clock
+  (`OnCalendar` + `Persistent=true`) and also announces a newly staged
+  deployment right away, once, instead of only nagging after 2 days.
+
+### Removed (2026-07-10)
+- **Reaper is no longer preinstalled** (still one click away in Bazaar).
+  Policy: no extra-data apps in the preinstall set; their vendor download is
+  exactly the unattended-update hang above. Existing installs keep Reaper
+  and are protected by the watchdog.
+
 ### Changed (2026-07-05)
 - **One repo.** `margine-fedora-atomic` (the spec: the `configure-*` /
   `validate-*` scripts, `declarations.yaml`, branding assets, ADRs, and the

@@ -101,6 +101,10 @@ env:
   # Node-20 action breaks while it is still our choice to roll back.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; every job below declares exactly what it needs.
+permissions: {}
+
 concurrency:
   # One group per (event, variant): a stable dispatch and a nvidia
   # dispatch never collide, and a NEW dispatch of the same variant

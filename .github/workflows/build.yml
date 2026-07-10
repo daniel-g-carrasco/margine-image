@@ -233,8 +233,6 @@ jobs:
             io.artifacthub.package.license=Apache-2.0
             io.artifacthub.package.prerelease=false
             containers.bootc=1
-            place.the-empty.margine.spec-ref=${{ github.sha }}
-            place.the-empty.margine.spec-ref-name=${{ github.sha }}
             org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
             org.opencontainers.image.base.name=ghcr.io/ublue-os/bluefin-dx:stable
           sep-tags: " "
@@ -342,6 +340,7 @@ jobs:
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
 
       - name: Generate SBOM (Bluefin pattern — podman export + tar + syft dir)
+        id: sbom
         # syft's `podman:` / `containers-storage:` providers still pull all
         # layers and expand the in-memory layer tree past the runner's 16 GB
         # RAM — verified in PRs #58/#60/#65.
@@ -372,6 +371,18 @@ jobs:
           sudo chown "$(id -u):$(id -g)" sbom.spdx.json
           ls -la sbom.spdx.json
           echo "SBOM package count: $(jq '.packages | length' sbom.spdx.json)"
+          # Piggyback: capture the image's kernel version for the
+          # dev.margine.kernel OCI label (rechunk step below). This is the
+          # only place the built rootfs is already expanded on disk, and the
+          # image ships exactly one /usr/lib/modules/<kver>/ directory.
+          # Historically the status page read a place.the-empty.margine.kernel
+          # label that NOTHING ever produced (and pre-rechunk labels are
+          # dropped by rechunk anyway), so /status relied on a manually
+          # curated carry-over. This closes that loop.
+          KVER="$(sudo ls "$ROOTFS/usr/lib/modules" | head -1)"
+          [ -n "$KVER" ] || { echo "::error::no kernel dir under /usr/lib/modules in the built image"; exit 1; }
+          echo "kver=$KVER" >> "$GITHUB_OUTPUT"
+          echo "Kernel in image: $KVER"
           # Reclaim the ~14 GB used by the expanded rootfs before rechunk
           # runs — rechunk needs disk for its own staging.
           sudo rm -rf "$ROOTFS"
@@ -400,6 +411,7 @@ jobs:
             io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
             io.artifacthub.package.license=Apache-2.0
             containers.bootc=1
+            dev.margine.kernel=${{ steps.sbom.outputs.kver }}
           revision: ${{ github.sha }}
 
       - name: Login to GHCR

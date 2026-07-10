@@ -13,7 +13,7 @@ import subprocess
 import gi  # noqa: F401  (gi.repository needs the gi import side effects)
 from gi.repository import Gio, GLib
 
-APP_ID = "place.empty.margine.IsoBuilder"
+APP_ID = "dev.margine.IsoBuilder"
 # core.py lives in tools/iso-builder/mib/ → repo root is three levels up.
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 BUILD_SCRIPT = os.path.join(REPO_ROOT, "live-env", "build-iso-local.sh")

@@ -11,7 +11,7 @@ tools that make it ready for work from minute one. Built on
 [CachyOS](https://cachyos.org/) kernel.
 
 <p>
-  <a href="https://margine.dev/"><img alt="Website" src="https://img.shields.io/badge/site-margine.the--empty.place-D97757?style=for-the-badge"></a>
+  <a href="https://margine.dev/"><img alt="Website" src="https://img.shields.io/badge/site-margine.dev-D97757?style=for-the-badge"></a>
   <a href="https://margine.dev/handbook"><img alt="Handbook" src="https://img.shields.io/badge/handbook-how%20it's%20built-C2A180?style=for-the-badge"></a>
 </p>
 

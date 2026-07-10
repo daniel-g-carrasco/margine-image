@@ -292,9 +292,9 @@ install-desktop:
     set -euo pipefail
     apps="$HOME/.local/share/applications"
     mkdir -p "$apps"
-    dst="$apps/place.empty.margine.IsoBuilder.desktop"
+    dst="$apps/dev.margine.IsoBuilder.desktop"
     sed "s|@GUI@|{{justfile_directory()}}/tools/iso-builder/margine-iso-builder.py|" \
-      "{{justfile_directory()}}/tools/iso-builder/place.empty.margine.IsoBuilder.desktop.in" > "$dst"
+      "{{justfile_directory()}}/tools/iso-builder/dev.margine.IsoBuilder.desktop.in" > "$dst"
     chmod 0644 "$dst"
     update-desktop-database "$apps" 2>/dev/null || true
     echo "Installed launcher: $dst"

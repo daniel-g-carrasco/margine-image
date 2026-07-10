@@ -8,6 +8,16 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-07-11)
+- **Reverse-DNS namespace moved to dev.margine.** The last identifiers
+  derived from the old domain are gone: the ISO-builder GUI app id is now
+  `dev.margine.IsoBuilder` (.desktop, D-Bus name, Justfile, DESIGN.md,
+  renamed together), and the never-produced `place.the-empty.margine.kernel`
+  status label became a real `dev.margine.kernel` OCI label, stamped at
+  rechunk from the built rootfs, so /status reads the kernel from the image
+  instead of a curated carry-over. The redundant `spec-ref` labels (equal to
+  `org.opencontainers.image.revision` and dropped by rechunk anyway) are
+  deleted, which finally makes the 2026-07-05 "spec-ref label is gone"
+  changelog claim true.
 - **The project domain is now margine.dev.** Every living reference moved
   over: os-release URLs, margine-status/update, the docs-open helper, the
   offline-docs mirror source (verified live: 35 pages + 89 assets, zero

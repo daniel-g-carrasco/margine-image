@@ -89,12 +89,14 @@ blu_ver = ver(blu_l); blu_date = created(blu)
 mar_ver = ver(mar_l); mar_date = created(mar)
 fedora_ver = blu_ver.split(".")[0] if "." in blu_ver else "44"
 
-# Kernel: no clean build-time source (the real running kernel is only
-# knowable on a booted host — `ujust margine-status` uses `uname -r`). The
-# engine emits whatever a build labelled, else leaves it empty; the publish
-# step (publish-status-json.sh) preserves the curated value already on the
+# Kernel: read from the dev.margine.kernel OCI label, which build.yml's
+# rechunk step stamps from the built rootfs (/usr/lib/modules/<kver>).
+# Images published before 2026-07-11 lack it (the old
+# place.the-empty.margine.kernel name was never produced, and pre-rechunk
+# labels were dropped at rechunk anyway): for those the publish step
+# (publish-status-json.sh) preserves the curated value already on the
 # site so the field never blanks out.
-mar_kernel = mar_l.get("place.the-empty.margine.kernel", "")
+mar_kernel = mar_l.get("dev.margine.kernel", "")
 
 blu_digest = blu.get("Digest", "")
 mar_digest = mar.get("Digest", "")

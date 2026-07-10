@@ -18,7 +18,7 @@ tools/iso-builder/
     help.py                # redesigned How-to-use dialog
 ```
 
-Entry point path and `APP_ID = "place.empty.margine.IsoBuilder"` MUST NOT
+Entry point path and `APP_ID = "dev.margine.IsoBuilder"` MUST NOT
 change (a .desktop launcher and a Justfile recipe point at them).
 Runtime: `/usr/bin/python3` (system, PyGObject), GTK4 + libadwaita ≥ 1.5
 (Fedora 44). Stdlib + gi only — no new dependencies.

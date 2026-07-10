@@ -7,5 +7,5 @@ Icon=margine-logo
 Terminal=false
 Categories=Development;Building;
 StartupNotify=true
-StartupWMClass=place.empty.margine.IsoBuilder
+StartupWMClass=dev.margine.IsoBuilder
 Keywords=margine;iso;build;titanoboa;

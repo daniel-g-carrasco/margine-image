@@ -23,7 +23,7 @@ set -euo pipefail
 #
 #   DEFER (.preinstall files + flatpak-preinstall.service at first
 #   boot, ~12 apps):
-#     Heavy creative apps (GIMP, Inkscape, darktable, OBS, Reaper,
+#     Heavy creative apps (GIMP, Inkscape, darktable, OBS,
 #     ...) the user doesn't need in the first 10 min after first
 #     login. flatpak-preinstall.service downloads them in background.
 #     Pattern: upstream Flatpak preinstall.d API.
@@ -121,7 +121,6 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.github.PintaProject.Pinta \
       org.audacityteam.Audacity \
       com.github.wwmm.easyeffects \
-      fm.reaper.Reaper \
       com.github.neithern.g4music \
       com.rafaelmardojai.Blanket \
       de.haeckerfelix.Fragments \
@@ -146,6 +145,17 @@ mkdir -p /usr/share/flatpak/preinstall.d
     #               kickstart download)
     #   kept DEFER: GIMP, Inkscape, darktable, OBS Studio (the four
     #               creative-pro macigni totaling ~2 GB).
+    #
+    # REMOVED 2026-07-10: fm.reaper.Reaper. It is an EXTRA-DATA app:
+    # flathub ships a wrapper and the real binary downloads from
+    # reaper.fm at every install/update. flatpak's extra-data fetch has
+    # no timeout and wedges forever when the vendor CDN drops the
+    # connection (sockets stuck in CLOSE-WAIT): it froze uupd + the
+    # system flatpak lock (Bazaar too) for DAYS twice in 12 days
+    # (2026-06-28, 2026-07-08). Policy: no extra-data apps in the
+    # preinstall set. Users can still install Reaper from Bazaar; the
+    # margine-update-watchdog auto-excludes it from unattended updates
+    # if it wedges them again.
     #
     # See /usr/share/margine/installer-flatpaks-base for the full
     # BAKE list (29 base apps after the rebalance).

@@ -1,0 +1,10 @@
+[Unit]
+Description=Margine: diagnose and self-heal a hung unattended update
+# Fired by uupd.service's OnFailure= (drop-in 10-margine.conf). On a
+# timeout failure it identifies the extra-data flatpak that wedged the
+# run and, after repeated strikes, masks it so unattended updates
+# complete again. See /usr/libexec/margine-update-watchdog.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-update-watchdog

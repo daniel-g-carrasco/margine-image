@@ -3,10 +3,15 @@ Description=Margine: periodic check for long-staged updates
 
 [Timer]
 # Late enough that uupd's daily run (and any boot-time staging) has
-# settled; then twice a working day. The script itself rate-limits
-# to one notification per day.
+# settled, then on the wall clock. OnUnitActiveSec alone counted
+# MONOTONIC time, which freezes across suspend: on a laptop that
+# sleeps most of the day the "every 6h" tick effectively never fired
+# (observed 2026-07-10: no tick for 38h of calendar time). OnCalendar
+# + Persistent fires promptly after resume instead. The script itself
+# rate-limits every notification class.
 OnStartupSec=20min
-OnUnitActiveSec=6h
+OnCalendar=*-*-* 09,13,17,21:00:00
+Persistent=true
 AccuracySec=10min
 
 [Install]

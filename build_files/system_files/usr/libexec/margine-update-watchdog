@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# margine-update-watchdog: fired by uupd.service's OnFailure= (see the
+# uupd.service.d/10-margine.conf drop-in).
+#
+# The failure class this handles (seen 2026-06-28 and again 2026-07-08):
+# an EXTRA-DATA flatpak (e.g. fm.reaper.Reaper) downloads its real binary
+# from the vendor at update time; flatpak's extra-data fetch has no
+# timeout, so when the vendor CDN drops the connection the process wedges
+# forever (sockets in CLOSE-WAIT), holding the system flatpak lock
+# (Bazaar and every flatpak op block). The drop-in's TimeoutStartSec kills
+# the run, but the NEXT run hangs on the same app, so the machine loops:
+# 73 kill-restart cycles observed. Note the timeout counts MONOTONIC
+# (awake) time, so on a suspending laptop one 30-minute cycle can span
+# days of calendar time.
+#
+# What this script does, per timeout failure:
+#   1. identify the app the run was updating when it hung (journal);
+#   2. only if it is an extra-data app, record a strike;
+#   3. at 2 strikes in 7 days, `flatpak mask` it so unattended updates
+#      complete again, and record it in blocked/ for the session
+#      notifier (margine-staged-notify) and margine-status to surface.
+# Recovery: `ujust margine-update-unblock` (unmask + foreground update).
+set -uo pipefail
+
+STATE_DIR=/var/lib/margine/update-watchdog
+BLOCKED="$STATE_DIR/blocked"
+STRIKE_WINDOW_DAYS=7
+STRIKE_LIMIT=2
+
+log() { echo "margine-update-watchdog: $*"; }
+
+result="$(systemctl show uupd.service -p Result --value 2>/dev/null || true)"
+if [ "$result" != "timeout" ]; then
+  log "uupd failed with result '$result' (not a hang); nothing to do."
+  exit 0
+fi
+
+# The flatpak child logs inside uupd.service's cgroup, so its per-app
+# progress lines are attributed to the unit. The last one names the app
+# the run was chewing on when systemd killed it.
+culprit="$(journalctl -u uupd.service --since '-2 hours' --no-pager 2>/dev/null \
+  | grep -oE '(Updating|Installing) (app|runtime)/[A-Za-z0-9._-]+' \
+  | tail -1 | sed -E 's#.*(app|runtime)/##')"
+if [ -z "$culprit" ]; then
+  log "timeout, but no in-progress flatpak found in the journal; not acting."
+  exit 0
+fi
+
+# Only extra-data apps get auto-excluded: their vendor download is the
+# known no-timeout hang. Anything else timing out is likely a transient
+# network problem where masking would be wrong.
+if ! flatpak info -m "$culprit" 2>/dev/null | grep -q '^\[Extra Data\]'; then
+  log "uupd hung around '$culprit', which is not an extra-data app; not masking (transient network?)."
+  exit 0
+fi
+
+mkdir -p "$STATE_DIR"
+chmod 0755 "$STATE_DIR"
+strikes_file="$STATE_DIR/strikes-$culprit"
+now="$(date -u +%s)"
+cutoff=$((now - STRIKE_WINDOW_DAYS * 86400))
+
+touch "$strikes_file"
+# keep only strikes inside the window, then add this one
+awk -v c="$cutoff" '$1 >= c' "$strikes_file" > "$strikes_file.tmp" || true
+mv "$strikes_file.tmp" "$strikes_file"
+echo "$now" >> "$strikes_file"
+chmod 0644 "$strikes_file"
+count="$(wc -l < "$strikes_file")"
+log "extra-data app '$culprit' hung an unattended update (strike $count/$STRIKE_LIMIT in ${STRIKE_WINDOW_DAYS}d)."
+
+if [ "$count" -lt "$STRIKE_LIMIT" ]; then
+  exit 0
+fi
+
+if flatpak mask "$culprit" >/dev/null 2>&1 || flatpak mask 2>/dev/null | grep -q "$culprit"; then
+  if ! grep -q "^$culprit " "$BLOCKED" 2>/dev/null; then
+    echo "$culprit $(date -u +%Y-%m-%dT%H:%M:%SZ) vendor-download-hang" >> "$BLOCKED"
+    chmod 0644 "$BLOCKED"
+  fi
+  log "masked '$culprit': unattended updates will skip it from now on. Recover with: ujust margine-update-unblock $culprit"
+else
+  log "ERROR: could not mask '$culprit'; unattended updates may keep hanging on it."
+  exit 1
+fi

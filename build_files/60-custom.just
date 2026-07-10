@@ -933,6 +933,43 @@ margine-test-vm-clean $ALL="false":
     done
     if [[ "$ALL" != "true" ]]; then echo "Kept the clone template '$KEEP' (pass ALL=true to remove it too)."; fi
 
+# Update an app the update-watchdog excluded from unattended updates.
+# Extra-data flatpaks (e.g. Reaper) download their real binary from the
+# vendor at update time; when that download wedges unattended runs twice,
+# the watchdog masks the app so nightly updates keep working, and points
+# here. This recipe unmasks it, updates it IN THE FOREGROUND (you see the
+# progress and can Ctrl+C a stall), and clears the exclusion on success.
+[group('Margine')]
+margine-update-unblock APP="":
+    #!/usr/bin/bash
+    set -uo pipefail
+    BLOCKED=/var/lib/margine/update-watchdog/blocked
+    APP="{{ APP }}"
+    if [[ -z "$APP" ]]; then
+      if [[ -s "$BLOCKED" ]]; then
+        echo "Apps excluded from unattended updates:"
+        awk '{print "  " $1 "  (since " $2 ")"}' "$BLOCKED"
+        echo
+        echo "Re-run with the app id, e.g.:  ujust margine-update-unblock $(awk 'NR==1{print $1}' "$BLOCKED")"
+      else
+        echo "No apps are excluded from unattended updates."
+      fi
+      exit 0
+    fi
+    sudo flatpak mask --remove "$APP" 2>/dev/null || true
+    echo "Updating $APP in the foreground (Ctrl+C aborts)..."
+    if flatpak update -y "$APP"; then
+      sudo sed -i "\\|^$APP |d" "$BLOCKED" 2>/dev/null || true
+      sudo rm -f "/var/lib/margine/update-watchdog/strikes-$APP" 2>/dev/null || true
+      rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/margine/blocked-notified" 2>/dev/null || true
+      echo "$APP updated and re-included in unattended updates."
+      echo "(If its vendor download wedges them again, the watchdog will re-exclude it.)"
+    else
+      echo "Update failed or aborted; keeping $APP excluded from unattended updates."
+      sudo flatpak mask "$APP" >/dev/null 2>&1 || true
+      exit 1
+    fi
+
 # Enable GPU OpenCL in the darktable Flatpak (Mesa rusticl). Two switches are
 # needed and both ship off: the Flatpak needs RUSTICL_ENABLE for its rusticl
 # driver, and darktable keeps rusticl blocklisted until two prefs are flipped.

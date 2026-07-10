@@ -4100,7 +4100,9 @@ Bluefin DX ships uupd (Universal Updater) with `uupd.timer` enabled; Margine inh
 2. `flatpak update` (system + user);
 3. `brew update && brew upgrade` if Homebrew is present;
 4. `distrobox upgrade --all`;
-5. reboot indication via `notify-send` when a new deployment is staged.
+5. reboot indication via `notify-send` when a new deployment is staged (see "Update visibility and the extra-data watchdog" below for how Margine implements this and what guards the pass when a step wedges).
+
+The ordering in step 1 is load-bearing: the OS image moves BEFORE the app steps, so even a run that later wedges on a flatpak has already staged the OS/security update. Two real incidents (2026-06-28 and 2026-07-08) proved both halves of this design: an extra-data flatpak froze step 2 for days, and the affected machine kept staging OS updates the whole time.
 
 Host image, Flatpaks, brew, and distrobox containers move in one pass with one failure surface, the practical reason to prefer an orchestrator over N independent timers. The history matters here: Margine's earlier `scripts/update-all` (an rpm-ostree-first orchestrator with pre/post validators) and its Topgrade accessory profile were retired when the project moved onto Bluefin (ADR 0004 superseded by 0005). The Topgrade config survives as documentation of the boundary it enforced:
 
@@ -4149,7 +4151,22 @@ else
 
 `rpm-ostree rebase` writes BLS entries immediately ("pending"); `bootc switch`/`upgrade` defers them ("staged"). A validator that asserts "entry must exist" fails spuriously on the bootc path unless it knows the difference.
 
-After the reboot, a login-time oneshot compares the booted digest against the last recorded one and tells the user what just happened (`/usr/libexec/margine-upgrade-notify`, wired via `/etc/skel/.config/systemd/user/`): "Now running: stable.20260608 / Digest: sha256:ab12...". Reboots that silently apply OS updates erode trust; a one-line toast fixes that.
+After the reboot, a login-time oneshot compares the booted digest against the last recorded one and tells the user what just happened (`/usr/libexec/margine-upgrade-notify`, a vendor-enabled user unit in `graphical-session.target.wants`): "Now running: stable.20260608 / Digest: sha256:ab12...". Reboots that silently apply OS updates erode trust; a one-line toast fixes that. Two lessons are baked into it (2026-07-10): the unit must bind to `graphical-session.target`, not `default.target`, or the toast fires before the session's notification daemon exists; and the state file must advance only after `notify-send` succeeds, or a lost toast is lost forever.
+
+### Update visibility and the extra-data watchdog
+
+Staging is silent by design, so Margine makes the states visible instead of hoping the user checks:
+
+- **`margine-staged-update-notify`** (user timer): one toast when a new deployment first appears staged ("reboot whenever it suits you"), a daily low-urgency nag once it has waited 2+ days, and a one-time notice when the watchdog excludes an app (below). The timer fires on the wall clock (`OnCalendar` + `Persistent=true`): a monotonic `OnUnitActiveSec` interval freezes across suspend and never fires on a laptop that mostly sleeps.
+- **`margine-status`** shows the booted deployment (selected with `booted==true`, NOT `deployments[0]`, which is the staged one when an update is pending), a `Staged` line when a reboot would apply something, the last unattended-run health, and any watchdog-excluded apps.
+
+The hang class that motivated the watchdog: EXTRA-DATA flatpaks (Reaper was the repeat offender) download their real payload from the vendor at update time, and flatpak's extra-data fetch has no timeout. When the vendor CDN drops the connection, the update process wedges forever holding the system flatpak lock: Bazaar and every flatpak operation block, and the nightly retry wedges again on the same app. Containment is layered:
+
+1. a `TimeoutStartSec=30min` drop-in on `uupd.service` kills a wedged run (note: systemd timeouts count monotonic time, which stops during suspend, so one cycle can span days of calendar time on a laptop);
+2. the drop-in's `OnFailure=` fires **`margine-update-watchdog`**: on a timeout it identifies the in-flight app from the journal, verifies it is extra-data, and records a strike; at 2 strikes in 7 days it `flatpak mask`s the app so unattended runs complete again;
+3. the exclusion is surfaced (session toast + `margine-status`) with the recovery command: **`ujust margine-update-unblock`** unmasks, updates in the foreground where a stall is visible and Ctrl+C-able, and re-includes the app on success.
+
+Policy consequence: no extra-data apps in the preinstall set (Reaper was removed 2026-07-10; it stays one click away in Bazaar).
 
 ## 11.5 Rollback, pinning, /etc merge and drift
 

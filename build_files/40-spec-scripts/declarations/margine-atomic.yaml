@@ -1057,7 +1057,7 @@ home:
     - scratch
   xdg_user_dirs:
     DESKTOP: "$HOME/"
-    DOWNLOAD: "$HOME/data/inbox/10-downloads"
+    DOWNLOAD: "$HOME/scratch/downloads"
     TEMPLATES: "$HOME/data/templates"
     PUBLICSHARE: "$HOME/data/shared"
     DOCUMENTS: "$HOME/data/personal"
@@ -1068,7 +1068,7 @@ home:
   bookmarks:
     - path: "$HOME/data/personal"
       label: Documents
-    - path: "$HOME/data/inbox/10-downloads"
+    - path: "$HOME/scratch/downloads"
       label: Downloads
     - path: "$HOME/data/media/photos"
       label: Pictures

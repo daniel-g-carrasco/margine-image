@@ -4430,7 +4430,7 @@ virt-install \
     --disk size=64,format=qcow2 \
     --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,loader.secure=yes \
     --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-    --cdrom ~/data/inbox/10-downloads/bluefin-stable-x86_64.iso \
+    --cdrom ~/scratch/downloads/bluefin-stable-x86_64.iso \
     --graphics spice \
     --network network=default \
     --noautoconsole

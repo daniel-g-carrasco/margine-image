@@ -690,8 +690,8 @@ margine-keyring ACTION="status":
 # LUKS TPM2 auto-unlock). Runs rootless on qemu:///session, so it reads ISOs
 # straight from your home — no sudo, no copying multi-GB files.
 #
-#   ujust margine-test-vm ~/Downloads/margine-20260618.iso     # create + boot a VM from that ISO (recommended)
-#   ujust margine-test-vm ~/Downloads/x.iso mytest 100         # custom name + 100 GiB disk
+#   ujust margine-test-vm ~/scratch/downloads/margine-<date>.iso     # create + boot a VM from that ISO (recommended)
+#   ujust margine-test-vm ~/scratch/downloads/x.iso mytest 100         # custom name + 100 GiB disk
 #   ujust margine-test-vm                                       # no ISO: define a TEMPLATE to clone in virt-manager
 #
 # Tear a test VM down with `ujust margine-test-vm-remove [name]`.
@@ -817,8 +817,8 @@ margine-test-vm ISO="" NAME="" DISK="80":
       echo "  1. Open virt-manager. If it isn't listed: File -> Add Connection ->"
       echo "     'QEMU/KVM user session' -> Connect."
       echo "  2. Right-click '$TEMPLATE' -> Clone... (one clone per test)."
-      echo "  3. On the clone, point the CD-ROM at your ISO (~/Downloads/*.iso), boot."
-      echo "  Or skip the clicking:  ujust margine-test-vm ~/Downloads/<your>.iso"
+      echo "  3. On the clone, point the CD-ROM at your ISO (~/scratch/downloads/*.iso), boot."
+      echo "  Or skip the clicking:  ujust margine-test-vm ~/scratch/downloads/<your>.iso"
       print_walkthrough
       exit 0
     fi

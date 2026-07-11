@@ -13,6 +13,7 @@
 import datetime
 import json
 import os
+import re
 import shutil
 
 import gi
@@ -94,7 +95,8 @@ def _fmt_date(created):
 class CiPage:
     def __init__(self, win):
         self.win = win
-        self._ia_link = None       # derived archive.org details URL
+        self._ia_link = None       # archive.org details URL of the newest item
+        self._ia_sha = None        # source commit of the newest published ISO
         self._pub_url = None       # newest successful publish run's URL
         self._status_busy = False  # a dashboard refresh is in flight
         self._status_pending = 0
@@ -271,6 +273,7 @@ class CiPage:
         for row in (self.stable_row, self.pubstat_row, self.ia_row):
             row.set_subtitle("checking…")
         self._ia_link = None
+        self._ia_sha = None
         self._pub_url = None
         self.ia_copy_btn.set_visible(False)
         self.ia_open_btn.set_visible(False)
@@ -347,83 +350,57 @@ class CiPage:
                  "--workflow", "build-disk.yml", "--event", "workflow_dispatch",
                  "--limit", "1", "--json", "databaseId,createdAt"], listed)
 
+    # Until 2026-07-11 this row RECONSTRUCTED the identifier from the last
+    # SUCCESSFUL dispatch run (publish-job start date). Twice in a week that
+    # showed days-old items, because IA publishes can complete even when the
+    # run reports failure (2026-07-06 multipart-ETag false-fail, 2026-07-10
+    # rationing verify-timeout): the last "successful" run was much older
+    # than the last actually-published ISO. Ask the Archive itself instead:
+    # the newest margine-live-iso-* item IS the truth, and its description
+    # carries the source commit (written by the publish step), which also
+    # gives "Changes since last publish" an honest base.
     def _q_ia(self):
-        def listed(ok, out, err):
-            runs = _runs(out) if ok else []
-            if not runs:
+        def searched(ok, out, _err):
+            ident = None
+            if ok and out.strip():
+                try:
+                    docs = json.loads(out).get("response", {}).get("docs", [])
+                    if docs:
+                        ident = docs[0].get("identifier")
+                except ValueError:
+                    ident = None
+            if not ident:
                 self.ia_row.set_subtitle(
-                    ("unavailable — " + _errline(err)) if not ok
-                    else "no successful publish run yet")
+                    "archive.org unreachable — retry with the refresh button")
                 self._done_one()
                 return
-            self._pub_url = runs[0].get("url") or ""
+            self._ia_link = f"https://archive.org/details/{ident}"
+            self.ia_row.set_subtitle(_esc(ident))
+            self.ia_copy_btn.set_visible(True)
 
-            def viewed(ok2, out2, _err2):
+            def got_meta(ok2, out2, _err2):
                 try:
-                    data = None
                     if ok2 and out2.strip():
-                        try:
-                            data = json.loads(out2)
-                        except ValueError:
-                            data = None
-                    ident = self._derive_ia_identifier(data)
-                    if ident:
-                        self._ia_link = f"https://archive.org/details/{ident}"
-                        self.ia_row.set_subtitle(_esc(ident))
-                        self.ia_copy_btn.set_visible(True)
-                    else:
-                        self.ia_row.set_subtitle(
-                            "No Archive link for this run "
-                            "(non-stable variant?) — open the run page")
-                        self.ia_open_btn.set_visible(bool(self._pub_url))
+                        desc = (json.loads(out2).get("metadata", {})
+                                or {}).get("description", "")
+                        m = re.search(r"commit ([0-9a-f]{7,40})", desc)
+                        if m:
+                            self._ia_sha = m.group(1)
+                except ValueError:
+                    pass
                 finally:
                     self._done_one()
 
-            core.gh(["run", "view", str(runs[0]["databaseId"]),
-                     "--repo", core.GH_REPO, "--json", "jobs"], viewed)
+            core.spawn_collect(
+                ["curl", "-s", "--max-time", "15",
+                 f"https://archive.org/metadata/{ident}"], got_meta)
 
-        core.gh(["run", "list", "--repo", core.GH_REPO,
-                 "--workflow", "build-disk.yml", "--event", "workflow_dispatch",
-                 "--status", "success", "--limit", "1",
-                 "--json", "databaseId,url"], listed)
-
-    @staticmethod
-    def _derive_ia_identifier(data):
-        """Reproduce the ia_upload step of .github/workflows/build-disk.yml:
-
-            DATE_TAG="$(date -u +%Y%m%d)"        # taken IN the publish_ia job
-            VSLUG="live" for stable, else the raw tag (e.g. "nvidia")
-            IDENTIFIER="margine-${VSLUG}-iso-${DATE_TAG}"
-            → https://archive.org/details/$IDENTIFIER
-
-        What is reconstructable from run data:
-        * DATE_TAG — the 'Publish ISO' JOB's startedAt (UTC day), NOT the
-          run's createdAt: `gh run rerun --failed <id>` re-runs just
-          publish_ia days later and DATE_TAG is re-derived then.
-        * variant — workflow_dispatch inputs are not exposed by the runs
-          API, but install_gate's `if:` runs it exactly when image_tag is
-          ''/'stable', so gate success => stable => VSLUG "live". A skipped
-          gate means a non-stable tag whose VALUE is unrecoverable — do not
-          guess (return None → the run-page fallback button).
-        matrix.image is single-entry "margine" (gaming variant retired
-        2026-06-06), so the identifier prefix is a constant.
-        """
-        gate_s, gate_c = _job(data, "Automated install gate")
-        if gate_s != "completed" or gate_c != "success":
-            return None
-        pub = None
-        for j in (data or {}).get("jobs", []):
-            if j.get("name", "").startswith("Publish ISO"):
-                pub = j
-                break
-        if pub is None or pub.get("conclusion") != "success":
-            return None
-        ts = core.iso_ts(pub.get("startedAt") or "")
-        if ts <= 0:
-            return None
-        date_tag = datetime.datetime.fromtimestamp(
-            ts, datetime.timezone.utc).strftime("%Y%m%d")
-        return f"margine-live-iso-{date_tag}"
+        core.spawn_collect(
+            ["curl", "-sg", "--max-time", "15",
+             "https://archive.org/advancedsearch.php"
+             "?q=identifier:margine-live-iso-*"
+             "&fl[]=identifier&sort[]=identifier+desc&rows=1&output=json"],
+            searched)
 
     def on_copy_ia(self, _btn):
         if not self._ia_link:
@@ -454,16 +431,7 @@ class CiPage:
     def on_changelog(self, _btn):
         self.chlog_btn.set_sensitive(False)
 
-        def listed(ok, out, err):
-            runs = _runs(out) if ok else []
-            if not runs or not runs[0].get("headSha"):
-                self.chlog_btn.set_sensitive(True)
-                self.win.toast(("gh failed: " + _errline(err)) if not ok else
-                               "No successful publish run found — nothing to diff against")
-                return
-            sha = runs[0]["headSha"]
-            since = _fmt_date(runs[0].get("createdAt", ""))
-
+        def diff_from(sha, since):
             def got(ok2, out2, err2):
                 self.chlog_btn.set_sensitive(True)
                 if not ok2:
@@ -477,6 +445,26 @@ class CiPage:
 
             core.spawn_collect(["git", "-C", core.REPO_ROOT, "log",
                                 "--oneline", f"{sha}..HEAD"], got)
+
+        # Preferred base: the source commit of the newest PUBLISHED ISO,
+        # read from the Archive item itself by _q_ia (truthful even when
+        # the publish run reported failure but the upload landed, as on
+        # 2026-07-06 and 2026-07-10). Identifier date doubles as "since".
+        if self._ia_sha and self._ia_link:
+            diff_from(self._ia_sha, self._ia_link.rsplit("-", 1)[-1])
+            return
+
+        # Fallback (Archive metadata not loaded yet / unreachable): the
+        # last successful dispatch run's head commit, the pre-2026-07-11
+        # behavior.
+        def listed(ok, out, err):
+            runs = _runs(out) if ok else []
+            if not runs or not runs[0].get("headSha"):
+                self.chlog_btn.set_sensitive(True)
+                self.win.toast(("gh failed: " + _errline(err)) if not ok else
+                               "No successful publish run found — nothing to diff against")
+                return
+            diff_from(runs[0]["headSha"], _fmt_date(runs[0].get("createdAt", "")))
 
         core.gh(["run", "list", "--repo", core.GH_REPO,
                  "--workflow", "build-disk.yml", "--event", "workflow_dispatch",

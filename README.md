@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/branding/margine-logo-wide.png" alt="Margine" width="640">
+<img src="docs/branding/margine-logo-wide.png" alt="Margine OS" width="640">
 
-### An immutable Linux desktop distribution.
+### Margine OS: an immutable Linux desktop distribution.
 
 Bomb-proof by design, fast on the CachyOS kernel, with a GNOME re-wired for
 tiling, every codec and driver already in place, and a curated set of creator

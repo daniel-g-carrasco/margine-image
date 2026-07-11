@@ -8,6 +8,15 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-07-11)
+- **The public product name is "Margine OS"** (fixed together with the
+  DistroWatch submission). os-release NAME/PRETTY_NAME/VERSION/VARIANT now
+  say "Margine OS" (GNOME About, hostnamectl, BLS boot entries), the About
+  panel's Website link points at https://margine.dev (was GitHub), the
+  Archive ISO titles read "Margine OS ... Linux ISO", and README leads with
+  the full name. "Margine" stays as the short form in running text; the
+  technical identifiers (VARIANT_ID=margine for countme, margine-* names,
+  Archive identifiers, the image name) are deliberately unchanged. Naming
+  policy recorded in docs/BRANDING.md.
 - **Reverse-DNS namespace moved to dev.margine.** The last identifiers
   derived from the old domain are gone: the ISO-builder GUI app id is now
   `dev.margine.IsoBuilder` (.desktop, D-Bus name, Justfile, DESIGN.md,

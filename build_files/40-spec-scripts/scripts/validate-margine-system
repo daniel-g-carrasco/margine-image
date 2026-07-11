@@ -68,7 +68,7 @@ fi
 
 # Expected values — canonical Margine state.
 # Keep in sync with declarations/margine-atomic.yaml and build.sh.
-EXPECTED_OS_NAME="Margine"
+EXPECTED_OS_NAME="Margine OS"
 # os-release(5): ID is the family (we use "fedora", same as Bluefin's own
 # upstream now does, so bootc-image-builder can find its distro definition);
 # VARIANT_ID is the specific spin within the family. Margine identifies as

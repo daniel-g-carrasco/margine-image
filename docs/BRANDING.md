@@ -107,18 +107,27 @@ renamed or deleted):
 
 Fields that matter for branding:
 
+**Naming policy (2026-07-11, fixed with the DistroWatch submission):** the
+public product name is **"Margine OS"**: titles, first mentions, About panel,
+directories and stores all use it. **"Margine"** alone is the accepted short
+form in running text after the first mention. Technical identifiers never
+carry the suffix and never change: `VARIANT_ID=margine` (countme keys on it),
+`margine-*` unit/script/icon names, `margine-live-iso-*` Archive identifiers,
+the `margine.dev` domain, the ghcr.io/`margine` image name.
+
 | Key | Value | Consumed by |
 |---|---|---|
-| `NAME` | `Margine` | GNOME About title, many tools |
-| `PRETTY_NAME` | `Margine <ver> (<build-date>)` | login banners, `hostnamectl` |
-| `VERSION` | `<ver> (Margine)` | About |
-| `VARIANT` | `Margine` | About |
-| `VARIANT_ID` | `margine` | **the authoritative discriminator** (anaconda profile, scripts) |
+| `NAME` | `Margine OS` | GNOME About title, many tools |
+| `PRETTY_NAME` | `Margine OS <ver> (<build-date>)` | login banners, `hostnamectl`, BLS boot entries |
+| `VERSION` | `<ver> (Margine OS)` | About |
+| `VARIANT` | `Margine OS` | About |
+| `VARIANT_ID` | `margine` | **the authoritative discriminator** (anaconda profile, scripts, countme) — do not change |
 | `ID` | `fedora` | kept for bootc-image-builder / tooling compat — **do not change** |
 | `ID_LIKE` | `bluefin` | provenance |
 | `LOGO` | `margine-logo` | GNOME About logo (icon-theme lookup) |
 | `ANSI_COLOR` | `0;38;2;232;186;0` | terminal accent = **#E8BA00** (the Margine yellow) |
-| `HOME_URL` / `DOCUMENTATION_URL` / `SUPPORT_URL` / `BUG_REPORT_URL` | GitHub repos | About "Website", links |
+| `HOME_URL` / `DOCUMENTATION_URL` | `https://margine.dev` / `/docs` | About "Website", links |
+| `SUPPORT_URL` / `BUG_REPORT_URL` | GitHub issues | About links |
 | `DEFAULT_HOSTNAME` | `margine` | first-boot hostname |
 
 **About panel extras** (`build_files/50-branding/install.sh`):

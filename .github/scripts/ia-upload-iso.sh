@@ -63,25 +63,35 @@ echo "hashing local file (md5, for the verify short-circuit)..."
 MD5="$(md5sum "$FILE" | awk '{print $1}')"
 
 already_uploaded() {
-  # Complete when the S3 object's size matches and, if an ETag comes
-  # back, its md5 matches too (missing/opaque ETag falls back to size).
-  local headers size etag
-  headers="$(curl -fsSI -m 60 \
-    -H "authorization: LOW ${IA_S3_ACCESS}:${IA_S3_SECRET}" \
-    "${BASE}/${IDENTIFIER}/${REMOTE}" 2>/dev/null)" || return 1
-  size="$(printf '%s' "$headers" | tr -d '\r' | awk 'tolower($1)=="content-length:" {print $2}' | tail -1)"
-  etag="$(printf '%s' "$headers" | tr -d '\r' | awk 'tolower($1)=="etag:" {gsub(/"/, "", $2); print $2}' | tail -1)"
-  [ "$size" = "$SIZE" ] || return 1
-  # IA stores a large file with a MULTIPART etag (e.g. "<hash>-<parts>"),
-  # not the plain content md5, so the etag is only authoritative when it IS
-  # a 32-hex md5. Otherwise trust the size match (a truncated upload changes
-  # the size). Without this, a multi-GB ISO uploads fine but the verify never
-  # matches and the job false-fails even though the ISO published (run
-  # 28779615535, 2026-07-06: the 8.9 GB stable ISO landed + IA derived the
-  # torrent, yet the publish job went red and the site bump never ran).
-  if printf '%s' "$etag" | grep -qE '^[0-9a-f]{32}$' && [ "$etag" != "$MD5" ]; then
-    return 1
+  # Complete when the item METADATA lists the file with matching size and
+  # md5. This replaced the S3 HEAD probe on 2026-07-11 after it silently
+  # broke the verify for a whole day (run 29129693269, 3 red attempts on
+  # an ISO that was PUBLISHED and intact): s3.us.archive.org started
+  # answering HEAD with a 307 to the storage node, and without -L the
+  # probe read the redirect's own headers (content-length: 403) so the
+  # size never matched; following the redirect is no better, the node
+  # answers HEAD with Content-Length: 1. The metadata API has neither
+  # problem: no redirects, and explicit size + md5 that IA computed from
+  # the bytes it actually stored. The old etag heuristics (multipart
+  # etags, 2026-07-06) are obsolete with it. Metadata appears only after
+  # IA finishes ingesting, which is exactly the "complete" we want; the
+  # caller's retry loop rides out the ingest delay. Every mismatch is
+  # LOGGED: the silent `return 1` cost hours of blind diagnosis today.
+  local meta size md5
+  meta="$(curl -fsS -m 60 "https://archive.org/metadata/${IDENTIFIER}" 2>/dev/null)" || {
+    echo "verify: metadata fetch failed (transient?)"; return 1; }
+  size="$(jq -r --arg n "$REMOTE" '.files[]? | select(.name==$n) | .size' <<<"$meta" 2>/dev/null | head -1)"
+  md5="$(jq -r --arg n "$REMOTE" '.files[]? | select(.name==$n) | .md5' <<<"$meta" 2>/dev/null | head -1)"
+  if [ -z "$size" ] || [ "$size" = "null" ]; then
+    echo "verify: ${REMOTE} not in item metadata yet (still ingesting?)"; return 1
   fi
+  if [ "$size" != "$SIZE" ]; then
+    echo "verify: size mismatch (remote ${size} vs local ${SIZE})"; return 1
+  fi
+  if [ -n "$md5" ] && [ "$md5" != "null" ] && [ "$md5" != "$MD5" ]; then
+    echo "verify: md5 mismatch (remote ${md5} vs local ${MD5}) — remote copy is corrupt, re-uploading"; return 1
+  fi
+  echo "verify: metadata match (size + md5) — remote object is complete"
   return 0
 }
 

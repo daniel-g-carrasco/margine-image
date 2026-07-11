@@ -45,7 +45,9 @@ log "Stamping os-release as Margine (canonical Fedora layout: /etc → /usr/lib 
 # (Workstation/Server/Silverblue/Kinoite all set ID=fedora and a different
 # VARIANT_ID). We follow the same pattern:
 #
-#   * NAME / PRETTY_NAME / VARIANT all say "Margine" — every UI surface that
+#   * NAME / PRETTY_NAME / VARIANT all say "Margine OS" (the public product
+#     name, decided 2026-07-11 with the DistroWatch submission; "Margine"
+#     stays as the short form in running text) — every UI surface that
 #     reads os-release (GNOME About panel, hostnamectl, neofetch, the
 #     gdm/Plymouth themes) reads NAME or PRETTY_NAME, not ID.
 #   * ID=fedora — so distro-tooling that does an exact lookup by ID-VERSION_ID
@@ -59,21 +61,21 @@ log "Stamping os-release as Margine (canonical Fedora layout: /etc → /usr/lib 
 #     margine-fedora-atomic now checks this instead of ID to identify a
 #     Margine install.
 OS_RELEASE_CONTENT=$(cat <<EOF
-NAME="Margine"
-VERSION="${FEDORA_VER} (Margine)"
+NAME="Margine OS"
+VERSION="${FEDORA_VER} (Margine OS)"
 ID=fedora
 ID_LIKE=bluefin
 VERSION_ID=${FEDORA_VER}
 VERSION_CODENAME=""
 PLATFORM_ID="platform:f${FEDORA_VER}"
-PRETTY_NAME="Margine ${FEDORA_VER} (${BUILD_DATE})"
-VARIANT="Margine"
+PRETTY_NAME="Margine OS ${FEDORA_VER} (${BUILD_DATE})"
+VARIANT="Margine OS"
 VARIANT_ID=margine
 ANSI_COLOR="0;38;2;232;186;0"
 LOGO=margine-logo
 CPE_NAME="cpe:/o:daniel-g-carrasco:margine:${FEDORA_VER}"
-HOME_URL="https://github.com/daniel-g-carrasco/margine-image"
-DOCUMENTATION_URL="https://github.com/daniel-g-carrasco/margine-image"
+HOME_URL="https://margine.dev"
+DOCUMENTATION_URL="https://margine.dev/docs"
 SUPPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
 BUG_REPORT_URL="https://github.com/daniel-g-carrasco/margine-image/issues"
 DEFAULT_HOSTNAME="margine"

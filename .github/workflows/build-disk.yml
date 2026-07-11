@@ -804,12 +804,12 @@ jobs:
           ISO_TAG="${{ github.event_name == 'workflow_run' && 'nvidia' || inputs.image_tag || 'stable' }}"
           if [[ "$ISO_TAG" == "stable" ]]; then VSLUG="live"; VLABEL=""; else VSLUG="$ISO_TAG"; VLABEL=" ${ISO_TAG^^}"; fi
           IDENTIFIER="${{ matrix.image }}-${VSLUG}-iso-${DATE_TAG}"
-          TITLE="Margine${VLABEL} Linux ISO ${DATE_TAG}"
-          DESCRIPTION="Margine${VLABEL} live ISO (Titanoboa) — bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Source: https://github.com/${{ github.repository }}"
+          TITLE="Margine OS${VLABEL} Linux ISO ${DATE_TAG}"
+          DESCRIPTION="Margine OS${VLABEL} live ISO (Titanoboa): bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + Margine deltas. Built on ${DATE_TAG} from commit ${{ github.sha }}. Website: https://margine.dev. Source: https://github.com/${{ github.repository }}"
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
             IDENTIFIER="${{ matrix.image }}-nvidia-iso-weekly"
-            TITLE="Margine NVIDIA Linux ISO (weekly auto-refresh)"
-            DESCRIPTION="Margine NVIDIA live ISO (Titanoboa), experimental — refreshed automatically every week; margine-nvidia-latest.iso is replaced in place, check SHA256SUMS for the current build. Bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + NVIDIA driver + Margine deltas. Source: https://github.com/${{ github.repository }}"
+            TITLE="Margine OS NVIDIA Linux ISO (weekly auto-refresh)"
+            DESCRIPTION="Margine OS NVIDIA live ISO (Titanoboa), experimental: refreshed automatically every week; margine-nvidia-latest.iso is replaced in place, check SHA256SUMS for the current build. Bootable GNOME live session with the Anaconda installer. Bluefin DX + CachyOS signed kernel + NVIDIA driver + Margine deltas. Website: https://margine.dev. Source: https://github.com/${{ github.repository }}"
           fi
           SUBJECT="linux;fedora;bootc;bluefin;cachyos;margine"
           export IA_CONFIG_FILE=/tmp/ia.ini
@@ -888,8 +888,8 @@ jobs:
           OUTDIR="${{ steps.disk.outputs.outdir }}"
           DATE_TAG="${{ steps.disk.outputs.date_tag }}"
           ISO_NAME="${{ steps.disk.outputs.artifact_basename }}"
-          HEADER="Margine ${DATE_TAG}"
-          SUBHEAD="Margine — Bluefin DX + CachyOS signed kernel."
+          HEADER="Margine OS ${DATE_TAG}"
+          SUBHEAD="Margine OS: Bluefin DX + CachyOS signed kernel."
           TORRENT_URL="https://archive.org/download/${IDENTIFIER}/${IDENTIFIER}_archive.torrent"
           MIRROR_HTTP="https://archive.org/download/${IDENTIFIER}/${ISO_NAME}"
           cat > "$OUTDIR/index.html" <<HTML

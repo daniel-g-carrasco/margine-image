@@ -331,13 +331,19 @@ if [[ "${ENABLE_NVIDIA:-0}" == "1" ]]; then
     || { err "no NVIDIA CUDA repo for fedora${_verid}/${_arch} (or fetch failed)"; exit 1; }
 
   # kmod source + matching userland from the SINGLE NVIDIA repo, one
-  # transaction → no kmod/userland version skew. The RPM %post runs a dkms
-  # autoinstall against the HOST kernel that fails harmlessly (no host
-  # kernel-devel in the build); coreos relies on the same, and we rebuild
-  # explicitly with -k below. (If a future package makes that %post fatal to
-  # the dnf transaction, add --setopt=tsflags=noscripts here AND an explicit
-  # `dkms add -m nvidia -v "$DRIVER_VERSION"` before the build.)
+  # transaction → no kmod/userland version skew. The excludepkgs setopt
+  # ENFORCES that: the base image's fedora-multimedia (negativo17) also
+  # ships nvidia-driver, and whenever it publishes ahead of NVIDIA's CUDA
+  # repo (610.43.03 vs .02, run 29184241364, 2026-07-12) dnf --best mixes
+  # the two sources and the transaction is unsolvable. The RPM %post runs
+  # a dkms autoinstall against the HOST kernel that fails harmlessly (no
+  # host kernel-devel in the build); coreos relies on the same, and we
+  # rebuild explicitly with -k below. (If a future package makes that
+  # %post fatal to the dnf transaction, add --setopt=tsflags=noscripts
+  # here AND an explicit `dkms add -m nvidia -v "$DRIVER_VERSION"` before
+  # the build.)
   dnf -y install --no-docs --best --setopt=install_weak_deps=False \
+    --setopt='fedora-multimedia.excludepkgs=*nvidia*' \
     kmod-nvidia-open-dkms nvidia-driver nvidia-driver-libs nvidia-driver-cuda nvidia-persistenced nvidia-modprobe \
     || { err "nvidia upstream kmod + userland install failed"; exit 1; }
 

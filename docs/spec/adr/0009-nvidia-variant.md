@@ -158,3 +158,15 @@ the `modinfo -F signer` CN-match warning) are **superseded** by v1: userland
 left entirely to the existing loop (no CN gate). Status stays **experimental**
 — rollout steps 2 (build green in CI) and 3 (real-hardware runtime validation)
 are unchanged and still gate `:stable-nvidia`.
+
+## Update 2026-07-12 — single-repo invariant enforced against negativo17
+
+First scheduled weekly run (29184241364) failed: the base image's
+fedora-multimedia repo (negativo17) also ships `nvidia-driver`, and it had
+published 610.43.03 while NVIDIA's CUDA repo was still at .02. With `--best`,
+dnf tried to take the userland from negativo17 and the kmod from CUDA and the
+transaction became unsolvable. The "single NVIDIA repo, one transaction"
+invariant above was stated but not enforced; it now is, via
+`--setopt='fedora-multimedia.excludepkgs=*nvidia*'` on the install, so the
+whole nvidia family always resolves from the CUDA repo regardless of which
+repo happens to be ahead on a given day.

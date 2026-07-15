@@ -9,9 +9,9 @@ Reassures them that the reboot actually did something.
    (e.g. after ujust margine-gaming-native), which made this crash;
    fall back to rpm-ostree and select the deployment with booted=true
    (deployments[0] is the STAGED one when an update is pending).
- - the state file was written even when notify-send failed or the
+ - the state file was written even when the notification failed or the
    toast was lost, so a missed notification never retried; now state
-   advances only after notify-send succeeds.
+   advances only after the notification succeeds.
  - state moved from ~/.cache (routinely wiped) to XDG_STATE_HOME.
  - the unit moved from default.target.wants to
    graphical-session.target.wants: default.target starts before the
@@ -72,11 +72,10 @@ previous = state_file.read_text().strip() if state_file.exists() else ""
 if previous and previous != digest:
     title = "Margine updated"
     body = f"Now running: {version}\nDigest: {digest[:23]}…"
+    # margine-notify, not notify-send: it fills the fdo app_icon field
+    # so the logo also shows on the lock screen (docs/BRANDING.md).
     r = subprocess.run(
-        [
-            "notify-send", "-u", "normal", "-a", "Margine",
-            "-i", "margine-logo", title, body,
-        ]
+        ["/usr/libexec/margine/margine-notify", "-u", "normal", title, body]
     )
     if r.returncode != 0:
         # No notification daemon yet: keep the old state so the next

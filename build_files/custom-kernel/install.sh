@@ -8,7 +8,8 @@
 # Inspired by Origami Linux's modules/custom-kernel/custom-kernel.sh
 # (https://gitlab.com/origami-linux/images), simplified for Margine:
 #   - only the kernel-cachyos (mainline) variant — no LTS/RT/LTO choice
-#   - no Nvidia codepath (target hardware: Framework 13 AMD 7640U + Intel)
+#   - NVIDIA only in the opt-in :*-nvidia variant (ENABLE_NVIDIA=1 block
+#     below, ADR 0009); the base image ships no NVIDIA codepath
 #   - signing is mandatory: this image is meant to boot under Secure Boot
 #
 # Inputs (BuildKit secrets):

@@ -16,8 +16,12 @@
 # rpm-ostree status is daemon-mediated and read-only for users.
 set -euo pipefail
 
+# margine-notify (NOT notify-send): fills the fdo app_icon field so the
+# Margine logo also shows on the LOCK SCREEN rows (see the helper's
+# header + docs/BRANDING.md). notify-send leaves app_icon empty.
+MN=/usr/libexec/margine/margine-notify
 command -v rpm-ostree >/dev/null 2>&1 || exit 0
-command -v notify-send >/dev/null 2>&1 || exit 0
+[[ -x "$MN" ]] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
 
 MIN_AGE_DAYS=2
@@ -33,15 +37,12 @@ if [[ -n "$STAGED_JSON" ]]; then
   STAGED_TS="$(printf '%s' "$STAGED_JSON" | jq -r '.timestamp // empty')"
 
   # (1) First sight of THIS staged update: tell the user right away.
-  # Stamp written only AFTER a successful notify-send, so a tick that
+  # Stamp written only AFTER a successful notification, so a tick that
   # fires with no notification daemon around (SSH-spawned user manager)
   # doesn't burn the notice.
   SEEN="$STAMP_DIR/staged-seen"
   if [[ -n "$STAGED_SUM" && "$(cat "$SEEN" 2>/dev/null)" != "$STAGED_SUM" ]]; then
-    notify-send \
-      --app-name="Margine" \
-      --icon="margine-logo" \
-      --urgency=normal \
+    "$MN" -u normal \
       "Update ready" \
       "Margine ${STAGED_VER} is downloaded and staged. Reboot whenever it suits you to apply it." \
       && printf '%s\n' "$STAGED_SUM" > "$SEEN"
@@ -54,10 +55,7 @@ if [[ -n "$STAGED_JSON" ]]; then
     STAMP="$STAMP_DIR/staged-notify.stamp"
     TODAY="$(date +%F)"
     if (( AGE_DAYS >= MIN_AGE_DAYS )) && [[ "$(cat "$STAMP" 2>/dev/null)" != "$TODAY" ]]; then
-      notify-send \
-        --app-name="Margine" \
-        --icon="margine-logo" \
-        --urgency=normal \
+      "$MN" -u normal \
         "Update staged for ${AGE_DAYS} days" \
         "A newer Margine is already downloaded and waiting. Reboot whenever it suits you to apply it — until then you keep running the previous version." \
         && printf '%s\n' "$TODAY" > "$STAMP"
@@ -73,10 +71,7 @@ if [[ -s "$BLOCKED" ]]; then
   while read -r app when _reason; do
     [[ -n "$app" ]] || continue
     grep -qx "$app" "$NOTIFIED" && continue
-    notify-send \
-      --app-name="Margine" \
-      --icon="margine-logo" \
-      --urgency=normal \
+    "$MN" -u normal \
       "$app excluded from automatic updates" \
       "Its vendor download kept hanging unattended updates (since $when). Update it when you want with: ujust margine-update-unblock $app" \
       && printf '%s\n' "$app" >> "$NOTIFIED"

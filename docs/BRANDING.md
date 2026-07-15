@@ -62,8 +62,9 @@ These five cut across almost every touchpoint below:
 | "Secure Boot is disabled" notice | `live-env/src/build.sh` | `margine-live-sb-notice` |
 | MOK passphrase / enrollment | `build_files/custom-kernel/install.sh` | `margine-os`, `mok-enroll` |
 | First-login bootstrap + notification | `build_files/system_files/etc/xdg/autostart/margine-first-boot*.desktop` | `first-boot-bootstrap`, `first-boot-status` |
-| Update notifications | `build_files/system_files/usr/lib/systemd/user/margine-*-notify.*` | `notify-send` |
-| fastfetch / MOTD / `/etc/issue` | `build_files/50-branding/install.sh`, `…/fastfetch/margine.jsonc` | `ascii-logo.txt`, `no-show-user-motd`, `/etc/issue` |
+| Update notifications | `build_files/system_files/usr/libexec/margine*` (units in `…/usr/lib/systemd/user/`) | `margine-notify` |
+| Notification icon on the lock screen | `build_files/system_files/usr/libexec/margine/margine-notify` | `app_icon`, `image-path` |
+| fastfetch / MOTD / `/etc/issue` | `build_files/50-branding/install.sh`, `…/fastfetch/margine.jsonc`, `build_files/60-ujust-services/install.sh` | `ascii-logo.txt`, `no-show-user-motd`, `/etc/issue` |
 
 ---
 
@@ -86,7 +87,7 @@ renamed or deleted):
   (`Adw.StatusPage iconName`) and by **gnome-initial-setup** (which maps
   `os-release ID=fedora` → this icon name). Must be *replaced*, never deleted.
 - `org.fedoraproject.AnacondaInstaller.{svg,png}` — the installer window icon name
-  (see [Anaconda installer icon](#anaconda-installer-window-icon-the-hard-one)).
+  (see [Anaconda installer icon](#7-anaconda-installer--window-icon-the-hard-one)).
   Lives in the **live image** (`live-env/src/build.sh`), not the base.
 
 **Gotchas**
@@ -158,8 +159,9 @@ the `margine.dev` domain, the ghcr.io/`margine` image name.
   `libply-splash-graphics.so`).
 - Copies the three theme files from in-repo `build_files/50-branding/assets/plymouth/`.
 - `plymouth-set-default-theme margine`.
-- **Regenerates the initramfs** with `dracut --force --zstd --add ostree` for every
-  kernel — the theme is embedded in the initramfs, so this is mandatory at build.
+- **Regenerates the initramfs** with `dracut --force --zstd --no-hostonly
+  --no-hostonly-cmdline --add ostree` for every kernel — the theme is embedded
+  in the initramfs, so this is mandatory at build.
 
 **Kargs** (`build_files/system_files/usr/lib/bootc/kargs.d/10-margine-plymouth.toml`):
 `rhgb quiet plymouth.ignore-serial-consoles` — `rhgb` enables graphical splash;
@@ -177,9 +179,9 @@ headless and skipping the splash.
 ## 3. GRUB / boot menu
 
 **Menu text** (`live-env/src/iso.yaml`): entries explicitly read **"Install
-Margine"** (+ Basic Graphics, + verbose-debug, + *Enroll Secure Boot key
-(MokManager)*). The ISO volume label must stay `Margine-Live` (the CDLABEL the boot
-config references).
+Margine"** (+ *Basic Graphics Mode*, + *verbose, no splash, no serial*, +
+*Enroll Secure Boot key (MokManager)*). The ISO volume label must stay
+`Margine-Live` (the CDLABEL the boot config references).
 
 **HiDPI font** — GRUB has no DPI scaling, so the only legibility lever is a baked
 large font:
@@ -306,8 +308,10 @@ fresh ISO in the SB test VM.
 
 **Gotchas**
 - **Ordering:** the matchers + icon alias run *before* the `dnf install
-  anaconda-live anaconda-webui slitherer`. That's currently safe **only because
-  those packages ship none of these files** (verified). If a future anaconda/
+  anaconda-live anaconda-webui …` (note: `slitherer` is **not** installed
+  explicitly — it arrives as a dependency selected by `webui_web_engine =
+  slitherer` in `margine.conf`). That's currently safe **only because those
+  packages ship none of these files** (verified). If a future anaconda/
   slitherer starts shipping `org.fedoraproject.AnacondaInstaller.desktop` or that
   icon, the dnf install will **clobber** our versions — then move the alias +
   matcher block to *after* the dnf install. (Re-verify with
@@ -337,7 +341,7 @@ A one-shot autostart (`/etc/xdg/autostart/margine-live-sb-notice.desktop` →
 if SB is off** (`mokutil --sb-state`), shows a `zenity --info` explaining that
 Margine supports Secure Boot, how to enroll (boot-menu MokManager or first-boot,
 passphrase `margine-os`), and links the docs. Idempotent via a marker in
-`$XDG_RUNTIME_DIR`.
+`$XDG_RUNTIME_DIR` (falls back to `/tmp`).
 
 **Gotchas**
 - It uses a **plain `zenity --info`** (the default info icon). An earlier
@@ -385,14 +389,26 @@ All under `build_files/system_files/`. All autostart entries follow Golden Rules
   is still installing the deferred heavy apps ("installing extra apps… ~5–15 min"),
   and "Margine is ready" when done. Marker `~/.cache/margine/first-boot-notified`.
 - **Upgrade notify** (`usr/lib/systemd/user/margine-upgrade-notify.service`):
-  at login, "a new deployment is ready; log out to apply" — only if the booted
-  deployment changed.
-- **Staged-update notify** (`…/margine-staged-update-notify.{timer,service}`):
-  OnStartup 20 min then every 6 h, rate-limited to once/day, "restart to apply".
+  post-reboot **confirmation** — at login, if the booted deployment digest
+  differs from the recorded one, toasts "Margine updated / Now running: …".
+  The "reboot to apply" role belongs to staged-update notify, not here. State
+  advances only after the notification succeeds, so a missed toast retries at
+  the next login.
+- **Staged-update notify** (`…/margine-staged-update-notify.{timer,service}` →
+  `usr/libexec/margine/staged-update-notify`): timer is `OnStartupSec=20min` +
+  `OnCalendar` at 09/13/17/21 with `Persistent=true` (wall-clock on purpose —
+  monotonic `OnUnitActiveSec` never fires on a suspending laptop). The script
+  posts three distinct notice classes: (1) "Update ready" once per staged
+  checksum, at the first tick that sees it; (2) a once-per-day "staged for N
+  days" nag only once the staged deployment is ≥2 days old; (3) a once-per-app
+  notice when the update watchdog excludes an extra-data app.
 
 **Gotchas**
-- All use `notify-send` → require a graphical session DBus (`graphical-session
-  .target`); they no-op headless.
+- Notifications go through **`margine-notify`** (see section 12) — not
+  `notify-send`. Only `margine-upgrade-notify.service` is actually bound to
+  `graphical-session.target`; the timer and the autostart entries can tick
+  without a session, and headless safety comes from the scripts themselves
+  (a failed notification exits non-zero and the stamp/marker is not written).
 - Every notifier is idempotent via a marker — don't remove the marker checks or
   users get spammed each login.
 
@@ -410,11 +426,53 @@ All under `build_files/system_files/`. All autostart entries follow Golden Rules
   (`ublue-motd.sh`, `ublue-fastfetch.sh`, `90-bluefin-starship.sh`,
   `91-bluefin-aliases.sh`) are deleted from **both** `/etc/profile.d` and
   `/usr/etc/profile.d` (Golden Rule 1).
-- **`/etc/issue`:** `Margine \r (\m) — Bluefin DX + CachyOS signed kernel`
-  (emergency console only).
-- **ujust:** recipes live in `build_files/60-custom.just` under
-  `[group('Margine')]` (`margine-bootstrap`, `margine-gaming`, `margine-ai`,
-  `margine-test-vm`, …), discoverable via `ujust --list`.
+- **`/etc/issue`:** first line `Margine \r (\m) — Bluefin DX + CachyOS signed
+  kernel`, second line `\d \t` (emergency console only).
+- **ujust:** recipes live in `build_files/60-custom.just`, mostly under
+  `[group('Margine')]` (`margine-bootstrap`, `margine-ai`, `margine-test-vm`, …;
+  `margine-gaming` sits under `[group('Gaming')]`), discoverable via
+  `ujust --list`.
+
+---
+
+## 12. Notification icons — the lock screen trap
+
+**Symptom (found 2026-07-15, GNOME 50):** every Margine notification showed the
+Margine logo in the tray/banner but the generic `application-x-executable`
+gears on the **lock screen**, for all our notifiers at once.
+
+**Root cause (wire-verified with `dbus-monitor`):** libnotify's `notify-send`
+sends the fdo `Notify` call with the **`app_icon` field empty** and carries
+`--icon` only in the `image-path` **hint**. GNOME Shell renders two different
+icons:
+- the **notification's own icon** (tray banner + message list) comes from the
+  `image-data`/`image-path` hints → looked right;
+- the **source icon** — the ONLY thing the lock screen shows — comes from the
+  `app_icon` field (or a matching `.desktop` app) and **never** from
+  `image-path` → empty → `St.Icon` falls back to `application-x-executable`.
+
+**Fix:** `usr/libexec/margine/margine-notify` — a notify-send stand-in that
+calls `Notify` over D-Bus (gdbus) with **both** `app_icon` and `image-path`
+set. All Margine notifiers (staged-update, upgrade, staleness, first-boot
+status) go through it. Matrix-tested on the lock screen 2026-07-15: themed
+name, absolute path and Adwaita icons via notify-send all fail; the same
+themed name via `app_icon` shows the logo.
+
+**Gotchas**
+- **Don't "simplify" back to `notify-send`** — its empty `app_icon` is
+  hardcoded upstream; every regression here reintroduces the gears.
+- **`desktop-entry` hints are not a substitute:** sources attributed to a
+  `.desktop` via hint never appeared on the lock screen at all in the same
+  tests (twice). `-d` in margine-notify only adds in-session app attribution
+  (e.g. Bazaar for first-boot status), it does not fix the lock screen alone.
+- The `--` in the helper's gdbus call is load-bearing: without it gdbus parses
+  the `-1` expire-timeout as an option.
+- Upstream: GNOME Shell `js/ui/unlockDialog.js` binds `source.icon` with
+  `fallback_icon_name: 'application-x-executable'`; `notificationDaemon.js`
+  only sets the source icon from `app_icon` (`_iconForNotificationData(appIcon)`)
+  when the source has no app. Same class of bug reported against GSConnect in
+  2019 (grey gear on lock screen) — this is old, unfixed upstream behavior.
+
 
 ---
 
@@ -437,4 +495,7 @@ All under `build_files/system_files/`. All autostart entries follow Golden Rules
 ---
 
 *Source map assembled 2026-07-01 from a full sweep of `build_files/` and
-`live-env/`. Line numbers deliberately omitted — grep the anchors.*
+`live-env/`. Re-verified claim-by-claim against the code 2026-07-15 (stale
+notifier semantics, timer schedule, anchors and package lists corrected; the
+icon-cache `-t` rule is now actually enforced in `50-branding`). Line numbers
+deliberately omitted — grep the anchors.*

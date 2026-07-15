@@ -53,8 +53,9 @@ crosses to *critical* at >14 days.
 A `systemd --user` one-shot wired to `default.target.wants` (so it
 fires on every login). Compares the currently booted image digest
 (`bootc status --json`) to the previous run's digest, cached at
-`~/.cache/margine/last-booted-digest`. On a change, a `notify-send`
-pops up: "Margine updated to vXXX".
+`~/.cache/margine/last-booted-digest`. On a change, a desktop notification
+pops up: "Margine updated to vXXX" (via `margine-notify`, the notify-send
+stand-in that also fixes the lock-screen icon — see docs/BRANDING.md §12).
 
 Reassures the user that a reboot did pick up the new image — useful
 because Margine relies on `bootc upgrade` daily, and after a normal
@@ -67,11 +68,11 @@ booted into.
 CI side                                          Deployed Margine side
 ─────────                                        ─────────────────────
 build.yml      → ntfy: "build OK"  →  📱        margine-staleness.timer
-smoke-boot.yml → ntfy: "boot OK,                  → notify-send if
+smoke-boot.yml → ntfy: "boot OK,                  → margine-notify if
                  :stable promoted" →  📱            :stable >7 days old
 build-disk.yml → ntfy: "ISO live"  →  📱
                                                   margine-upgrade-notify
-                                                  → notify-send on each
+                                                  → margine-notify on each
                                                     deployment change
 ```
 

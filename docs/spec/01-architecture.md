@@ -242,7 +242,7 @@ runs daily and orchestrates, in order:
 2. `flatpak update` (system + user);
 3. `brew update && brew upgrade` if Homebrew is present;
 4. `distrobox upgrade --all` for declared containers;
-5. reboot indication via `notify-send` when a new deployment is staged.
+5. reboot indication via a desktop notification (`margine-notify`) when a new deployment is staged.
 
 The Atomic update boundary is different from the Arch/CachyOS one:
 

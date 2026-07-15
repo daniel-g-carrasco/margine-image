@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# notify-send stand-in that ALSO fills the fdo Notify app_icon FIELD.
+#
+# Why this exists (2026-07-15, GNOME 50): libnotify's notify-send sends
+# the app_icon field as "" and carries --icon only in the image-path
+# hint (wire-captured with dbus-monitor). GNOME Shell builds the LOCK
+# SCREEN rows from the notification SOURCE's icon, which it derives
+# only from app_icon or a matching .desktop app — never from
+# image-path. Result: every notify-send toast looks right in the tray
+# but shows the generic application-x-executable gears on the lock
+# screen. Calling Notify over D-Bus with BOTH app_icon and image-path
+# set fixes both surfaces (matrix-tested on the lock screen; see
+# docs/BRANDING.md, "Notifications" touchpoint).
+#
+# desktop-entry hints are NOT a substitute: sources attributed to a
+# .desktop via hint never showed up on the lock screen at all in the
+# same tests. Don't "simplify" back to notify-send or hints.
+#
+# Usage: margine-notify [-u low|normal|critical] [-i ICON] [-d DESKTOP_ID]
+#                       SUMMARY BODY
+# Defaults: -u normal, -i margine-logo, app name "Margine".
+# Exit: non-zero when no notification daemon answered (callers use this
+# to retry at the next tick instead of burning their once-only stamps).
+set -euo pipefail
+
+URGENCY=1
+ICON="margine-logo"
+DESKTOP_ID=""
+while getopts "u:i:d:" opt; do
+  case "$opt" in
+    u) case "$OPTARG" in
+         low) URGENCY=0 ;;
+         normal) URGENCY=1 ;;
+         critical) URGENCY=2 ;;
+         *) echo "margine-notify: bad urgency '$OPTARG'" >&2; exit 2 ;;
+       esac ;;
+    i) ICON="$OPTARG" ;;
+    d) DESKTOP_ID="$OPTARG" ;;
+    *) exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+SUMMARY="${1:?usage: margine-notify [-u urgency] [-i icon] [-d desktop-id] SUMMARY BODY}"
+BODY="${2:-}"
+
+# ICON/DESKTOP_ID land inside GVariant text; they are controlled values
+# (icon names, reverse-DNS ids), but refuse quotes rather than corrupt
+# the dict syntax if a caller ever gets creative.
+case "${ICON}${DESKTOP_ID}" in
+  *"'"*) echo "margine-notify: quotes not allowed in icon/desktop id" >&2; exit 2 ;;
+esac
+
+HINTS="{'image-path': <'${ICON}'>, 'urgency': <byte ${URGENCY}>"
+[[ -n "$DESKTOP_ID" ]] && HINTS+=", 'desktop-entry': <'${DESKTOP_ID}'>"
+HINTS+="}"
+
+# `--` is load-bearing: without it gdbus eats "-1" as an option.
+exec gdbus call --session \
+  --dest org.freedesktop.Notifications \
+  --object-path /org/freedesktop/Notifications \
+  --method org.freedesktop.Notifications.Notify -- \
+  "Margine" 0 "$ICON" "$SUMMARY" "$BODY" "[]" "$HINTS" "-1" >/dev/null

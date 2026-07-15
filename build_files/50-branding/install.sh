@@ -36,7 +36,7 @@ cp /ctx/50-branding/assets/margine-logo-square.png /usr/share/pixmaps/margine-lo
 [[ -s /usr/share/pixmaps/margine-logo.png ]] || { log "FATAL: required branding asset is empty: /usr/share/pixmaps/margine-logo.png"; exit 1; }
 chmod 0644 /usr/share/pixmaps/margine-logo.png
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-  gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+  gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor 2>/dev/null || true
 fi
 log "Installed margine-logo: hicolor/scalable/apps SVG + pixmaps PNG (About panel can now resolve it via GTK4 icon-theme lookup)"
 
@@ -146,7 +146,7 @@ if [[ -f "$SPRITE" ]]; then
 <svg xmlns="http://www.w3.org/2000/svg" width="296" height="296" viewBox="0 0 296 296"/>
 SVG
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache /usr/share/icons/hicolor || true
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
   fi
   log "Replaced Bluefin's fedora-logo-sprite.svg with transparent placeholder"
 fi
@@ -196,7 +196,7 @@ cp /usr/share/icons/hicolor/scalable/apps/margine-logo.svg \
    /usr/share/icons/hicolor/scalable/apps/fedora-logo-icon.svg
 cp /usr/share/pixmaps/margine-logo.png /usr/share/pixmaps/fedora-logo-icon.png
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-  gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+  gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor 2>/dev/null || true
 fi
 log "fedora-logo-icon now carries the Margine mark (fedora-welcome + gnome-initial-setup hardcode this name)"
 # About-panel distributor logo = the Margine WORDMARK, not the square "m".
@@ -505,7 +505,7 @@ fi
 # Update the icon-theme cache so removed SVGs disappear from icon
 # lookups immediately at first boot.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-  gtk-update-icon-cache --force --quiet /usr/share/icons/hicolor 2>/dev/null || true
+  gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------

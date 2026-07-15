@@ -43,9 +43,11 @@ if [[ -f "$MARKER" ]]; then
   exit 0
 fi
 
-# notify-send is in libnotify, always present on GNOME / Bluefin DX.
-if ! command -v notify-send >/dev/null 2>&1; then
-  log "notify-send not available — exit"
+# margine-notify (NOT notify-send): fills the fdo app_icon field so the
+# icon also shows on the lock screen (see the helper's header).
+MN=/usr/libexec/margine/margine-notify
+if [[ ! -x "$MN" ]]; then
+  log "margine-notify not available — exit"
   date -uIs > "$MARKER"
   exit 0
 fi
@@ -79,11 +81,7 @@ log "initial flatpak-preinstall.service state = $initial"
 case "$initial" in
   active|activating|reloading)
     # Service is still working. Tell the user.
-    notify-send \
-      --app-name="Margine" \
-      --icon="margine-logo" \
-      --urgency=low \
-      --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
+    "$MN" -u low -d io.github.kolunmi.Bazaar \
       "Margine is installing some extra apps" \
       "GIMP, Inkscape, darktable, OBS and more are arriving in the background. ~5-15 minutes. Keep the network up — you'll get another notification when it's done."
     log "posted START notification"
@@ -105,20 +103,13 @@ case "$initial" in
     final="$(svc_state)"
     log "final flatpak-preinstall.service state = $final"
     if [[ "$final" == "failed" ]]; then
-      notify-send \
-        --app-name="Margine" \
-        --icon="dialog-warning" \
-        --urgency=normal \
+      "$MN" -u normal -i dialog-warning \
         "Some apps were not installed" \
         "Installing some extra apps failed (network?). Retry from Bazaar, or run: systemctl restart flatpak-preinstall.service"
       log "posted FAIL notification"
     else
       installed=$(flatpak list --app --columns=application 2>/dev/null | wc -l)
-      notify-send \
-        --app-name="Margine" \
-        --icon="emblem-ok" \
-        --urgency=low \
-        --hint=string:desktop-entry:io.github.kolunmi.Bazaar \
+      "$MN" -u low -i emblem-ok -d io.github.kolunmi.Bazaar \
         "Margine is ready" \
         "All extra apps are installed (${installed} Flatpaks total). Open Activities (Super key) to see them."
       log "posted DONE notification (apps=$installed)"

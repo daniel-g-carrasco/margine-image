@@ -44,9 +44,8 @@ if age_days < WARN_AGE_DAYS:
 urgency = "critical" if age_days >= CRIT_AGE_DAYS else "normal"
 title = "Margine: upstream stale"
 body = f"Latest :stable is {age_days:.0f} days old. Build pipeline may be broken."
+# margine-notify, not notify-send: it fills the fdo app_icon field so
+# the logo also shows on the lock screen (docs/BRANDING.md).
 subprocess.run(
-    [
-        "notify-send", "-u", urgency, "-a", "Margine",
-        "-i", "margine-logo", title, body,
-    ]
+    ["/usr/libexec/margine/margine-notify", "-u", urgency, title, body]
 )

@@ -71,7 +71,7 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # (switch moved, top-bar icon + windows frozen). Fixed in 2.8.11 via an
 # _indicator_updating guard; 2.8.17 is the current release. Schema keys
 # Margine overrides in 03-margine-o-tiling are unchanged in 2.8.17.
-OTILING_VERSION="v2.9.12"
+OTILING_VERSION="v2.9.15"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
 OTILING_SHA256="b953528bd6f1fb8027ce7e2032d77e5dd09722d968c5e099dc3fdda164c1a882"
 

@@ -16,6 +16,13 @@
 # repo being disabled on some machines. sys_age=-1 rows are untagged
 # metadata fetches, not devices, and are excluded.
 #
+# os_name comes from os-release NAME, which the 2026-07-11 rebrand
+# changed from "Margine" to "Margine OS" — the fleet reports BOTH names
+# while it migrates (week of 2026-07-13: 4 "Margine" + 8 "Margine OS"
+# devices). Counting only one name undercounts and eventually zeroes
+# the chart, so both are accepted; a device reports exactly one, so
+# summing them per week/repo stays a device count.
+#
 # Usage: cd site && ../.github/scripts/publish-countme-json.sh
 set -euo pipefail
 
@@ -34,7 +41,7 @@ curl -fsSL --retry 3 --max-time 300 -r "-${TAIL_BYTES}" "$CSV_URL" -o "$TMP/tail
 # NF/date filters drop the header and the partial first line of the
 # range. Columns: week_start,week_end,hits,os_name,os_version,
 # os_variant,os_arch,sys_age,repo_tag,repo_arch.
-awk -F, 'NF==10 && $1 ~ /^20..-..-..$/ && $4=="Margine" && $8+0>=0 { sum[$1"|"$2"|"$9]+=$3 }
+awk -F, 'NF==10 && $1 ~ /^20..-..-..$/ && ($4=="Margine" || $4=="Margine OS") && $8+0>=0 { sum[$1"|"$2"|"$9]+=$3 }
   END { for (k in sum) { split(k,a,"|"); w=a[1]"|"a[2]; if (sum[k]>best[w]) best[w]=sum[k] }
         for (w in best) { split(w,b,"|"); printf "{\"start\":\"%s\",\"end\":\"%s\",\"devices\":%d}\n", b[1], b[2], best[w] } }' \
   "$TMP/tail.csv" | jq -s 'sort_by(.start)' > "$TMP/new-weeks.json"
@@ -56,7 +63,7 @@ jq -n --argjson old "$OLD_WEEKS" --slurpfile new "$TMP/new-weeks.json" \
   (($old + $new[0]) | group_by(.start) | map(last) | sort_by(.start)) as $weeks |
   { generatedAt: $gen,
     source: $src,
-    note: "devices = weekly Fedora countme pings with os_name=Margine, sys_age>=0, max across repos",
+    note: "devices = weekly Fedora countme pings with os_name Margine or Margine OS, sys_age>=0, max across repos",
     weeks: $weeks }' > "$TMP/countme.json"
 
 # Material-change check (ignore the timestamp) — no commit on a no-op tick.

@@ -14,7 +14,6 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
-
 # Fallback route list — used only when the live site's machine-readable
 # /routes.json (emitted by its prerender step since 2026-06-12) cannot
 # be fetched or parsed. With routes.json available, a new docs page or

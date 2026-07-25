@@ -3,12 +3,16 @@ name: Countme tracker
 # Refreshes the site's /status "Devices running Margine" chart from
 # Fedora's public Count Me dataset (see publish-countme-json.sh for the
 # counting model). Fedora's weeks close on Sunday and the published
-# totals settle a day or two later, hence the Tuesday cron. Same
+# totals settle "a day or two" later — but not reliably by Tuesday
+# morning: the 2026-07-21 (Tue) tick missed the week that closed on the
+# 19th, and a weekly cron then leaves the chart 9+ days stale. Daily
+# tick instead: the script no-ops (no commit) until the dataset
+# actually gains a new week, so the extra runs cost nothing. Same
 # SITE_BUMP_TOKEN publish pattern as status-json.yml.
 
 on:
   schedule:
-    - cron: "43 7 * * 2"
+    - cron: "43 7 * * *"
   workflow_dispatch:
 
 permissions:

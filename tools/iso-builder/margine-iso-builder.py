@@ -25,11 +25,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gio, GLib  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 # The script's own directory is sys.path[0], so `mib` resolves whether the app
 # is launched from the repo, a .desktop file, or the GNOME grid.
-from mib import core, build, ci, maint  # noqa: E402
+from mib import build, ci, core, maint  # noqa: E402
 from mib import help as mib_help  # noqa: E402
 
 # Frozen: a .desktop launcher and a Justfile recipe point at this id / path.

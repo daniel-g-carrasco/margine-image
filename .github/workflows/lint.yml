@@ -66,10 +66,13 @@ jobs:
           shellcheck -S warning "${SH[@]}" "${BIN[@]}"
 
       - name: ruff (python build helpers)
+        # Pinned: an unpinned `pipx run ruff` broke every PR when 0.16.0
+        # widened the default rules (2026-07-23). Rules are locked in
+        # ruff.toml; the pin keeps the runner reproducible too.
         run: |
           set -euo pipefail
           mapfile -t PY < <(git ls-files '*.py')
-          pipx run ruff check "${PY[@]}"
+          pipx run ruff==0.16.0 check "${PY[@]}"
 
       - name: BAKE flatpak lists must not drift
         # installer/flatpaks-base (OCI image manifest) and

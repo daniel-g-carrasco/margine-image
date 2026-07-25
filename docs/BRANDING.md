@@ -146,6 +146,11 @@ the `margine.dev` domain, the ghcr.io/`margine` image name.
   aliasing and About config assume os-release is already Margine.
 - About reads only `NAME`, `PRETTY_NAME`, `VARIANT`, `LOGO` from os-release; other
   fields come from elsewhere.
+- **`NAME` feeds Fedora countme's `os_name`.** Renaming it splits the public
+  device-count series: the 2026-07-11 "Margine" → "Margine OS" rebrand moved
+  updated devices to a new `os_name` and the site's user chart silently
+  undercounted until `publish-countme-json.sh` learned to accept **both**
+  names. If `NAME` ever changes again, teach that script the new name too.
 
 ---
 

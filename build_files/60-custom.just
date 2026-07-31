@@ -597,6 +597,97 @@ margine-tpm2-enroll ACTION="enroll":
       *) echo "Usage: ujust margine-tpm-unlock [status|enable|disable]"; exit 1 ;;
     esac
 
+# Slim profile for low-spec / non-technical machines: stops the deferred
+# heavy creator apps (GIMP, Inkscape, darktable, OBS) and removes the
+# tinkerer apps a casual user never opens. Browser, mail, office and the
+# GNOME core suite stay. Masking flatpak-preinstall.service is REQUIRED,
+# not an optimization: the service re-installs every list entry at each
+# boot, so without the mask the removed apps come back. Reversible with
+# margine-slim-restore.
+[group('Margine')]
+margine-slim:
+    #!/usr/bin/bash
+    set -euo pipefail
+    # Guard: if the browser is missing the first-boot install has not
+    # finished (or failed) — masking now could strand a half-set system.
+    if ! flatpak info --system app.zen_browser.zen >/dev/null 2>&1; then
+      echo "Zen is not installed yet — first-boot app install still running (or broken)."
+      echo "Wait for the 'Margine is ready' notification, then re-run. (ujust margine-doctor helps if it never arrives.)"
+      exit 1
+    fi
+    cat <<'EOF'
+    == Margine slim profile ==
+
+    This will:
+      - mask flatpak-preinstall.service (stops the deferred heavy
+        creator apps: GIMP, Inkscape, darktable, OBS Studio — and
+        stops it re-installing anything removed below at every boot)
+      - remove the tinkerer apps: Apostrophe, Audacity, EasyEffects,
+        DistroShelf, Extension Manager, Fragments, Pinta, G4Music,
+        Blanket
+      - keep: Zen, Thunderbird, Bitwarden, LibreOffice and the whole
+        GNOME core suite
+
+    Everything is reversible: ujust margine-slim-restore brings the
+    stock set back, and single apps can be reinstalled from Bazaar.
+    EOF
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    sudo systemctl stop flatpak-preinstall.service 2>/dev/null || true
+    sudo systemctl mask flatpak-preinstall.service
+    for app in \
+      org.gimp.GIMP org.inkscape.Inkscape org.darktable.Darktable \
+      com.obsproject.Studio \
+      org.gnome.gitlab.somas.Apostrophe org.audacityteam.Audacity \
+      com.github.wwmm.easyeffects com.ranfdev.DistroShelf \
+      com.mattjakeman.ExtensionManager de.haeckerfelix.Fragments \
+      com.github.PintaProject.Pinta com.github.neithern.g4music \
+      com.rafaelmardojai.Blanket; do
+      sudo flatpak uninstall --system -y "$app" 2>/dev/null || true
+    done
+    sudo flatpak uninstall --system --unused -y || true
+    echo "Done — slim profile active. Restore anytime: ujust margine-slim-restore"
+
+# Near-empty profile on top of margine-slim: also removes office, mail
+# and the situational GNOME apps. What survives: Zen, Papers, Loupe,
+# Calculator, Text Editor, Calendar, Clocks and the system utilities
+# (Bazaar, Flatseal, Mission Center, Firmware, Disk Usage Analyzer).
+# Add anything back from Bazaar. Reversible with margine-slim-restore.
+[group('Margine')]
+margine-naked: margine-slim
+    #!/usr/bin/bash
+    set -euo pipefail
+    cat <<'EOF'
+    == Margine naked profile (on top of slim) ==
+
+    This ALSO removes: LibreOffice, Thunderbird, Bitwarden, Maps,
+    Weather, Contacts, Sound Recorder, Impression, Deja Dup.
+    EOF
+    read -rp "Continue? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted (slim profile already applied)."; exit 0 ;; esac
+    for app in \
+      org.libreoffice.LibreOffice org.mozilla.thunderbird_esr \
+      com.bitwarden.desktop org.gnome.Maps org.gnome.Weather \
+      org.gnome.Contacts org.gnome.SoundRecorder \
+      io.gitlab.adhami3310.Impression org.gnome.DejaDup; do
+      sudo flatpak uninstall --system -y "$app" 2>/dev/null || true
+    done
+    sudo flatpak uninstall --system --unused -y || true
+    echo "Done — naked profile active. Restore anytime: ujust margine-slim-restore"
+
+# Undo margine-slim / margine-naked: unmasking flatpak-preinstall is
+# enough — its list contains the full stock set (bake fallback included),
+# so the next run re-installs everything that was removed.
+[group('Margine')]
+margine-slim-restore:
+    #!/usr/bin/bash
+    set -euo pipefail
+    echo "Restoring the stock Margine app set (runs in background, 5-15 min on a normal line)…"
+    sudo systemctl unmask flatpak-preinstall.service
+    sudo systemctl start flatpak-preinstall.service --no-block
+    echo "Started. Apps reappear as they land; check progress with:"
+    echo "  systemctl status flatpak-preinstall.service"
+
 # Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]
 margine-doctor:

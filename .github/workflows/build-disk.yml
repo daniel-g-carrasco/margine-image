@@ -91,6 +91,16 @@ env:
   #      hard-fails the ISO build with "Not a directory".
   # Reverting to an upstream pin is impossible until all three land.
   # Renovate disabled.
+  #
+  # Upstream status (surveyed 2026-07-31): ublue-os/titanoboa is dormant
+  # — main frozen at post-#138 HEAD (2026-05-19, the exact base of our
+  # fork, 0 commits ahead), its own CI red, Renovate bumps and our PRs
+  # #147/#148 sitting unreviewed. The ecosystem pins forks too: Bazzite
+  # builds its ISOs from Zeglius/titanoboa@revamp-pr (a never-merged
+  # developer revamp, itself idle since 2026-03). Nothing upstream to
+  # chase; the one event that would warrant work here is that revamp
+  # landing on main (ISO pipeline v2) — then rebase our three patches
+  # deliberately instead of bumping.
   TITANOBOA_REF: "daniel-g-carrasco/titanoboa@cce73fc476e97fed626283afb6c518e0882a12d7"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "stable"

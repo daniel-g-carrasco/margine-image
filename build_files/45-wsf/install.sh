@@ -25,7 +25,7 @@ set -euo pipefail
 . /ctx/00-common.sh
 
 WSF_VERSION=1.0.0
-WSF_SHA256=fca3070e3df55795f201bb9c7e42013f31215963f2117ff90809117dba4722fe
+WSF_SHA256=eca5b60beca002e864e7b2251a1a9f5ae1b49620c1a4e31636a41fccac4ddac3
 WSF_RPM="wayland-scroll-factor-${WSF_VERSION}-1.fc44.x86_64.rpm"
 WSF_URL="https://github.com/daniel-g-carrasco/wayland-scroll-factor/releases/download/v${WSF_VERSION}/${WSF_RPM}"
 

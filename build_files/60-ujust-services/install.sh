@@ -65,3 +65,17 @@ touch /etc/skel/.config/no-show-user-motd
 log "Installed: /etc/skel/.config/no-show-user-motd (disables Bluefin MOTD for new users)"
 
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Network printers should just appear — cups-browsed, dnssd-only
+# ---------------------------------------------------------------------------
+# Fedora ships cups-browsed disabled (post-CVE-2024-47176 posture), so a
+# fresh install shows "No destinations added" and every print dialog
+# offers only Save-to-PDF until the user manually adds the printer.
+# Margine enables the service with the hardened dnssd-only config shipped
+# in system_files/etc/cups/cups-browsed.conf (the vulnerable legacy CUPS
+# browsing protocol stays off): driverless network printers materialize
+# as local queues automatically and every app, Flatpaks included, sees
+# them with zero clicks.
+systemctl -f enable cups-browsed.service
+log "Enabled cups-browsed (dnssd-only) — network printers auto-appear"

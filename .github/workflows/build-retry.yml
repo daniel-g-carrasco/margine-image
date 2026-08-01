@@ -1,0 +1,54 @@
+name: Auto-retry failed builds
+
+# One automatic rerun for the long build pipelines when they die.
+#
+# Born from 2026-07-31: the image build carrying the WSF 1.0.0 bump
+# HUNG in the rechunk step until the job's 90-min timeout (GitHub
+# reports timeouts as "cancelled"), and with no retry and no later
+# build-triggering push, :stable silently stayed a day behind until
+# the next unrelated merge. Same day, the ISO publish died on a slow
+# IA upload and by the time it was retried by hand the ISO artifact
+# had expired. A single automatic rerun of the FAILED jobs, minutes
+# after the death, would have absorbed both.
+#
+# Guards:
+# - run_attempt == 1: exactly one automatic retry, never a loop.
+# - pull_request runs excluded: a red PR build is signal, not weather.
+# - `--failed` reruns only the failed/cancelled jobs; green jobs
+#   (and their artifacts) are reused.
+# - This also retries runs a human cancelled on purpose (the payload
+#   cannot tell a timeout from a manual cancel). Cancelling twice
+#   makes it stick; documented cost of covering timeouts.
+
+on:
+  workflow_run:
+    workflows:
+      - "Build Margine image"
+      - "Build disk images"
+      - "Build Margine NVIDIA variant (experimental)"
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  retry:
+    if: >-
+      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.event != 'pull_request' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'cancelled')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Rerun failed jobs (single attempt)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          echo "Retrying '${RUN_NAME}' run ${RUN_ID} (attempt 1 ended: ${RUN_CONCLUSION})"
+          gh run rerun "$RUN_ID" --failed --repo "${{ github.repository }}"

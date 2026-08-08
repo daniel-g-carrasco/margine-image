@@ -265,6 +265,19 @@ class PhoneCamWindow(Adw.ApplicationWindow):
         self._restarting = False
         if self._scrcpy is None:
             self._on_start_stop(None)
+            # A format change leaves PipeWire's node with stale caps and
+            # consumers fail until the graph is refreshed (field-tested
+            # twice). Do it automatically instead of asking the user to
+            # find the Troubleshooting button.
+            GLib.timeout_add(900, self._auto_refresh_wireplumber)
+        return False
+
+    def _auto_refresh_wireplumber(self):
+        if self._scrcpy is not None:
+            subprocess.run(
+                ["systemctl", "--user", "restart", "wireplumber"],
+                timeout=10, check=False,
+            )
         return False
 
     # ── start/stop ───────────────────────────────────────────────────

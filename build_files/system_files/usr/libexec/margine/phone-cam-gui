@@ -94,6 +94,16 @@ class PhoneCamWindow(Adw.ApplicationWindow):
         self._phone_row.add_prefix(Gtk.Image.new_from_icon_name("phone-symbolic"))
         status_group.add(self._phone_row)
 
+        setup_row = Adw.ActionRow(
+            title="Set Up Your Phone",
+            subtitle="One-time steps to make the phone available",
+        )
+        setup_row.add_prefix(Gtk.Image.new_from_icon_name("help-about-symbolic"))
+        setup_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        setup_row.set_activatable(True)
+        setup_row.connect("activated", self._on_show_setup)
+        status_group.add(setup_row)
+
         # ── settings ─────────────────────────────────────────────────
         settings_group = Adw.PreferencesGroup(title="Camera")
         page.add(settings_group)
@@ -101,11 +111,14 @@ class PhoneCamWindow(Adw.ApplicationWindow):
         self._facing_row = Adw.ComboRow(title="Lens")
         self._facing_row.add_prefix(Gtk.Image.new_from_icon_name("camera-switch-symbolic"))
         self._facing_row.set_model(Gtk.StringList.new(["Back", "Front"]))
+        self._facing_row.connect("notify::selected", self._on_setting_changed)
         settings_group.add(self._facing_row)
 
         self._size_row = Adw.ComboRow(title="Resolution")
+        self._size_row.set_subtitle("1080p is the sweet spot; huge sizes can fail in call apps")
         self._size_row.add_prefix(Gtk.Image.new_from_icon_name("view-fullscreen-symbolic"))
         self._set_sizes(DEFAULT_SIZES)
+        self._size_row.connect("notify::selected", self._on_setting_changed)
         settings_group.add(self._size_row)
 
         # ── start/stop + preview ─────────────────────────────────────
@@ -197,9 +210,15 @@ class PhoneCamWindow(Adw.ApplicationWindow):
     # ── camera sizes ─────────────────────────────────────────────────
 
     def _set_sizes(self, sizes):
+        self._loading_sizes = True
         self._size_row.set_model(Gtk.StringList.new(sizes))
         if PREFERRED_SIZE in sizes:
             self._size_row.set_selected(sizes.index(PREFERRED_SIZE))
+        else:
+            under = [s for s in sizes if int(s.split("x")[0]) <= 1920]
+            if under:
+                self._size_row.set_selected(sizes.index(under[0]))
+        self._loading_sizes = False
 
     def _load_sizes_once(self, serial):
         if self._sizes_device == serial:
@@ -219,11 +238,34 @@ class PhoneCamWindow(Adw.ApplicationWindow):
                 key=lambda s: int(s.split("x")[0]) * int(s.split("x")[1]),
                 reverse=True,
             )
-            common = [s for s in sizes if s in DEFAULT_SIZES] or sizes[:8]
-            if common:
-                GLib.idle_add(self._set_sizes, common)
+            if sizes:
+                GLib.idle_add(self._set_sizes, sizes)
 
         Gio.Task.new(self, None, None).run_in_thread(lambda *a: worker())
+
+    def _on_setting_changed(self, *_args):
+        # Changing lens/resolution while streaming restarts the producer
+        # with the new parameters: without this the change silently
+        # applies only to the NEXT start (first user test feedback).
+        if self._scrcpy is None or getattr(self, "_loading_sizes", False):
+            return
+        if getattr(self, "_restart_id", None):
+            GLib.source_remove(self._restart_id)
+        self._restart_id = GLib.timeout_add(400, self._restart_stream)
+
+    def _restart_stream(self):
+        self._restart_id = None
+        if self._scrcpy is not None:
+            self._restarting = True
+            self._stop()
+            GLib.timeout_add(400, self._deferred_start)
+        return False
+
+    def _deferred_start(self):
+        self._restarting = False
+        if self._scrcpy is None:
+            self._on_start_stop(None)
+        return False
 
     # ── start/stop ───────────────────────────────────────────────────
 
@@ -267,7 +309,9 @@ class PhoneCamWindow(Adw.ApplicationWindow):
             self._start_button.set_label("Start Camera")
             self._start_button.remove_css_class("destructive-action")
             self._start_button.add_css_class("suggested-action")
-            if not proc.get_if_exited() or proc.get_exit_status() != 0:
+            if getattr(self, "_restarting", False):
+                pass  # deliberate stop from a settings change
+            elif not proc.get_if_exited() or proc.get_exit_status() != 0:
                 self._toast("The phone stream ended unexpectedly")
 
     def _stop(self):
@@ -305,6 +349,47 @@ class PhoneCamWindow(Adw.ApplicationWindow):
             self._preview_pipeline = None
         self._picture.set_paintable(None)
         self._picture.set_visible(False)
+
+    # ── phone setup guide ────────────────────────────────────────────
+
+    def _on_show_setup(self, _row):
+        steps = (
+            ("1", "Enable Developer options",
+             "Settings › About phone › tap “Build number” seven times"),
+            ("2", "Turn on USB debugging",
+             "Settings › System › Developer options › USB debugging"),
+            ("3", "Connect with a data cable",
+             "Some charging cables carry no data: if nothing happens, try another cable"),
+            ("4", "Authorize this computer",
+             "On the phone, accept “Allow USB debugging?” and check “Always allow”"),
+        )
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(
+            title="Set Up Your Phone",
+            description="Needed once per phone; afterwards it just connects.",
+        )
+        page.add(group)
+        for number, title, subtitle in steps:
+            row = Adw.ActionRow(title=title, subtitle=subtitle)
+            badge = Gtk.Label(label=number)
+            badge.add_css_class("title-3")
+            badge.set_width_chars(2)
+            row.add_prefix(badge)
+            group.add(row)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(page)
+        if hasattr(Adw, "Dialog"):
+            dialog = Adw.Dialog()
+            dialog.set_title("Phone Setup")
+            dialog.set_content_width(460)
+            dialog.set_child(toolbar)
+            dialog.present(self)
+        else:
+            win = Adw.Window(transient_for=self, modal=True, title="Phone Setup")
+            win.set_default_size(460, 420)
+            win.set_content(toolbar)
+            win.present()
 
     # ── troubleshooting ──────────────────────────────────────────────
 

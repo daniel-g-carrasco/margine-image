@@ -1,0 +1,80 @@
+name: Fix scrcpy sha pin
+
+# Companion to the Renovate custom manager (see .github/renovate.json5).
+# Renovate bumps SCRCPY_VERSION in build_files/70-phone-cam/install.sh
+# from upstream GitHub releases, but hosted Renovate cannot hash the release
+# tarball — so SCRCPY_SHA256 the build verifies would go stale and the build
+# would fail its `sha256sum -c`. This recomputes SCRCPY_SHA256 on the
+# Renovate branch right after the version bump, so the PR is mergeable as-is.
+#
+# Same pattern as otiling-pin-sha.yml. Runs only on Renovate branches that touch
+# 70-phone-cam/install.sh. The hash is committed back via the GraphQL API
+# (createCommitOnBranch) so the commit is VERIFIED / GitHub-signed: main
+# requires signed commits, and a plain `git commit` from the runner is unsigned
+# and would block the PR (needing an admin bypass). Like a GITHUB_TOKEN push, an
+# API commit does not re-trigger workflows, so there is no loop.
+
+on:
+  push:
+    branches:
+      - "renovate/**"
+    paths:
+      - "build_files/70-phone-cam/install.sh"
+
+# Least privilege (Scorecard Token-Permissions): nothing at the workflow
+# level; the single job below elevates to exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: scrcpy-pin-sha-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix-sha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # push the recomputed sha to the Renovate branch
+    steps:
+      - name: Check out the Renovate branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Recompute SCRCPY_SHA256 to match SCRCPY_VERSION
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          f=build_files/70-phone-cam/install.sh
+          ver="$(grep -oP '^SCRCPY_VERSION=\K[0-9.]+' "$f")"
+          cur="$(grep -oP '^SCRCPY_SHA256=\K[0-9a-f]+' "$f")"
+          [ -n "$ver" ] || { echo "::error::could not read SCRCPY_VERSION"; exit 1; }
+          url="https://github.com/Genymobile/scrcpy/releases/download/v${ver}/scrcpy-linux-x86_64-v${ver}.tar.gz"
+          echo "Hashing $url"
+          new="$(curl -fsSL --retry 3 "$url" | sha256sum | cut -d' ' -f1)"
+          [ -n "$new" ] || { echo "::error::failed to hash scrcpy tarball"; exit 1; }
+          if [ "$new" = "$cur" ]; then
+            echo "SCRCPY_SHA256 already correct for ${ver} — nothing to do."
+            exit 0
+          fi
+          sed -i "s/^SCRCPY_SHA256=.*/SCRCPY_SHA256=${new}/" "$f"
+          # Commit the recomputed hash as a VERIFIED commit via the GraphQL API
+          # (github-actions[bot], GitHub-signed) so the Renovate branch passes
+          # main's require-signed-commits rule and the PR merges without a bypass.
+          gh api graphql -f query='
+            mutation ($repo:String!, $branch:String!, $msg:String!, $path:String!, $contents:Base64String!, $oid:GitObjectID!) {
+              createCommitOnBranch(input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                message: { headline: $msg },
+                fileChanges: { additions: [{ path: $path, contents: $contents }] },
+                expectedHeadOid: $oid
+              }) { commit { oid url } }
+            }' \
+            -f repo="${GITHUB_REPOSITORY}" \
+            -f branch="${GITHUB_REF_NAME}" \
+            -f msg="scrcpy: sync SCRCPY_SHA256 for v${ver}" \
+            -f path="$f" \
+            -f contents="$(base64 -w0 "$f")" \
+            -f oid="$(git rev-parse HEAD)"
+          echo "Committed SCRCPY_SHA256 -> ${new} for ${ver} (verified API commit)"

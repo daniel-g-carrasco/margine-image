@@ -21,12 +21,31 @@
       // branch simply re-arm the wait on the new SHA. Major updates stay
       // manual by design: they are the ones that break rebases and APIs.
       automerge: true,
+      // Renovate-side automerge (NOT GitHub's platform auto-merge):
+      // platform auto-merge waits only for REQUIRED checks (lint), while
+      // Renovate itself merges only when EVERY check on the PR is green,
+      // including the non-required full image build that the vm-test
+      // label triggers on baked-dependency bumps. That full build (with
+      // the in-container validators) is the actual compatibility gate.
+      platformAutomerge: false,
       matchUpdateTypes: [
         'minor',
         'patch',
         'pin',
         'pinDigest',
         'digest',
+      ],
+    },
+    {
+      // Anything baked into the image must prove it BUILDS before it
+      // merges: the vm-test label makes build.yml run the full 30-min
+      // image build (validators included) on the PR.
+      matchFileNames: [
+        'build_files/**',
+        'Containerfile',
+      ],
+      addLabels: [
+        'vm-test',
       ],
     },
     {
@@ -88,6 +107,18 @@
       matchStrings: ['OTILING_VERSION="(?<currentValue>v\\d+\\.\\d+\\.\\d+)"'],
       depNameTemplate: 'oliwebd/o-tiling',
       datasourceTemplate: 'github-releases',
+    },
+    {
+      // scrcpy (Phone Camera engine), pinned release tarball in
+      // 70-phone-cam. Same sha-companion pattern: renovate bumps
+      // SCRCPY_VERSION, .github/workflows/scrcpy-pin-sha.yml recomputes
+      // SCRCPY_SHA256 on the branch.
+      customType: 'regex',
+      managerFilePatterns: ['/build_files/70-phone-cam/install\\.sh$/'],
+      matchStrings: ['SCRCPY_VERSION=(?<currentValue>\\d+\\.\\d+(\\.\\d+)?)'],
+      depNameTemplate: 'Genymobile/scrcpy',
+      datasourceTemplate: 'github-releases',
+      extractVersionTemplate: '^v(?<version>.+)$',
     },
   ],
 }

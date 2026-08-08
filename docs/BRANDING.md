@@ -64,6 +64,7 @@ These five cut across almost every touchpoint below:
 | First-login bootstrap + notification | `build_files/system_files/etc/xdg/autostart/margine-first-boot*.desktop` | `first-boot-bootstrap`, `first-boot-status` |
 | Update notifications | `build_files/system_files/usr/libexec/margine*` (units in `…/usr/lib/systemd/user/`) | `margine-notify` |
 | Notification icon on the lock screen | `build_files/system_files/usr/libexec/margine/margine-notify` | `app_icon`, `image-path` |
+| Phone Camera app (name/icon/id) | `…/applications/dev.margine.PhoneCam.desktop` + `…/icons/hicolor/scalable/apps/dev.margine.PhoneCam.svg` + `…/libexec/margine/phone-cam-gui` | `dev.margine.PhoneCam`, `Margine Phone Cam` |
 | fastfetch / MOTD / `/etc/issue` | `build_files/50-branding/install.sh`, `…/fastfetch/margine.jsonc`, `build_files/60-ujust-services/install.sh` | `ascii-logo.txt`, `no-show-user-motd`, `/etc/issue` |
 
 ---

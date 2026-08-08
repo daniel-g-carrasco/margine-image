@@ -1,0 +1,444 @@
+#!/usr/bin/python3
+# Margine Phone Camera — use an Android phone as a webcam.
+#
+# Thin GUI over the pieces the image already ships: adb (android-tools),
+# scrcpy (pinned release bundle, /usr/bin/scrcpy wrapper) and the
+# v4l2loopback device the image loads at boot as /dev/video21
+# ("Margine Phone Cam", exclusive_caps=1). The app never needs
+# privileges: it only starts/stops an scrcpy producer and previews the
+# loopback device via GStreamer (gtk4paintablesink).
+#
+# Lessons baked in from the first manual run (2026-08-08):
+#   - ALWAYS constrain --camera-size: unconstrained, a modern phone
+#     pushes its full sensor (4080x3072 raw ≈ 4.5 Gbit/s) and PipeWire
+#     consumers give up with "Could not play camera stream".
+#   - Start the producer BEFORE the consuming app looks at the device;
+#     with exclusive_caps=1 the capture caps exist only while feeding.
+#   - If a camera picker still misses the device (stale WirePlumber
+#     enumeration), a user-level `systemctl --user restart wireplumber`
+#     fixes it: exposed here as the "repair" button.
+
+import os
+import re
+import shutil
+import subprocess
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("Gst", "1.0")
+
+from gi.repository import Adw, Gio, GLib, Gst, Gtk  # noqa: E402
+
+APP_ID = "dev.margine.PhoneCam"
+CARD_LABEL = "Margine Phone Cam"
+ADB_POLL_MS = 3000
+DEFAULT_SIZES = ["1920x1080", "1280x720", "640x480"]
+PREFERRED_SIZE = "1920x1080"
+
+
+def find_loopback_device():
+    """The image pins /dev/video21, but discover by label so manual
+    setups (different video_nr) keep working."""
+    base = "/sys/class/video4linux"
+    try:
+        entries = sorted(os.listdir(base))
+    except FileNotFoundError:
+        return None
+    fallback = None
+    for entry in entries:
+        try:
+            with open(os.path.join(base, entry, "name")) as f:
+                name = f.read().strip()
+        except OSError:
+            continue
+        if name.startswith(CARD_LABEL):
+            return f"/dev/{entry}"
+        # Manually-created loopbacks (the pre-app workflow) used the
+        # shorter label: accept them so the app works there too.
+        if name.startswith("Phone Cam") and fallback is None:
+            fallback = f"/dev/{entry}"
+    return fallback
+
+
+class PhoneCamWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app)
+        self.set_title("Phone Camera")
+        self.set_default_size(560, 640)
+        self.set_size_request(420, -1)
+
+        Gst.init(None)
+        self._scrcpy = None
+        self._preview_pipeline = None
+        self._sizes_device = None
+        self._device = find_loopback_device()
+
+        self._toast_overlay = Adw.ToastOverlay()
+        self.set_content(self._toast_overlay)
+
+        toolbar_view = Adw.ToolbarView()
+        self._toast_overlay.set_child(toolbar_view)
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="Phone Camera"))
+        toolbar_view.add_top_bar(header)
+
+        page = Adw.PreferencesPage()
+        toolbar_view.set_content(page)
+
+        # ── phone status ─────────────────────────────────────────────
+        status_group = Adw.PreferencesGroup(title="Phone")
+        page.add(status_group)
+        self._phone_row = Adw.ActionRow(title="Looking for a phone…")
+        self._phone_row.add_prefix(Gtk.Image.new_from_icon_name("phone-symbolic"))
+        status_group.add(self._phone_row)
+
+        setup_row = Adw.ActionRow(
+            title="Set Up Your Phone",
+            subtitle="One-time steps to make the phone available",
+        )
+        setup_row.add_prefix(Gtk.Image.new_from_icon_name("help-about-symbolic"))
+        setup_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        setup_row.set_activatable(True)
+        setup_row.connect("activated", self._on_show_setup)
+        status_group.add(setup_row)
+
+        # ── settings ─────────────────────────────────────────────────
+        settings_group = Adw.PreferencesGroup(title="Camera")
+        page.add(settings_group)
+
+        self._facing_row = Adw.ComboRow(title="Lens")
+        self._facing_row.add_prefix(Gtk.Image.new_from_icon_name("camera-switch-symbolic"))
+        self._facing_row.set_model(Gtk.StringList.new(["Back", "Front"]))
+        self._facing_row.connect("notify::selected", self._on_setting_changed)
+        settings_group.add(self._facing_row)
+
+        self._size_row = Adw.ComboRow(title="Resolution")
+        self._size_row.set_subtitle("1080p is the sweet spot; huge sizes can fail in call apps")
+        self._size_row.add_prefix(Gtk.Image.new_from_icon_name("view-fullscreen-symbolic"))
+        self._set_sizes(DEFAULT_SIZES)
+        self._size_row.connect("notify::selected", self._on_setting_changed)
+        settings_group.add(self._size_row)
+
+        # ── start/stop + preview ─────────────────────────────────────
+        run_group = Adw.PreferencesGroup()
+        page.add(run_group)
+
+        self._start_button = Gtk.Button(label="Start Camera")
+        self._start_button.add_css_class("suggested-action")
+        self._start_button.add_css_class("pill")
+        self._start_button.set_halign(Gtk.Align.CENTER)
+        self._start_button.connect("clicked", self._on_start_stop)
+        run_group.add(self._start_button)
+
+        self._picture = Gtk.Picture()
+        self._picture.set_size_request(-1, 240)
+        self._picture.add_css_class("card")
+        self._picture.set_visible(False)
+        run_group.add(self._picture)
+
+        # ── troubleshooting ──────────────────────────────────────────
+        fix_group = Adw.PreferencesGroup(title="Troubleshooting")
+        page.add(fix_group)
+        fix_row = Adw.ActionRow(
+            title="Camera not listed in apps?",
+            subtitle="Refresh the camera service (WirePlumber)",
+        )
+        fix_button = Gtk.Button(label="Refresh")
+        fix_button.set_valign(Gtk.Align.CENTER)
+        fix_button.connect("clicked", self._on_fix_wireplumber)
+        fix_row.add_suffix(fix_button)
+        fix_row.set_activatable_widget(fix_button)
+        fix_group.add(fix_row)
+
+        self._refresh_adb()
+        GLib.timeout_add(ADB_POLL_MS, self._refresh_adb)
+        self.connect("close-request", self._on_close)
+
+    # ── adb status ───────────────────────────────────────────────────
+
+    def _refresh_adb(self):
+        if not shutil.which("adb"):
+            self._phone_row.set_title("adb not installed")
+            self._phone_row.set_subtitle("The image should ship android-tools")
+            self._set_ready(False)
+            return True
+        if self._device is None:
+            self._device = find_loopback_device()
+        if self._device is None:
+            self._phone_row.set_title("Virtual camera device missing")
+            self._phone_row.set_subtitle("v4l2loopback not loaded (reboot after update?)")
+            self._set_ready(False)
+            return True
+        try:
+            out = subprocess.run(
+                ["adb", "devices", "-l"], text=True, capture_output=True, timeout=5
+            ).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        devices = [
+            line for line in out.splitlines()[1:] if line.strip() and "offline" not in line
+        ]
+        unauthorized = [d for d in devices if "unauthorized" in d]
+        ready = [d for d in devices if "unauthorized" not in d]
+        if ready:
+            model = "phone"
+            match = re.search(r"model:(\S+)", ready[0])
+            if match:
+                model = match.group(1).replace("_", " ")
+            self._phone_row.set_title(model)
+            self._phone_row.set_subtitle("Connected and authorized")
+            self._set_ready(True)
+            self._load_sizes_once(ready[0].split()[0])
+        elif unauthorized:
+            self._phone_row.set_title("Phone found, not authorized")
+            self._phone_row.set_subtitle("Accept the USB debugging prompt on the phone")
+            self._set_ready(False)
+        else:
+            self._phone_row.set_title("No phone detected")
+            self._phone_row.set_subtitle(
+                "Connect via USB with USB debugging enabled (data cable, not charge-only)"
+            )
+            self._set_ready(False)
+        return True
+
+    def _set_ready(self, ready):
+        running = self._scrcpy is not None
+        self._start_button.set_sensitive(ready or running)
+
+    # ── camera sizes ─────────────────────────────────────────────────
+
+    def _set_sizes(self, sizes):
+        self._loading_sizes = True
+        self._size_row.set_model(Gtk.StringList.new(sizes))
+        if PREFERRED_SIZE in sizes:
+            self._size_row.set_selected(sizes.index(PREFERRED_SIZE))
+        else:
+            under = [s for s in sizes if int(s.split("x")[0]) <= 1920]
+            if under:
+                self._size_row.set_selected(sizes.index(under[0]))
+        self._loading_sizes = False
+
+    def _load_sizes_once(self, serial):
+        if self._sizes_device == serial:
+            return
+        self._sizes_device = serial
+
+        def worker():
+            try:
+                out = subprocess.run(
+                    ["scrcpy", "--list-camera-sizes"],
+                    text=True, capture_output=True, timeout=20,
+                ).stdout
+            except (OSError, subprocess.TimeoutExpired):
+                return
+            sizes = sorted(
+                {m.group(0) for m in re.finditer(r"\b(\d{3,5}x\d{3,5})\b", out)},
+                key=lambda s: int(s.split("x")[0]) * int(s.split("x")[1]),
+                reverse=True,
+            )
+            if sizes:
+                GLib.idle_add(self._set_sizes, sizes)
+
+        Gio.Task.new(self, None, None).run_in_thread(lambda *a: worker())
+
+    def _on_setting_changed(self, *_args):
+        # Changing lens/resolution while streaming restarts the producer
+        # with the new parameters: without this the change silently
+        # applies only to the NEXT start (first user test feedback).
+        if self._scrcpy is None or getattr(self, "_loading_sizes", False):
+            return
+        if getattr(self, "_restart_id", None):
+            GLib.source_remove(self._restart_id)
+        self._restart_id = GLib.timeout_add(400, self._restart_stream)
+
+    def _restart_stream(self):
+        self._restart_id = None
+        if self._scrcpy is not None:
+            self._restarting = True
+            self._stop()
+            GLib.timeout_add(400, self._deferred_start)
+        return False
+
+    def _deferred_start(self):
+        self._restarting = False
+        if self._scrcpy is None:
+            self._on_start_stop(None)
+            # A format change leaves PipeWire's node with stale caps and
+            # consumers fail until the graph is refreshed (field-tested
+            # twice). Do it automatically instead of asking the user to
+            # find the Troubleshooting button.
+            GLib.timeout_add(900, self._auto_refresh_wireplumber)
+        return False
+
+    def _auto_refresh_wireplumber(self):
+        if self._scrcpy is not None:
+            subprocess.run(
+                ["systemctl", "--user", "restart", "wireplumber"],
+                timeout=10, check=False,
+            )
+        return False
+
+    # ── start/stop ───────────────────────────────────────────────────
+
+    def _on_start_stop(self, _button):
+        if self._scrcpy is not None:
+            self._stop()
+            return
+        if not shutil.which("scrcpy"):
+            self._toast("scrcpy is not installed")
+            return
+        facing = "back" if self._facing_row.get_selected() == 0 else "front"
+        size = self._size_row.get_selected_item().get_string()
+        argv = [
+            "scrcpy", "--video-source=camera", f"--camera-facing={facing}",
+            f"--camera-size={size}", f"--v4l2-sink={self._device}",
+            "--no-playback", "--no-window",
+        ]
+        try:
+            self._scrcpy = Gio.Subprocess.new(
+                argv, Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE
+            )
+        except GLib.Error as e:
+            self._toast(f"Could not start scrcpy: {e.message}")
+            return
+        self._scrcpy.wait_async(None, self._on_scrcpy_exit)
+        self._start_button.set_label("Stop Camera")
+        self._start_button.remove_css_class("suggested-action")
+        self._start_button.add_css_class("destructive-action")
+        # Give the producer a moment to negotiate before previewing.
+        GLib.timeout_add(700, self._start_preview)
+        self._toast("Camera running — pick “Margine Phone Cam” in any app")
+
+    def _on_scrcpy_exit(self, proc, result):
+        try:
+            proc.wait_finish(result)
+        except GLib.Error:
+            pass
+        if self._scrcpy is proc:
+            self._scrcpy = None
+            self._stop_preview()
+            self._start_button.set_label("Start Camera")
+            self._start_button.remove_css_class("destructive-action")
+            self._start_button.add_css_class("suggested-action")
+            if getattr(self, "_restarting", False):
+                pass  # deliberate stop from a settings change
+            elif not proc.get_if_exited() or proc.get_exit_status() != 0:
+                self._toast("The phone stream ended unexpectedly")
+
+    def _stop(self):
+        if self._scrcpy is not None:
+            proc, self._scrcpy = self._scrcpy, None
+            proc.send_signal(2)  # SIGINT: scrcpy cleans up the sink
+        self._stop_preview()
+        self._start_button.set_label("Start Camera")
+        self._start_button.remove_css_class("destructive-action")
+        self._start_button.add_css_class("suggested-action")
+
+    # ── preview ──────────────────────────────────────────────────────
+
+    def _start_preview(self):
+        if self._scrcpy is None or self._preview_pipeline is not None:
+            return False
+        try:
+            pipeline = Gst.parse_launch(
+                f"v4l2src device={self._device} ! videoconvert ! "
+                "gtk4paintablesink name=margine_sink"
+            )
+        except GLib.Error:
+            self._toast("Preview unavailable (gtk4 GStreamer sink missing)")
+            return False
+        sink = pipeline.get_by_name("margine_sink")
+        self._picture.set_paintable(sink.get_property("paintable"))
+        self._picture.set_visible(True)
+        pipeline.set_state(Gst.State.PLAYING)
+        self._preview_pipeline = pipeline
+        return False
+
+    def _stop_preview(self):
+        if self._preview_pipeline is not None:
+            self._preview_pipeline.set_state(Gst.State.NULL)
+            self._preview_pipeline = None
+        self._picture.set_paintable(None)
+        self._picture.set_visible(False)
+
+    # ── phone setup guide ────────────────────────────────────────────
+
+    def _on_show_setup(self, _row):
+        steps = (
+            ("1", "Enable Developer options",
+             "Settings › About phone › tap “Build number” seven times"),
+            ("2", "Turn on USB debugging",
+             "Settings › System › Developer options › USB debugging"),
+            ("3", "Connect with a data cable",
+             "Some charging cables carry no data: if nothing happens, try another cable"),
+            ("4", "Authorize this computer",
+             "On the phone, accept “Allow USB debugging?” and check “Always allow”"),
+        )
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(
+            title="Set Up Your Phone",
+            description="Needed once per phone; afterwards it just connects.",
+        )
+        page.add(group)
+        for number, title, subtitle in steps:
+            row = Adw.ActionRow(title=title, subtitle=subtitle)
+            badge = Gtk.Label(label=number)
+            badge.add_css_class("title-3")
+            badge.set_width_chars(2)
+            row.add_prefix(badge)
+            group.add(row)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(page)
+        if hasattr(Adw, "Dialog"):
+            dialog = Adw.Dialog()
+            dialog.set_title("Phone Setup")
+            dialog.set_content_width(460)
+            dialog.set_child(toolbar)
+            dialog.present(self)
+        else:
+            win = Adw.Window(transient_for=self, modal=True, title="Phone Setup")
+            win.set_default_size(460, 420)
+            win.set_content(toolbar)
+            win.present()
+
+    # ── troubleshooting ──────────────────────────────────────────────
+
+    def _on_fix_wireplumber(self, _button):
+        try:
+            subprocess.run(
+                ["systemctl", "--user", "restart", "wireplumber"], timeout=10, check=False
+            )
+            self._toast("Camera service refreshed — reopen the app that needed the camera")
+        except (OSError, subprocess.TimeoutExpired):
+            self._toast("Could not restart WirePlumber")
+
+    # ── misc ─────────────────────────────────────────────────────────
+
+    def _toast(self, message):
+        self._toast_overlay.add_toast(Adw.Toast.new(message))
+
+    def _on_close(self, *_args):
+        self._stop()
+        return False
+
+
+class PhoneCamApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID)
+
+    def do_activate(self):
+        if not self.get_active_window():
+            PhoneCamWindow(self)
+        self.get_active_window().present()
+
+
+def main():
+    app = PhoneCamApp()
+    return app.run(None)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

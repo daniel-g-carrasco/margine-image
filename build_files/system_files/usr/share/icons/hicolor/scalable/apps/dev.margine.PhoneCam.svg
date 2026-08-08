@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Margine Phone Camera app icon — hand-drawn, Adwaita full-color
+     style: front-facing, geometric, soft vertical gradients, GNOME
+     blues + the Margine yellow accent (#E8BA00). -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#1c71d8"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d32d"/>
+      <stop offset="1" stop-color="#e8ba00"/>
+    </linearGradient>
+  </defs>
+  <!-- phone body -->
+  <rect x="36" y="14" width="56" height="100" rx="14" fill="url(#body)"/>
+  <rect x="36" y="14" width="56" height="100" rx="14" fill="none" stroke="#1a5fb4" stroke-width="2"/>
+  <!-- speaker slit -->
+  <rect x="56" y="22" width="16" height="4" rx="2" fill="#99c1f1" opacity="0.9"/>
+  <!-- lens ring -->
+  <circle cx="64" cy="66" r="22" fill="#241f31"/>
+  <!-- lens core -->
+  <circle cx="64" cy="66" r="14" fill="url(#lens)"/>
+  <!-- lens highlight -->
+  <circle cx="59" cy="61" r="4.5" fill="#ffffff" opacity="0.55"/>
+  <!-- streaming arcs, top-right -->
+  <path d="M 98 26 a 14 14 0 0 1 14 14" fill="none" stroke="#e8ba00" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 98 12 a 26 26 0 0 1 26 26" fill="none" stroke="#e8ba00" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+</svg>

@@ -48,7 +48,20 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_NAME: ${{ github.event.workflow_run.name }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
+          # Never resurrect a SUPERSEDED run: if the branch has moved past
+          # this run's commit, the cancellation was concurrency doing its
+          # job, and rerunning would re-enter the concurrency group and
+          # cancel the CURRENT build (exactly what happened on
+          # 2026-08-08: the revived phone-cam run killed the newer
+          # o-tiling+phone-cam build 9s after it started).
+          head_sha="$(gh api "repos/${{ github.repository }}/branches/${RUN_BRANCH}" --jq .commit.sha)"
+          if [ "$head_sha" != "$RUN_SHA" ]; then
+            echo "Run ${RUN_ID} is superseded (${RUN_SHA} != branch head ${head_sha}) — not retrying."
+            exit 0
+          fi
           echo "Retrying '${RUN_NAME}' run ${RUN_ID} (attempt 1 ended: ${RUN_CONCLUSION})"
           gh run rerun "$RUN_ID" --failed --repo "${{ github.repository }}"

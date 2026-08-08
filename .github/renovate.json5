@@ -13,10 +13,20 @@
       enabled: false,
     },
     {
+      // Auto-merge everything non-major once checks are green (2026-08-09,
+      // Daniel's request). Mechanics: platformAutomerge (Renovate default)
+      // arms GitHub's native auto-merge on the PR; branch protection
+      // requires the `lint` check, so a red PR can never slip through,
+      // and the pin-sync workflows (wsf/otiling fix-sha) pushing to the
+      // branch simply re-arm the wait on the new SHA. Major updates stay
+      // manual by design: they are the ones that break rebases and APIs.
       automerge: true,
       matchUpdateTypes: [
+        'minor',
+        'patch',
         'pin',
         'pinDigest',
+        'digest',
       ],
     },
     {

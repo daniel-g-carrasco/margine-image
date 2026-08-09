@@ -736,24 +736,15 @@ margine-update:
     set -euo pipefail
     /usr/bin/margine-status || true
     echo
-    # bootc upgrade REFUSES a client-layered deployment ("Deployment contains
-    # local rpm-ostree modifications; cannot upgrade via bootc"). So the choice
-    # is NOT "is bootc installed" (it always is on a bootc image) — it's "are
-    # there layered/local packages". If so, use rpm-ostree upgrade, which pulls
-    # the new base image AND re-applies the layers. Otherwise prefer bootc.
-    if rpm-ostree status 2>/dev/null | grep -qE '^[[:space:]]*(Layered|Local)Packages:'; then
-      echo "Layered packages detected (e.g. gaming-native) — using rpm-ostree upgrade"
-      echo "(bootc upgrade refuses client-layered deployments; rpm-ostree re-applies your layers)."
-      sudo rpm-ostree upgrade
-    elif command -v bootc >/dev/null 2>&1; then
-      echo "No local layers — using bootc upgrade…"
-      sudo bootc upgrade
-    else
-      echo "Staging the latest Margine :stable (rpm-ostree upgrade)…"
-      sudo rpm-ostree upgrade
-    fi
+    # The bootc-vs-rpm-ostree decision lives in ONE place,
+    # /usr/libexec/margine/system-update, shared with the Margine System
+    # app so the terminal and the GUI can never disagree about how this
+    # machine updates. (Short version: bootc upgrade refuses a
+    # client-layered deployment, e.g. after margine-gaming-native, so
+    # layered systems must go through rpm-ostree.)
+    sudo /usr/libexec/margine/system-update
     echo
-    echo "Staged. Reboot to switch into it:  systemctl reboot"
+    echo "Reboot to switch into it:  systemctl reboot"
 
 # Enable/disable/inspect GDM autologin (default: status, read-only).
 [group('Margine')]

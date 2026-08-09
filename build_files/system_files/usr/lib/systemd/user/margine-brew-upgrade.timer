@@ -1,0 +1,14 @@
+[Unit]
+Description=Margine: weekly Homebrew upgrade
+
+[Timer]
+# Wall-clock, not monotonic: OnUnitActiveSec freezes across suspend and
+# effectively never fires on a laptop (lesson from the staged-update
+# timer, 2026-07-10). Persistent catches up after a missed week.
+OnCalendar=Sun 11:00
+Persistent=true
+RandomizedDelaySec=30min
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,658 @@
+#!/usr/bin/python3
+# Margine System — the graphical answer to "is my machine current and healthy?"
+#
+# Everything here already existed as CLI (margine-status, ujust
+# margine-update, ujust margine-doctor, rpm-ostree rollback). This app
+# is not a reimplementation: it drives the same scripts, so there is
+# exactly one definition of "how Margine updates" and the GUI can never
+# drift from the terminal (system-update is the shared helper; the just
+# recipe calls it too).
+#
+# Privilege model: the app runs as the user and never asks for a
+# password on its own. Privileged actions (stage an update, roll back)
+# go through pkexec, which DOES have an authentication agent in a
+# graphical session — unlike uupd's system-service context, where the
+# same call is refused silently (the bug that left brew months behind,
+# see brew-upgrade).
+#
+# Read-only state comes from unprivileged sources on purpose:
+# `rpm-ostree status --json` for the local deployments (bootc status
+# requires root), skopeo for the published :stable, and the
+# margine-validate-* scripts, which are all user-runnable by design.
+
+import json
+import os
+import shutil
+import subprocess
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+
+APP_ID = "dev.margine.System"
+IMAGE = "ghcr.io/daniel-g-carrasco/margine:stable"
+SYSTEM_UPDATE = "/usr/libexec/margine/system-update"
+BREW = "/home/linuxbrew/.linuxbrew/bin/brew"
+
+
+def run(argv, timeout=30):
+    """Best-effort command runner: returns stdout or '' — the UI shows
+    'unknown' rather than crashing when a tool is missing."""
+    try:
+        res = subprocess.run(argv, text=True, capture_output=True, timeout=timeout)
+        return res.stdout if res.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def local_state():
+    """Booted / staged / rollback deployments from rpm-ostree."""
+    out = run(["rpm-ostree", "status", "--json"])
+    state = {"booted": None, "staged": None, "rollback": None, "layered": []}
+    if not out:
+        return state
+    try:
+        deployments = json.loads(out).get("deployments", [])
+    except json.JSONDecodeError:
+        return state
+    seen_booted = False
+    for dep in deployments:
+        version = dep.get("version") or (dep.get("checksum") or "")[:12]
+        if dep.get("staged"):
+            state["staged"] = version
+        elif dep.get("booted"):
+            state["booted"] = version
+            seen_booted = True
+            state["layered"] = sorted(
+                set(dep.get("requested-packages") or []) | set(dep.get("packages") or [])
+            )
+        elif seen_booted and state["rollback"] is None:
+            state["rollback"] = version
+    return state
+
+
+class SystemWindow(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app)
+        self.set_title("Margine System")
+        self.set_default_size(560, 720)
+        self.set_size_request(400, -1)
+
+        self._state = {}
+        self._latest = None
+        self._busy = False
+
+        self._toasts = Adw.ToastOverlay()
+        self.set_content(self._toasts)
+        toolbar = Adw.ToolbarView()
+        self._toasts.set_child(toolbar)
+
+        header = Adw.HeaderBar()
+        header.set_title_widget(Adw.WindowTitle(title="Margine System"))
+        menu = Gio.Menu()
+        menu.append("About Margine System", "win.about")
+        menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic", primary=True)
+        menu_button.set_menu_model(menu)
+        menu_button.set_tooltip_text("Main menu")
+        header.pack_end(menu_button)
+        toolbar.add_top_bar(header)
+
+        about = Gio.SimpleAction.new("about", None)
+        about.connect("activate", self._on_about)
+        self.add_action(about)
+
+        page = Adw.PreferencesPage()
+        toolbar.set_content(page)
+
+        # ── the answer, up front ─────────────────────────────────────
+        # Hand-built hero instead of Adw.StatusPage: StatusPage is meant
+        # to BE a whole view, and nested in a PreferencesGroup it drew
+        # its icon while swallowing title and description entirely
+        # (first user test: "non è chiaro a colpo d'occhio se il sistema
+        # è aggiornato"). A plain box renders predictably and lets the
+        # version sit right under the verdict, which is the one thing
+        # people open this app to learn.
+        hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        hero.set_margin_top(12)
+        hero.set_margin_bottom(18)
+
+        self._hero_icon = Gtk.Image()
+        self._hero_icon.set_pixel_size(72)
+        self._hero_icon.set_margin_bottom(6)
+        hero.append(self._hero_icon)
+
+        self._hero_title = Gtk.Label()
+        self._hero_title.add_css_class("title-1")
+        self._hero_title.set_wrap(True)
+        self._hero_title.set_justify(Gtk.Justification.CENTER)
+        hero.append(self._hero_title)
+
+        self._hero_version = Gtk.Label()
+        self._hero_version.add_css_class("title-4")
+        self._hero_version.add_css_class("numeric")
+        hero.append(self._hero_version)
+
+        self._hero_body = Gtk.Label()
+        self._hero_body.add_css_class("dim-label")
+        self._hero_body.set_wrap(True)
+        self._hero_body.set_justify(Gtk.Justification.CENTER)
+        self._hero_body.set_margin_bottom(6)
+        hero.append(self._hero_body)
+
+        self._action_button = Gtk.Button()
+        self._action_button.add_css_class("pill")
+        self._action_button.set_halign(Gtk.Align.CENTER)
+        self._action_button.set_visible(False)
+        self._action_button.connect("clicked", self._on_primary_action)
+        hero.append(self._action_button)
+
+        hero_group = Adw.PreferencesGroup()
+        hero_group.add(hero)
+        page.add(hero_group)
+
+        # ── this machine ─────────────────────────────────────────────
+        sys_group = Adw.PreferencesGroup(title="This Machine")
+        page.add(sys_group)
+        self._version_row = self._info_row(sys_group, "Version", "drive-harddisk-symbolic")
+        self._kernel_row = self._info_row(sys_group, "Kernel", "computer-symbolic")
+        self._base_row = self._info_row(sys_group, "Built from", "package-x-generic-symbolic")
+
+        # Layered packages are the one part of the system that is NOT in
+        # the image, so "am I current?" is a fair question about them
+        # too. Answer: they are re-resolved from the repos on every
+        # system update, so they follow the image — but people cannot
+        # know that unless it is written down, and they cannot check
+        # what they layered months ago unless it is listed.
+        self._layered_row = Adw.ActionRow(title="Extra packages", subtitle="None")
+        self._layered_row.add_prefix(Gtk.Image.new_from_icon_name("system-software-install-symbolic"))
+        self._layered_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        self._layered_row.connect("activated", self._on_show_layered)
+        sys_group.add(self._layered_row)
+
+        # ── other update channels ────────────────────────────────────
+        ch_group = Adw.PreferencesGroup(
+            title="Apps and Tools",
+            description="Updated automatically in the background; these are the current counts",
+        )
+        page.add(ch_group)
+        self._flatpak_row = self._info_row(ch_group, "Apps", "view-grid-symbolic")
+        self._flatpak_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        self._flatpak_row.connect("activated", self._on_show_flatpak)
+
+        self._brew_row = self._info_row(ch_group, "Command-line tools", "utilities-terminal-symbolic")
+        self._brew_button = Gtk.Button(label="Update Now", valign=Gtk.Align.CENTER)
+        self._brew_button.set_visible(False)
+        self._brew_button.connect("clicked", self._on_brew_update)
+        self._brew_row.add_suffix(self._brew_button)
+        self._brew_row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
+        self._brew_row.connect("activated", self._on_show_brew)
+
+        # ── health + recovery ────────────────────────────────────────
+        care_group = Adw.PreferencesGroup(title="Health and Recovery")
+        page.add(care_group)
+
+        check_row = Adw.ActionRow(
+            title="System Check",
+            subtitle="Verify the system matches how Margine ships it",
+        )
+        check_row.add_prefix(Gtk.Image.new_from_icon_name("emblem-system-symbolic"))
+        self._check_button = Gtk.Button(label="Run", valign=Gtk.Align.CENTER)
+        self._check_button.connect("clicked", self._on_run_check)
+        check_row.add_suffix(self._check_button)
+        care_group.add(check_row)
+
+        self._rollback_row = Adw.ActionRow(
+            title="Previous Version",
+            subtitle="Not available",
+        )
+        self._rollback_row.add_prefix(Gtk.Image.new_from_icon_name("edit-undo-symbolic"))
+        self._rollback_button = Gtk.Button(label="Roll Back", valign=Gtk.Align.CENTER)
+        self._rollback_button.add_css_class("destructive-action")
+        self._rollback_button.set_sensitive(False)
+        self._rollback_button.connect("clicked", self._on_rollback)
+        self._rollback_row.add_suffix(self._rollback_button)
+        care_group.add(self._rollback_row)
+
+        self._refresh()
+
+    # ── small helpers ────────────────────────────────────────────────
+
+    def _info_row(self, group, title, icon):
+        row = Adw.ActionRow(title=title, subtitle="…")
+        row.add_prefix(Gtk.Image.new_from_icon_name(icon))
+        row.set_activatable(False)
+        group.add(row)
+        return row
+
+    def _toast(self, message):
+        self._toasts.add_toast(Adw.Toast.new(message))
+
+    # ── state refresh ────────────────────────────────────────────────
+
+    def _refresh(self):
+        self._state = local_state()
+        booted = self._state.get("booted") or "unknown"
+        self._version_row.set_subtitle(booted)
+        self._kernel_row.set_subtitle(os.uname().release)
+
+        self._base_row.set_subtitle("Fedora → Bluefin DX → Margine")
+
+        layered = self._state.get("layered") or []
+        if layered:
+            preview = ", ".join(layered[:3])
+            if len(layered) > 3:
+                preview += f" and {len(layered) - 3} more"
+            self._layered_row.set_subtitle(
+                f"{preview} — refreshed with every system update"
+            )
+            self._layered_row.set_activatable(True)
+        else:
+            self._layered_row.set_subtitle("None: this is a stock Margine system")
+            self._layered_row.set_activatable(False)
+
+        self._update_banner()
+        self._refresh_counts_async()
+        self._refresh_latest_async()
+
+        rollback = self._state.get("rollback")
+        if rollback:
+            self._rollback_row.set_subtitle(f"Restart into {rollback}")
+            self._rollback_button.set_sensitive(not self._busy)
+        else:
+            self._rollback_row.set_subtitle("No previous version on this machine yet")
+            self._rollback_button.set_sensitive(False)
+
+    def _update_banner(self):
+        staged = self._state.get("staged")
+        booted = self._state.get("booted") or "unknown"
+        self._hero_version.set_text(staged or booted)
+
+        if staged:
+            self._hero_icon.set_from_icon_name("system-reboot-symbolic")
+            self._hero_icon.remove_css_class("accent")
+            self._hero_icon.add_css_class("accent")
+            self._hero_title.set_text("Restart to Finish")
+            self._hero_body.set_text(
+                f"This version is downloaded and waiting. You are running {booted} until you restart."
+            )
+            self._set_action("Restart Now", suggested=True)
+            return
+
+        if self._latest is None:
+            self._hero_icon.set_from_icon_name("content-loading-symbolic")
+            self._hero_title.set_text("Checking for Updates")
+            self._hero_body.set_text("Asking the server which version is published…")
+            self._action_button.set_visible(False)
+            return
+
+        if self._latest and booted != self._latest:
+            self._hero_icon.set_from_icon_name("software-update-available-symbolic")
+            self._hero_title.set_text("Update Available")
+            self._hero_body.set_text(f"You are on {booted}. The published version is {self._latest}.")
+            self._set_action("Download Update", suggested=True)
+            return
+
+        self._hero_icon.set_from_icon_name("object-select-symbolic")
+        self._hero_title.set_text("Up to Date")
+        self._hero_body.set_text("This machine matches the latest published version.")
+        self._set_action("Check Again", suggested=False)
+
+    def _set_action(self, label, suggested):
+        self._action_button.set_label(label)
+        self._action_button.remove_css_class("suggested-action")
+        if suggested:
+            self._action_button.add_css_class("suggested-action")
+        self._action_button.set_visible(True)
+
+    def _refresh_latest_async(self):
+        def worker():
+            out = run(
+                [
+                    "skopeo", "inspect", "--no-tags", f"docker://{IMAGE}",
+                    "--format", "{{ index .Labels \"org.opencontainers.image.version\" }}",
+                ],
+                timeout=60,
+            ).strip()
+            GLib.idle_add(self._set_latest, out or None)
+
+        GLib.Thread.new(None, worker)
+
+    def _set_latest(self, latest):
+        self._latest = latest
+        self._update_banner()
+        return False
+
+    def _refresh_counts_async(self):
+        def worker():
+            flatpak = run(["flatpak", "remote-ls", "--updates", "--columns=application"], 90)
+            flat_list = [line.strip() for line in flatpak.splitlines() if line.strip()]
+            brew_list = None  # None = unavailable, [] = nothing outdated
+            if os.path.exists(BREW):
+                env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1")
+                try:
+                    res = subprocess.run(
+                        [BREW, "outdated", "--quiet"],
+                        text=True, capture_output=True, timeout=90, env=env,
+                    )
+                    brew_list = [x.strip() for x in res.stdout.splitlines() if x.strip()]
+                except (OSError, subprocess.TimeoutExpired):
+                    brew_list = None
+            GLib.idle_add(self._set_counts, flat_list, brew_list)
+
+        GLib.Thread.new(None, worker)
+
+    def _set_counts(self, flat_list, brew_list):
+        self._flatpak_updates = flat_list
+        self._brew_updates = brew_list
+
+        def phrase(items, noun):
+            if items is None:
+                return "Unavailable"
+            if not items:
+                return f"All {noun} are up to date"
+            preview = ", ".join(items[:2])
+            if len(items) > 2:
+                preview += f" and {len(items) - 2} more"
+            return f"{len(items)} waiting: {preview}"
+
+        self._flatpak_row.set_subtitle(phrase(flat_list, "apps"))
+        self._flatpak_row.set_activatable(bool(flat_list))
+        self._brew_row.set_subtitle(phrase(brew_list, "tools"))
+        self._brew_row.set_activatable(bool(brew_list))
+        self._brew_button.set_visible(bool(brew_list))
+        return False
+
+    def _list_dialog(self, title, description, items, empty):
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(title=title, description=description)
+        page.add(group)
+        if items:
+            for item in items:
+                row = Adw.ActionRow(title=item)
+                row.add_prefix(Gtk.Image.new_from_icon_name("package-x-generic-symbolic"))
+                group.add(row)
+        else:
+            row = Adw.ActionRow(title=empty)
+            group.add(row)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(page)
+        dialog = Adw.Dialog()
+        dialog.set_title(title)
+        dialog.set_content_width(460)
+        dialog.set_content_height(520)
+        dialog.set_child(toolbar)
+        dialog.present(self)
+
+    def _on_show_layered(self, _row):
+        self._list_dialog(
+            "Extra Packages",
+            "Installed on top of the image (rpm-ostree layering), usually by "
+            "ujust margine-gaming-native. They are re-resolved from the "
+            "repositories on every system update, so they stay current with it.",
+            self._state.get("layered") or [],
+            "No extra packages",
+        )
+
+    def _on_show_flatpak(self, _row):
+        self._list_dialog(
+            "App Updates",
+            "Flatpak apps with an update waiting. These install automatically "
+            "in the background; nothing to do.",
+            getattr(self, "_flatpak_updates", None) or [],
+            "All apps are up to date",
+        )
+
+    def _on_show_brew(self, _row):
+        self._list_dialog(
+            "Command-line Tools",
+            "Homebrew packages with a newer version available. They upgrade "
+            "weekly on their own; Update Now does it immediately.",
+            getattr(self, "_brew_updates", None) or [],
+            "All tools are up to date",
+        )
+
+    def _on_brew_update(self, _button):
+        # No pkexec here on purpose: brew's prefix belongs to the user
+        # and brew refuses to run as root.
+        self._brew_button.set_sensitive(False)
+        self._run_command(
+            ["/usr/libexec/margine/brew-upgrade"],
+            title="Updating Command-line Tools",
+            done="Command-line tools updated",
+        )
+
+    # ── actions ──────────────────────────────────────────────────────
+
+    def _on_primary_action(self, _button):
+        if self._state.get("staged"):
+            self._reboot()
+        elif self._latest and self._state.get("booted") != self._latest:
+            self._run_command(
+                ["pkexec", SYSTEM_UPDATE],
+                title="Downloading Update",
+                done="Update downloaded — restart to apply it",
+            )
+        else:
+            self._latest = None
+            self._refresh()
+
+    def _reboot(self):
+        dialog = Adw.AlertDialog(
+            heading="Restart Now?",
+            body="Open apps will be closed. The update is applied while restarting.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("restart", "Restart")
+        dialog.set_response_appearance("restart", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("cancel")
+        dialog.connect("response", self._on_reboot_response)
+        dialog.present(self)
+
+    def _on_reboot_response(self, _dialog, response):
+        if response == "restart":
+            subprocess.Popen(["systemctl", "reboot"])
+
+    def _on_rollback(self, _button):
+        target = self._state.get("rollback") or "the previous version"
+        dialog = Adw.AlertDialog(
+            heading="Roll Back?",
+            body=(
+                f"The next restart will boot {target} instead of the current version. "
+                "Your files and settings are not touched, and you can roll forward again "
+                "by updating."
+            ),
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("rollback", "Roll Back")
+        dialog.set_response_appearance("rollback", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.connect(
+            "response",
+            lambda _d, r: r == "rollback" and self._run_command(
+                ["pkexec", "/usr/bin/rpm-ostree", "rollback"],
+                title="Rolling Back",
+                done="Rolled back — restart to boot the previous version",
+            ),
+        )
+        dialog.present(self)
+
+    def _on_run_check(self, _button):
+        self._check_button.set_sensitive(False)
+        self._check_button.set_label("Running…")
+
+        def worker():
+            results = []
+            validators = sorted(
+                p for p in os.listdir("/usr/bin") if p.startswith("margine-validate-")
+            )
+            for path in validators:
+                try:
+                    res = subprocess.run(
+                        [f"/usr/bin/{path}"], text=True, capture_output=True, timeout=180
+                    )
+                    ok = res.returncode == 0
+                    detail = (res.stdout + res.stderr).strip()
+                except (OSError, subprocess.TimeoutExpired):
+                    ok, detail = False, "the check did not finish"
+                nice = path.replace("margine-validate-", "").replace("-", " ").capitalize()
+                results.append((nice, ok, detail))
+            GLib.idle_add(self._show_check_results, results)
+
+        GLib.Thread.new(None, worker)
+
+    def _show_check_results(self, results):
+        self._check_button.set_sensitive(True)
+        self._check_button.set_label("Run")
+        if not results:
+            self._toast("No checks are installed on this system")
+            return False
+
+        failed = [r for r in results if not r[1]]
+        page = Adw.PreferencesPage()
+        group = Adw.PreferencesGroup(
+            title="System Check",
+            description=(
+                "Everything matches how Margine ships."
+                if not failed
+                else f"{len(failed)} of {len(results)} checks need attention."
+            ),
+        )
+        page.add(group)
+        for name, ok, detail in results:
+            row = Adw.ActionRow(title=name)
+            row.add_prefix(
+                Gtk.Image.new_from_icon_name(
+                    "object-select-symbolic" if ok else "dialog-warning-symbolic"
+                )
+            )
+            if not ok and detail:
+                row.set_subtitle(detail.splitlines()[-1][:160])
+                row.set_subtitle_lines(3)
+            group.add(row)
+
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(page)
+        dialog = Adw.Dialog()
+        dialog.set_title("System Check")
+        dialog.set_content_width(520)
+        dialog.set_content_height(560)
+        dialog.set_child(toolbar)
+        dialog.present(self)
+        return False
+
+    # ── privileged runner with live output ───────────────────────────
+
+    def _run_command(self, argv, title, done):
+        if self._busy:
+            return
+        self._busy = True
+        self._action_button.set_sensitive(False)
+
+        buffer = Gtk.TextBuffer()
+        view = Gtk.TextView(buffer=buffer, editable=False, monospace=True)
+        view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        scroller = Gtk.ScrolledWindow(child=view, vexpand=True)
+        scroller.set_min_content_height(320)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        toolbar.set_content(scroller)
+        dialog = Adw.Dialog()
+        dialog.set_title(title)
+        dialog.set_content_width(620)
+        dialog.set_content_height(420)
+        dialog.set_child(toolbar)
+        dialog.set_can_close(False)
+        dialog.present(self)
+
+        try:
+            proc = Gio.Subprocess.new(
+                argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
+            )
+        except GLib.Error as e:
+            self._busy = False
+            self._action_button.set_sensitive(True)
+            dialog.set_can_close(True)
+            dialog.close()
+            self._toast(f"Could not start: {e.message}")
+            return
+
+        stream = Gio.DataInputStream.new(proc.get_stdout_pipe())
+        self._read_line(stream, buffer, view)
+        proc.wait_async(None, self._on_privileged_done, (dialog, done))
+
+    def _read_line(self, stream, buffer, view):
+        def on_line(src, result):
+            try:
+                line, _ = src.read_line_finish_utf8(result)
+            except GLib.Error:
+                line = None
+            if line is None:
+                return
+            buffer.insert(buffer.get_end_iter(), line + "\n")
+            view.scroll_to_mark(
+                buffer.create_mark(None, buffer.get_end_iter(), False), 0, False, 0, 0
+            )
+            self._read_line(src, buffer, view)
+
+        stream.read_line_async(GLib.PRIORITY_DEFAULT, None, on_line)
+
+    def _on_privileged_done(self, proc, result, payload):
+        dialog, done_message = payload
+        self._busy = False
+        self._action_button.set_sensitive(True)
+        self._brew_button.set_sensitive(True)
+        try:
+            proc.wait_finish(result)
+            ok = proc.get_if_exited() and proc.get_exit_status() == 0
+        except GLib.Error:
+            ok = False
+        dialog.set_can_close(True)
+        if ok:
+            dialog.close()
+            self._toast(done_message)
+        else:
+            # Leave the log on screen: a failed update is exactly when
+            # the output matters. pkexec exits 126/127 when the user
+            # dismissed the password prompt — not worth a scary toast.
+            self._toast("The operation did not complete — see the log")
+        self._refresh()
+
+    def _on_about(self, *_args):
+        about = Adw.AboutDialog(
+            application_name="Margine System",
+            application_icon=APP_ID,
+            developer_name="Daniel Grasso",
+            website="https://margine.dev/docs/updates-and-rollback",
+            issue_url="https://github.com/daniel-g-carrasco/margine-image/issues",
+            license_type=Gtk.License.GPL_3_0,
+        )
+        status = run(["/usr/bin/margine-status"], timeout=90)
+        if status:
+            about.set_debug_info(status)
+            about.set_debug_info_filename("margine-status.txt")
+        about.present(self)
+
+
+class SystemApp(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID)
+
+    def do_activate(self):
+        if not self.get_active_window():
+            SystemWindow(self)
+        self.get_active_window().present()
+
+
+def main():
+    if not shutil.which("rpm-ostree"):
+        print("margine-system-gui: this is not an rpm-ostree/bootc system", flush=True)
+    return SystemApp().run(None)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

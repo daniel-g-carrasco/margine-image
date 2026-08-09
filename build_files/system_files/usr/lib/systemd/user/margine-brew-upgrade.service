@@ -1,0 +1,17 @@
+[Unit]
+Description=Margine: upgrade Homebrew CLI packages
+Documentation=https://margine.dev/docs/updates-and-rollback
+ConditionPathIsDirectory=/home/linuxbrew/.linuxbrew
+
+[Service]
+Type=oneshot
+# Runs as the USER, which is the whole point: brew's prefix is owned by
+# the user and brew refuses to run as root. uupd's Brew module does run
+# `brew upgrade`, but it shells out through pkexec, which has no
+# authentication agent inside a system service and is refused silently:
+# on the reference host `brew update` succeeded every night while the
+# upgrade died in <0.4s with no output, leaving CLI tools months behind
+# (13 packages, incl. a ruff two minor versions old, 2026-08-09).
+ExecStart=/usr/libexec/margine/brew-upgrade
+Nice=10
+IOSchedulingClass=idle

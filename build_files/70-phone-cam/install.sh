@@ -42,6 +42,15 @@ cat > /usr/bin/scrcpy <<'WRAP'
 #!/usr/bin/env bash
 # Margine wrapper: the release-tarball client must run with ITS OWN
 # matching scrcpy-server (version-paired protocol).
+#
+# ADB is load-bearing here: the release client looks for an `adb` NEXT
+# TO ITSELF before falling back to PATH, and this install deliberately
+# drops the bundled copy in favour of the distro one (kept current by
+# image updates). Without the explicit ADB env var the client dies with
+# "Command not found: [/usr/lib/margine/scrcpy/adb]" even though adb is
+# perfectly installed (field failure 2026-08-09, first run from the
+# shipped image).
+export ADB=/usr/bin/adb
 export SCRCPY_SERVER_PATH=/usr/lib/margine/scrcpy/scrcpy-server
 export SCRCPY_ICON_PATH=/usr/lib/margine/scrcpy/scrcpy.png
 exec /usr/lib/margine/scrcpy/scrcpy "$@"
@@ -49,4 +58,11 @@ WRAP
 chmod 0755 /usr/bin/scrcpy
 
 /usr/bin/scrcpy --version >/dev/null || { echo "scrcpy smoke test failed" >&2; exit 1; }
+# Assert the wrapper's adb wiring: --list-camera-sizes with no device
+# must fail on "no device", NOT on a missing adb binary (the 2026-08-09
+# regression). Any other output is fine; the adb-not-found string is not.
+if /usr/bin/scrcpy --list-camera-sizes 2>&1 | grep -q "Command not found.*adb"; then
+  echo "scrcpy cannot find adb — check the ADB env var in the wrapper" >&2
+  exit 1
+fi
 log "scrcpy $( /usr/bin/scrcpy --version | head -1 ) installed"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Margine System
+Comment=System status, updates and health checks
+Exec=/usr/libexec/margine/system-gui
+Icon=dev.margine.System
+Terminal=false
+Categories=System;GTK;
+Keywords=update;upgrade;status;version;rollback;health;bootc;
+StartupNotify=true

@@ -54,6 +54,12 @@ jobs:
         # behaviours no boot-test exercises. Fails if any is silently undone.
         run: .github/scripts/check-flatpak-fixes.sh
 
+      - name: GUI icon names must exist
+        # GTK draws a broken-image placeholder for a missing icon name
+        # instead of failing, so invented names ship silently (they did:
+        # os-symbolic / processor-symbolic / emblem-ok-symbolic).
+        run: .github/scripts/check-gui-icon-names.sh
+
       - name: shellcheck (tracked *.sh + shebang-discovered system_files)
         # -S warning: the only info-level items are SC1091 ("can't
         # follow /ctx/00-common.sh") — a build-container path that does

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Margine System app icon — hand-drawn, Adwaita full-color style:
+     a laptop seen front-on with a Margine-yellow check/refresh mark,
+     the app's whole promise in one glyph: "this machine is current". -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#1c71d8"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d32d"/>
+      <stop offset="1" stop-color="#e8ba00"/>
+    </linearGradient>
+  </defs>
+  <!-- screen -->
+  <rect x="20" y="22" width="88" height="62" rx="10" fill="url(#screen)"/>
+  <rect x="20" y="22" width="88" height="62" rx="10" fill="none" stroke="#1a5fb4" stroke-width="2"/>
+  <!-- base -->
+  <rect x="10" y="90" width="108" height="12" rx="6" fill="#241f31"/>
+  <!-- check mark -->
+  <path d="M 42 54 l 14 14 l 28 -28" fill="none" stroke="url(#mark)" stroke-width="11"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

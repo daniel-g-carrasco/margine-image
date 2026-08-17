@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""
+Undo Margine's opinionated home layout: back to the stock Linux one.
+
+Margine ships a deliberate home (~/data, ~/dev, ~/scratch, XDG folders
+remapped inside them, matching sidebar bookmarks). It suits the way
+Margine is meant to be used, and it is not for everyone: this puts the
+machine back to what any other GNOME distro gives you, so nobody has to
+fight the distro over where their files live.
+
+What it changes (all of it user-level, none of it root):
+  1. ~/.config/user-dirs.dirs           -> stock XDG mapping (~/Documents,
+                                           ~/Downloads, ~/Pictures, ...)
+  2. the stock folders                  -> created if missing
+  3. ~/.config/gtk-3.0/bookmarks
+     ~/.config/gtk-4.0/bookmarks        -> Margine's entries removed, any
+                                           bookmark you added kept
+
+WHAT IT NEVER DOES: touch your files. ~/data, ~/dev and ~/scratch stay
+exactly where they are with everything in them; this only stops apps
+from *defaulting* there. Moving the content is a decision only you can
+make, so it stays yours: the summary prints what is still sitting in
+the old tree.
+
+Usage:
+    restore-stock-home            # dry-run: print the plan
+    restore-stock-home --apply    # write it
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CONFIG = Path.home() / ".config"
+
+# The freedesktop defaults, i.e. what xdg-user-dirs creates on a stock
+# install. Order matters only for readability of the written file.
+STOCK_DIRS = {
+    "XDG_DESKTOP_DIR": "Desktop",
+    "XDG_DOWNLOAD_DIR": "Downloads",
+    "XDG_TEMPLATES_DIR": "Templates",
+    "XDG_PUBLICSHARE_DIR": "Public",
+    "XDG_DOCUMENTS_DIR": "Documents",
+    "XDG_MUSIC_DIR": "Music",
+    "XDG_PICTURES_DIR": "Pictures",
+    "XDG_VIDEOS_DIR": "Videos",
+}
+
+# Margine's own tree: bookmarks pointing anywhere inside these are the
+# ones this script removes. Everything else in the file is the user's.
+MARGINE_TREE = ("data", "dev", "scratch")
+
+
+def render_user_dirs() -> str:
+    lines = [
+        "# This file is written by xdg-user-dirs-update",
+        "# Restored to the stock layout by ujust margine-home-stock.",
+        "",
+    ]
+    for key, folder in STOCK_DIRS.items():
+        lines.append(f'{key}="$HOME/{folder}"')
+    return "\n".join(lines) + "\n"
+
+
+def margine_bookmark(line: str) -> bool:
+    """True when a bookmark points into Margine's tree."""
+    uri = line.split()[0] if line.strip() else ""
+    for name in MARGINE_TREE:
+        if uri.startswith(f"file://{HOME}/{name}"):
+            return True
+    return False
+
+
+def plan_bookmarks() -> list[tuple[Path, list[str], list[str]]]:
+    out = []
+    for version in ("gtk-3.0", "gtk-4.0"):
+        path = CONFIG / version / "bookmarks"
+        if not path.is_file():
+            continue
+        lines = path.read_text().splitlines()
+        keep = [line for line in lines if line.strip() and not margine_bookmark(line)]
+        drop = [line for line in lines if line.strip() and margine_bookmark(line)]
+        if drop:
+            out.append((path, keep, drop))
+    return out
+
+
+def leftovers() -> list[tuple[Path, int]]:
+    """Margine folders that still hold something, for the summary."""
+    found = []
+    for name in MARGINE_TREE:
+        path = HOME / name
+        if path.is_dir():
+            try:
+                count = sum(1 for _ in path.rglob("*"))
+            except OSError:
+                count = -1
+            if count:
+                found.append((path, count))
+    return found
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="write the changes")
+    args = parser.parse_args()
+
+    user_dirs = CONFIG / "user-dirs.dirs"
+    current = user_dirs.read_text() if user_dirs.is_file() else ""
+    wanted = render_user_dirs()
+    dirs_change = current.strip() != wanted.strip()
+
+    missing = [
+        HOME / folder for folder in STOCK_DIRS.values() if not (HOME / folder).is_dir()
+    ]
+    bookmarks = plan_bookmarks()
+
+    if not dirs_change and not missing and not bookmarks:
+        print("Home layout is already the stock one [no change]")
+        return 0
+
+    print("This will restore the stock Linux home layout:")
+    if dirs_change:
+        print(f"  rewrite {user_dirs}")
+        for key, folder in STOCK_DIRS.items():
+            print(f"    {key} -> ~/{folder}")
+    for path in missing:
+        print(f"  create  {path}")
+    for path, keep, drop in bookmarks:
+        print(f"  edit    {path}: remove {len(drop)} Margine bookmark(s), keep {len(keep)}")
+
+    if not args.apply:
+        print("\ndry-run: re-run with --apply to write these.")
+        return 0
+
+    for path in missing:
+        path.mkdir(parents=True, exist_ok=True)
+    if dirs_change:
+        CONFIG.mkdir(parents=True, exist_ok=True)
+        user_dirs.write_text(wanted)
+    for path, keep, _drop in bookmarks:
+        path.write_text("\n".join(keep) + ("\n" if keep else ""))
+
+    print("\nStock layout restored.")
+    rest = leftovers()
+    if rest:
+        print("\nYour files were NOT moved. Still in the Margine tree:")
+        for path, count in rest:
+            size = f"{count} item(s)" if count >= 0 else "unreadable"
+            print(f"  {path}  ({size})")
+        print("Move what you want into the stock folders when it suits you;")
+        print("nothing here is deleted for you.")
+    print("\nLog out and back in so every app picks up the new folders.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

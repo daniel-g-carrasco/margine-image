@@ -175,28 +175,29 @@ jobs:
         # present (libc, libgtk-3 ... needed by seahorse). Same commit,
         # same base digest (f2a12f32), builds fine on a workstation and
         # on the previous runner image (20260720): the variable is the
-        # runner's container stack.
+        # runner's container stack, which now ships
+        #   mountopt = "nodev,fsync=0"
+        # fsync=0 tells the overlay driver to skip fsync for speed. The
+        # rpmdb is sqlite, and sqlite's consistency rests entirely on
+        # fsync ordering: with it disabled, a layer commit can capture a
+        # torn database, which is exactly what we get. Drop fsync=0 and
+        # leave the rest of the runner's config alone.
         #
-        # overlay metacopy=on is the known way to corrupt an rpmdb built
-        # this way: metadata-only copy-ups leave the sqlite file's pages
-        # inconsistent across layers. Turning it off costs a full copy-up
-        # on write and buys a build that completes.
-        #
-        # Revisit when the runner image moves on: if a later image is
-        # fine with metacopy, this step is harmless but no longer needed.
+        # The step prints the config before and after, so if a future
+        # runner image changes the ground again, the log says so.
         run: |
           set -euo pipefail
           conf=/etc/containers/storage.conf
           echo "==> before"
-          grep -E "^\s*(driver|mountopt|metacopy)" "$conf" || true
-          sudo mkdir -p /etc/containers
-          if grep -q "metacopy=on" "$conf" 2>/dev/null; then
-            sudo sed -i 's/metacopy=on/metacopy=off/g' "$conf"
-          else
-            printf '\n[storage.options.overlay]\nmountopt = "nodev"\n' | sudo tee -a "$conf" >/dev/null
-          fi
+          grep -E '^\s*(driver|mountopt)' "$conf" || true
+          # Only touch the mountopt line, and only to remove fsync=0.
+          sudo sed -i -E 's/^(\s*mountopt\s*=\s*")([^"]*)"/\1\2"/; s/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
           echo "==> after"
-          grep -E "^\s*(driver|mountopt|metacopy)" "$conf" || true
+          grep -E '^\s*(driver|mountopt)' "$conf" || true
+          if grep -q 'fsync=0' "$conf"; then
+            echo "::error::fsync=0 still present in $conf — the rpmdb will corrupt"
+            exit 1
+          fi
           podman info --format '{{.Store.GraphDriverName}} {{.Store.GraphOptions}}'
 
       - name: Pre-build login to GHCR

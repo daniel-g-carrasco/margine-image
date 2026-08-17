@@ -167,51 +167,45 @@ jobs:
           fetch-depth: 1
 
       - name: Harden podman storage (rpmdb corruption guard)
-        # The 20260810 ubuntu-24.04 runner image broke every Margine
-        # build: dnf transactions die with
+        # Every build since 2026-08-12 dies with a torn rpmdb:
         #   error: SELECT hnum, blob FROM 'Packages': 11: database disk
         #          image is malformed
-        # and the install then "fails" on dependencies that are plainly
-        # present (libc, libgtk-3 ... needed by seahorse). Same commit,
-        # same base digest (f2a12f32), builds fine on a workstation and
-        # on the previous runner image (20260720): the variable is the
-        # runner's container stack, which now ships
-        #   mountopt = "nodev,fsync=0"
-        # fsync=0 tells the overlay driver to skip fsync for speed. The
-        # rpmdb is sqlite, and sqlite's consistency rests entirely on
-        # fsync ordering: with it disabled, a layer commit can capture a
-        # torn database, which is exactly what we get. Drop fsync=0 and
-        # leave the rest of the runner's config alone.
+        # and then bogus unmet dependencies (the package it blames moves
+        # around: seahorse, sqlite-libs, ...). What we ruled out, each
+        # by experiment: our code (same commit + same base digest builds
+        # clean on a workstation), disk space (119 GB free), metacopy
+        # (the runner never set it), fsync=0 (stripped, no change).
         #
-        # The step prints the config before and after, so if a future
-        # runner image changes the ground again, the log says so.
+        # What is left is the storage driver itself. Runner image
+        # 20260810 ships its OWN fuse-overlayfs in /usr/local/bin and
+        # points containers-storage at it; the previous image, on which
+        # our builds were green, did not. A userspace copy-up that
+        # mishandles a file being written is exactly how an sqlite
+        # database ends up torn between layers.
+        #
+        # So: take the userspace driver out of the path and let podman
+        # use the kernel's overlay, and keep fsync on while we are here.
+        # The step prints the config and podman's effective options
+        # before and after, so the next runner-image rotation is visible
+        # in the log instead of being guessed at.
         run: |
           set -euo pipefail
           conf=/etc/containers/storage.conf
           echo "==> before"
-          grep -E '^\s*(driver|mountopt)' "$conf" || true
-          # Only touch the mountopt line, and only to remove fsync=0.
-          sudo sed -i -E 's/^(\s*mountopt\s*=\s*")([^"]*)"/\1\2"/; s/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
+          grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
+          podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+
+          # Comment out the userspace mount program (kernel overlay), and
+          # drop fsync=0 from the mount options. Nothing else is touched.
+          sudo sed -i -E 's|^(\s*mount_program\s*=)|# \1|' "$conf"
+          sudo sed -i -E 's/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
+
           echo "==> after"
-          grep -E '^\s*(driver|mountopt)' "$conf" || true
-          if grep -q 'fsync=0' "$conf"; then
-            echo "::error::fsync=0 still present in $conf — the rpmdb will corrupt"
+          grep -E '^\s*(driver|mountopt|mount_program|# *mount_program)' "$conf" || true
+          podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+          if podman info --format '{{.Store.GraphOptions}}' | grep -q mount_program; then
+            echo "::error::podman still uses a userspace mount_program"
             exit 1
-          fi
-          podman info --format '{{.Store.GraphDriverName}} {{.Store.GraphOptions}}'
-          podman version
-          # fuse-overlayfs instead of the kernel overlay driver: stripping
-          # fsync=0 was not enough, the rpmdb still comes out torn (the
-          # package it blames just moves around: seahorse, then
-          # sqlite-libs). fuse-overlayfs does its own copy-up and is the
-          # standard escape hatch when the kernel driver and the layer
-          # commit disagree about what is on disk.
-          if [ -x /usr/bin/fuse-overlayfs ]; then
-            sudo sed -i -E '/^\s*\[storage\.options\.overlay\]/a mount_program = "/usr/bin/fuse-overlayfs"' "$conf"
-            grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
-            podman info --format '{{.Store.GraphDriverName}} {{.Store.GraphOptions}}'
-          else
-            echo "::warning::fuse-overlayfs not installed on this runner"
           fi
 
       - name: Pre-build login to GHCR

@@ -199,6 +199,20 @@ jobs:
             exit 1
           fi
           podman info --format '{{.Store.GraphDriverName}} {{.Store.GraphOptions}}'
+          podman version
+          # fuse-overlayfs instead of the kernel overlay driver: stripping
+          # fsync=0 was not enough, the rpmdb still comes out torn (the
+          # package it blames just moves around: seahorse, then
+          # sqlite-libs). fuse-overlayfs does its own copy-up and is the
+          # standard escape hatch when the kernel driver and the layer
+          # commit disagree about what is on disk.
+          if [ -x /usr/bin/fuse-overlayfs ]; then
+            sudo sed -i -E '/^\s*\[storage\.options\.overlay\]/a mount_program = "/usr/bin/fuse-overlayfs"' "$conf"
+            grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
+            podman info --format '{{.Store.GraphDriverName}} {{.Store.GraphOptions}}'
+          else
+            echo "::warning::fuse-overlayfs not installed on this runner"
+          fi
 
       - name: Pre-build login to GHCR
         # Authenticated pull of ghcr.io/ublue-os/bluefin-dx:stable

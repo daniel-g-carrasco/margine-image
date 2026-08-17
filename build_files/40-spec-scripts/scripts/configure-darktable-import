@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Point darktable's import at the RAW folder, and make it import RAWs only.
+Point darktable's import at the RAW folder, import RAWs only, and keep
+the integrated GPU inside the driver's compute watchdog.
 
 Rationale (2026-08-17): the home layout already gives photos a proper
 place (XDG_PICTURES_DIR/raw for camera originals, exports/ for output),
@@ -17,6 +18,24 @@ Three keys, all darktable's own:
 "Only new photos" needs no key: darktable already skips images that are
 in the library, so importing the folder again picks up only what the
 camera added since.
+
+It also caps how much memory darktable assumes it has on a UNIFIED-memory
+GPU (an integrated one, sharing system RAM):
+
+    cldevice_v6_<device>  field 7 (unified_fraction)  0.250 -> 0.100
+
+Why: darktable sizes its OpenCL tiles from that fraction, so on a 32 GB
+laptop it will happily build a single kernel invocation over ~8 GB of
+image data. On an iGPU that one call can outlast amdgpu's compute
+watchdog, and the driver then resets the ring and kills the app:
+
+    amdgpu: ring comp_1.2.1 timeout, signaled seq=385, emitted seq=386
+    amdgpu: Starting comp_1.2.1 ring reset ... device wedged
+
+(Reference host, 2026-08-17, opening a Fujifilm RAF: the X-Trans
+Markesteijn demosaic is the heaviest kernel darktable has, and it took
+the GPU down twice.) A smaller fraction means more, shorter kernels:
+the same total work, none of it long enough to look hung.
 
 RESPECTS EXISTING CHOICES. A key is written only when it still holds
 darktable's shipped default; anything the user changed is left alone,
@@ -48,6 +67,12 @@ KEYS = {
     "ui_last/import_recursive": ("true", "false"),
 }
 DIR_KEY = "ui_last/import_last_directory"
+
+# Per-device OpenCL line: micro_nap pinned_memory eventhandles async
+# disabled advantage unified_fraction. Only the last field is ours.
+CLDEVICE_PREFIX = "cldevice_v6_"
+UNIFIED_DEFAULT = "0.250"
+UNIFIED_SAFE = "0.100"
 
 
 def pictures_dir() -> Path:
@@ -92,6 +117,16 @@ def plan(config: Path, raw_dir: Path) -> list[tuple[str, str, str]]:
         cur = current.get(key, shipped)
         if cur.lower() == shipped and cur.lower() != desired:
             changes.append((key, cur, desired))
+
+    # Unified-memory GPUs only: a discrete card has its own VRAM and the
+    # fraction does not apply, so those lines are left alone.
+    for key, value in current.items():
+        if not key.startswith(CLDEVICE_PREFIX) or key.endswith("_id0"):
+            continue
+        fields = value.split()
+        if len(fields) == 7 and fields[6] == UNIFIED_DEFAULT:
+            fields[6] = UNIFIED_SAFE
+            changes.append((key, value, " ".join(fields)))
 
     return changes
 

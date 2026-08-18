@@ -52,8 +52,8 @@ RUN --mount=type=bind,from=ctx,source=/custom-kernel,target=/ctx/custom-kernel \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
-    --mount=type=secret,id=mok-key,target=/tmp/certs/MOK.key \
-    --mount=type=secret,id=mok-cert,target=/tmp/certs/MOK.pem \
+    --mount=type=secret,id=mok-key,target=/run/margine-certs/MOK.key \
+    --mount=type=secret,id=mok-cert,target=/run/margine-certs/MOK.pem \
     env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" /ctx/custom-kernel/install.sh
 
 # ----- Margine modifications (GNOME settings, branding, flatpaks, etc.) -----

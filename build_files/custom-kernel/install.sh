@@ -13,8 +13,8 @@
 #   - signing is mandatory: this image is meant to boot under Secure Boot
 #
 # Inputs (BuildKit secrets):
-#   /tmp/certs/MOK.key        — RSA private key (PEM)
-#   /tmp/certs/MOK.pem        — X509 certificate (PEM)
+#   /run/margine-certs/MOK.key        — RSA private key (PEM)
+#   /run/margine-certs/MOK.pem        — X509 certificate (PEM)
 # (The mokutil enrollment passphrase is public by design and lives as
 #  a constant below — see the MOK_PASSWORD comment.)
 #
@@ -27,8 +27,12 @@ set -euo pipefail
 log() { printf '[custom-kernel] %s\n' "$*"; }
 err() { printf '[custom-kernel] ERROR: %s\n' "$*" >&2; }
 
-SIGNING_KEY="/tmp/certs/MOK.key"
-SIGNING_CERT="/tmp/certs/MOK.pem"
+# NOT under /tmp: the same RUN mounts a tmpfs on /tmp, and with
+# --layers=false buildah orders that mount after the secrets, so a
+# secret at /tmp/certs is masked by the empty tmpfs and the build dies
+# with "Missing secret" (2026-08-18).
+SIGNING_KEY="/run/margine-certs/MOK.key"
+SIGNING_CERT="/run/margine-certs/MOK.pem"
 
 for f in "$SIGNING_KEY" "$SIGNING_CERT"; do
   [[ -f "$f" ]] || { err "Missing secret: $f"; exit 1; }

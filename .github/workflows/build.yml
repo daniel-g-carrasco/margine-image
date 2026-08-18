@@ -327,7 +327,16 @@ jobs:
           sudo -E buildah build \
             --file ./Containerfile \
             --format docker \
-            --layers \
+            # --layers OFF (2026-08-18): with intermediate commits on, the
+            # rpmdb is corrupt the instant the RUN after custom-kernel
+            # starts, and rpm --rebuilddb cannot even read it to repair
+            # it: the damage is done by the commit of that very large
+            # (12-minute) layer, not by anything we run. Storage driver,
+            # fsync=0, metacopy and disk space were each ruled out by
+            # experiment first. No intermediate commit, no window in
+            # which the database can be torn. Costs the layer cache,
+            # which this CI never reuses: every run gets a fresh runner.
+            --layers=false \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
             "${TAG_ARGS[@]}" \

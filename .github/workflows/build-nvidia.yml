@@ -95,9 +95,7 @@ jobs:
           sudo -E buildah build \
             --file ./Containerfile \
             --format docker \
-            # Same as build.yml: intermediate commits tear the rpmdb on
-            # current runners (see that workflow for the diagnosis).
-            --layers=false \
+            --layers \
             --build-arg "ENABLE_NVIDIA=1" \
             --build-arg "NVIDIA_KMOD=${{ inputs.nvidia_kmod || 'nvidia-open' }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \

@@ -136,7 +136,16 @@ jobs:
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # 150, not 90 (2026-08-18): merging custom-kernel and build.sh
+    # into one RUN removed the layer commit that tore the rpmdb,
+    # and with it the layer cache for that stage — 'Build image'
+    # went from 14 to 46 minutes. The first build to survive the
+    # corruption then died here instead, cancelled mid-SBOM at
+    # exactly 90 minutes with every substantive step already
+    # green. Budget: ~46 build + ~12 validate + ~15 SBOM + ~11
+    # rechunk + push, so 150 leaves real headroom without
+    # letting a genuine hang run all day.
+    timeout-minutes: 150
     permissions:
       contents: read
       packages: write

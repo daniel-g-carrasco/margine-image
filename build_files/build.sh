@@ -10,6 +10,7 @@ set -euo pipefail
 
 log "==== Margine build orchestrator: starting ===="
 
+
 # Run every sub-script in lexicographic order. Globs expand
 # deterministically because we name dirs <NN>-<area>.
 for d in /ctx/[1-9][0-9]-*/install.sh; do

@@ -25,9 +25,11 @@ for s in \
     configure-gnome-appearance \
     configure-gnome-extensions \
     configure-gnome-keybindings \
+    configure-darktable-import \
     configure-home-layout \
     configure-zen-browser \
     install-user-extensions \
+    restore-stock-home \
     validate-atomic-layout \
     validate-cachyos-kernel \
     validate-hardware-media-stack \

@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""
+Point darktable's import at the RAW folder, import RAWs only, and keep
+the integrated GPU inside the driver's compute watchdog.
+
+Rationale (2026-08-17): the home layout already gives photos a proper
+place (XDG_PICTURES_DIR/raw for camera originals, exports/ for output),
+but darktable ships pointing at $HOME and importing every image format
+it recognises. So the first import of a fresh install pulls in
+screenshots, downloaded PNGs and phone JPEGs alongside the actual
+negatives, and the library starts dirty.
+
+Three keys, all darktable's own:
+    ui_last/import_last_directory  -> <pictures>/raw
+    ui_last/import_ignore_nonraws  -> true
+    ui_last/import_recursive       -> true
+
+"Only new photos" needs no key: darktable already skips images that are
+in the library, so importing the folder again picks up only what the
+camera added since.
+
+It also caps how much memory darktable assumes it has on a UNIFIED-memory
+GPU (an integrated one, sharing system RAM):
+
+    cldevice_v6_<device>  field 7 (unified_fraction)  0.250 -> 0.100
+
+Why: darktable sizes its OpenCL tiles from that fraction, so on a 32 GB
+laptop it will happily build a single kernel invocation over ~8 GB of
+image data. On an iGPU that one call can outlast amdgpu's compute
+watchdog, and the driver then resets the ring and kills the app:
+
+    amdgpu: ring comp_1.2.1 timeout, signaled seq=385, emitted seq=386
+    amdgpu: Starting comp_1.2.1 ring reset ... device wedged
+
+(Reference host, 2026-08-17, opening a Fujifilm RAF: the X-Trans
+Markesteijn demosaic is the heaviest kernel darktable has, and it took
+the GPU down twice.) A smaller fraction means more, shorter kernels:
+the same total work, none of it long enough to look hung.
+
+RESPECTS EXISTING CHOICES. A key is written only when it still holds
+darktable's shipped default; anything the user changed is left alone,
+so this is safe to re-run after upgrades (margine-bootstrap does).
+
+Usage:
+    configure-darktable-import            # dry-run: print the plan
+    configure-darktable-import --apply    # write darktablerc
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# Flatpak first (how Margine ships darktable), then a native install.
+CONFIG_CANDIDATES = (
+    Path.home() / ".var/app/org.darktable.Darktable/config/darktable/darktablerc",
+    Path.home() / ".config/darktable/darktablerc",
+)
+
+# key -> (desired value, darktable's shipped default)
+# Only a key still at its shipped default gets rewritten.
+KEYS = {
+    "ui_last/import_ignore_nonraws": ("true", "false"),
+    "ui_last/import_recursive": ("true", "false"),
+}
+DIR_KEY = "ui_last/import_last_directory"
+
+# Per-device OpenCL line: micro_nap pinned_memory eventhandles async
+# disabled advantage unified_fraction. Only the last field is ours.
+CLDEVICE_PREFIX = "cldevice_v6_"
+UNIFIED_DEFAULT = "0.250"
+UNIFIED_SAFE = "0.100"
+
+
+def pictures_dir() -> Path:
+    """XDG_PICTURES_DIR, via xdg-user-dir when available."""
+    try:
+        out = subprocess.run(
+            ["xdg-user-dir", "PICTURES"], text=True, capture_output=True, timeout=10
+        ).stdout.strip()
+        if out:
+            return Path(out)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return Path(os.environ.get("XDG_PICTURES_DIR", Path.home() / "Pictures"))
+
+
+def find_config() -> Path | None:
+    for path in CONFIG_CANDIDATES:
+        if path.is_file():
+            return path
+    return None
+
+
+def plan(config: Path, raw_dir: Path) -> list[tuple[str, str, str]]:
+    """Return [(key, current, new)] for keys that should change."""
+    lines = config.read_text().splitlines()
+    current = {}
+    for line in lines:
+        if "=" in line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            current[key.strip()] = value.strip()
+
+    changes: list[tuple[str, str, str]] = []
+
+    # The directory key: only touch it while darktable still points at the
+    # home directory (its shipped default). Once someone has imported from
+    # somewhere else, that is their working folder — leave it.
+    cur_dir = current.get(DIR_KEY, "")
+    if cur_dir in ("", str(Path.home())) and cur_dir != str(raw_dir):
+        changes.append((DIR_KEY, cur_dir or "(unset)", str(raw_dir)))
+
+    for key, (desired, shipped) in KEYS.items():
+        cur = current.get(key, shipped)
+        if cur.lower() == shipped and cur.lower() != desired:
+            changes.append((key, cur, desired))
+
+    # Unified-memory GPUs only: a discrete card has its own VRAM and the
+    # fraction does not apply, so those lines are left alone.
+    for key, value in current.items():
+        if not key.startswith(CLDEVICE_PREFIX) or key.endswith("_id0"):
+            continue
+        fields = value.split()
+        if len(fields) == 7 and fields[6] == UNIFIED_DEFAULT:
+            fields[6] = UNIFIED_SAFE
+            changes.append((key, value, " ".join(fields)))
+
+    return changes
+
+
+def apply(config: Path, changes: list[tuple[str, str, str]]) -> None:
+    text = config.read_text()
+    lines = text.splitlines()
+    wanted = {key: new for key, _, new in changes}
+    seen: set[str] = set()
+
+    for i, line in enumerate(lines):
+        key = line.partition("=")[0].strip()
+        if key in wanted:
+            lines[i] = f"{key}={wanted[key]}"
+            seen.add(key)
+
+    for key, new in wanted.items():
+        if key not in seen:
+            lines.append(f"{key}={new}")
+
+    config.write_text("\n".join(lines) + "\n")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="write the changes")
+    args = parser.parse_args()
+
+    config = find_config()
+    if config is None:
+        print("darktable has no config yet (never launched) — nothing to do.")
+        print("Re-run this after the first darktable start, or let")
+        print("margine-bootstrap do it on the next run.")
+        return 0
+
+    raw_dir = pictures_dir() / "raw"
+    changes = plan(config, raw_dir)
+
+    if not changes:
+        print("darktable import settings [no change]")
+        return 0
+
+    for key, cur, new in changes:
+        print(f"  {key}: {cur} -> {new}")
+
+    if not args.apply:
+        print("\ndry-run: re-run with --apply to write these.")
+        return 0
+
+    if not raw_dir.is_dir():
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        print(f"  created {raw_dir}")
+
+    apply(config, changes)
+    print("darktable import settings applied.")
+    print("NOTE: darktable rewrites darktablerc on exit — close it before")
+    print("      running this, or the change is lost with the old file.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

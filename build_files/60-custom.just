@@ -27,6 +27,7 @@ margine-bootstrap $MODE="interactive":
       3. margine-configure-gnome-appearance    (accent, theme, dconf for extensions)
       4. margine-configure-default-applications (Zen as browser, Ptyxis terminal, etc.)
       5. margine-configure-gnome-app-folders   (Activities grid grouped by category)
+      6. margine-configure-darktable-import    (import from Pictures/raw, RAWs only)
 
     As of 2026-06-03 PR A, GNOME extensions are no longer installed
     or enabled per-user: o-tiling and hide-cursor live in /usr/share/
@@ -60,7 +61,8 @@ margine-bootstrap $MODE="interactive":
         margine-configure-gnome-appearance \
         margine-configure-default-applications \
         margine-configure-gnome-app-folders \
-        margine-configure-zen-browser ; do
+        margine-configure-zen-browser \
+        margine-configure-darktable-import ; do
       echo
       echo "==> $step --apply"
       if ! $step --apply; then
@@ -687,6 +689,25 @@ margine-slim-restore:
     sudo systemctl start flatpak-preinstall.service --no-block
     echo "Started. Apps reappear as they land; check progress with:"
     echo "  systemctl status flatpak-preinstall.service"
+
+# Go back to the stock Linux home layout (~/Documents, ~/Downloads, ...)
+# for anyone who does not want Margine's opinionated one. Never moves or
+# deletes files: it only changes where apps default to.
+[group('Margine')]
+margine-home-stock:
+    #!/usr/bin/bash
+    set -euo pipefail
+    echo "== Restore the stock home layout =="
+    echo
+    echo "Margine ships an opinionated home: ~/data (backed up), ~/dev (code),"
+    echo "~/scratch (throwaway), with the XDG folders remapped inside them."
+    echo "This puts the machine back to what any other GNOME distro gives you."
+    echo
+    margine-restore-stock-home
+    echo
+    read -rp "Apply these changes? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    margine-restore-stock-home --apply
 
 # Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]

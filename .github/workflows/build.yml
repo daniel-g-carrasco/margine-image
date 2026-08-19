@@ -136,7 +136,16 @@ jobs:
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # 150, not 90 (2026-08-18): merging custom-kernel and build.sh
+    # into one RUN removed the layer commit that tore the rpmdb,
+    # and with it the layer cache for that stage — 'Build image'
+    # went from 14 to 46 minutes. The first build to survive the
+    # corruption then died here instead, cancelled mid-SBOM at
+    # exactly 90 minutes with every substantive step already
+    # green. Budget: ~46 build + ~12 validate + ~15 SBOM + ~11
+    # rechunk + push, so 150 leaves real headroom without
+    # letting a genuine hang run all day.
+    timeout-minutes: 150
     permissions:
       contents: read
       packages: write
@@ -165,6 +174,48 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 1
+
+      - name: Harden podman storage (rpmdb corruption guard)
+        # Every build since 2026-08-12 dies with a torn rpmdb:
+        #   error: SELECT hnum, blob FROM 'Packages': 11: database disk
+        #          image is malformed
+        # and then bogus unmet dependencies (the package it blames moves
+        # around: seahorse, sqlite-libs, ...). What we ruled out, each
+        # by experiment: our code (same commit + same base digest builds
+        # clean on a workstation), disk space (119 GB free), metacopy
+        # (the runner never set it), fsync=0 (stripped, no change).
+        #
+        # What is left is the storage driver itself. Runner image
+        # 20260810 ships its OWN fuse-overlayfs in /usr/local/bin and
+        # points containers-storage at it; the previous image, on which
+        # our builds were green, did not. A userspace copy-up that
+        # mishandles a file being written is exactly how an sqlite
+        # database ends up torn between layers.
+        #
+        # So: take the userspace driver out of the path and let podman
+        # use the kernel's overlay, and keep fsync on while we are here.
+        # The step prints the config and podman's effective options
+        # before and after, so the next runner-image rotation is visible
+        # in the log instead of being guessed at.
+        run: |
+          set -euo pipefail
+          conf=/etc/containers/storage.conf
+          echo "==> before"
+          grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
+          podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+
+          # Comment out the userspace mount program (kernel overlay), and
+          # drop fsync=0 from the mount options. Nothing else is touched.
+          sudo sed -i -E 's|^(\s*mount_program\s*=)|# \1|' "$conf"
+          sudo sed -i -E 's/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
+
+          echo "==> after"
+          grep -E '^\s*(driver|mountopt|mount_program|# *mount_program)' "$conf" || true
+          podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+          if podman info --format '{{.Store.GraphOptions}}' | grep -q mount_program; then
+            echo "::error::podman still uses a userspace mount_program"
+            exit 1
+          fi
 
       - name: Pre-build login to GHCR
         # Authenticated pull of ghcr.io/ublue-os/bluefin-dx:stable

@@ -198,7 +198,7 @@ Phase boundaries are independently completable so the migration can pause betwee
 **Acceptance:** Anaconda WebUI launches with margine profile. Disk autodetect `%pre` selects single available disk. Partitioning shows ESP 4 GiB + btrfs root + zstd:1. Install completes to bootable installed system on QEMU.
 
 ### Phase 4 — Port MOK enrollment %post; validate CachyOS kernel full pipeline (2 days)
-**Description:** Write `post-scripts/secureboot-enroll-key.ks` containing the MOK enrollment block from `disk_config/iso-gnome.toml:80-137` verbatim (`mokutil --timeout -1` + `printf 'margine-os\nmargine-os\n' | mokutil --import /mnt/sysimage/usr/share/cert/MOK.der` with EFI gate). Document the supported "disable SB → install → enroll → re-enable SB" flow in `/docs/install` for users.
+**Description:** Write `post-scripts/secureboot-enroll-key.ks` containing the MOK enrollment block from `disk_config/iso-gnome.toml:80-137` verbatim (`mokutil --timeout -1` + `printf 'margine\nmargine-os\n' | mokutil --import /mnt/sysimage/usr/share/cert/MOK.der` with EFI gate). Document the supported "disable SB → install → enroll → re-enable SB" flow in `/docs/install` for users.
 **Acceptance:** Install completes on QEMU UEFI with SB disabled. After install: first reboot triggers `mok-enroll.service` or Anaconda %post enrollment shows up as pending MokManager request. Second reboot shows MokManager. CachyOS kernel boots on installed system after enrollment.
 
 ### Phase 5 — Replace BIB anaconda-iso pipeline; retain BIB qcow2 path (1 day)
@@ -220,7 +220,7 @@ These are not gating but should be confirmed before the relevant phase starts:
 - **Repository location for `live-env/`:** keep inside `margine-image/live-env/` (single-repo, matches Bazzite's `installer/`) vs split into new `margine-iso` repo. Recommendation: single-repo for v1.
 - **Phase-5 qcow2 retention:** keep BIB qcow2 vs retire alongside anaconda-iso. Recommendation: keep for now (cheap, useful for smoke tests).
 - **Offline install support:** pre-pull `margine:stable` into containers-storage at margine-live build (~3-4 GB ISO bloat, install works without network) vs `--transport=registry` (smaller ISO, network-required install). Recommendation: pre-pull (offline install is documented Margine UX).
-- **MOK enrollment password `margine-os`:** keep as-is (documented, memorable, Bazzite uses `universalblue` same shape).
+- **MOK enrollment password `margine`:** keep as-is (documented, memorable, Bazzite uses `universalblue` same shape).
 - **Live env GNOME session:** stock livesys-scripts gnome session vs custom Margine liveuser autostart. Recommendation: stock for v1; Margine-specific welcome dialog can be phase-8+ polish.
 - **Phase-6 second SB test hardware:** any modern Intel UEFI laptop. Identify before Phase 6 starts.
 - **Installer choice longevity:** stay on Anaconda forever vs commit to Readymade migration as ADR-0010 in Q4 2026. Recommendation: Anaconda for v1, re-evaluate Readymade in Q4 2026.

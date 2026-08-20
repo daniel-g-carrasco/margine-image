@@ -140,7 +140,7 @@ parts.
    (smoother enroll-from-ISO flow is planned).
 4. Reboot when the installation completes. MOK Manager appears before
    the installed system starts; enroll the key with passphrase
-   **`margine-os`**, then reboot into Margine.
+   **`margine`**, then reboot into Margine.
 5. Apply the user-state once:
    ```sh
    ujust margine-bootstrap
@@ -170,7 +170,7 @@ After the reboot, two more one-time steps:
    `mok-enroll.service` submits the request during the first Margine
    boot. Reboot once more; a blue/grey screen called **MOK Manager**
    appears automatically. Choose `Enroll MOK` -> `Continue` -> `Yes`,
-   type the passphrase **`margine-os`** when prompted, and reboot. From
+   type the passphrase **`margine`** when prompted, and reboot. From
    this point on the kernel boots normally under Secure Boot and you
    will not see this screen again. Full walkthrough with the exact
    screen-by-screen flow is at

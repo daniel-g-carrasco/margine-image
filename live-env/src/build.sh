@@ -119,7 +119,7 @@ cp -v /boot/efi/EFI/fedora/grubx64.efi /boot/efi/EFI/BOOT/fbx64.efi
 # volumes (FAT). Titanoboa packs /boot/efi/EFI verbatim into the
 # ISO's efiboot image (build_iso.sh: mcopy -s /work/EFI ::), so the
 # cert placed here is reachable as EFI/MOK.der on that volume:
-# enroll (passphrase: margine-os) -> reboot -> the live boots with
+# enroll (passphrase: margine) -> reboot -> the live boots with
 # Secure Boot ON. Same pattern Bazzite documents for its ISOs.
 cp -v /usr/share/cert/MOK.der /boot/efi/EFI/MOK.der
 
@@ -225,7 +225,7 @@ command -v zenity  >/dev/null 2>&1 || exit 0
 if mokutil --sb-state 2>/dev/null | grep -qi 'enabled'; then
   exit 0
 fi
-zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine-os</tt>).\n\nGuide and key fingerprint:\nhttps://margine.dev/docs/first-boot" || true
+zenity --info --no-wrap --title="Secure Boot"   --text="<b>Secure Boot is currently disabled.</b>\n\nMargine fully supports Secure Boot: its kernel is signed with the\nMargine key, and this ISO can enroll that key for you — pick\n<i>Enroll Secure Boot key (MokManager)</i> from the boot menu, or\nenroll at first boot after installing (passphrase: <tt>margine</tt>).\n\nGuide and key fingerprint:\nhttps://margine.dev/docs/first-boot" || true
 SBNOTICE
 chmod 0755 /usr/libexec/margine-live-sb-notice
 

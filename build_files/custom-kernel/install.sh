@@ -72,8 +72,20 @@ RPMFUSION_NONFREE_FPR="79BDB88F9BBF73910FD4095B6A2AF96194843C65"
 NVIDIA_CUDA_FPR_44="129994480EC63D2789BC98E490DFED2F73CD9B30"
 
 # gpg comes from the base image (gnupg2); nothing to install at build time.
+# GNUPGHOME is pinned explicitly because buildah RUN starts from a bare
+# environment: gpg wants a home directory it can create, and the first
+# build to try this failed with an empty fingerprint and no explanation,
+# because stderr was being thrown away. It is not thrown away now.
 key_fingerprint() {
-  gpg --show-keys --with-colons "$1" 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}'
+  local out
+  export GNUPGHOME="${GNUPGHOME:-/run/margine-gnupg}"
+  mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+  if ! out="$(gpg --batch --no-options --show-keys --with-colons "$1" 2>&1)"; then
+    err "gpg could not read $1:"
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    return 1
+  fi
+  printf '%s\n' "$out" | awk -F: '/^fpr:/{print $10; exit}'
 }
 
 verify_key_fpr() {
@@ -82,7 +94,7 @@ verify_key_fpr() {
     err "$label: expected key file $file, not found"
     return 1
   fi
-  actual="$(key_fingerprint "$file")"
+  actual="$(key_fingerprint "$file")" || actual=""
   if [[ "$actual" != "$expected" ]]; then
     err "$label: GPG key fingerprint mismatch, refusing to build"
     err "  expected: $expected"

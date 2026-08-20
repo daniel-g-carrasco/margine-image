@@ -877,7 +877,7 @@ margine-test-vm ISO="" NAME="" DISK="80":
       echo "     so shim runs, but Margine signs its kernel/modules with its own MOK."
       echo "     A blue MOK Manager screen appears:"
       echo "         Enroll MOK -> Continue -> Yes -> enter the password"
-      echo "     (Margine's MOK password is 'margine-os', public by design), reboot."
+      echo "     (Margine's MOK password is 'margine', public by design), reboot."
       echo "  3. Confirm Secure Boot:    mokutil --sb-state     # -> SecureBoot enabled"
       echo "  4. TPM2 LUKS auto-unlock:  ujust margine-tpm-unlock enable"
       echo "     then reboot — the disk should unlock from the emulated TPM with no"

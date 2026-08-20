@@ -1551,7 +1551,7 @@ the live and installed environments instead of keeping a Fedora-signed live kern
 
 ## 4.6 Why the passphrase is public by design
 
-`margine-os` is printed in the README, the docs site, and this handbook. That is correct, not
+`margine` is printed in the README, the docs site, and this handbook. That is correct, not
 sloppy, because the password is not a secret-keeping mechanism:
 
 - The real gate is **physical presence**. MokManager runs pre-OS, on the console, before any

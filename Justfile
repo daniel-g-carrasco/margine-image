@@ -254,7 +254,7 @@ test-install-vm:
     echo "Launching a virt-manager test VM (SPICE/clipboard + Secure Boot + TPM2) from:"
     echo "  $ISO_ABS"
     echo "Install with the DEFAULT partitioning; the INSTALLED system's first boot"
-    echo "prompts MokManager for Secure Boot (passphrase: margine-os)."
+    echo "prompts MokManager for Secure Boot (passphrase: margine)."
     # Recycle here too, so a re-run never dead-ends on "a VM named X already
     # exists". The shipped `ujust margine-test-vm` only learns to recycle after a
     # base update (PR #239); this dev recipe (what `iso-test-vm` / the GUI button

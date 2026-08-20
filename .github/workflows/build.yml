@@ -482,7 +482,42 @@ jobs:
             io.artifacthub.package.license=Apache-2.0
             containers.bootc=1
             dev.margine.kernel=${{ steps.sbom.outputs.kver }}
+            org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
           revision: ${{ github.sha }}
+
+      # NOTE on labels above: rechunk keeps only what it is handed, so
+      # anything stamped on the pre-rechunk image is lost. base.digest
+      # was exactly that casualty — status.json's
+      # baseDigestMatchesBluefin came back null on every build, which is
+      # why the /status page could show Margine as "Current" while it
+      # was built from a two-week-old Bluefin (2026-08-19). Same reason
+      # dev.margine.kernel is re-stamped here.
+
+      - name: Verify the shipped kernel is still MOK-signed
+        # Bluefin runs a secureboot check on the built image; we only
+        # verified inside custom-kernel, BEFORE rechunk. That is the
+        # wrong side of the one step that has already eaten our labels
+        # twice: a rechunk that mangled vmlinuz would ship an unsigned
+        # kernel and Secure Boot users would find out at boot. Check the
+        # artefact that actually gets published.
+        run: |
+          set -euo pipefail
+          IMG="localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
+          CID="$(sudo podman create "${{ steps.rechunk.outputs.ref }}" true)"
+          trap 'sudo podman rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+          MNT="$(sudo podman mount "$CID")"
+          KVER="$(sudo ls "$MNT/usr/lib/modules" | head -1)"
+          VMLINUZ="$MNT/usr/lib/modules/$KVER/vmlinuz"
+          sudo test -f "$VMLINUZ" || { echo "::error::no vmlinuz in the rechunked image"; exit 1; }
+          command -v sbverify >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq sbsigntool; }
+          if sudo sbverify --list "$VMLINUZ" | grep -qi "Margine"; then
+            echo "vmlinuz ($KVER) carries the Margine MOK signature"
+          else
+            echo "::error::the published kernel is not signed with the Margine MOK"
+            sudo sbverify --list "$VMLINUZ" || true
+            exit 1
+          fi
+          sudo podman unmount "$CID" >/dev/null
 
       - name: Login to GHCR
         run: |
@@ -501,8 +536,12 @@ jobs:
           # Copy each metadata tag → GHCR. All tags point at the same
           # manifest, so we capture the digest from the first copy
           # (--digestfile) and reuse it for sign's by-digest reference.
+          # retry-times 5, not 3: GHCR stalls and rate-limits on multi-GB
+          # pushes, and a failed publish means a build that succeeded
+          # ships nothing. Bluefin wraps its whole push in a 3-attempt
+          # retry action for the same reason.
           for tag in ${{ steps.metadata.outputs.tags }}; do
-            sudo skopeo copy --retry-times 3 \
+            sudo skopeo copy --retry-times 5 \
               --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
               --digestfile=/tmp/digest.txt \
               "${{ steps.rechunk.outputs.ref }}" \

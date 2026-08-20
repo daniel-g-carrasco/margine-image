@@ -17,11 +17,15 @@
 # metadata fetches, not devices, and are excluded.
 #
 # os_name comes from os-release NAME, which the 2026-07-11 rebrand
-# changed from "Margine" to "Margine OS" — the fleet reports BOTH names
-# while it migrates (week of 2026-07-13: 4 "Margine" + 8 "Margine OS"
-# devices). Counting only one name undercounts and eventually zeroes
-# the chart, so both are accepted; a device reports exactly one, so
-# summing them per week/repo stays a device count.
+# changed from "Margine" to "Margine OS". The fleet reported BOTH names
+# while it migrated: in the week of 2026-07-13 the tagged pings split 2
+# "Margine" + 4 "Margine OS" on fedora-44, and from the week of
+# 2026-07-20 on, every device reports "Margine OS". Counting only one
+# name undercounts and eventually zeroes the chart, so both are
+# accepted; a device reports exactly one at a time, so summing them per
+# week/repo stays a device count. (The one imprecision left is a device
+# that updated mid-week during the rename and pinged under both names:
+# it counts twice in that single week, July 2026 only.)
 #
 # Usage: cd site && ../.github/scripts/publish-countme-json.sh
 set -euo pipefail

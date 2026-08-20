@@ -537,54 +537,38 @@ jobs:
             label_args+=(--label "$l")
           done
 
-          # Anchoring the layer plan to what users already run is what keeps an
-          # update a small delta instead of a full re-download. rpm-ostree reads
-          # the manifest straight from the registry without pulling the image.
-          # Best-effort on purpose: on a first build, or a registry hiccup,
-          # chunking without an anchor is worse for bandwidth and perfectly
-          # correct otherwise.
-          PREV="docker://$(echo "${IMAGE_REGISTRY}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]'):stable"
-          prev_args=()
-          if sudo skopeo inspect --no-tags "$PREV" >/dev/null 2>&1; then
-            prev_args=(--previous-build "$PREV")
-            echo "layer plan anchored to ${PREV}"
-          else
-            echo "::warning::could not read ${PREV}; chunking without a previous build"
-          fi
-
-          chunk() {
-            sudo podman run --rm --pull=never --privileged \
-              --mount=type=image,src="$SRC",target=/rpm-ostree \
-              --volume "${OUT_DIR}:/run/out:Z" \
-              --entrypoint /usr/bin/rpm-ostree \
-              "$SRC" \
-              compose build-chunked-oci \
-              --bootc --max-layers 127 --format-version 2 \
-              "$@" \
-              "${label_args[@]}" \
-              --rootfs /rpm-ostree \
-              --output oci:/run/out/image
-          }
-
-          # --max-layers 127 and --format-version 2 match what Bazzite ships,
-          # which is the largest real-world fleet on this exact code path.
+          # NO --previous-build, and that is a tested decision rather than an
+          # omission. The flag anchors the layer plan to an existing image so
+          # an update stays a small delta, which sounds exactly like something
+          # we want. In rpm-ostree 2026.2 it panics on our image, twice over:
           #
-          # The anchor is attempted, not required. rpm-ostree 2026.2 PANICS
-          # inside ostree-ext chunking when the previous build does not line
-          # up with the rootfs it is chunking (a bare assertion on package
-          # counts, "2290 != 2501", reproduced locally against our current
-          # rechunk-made :stable). A failed anchor must cost users a bigger
-          # download, never a build. This also self-heals: once :stable is
-          # itself produced here, the anchor has a shape this tool wrote.
-          if [ ${#prev_args[@]} -gt 0 ]; then
-            if ! chunk "${prev_args[@]}"; then
-              echo "::warning::chunking with --previous-build failed; retrying without the anchor (updates will be a larger delta this once)"
-              sudo rm -rf "${OUT_DIR:?}/image"
-              chunk
-            fi
-          else
-            chunk
-          fi
+          #   against our registry :stable   assertion left == right failed,
+          #                                  2290 != 2501  (chunking.rs:694)
+          #   against its own output         assertion left == right failed,
+          #                                  1734 != 0     (chunking.rs:423)
+          #
+          # Both reproduced locally on the real 19.5 GB rootfs, so it is not a
+          # registry or transport accident. Wiring it up behind a fallback
+          # would burn two and a half minutes crashing on every single build
+          # for a benefit that never arrives.
+          #
+          # Nothing is lost relative to what we shipped yesterday: the rechunk
+          # action was never passed prev-ref either. Bazzite, the largest fleet
+          # on this exact code path, also chunks without an anchor. The plan is
+          # computed per package and is stable in practice; revisit if a future
+          # rpm-ostree fixes the assertion.
+          #
+          # --max-layers 127 and --format-version 2 match what Bazzite ships.
+          sudo podman run --rm --pull=never --privileged \
+            --mount=type=image,src="$SRC",target=/rpm-ostree \
+            --volume "${OUT_DIR}:/run/out:Z" \
+            --entrypoint /usr/bin/rpm-ostree \
+            "$SRC" \
+            compose build-chunked-oci \
+            --bootc --max-layers 127 --format-version 2 \
+            "${label_args[@]}" \
+            --rootfs /rpm-ostree \
+            --output oci:/run/out/image
 
           [ -f "${OUT_DIR}/image/index.json" ] || {
             echo "::error::chunker produced no OCI image at ${OUT_DIR}/image"

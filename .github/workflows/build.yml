@@ -136,16 +136,18 @@ jobs:
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
     runs-on: ubuntu-26.04
-    # 150, not 90 (2026-08-18): merging custom-kernel and build.sh
-    # into one RUN removed the layer commit that tore the rpmdb,
-    # and with it the layer cache for that stage — 'Build image'
-    # went from 14 to 46 minutes. The first build to survive the
-    # corruption then died here instead, cancelled mid-SBOM at
-    # exactly 90 minutes with every substantive step already
-    # green. Budget: ~46 build + ~12 validate + ~15 SBOM + ~11
-    # rechunk + push, so 150 leaves real headroom without
-    # letting a genuine hang run all day.
-    timeout-minutes: 150
+    # 90 (2026-08-20). The 150 this replaces was budgeted for a
+    # 46-minute 'Build image', which was never really the cost of
+    # merging custom-kernel and build.sh into one RUN: it was the old
+    # runner's fuse-overlayfs spending twelve minutes committing the
+    # kernel layer. On ubuntu-26.04 the merged build measures 12
+    # minutes, so the merge costs nothing and there is no layer cache
+    # worth splitting the RUN to recover. Measured end to end on
+    # 2026-08-20: 12 build + 11 SBOM + 9 rechunk + 2 push = 35 min.
+    # 90 is 2.5x that, enough for a GHCR push that stalls into its
+    # retries, and short enough that a real hang is caught the same
+    # morning instead of running all day.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write

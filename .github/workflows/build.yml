@@ -249,10 +249,14 @@ jobs:
         id: basedigest
         continue-on-error: true
         run: |
+          # Emitted before the network call: the name is a constant and must
+          # survive a skopeo hiccup, which only costs us the digest.
+          BASE_REF="ghcr.io/ublue-os/bluefin-dx:stable"
+          echo "name=${BASE_REF}" >> "$GITHUB_OUTPUT"
           command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
-          DIGEST="$(skopeo inspect --no-tags docker://ghcr.io/ublue-os/bluefin-dx:stable --format '{{.Digest}}' 2>/dev/null || echo '')"
+          DIGEST="$(skopeo inspect --no-tags "docker://${BASE_REF}" --format '{{.Digest}}' 2>/dev/null || echo '')"
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-          echo "base (bluefin-dx:stable) digest: ${DIGEST:-<unresolved>}"
+          echo "base (${BASE_REF}) digest: ${DIGEST:-<unresolved>}"
 
       - name: Stage MOK secrets for BuildKit
         # Key + cert only. The enrollment PASSPHRASE is public by design
@@ -485,10 +489,19 @@ jobs:
             containers.bootc=1
             dev.margine.kernel=${{ steps.sbom.outputs.kver }}
             org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
+            org.opencontainers.image.base.name=${{ steps.basedigest.outputs.name }}
+            org.opencontainers.image.created=${{ steps.date.outputs.date }}
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/README.md
+            io.artifacthub.package.deprecated=false
+            io.artifacthub.package.prerelease=false
           revision: ${{ github.sha }}
 
       # NOTE on labels above: rechunk keeps only what it is handed, so
-      # anything stamped on the pre-rechunk image is lost. base.digest
+      # anything stamped on the pre-rechunk image is lost. The list is
+      # now the full set docker/metadata-action produces, checked against
+      # a published image on 2026-08-21: base.digest fixed the visible
+      # symptom, and base.name, created and the three artifacthub fields
+      # were still quietly falling off the end. base.digest
       # was exactly that casualty — status.json's
       # baseDigestMatchesBluefin came back null on every build, which is
       # why the /status page could show Margine as "Current" while it

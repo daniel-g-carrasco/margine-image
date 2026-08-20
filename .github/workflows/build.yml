@@ -552,19 +552,39 @@ jobs:
             echo "::warning::could not read ${PREV}; chunking without a previous build"
           fi
 
+          chunk() {
+            sudo podman run --rm --pull=never --privileged \
+              --mount=type=image,src="$SRC",target=/rpm-ostree \
+              --volume "${OUT_DIR}:/run/out:Z" \
+              --entrypoint /usr/bin/rpm-ostree \
+              "$SRC" \
+              compose build-chunked-oci \
+              --bootc --max-layers 127 --format-version 2 \
+              "$@" \
+              "${label_args[@]}" \
+              --rootfs /rpm-ostree \
+              --output oci:/run/out/image
+          }
+
           # --max-layers 127 and --format-version 2 match what Bazzite ships,
           # which is the largest real-world fleet on this exact code path.
-          sudo podman run --rm --pull=never --privileged \
-            --mount=type=image,src="$SRC",target=/rpm-ostree \
-            --volume "${OUT_DIR}:/run/out:Z" \
-            --entrypoint /usr/bin/rpm-ostree \
-            "$SRC" \
-            compose build-chunked-oci \
-            --bootc --max-layers 127 --format-version 2 \
-            "${prev_args[@]}" \
-            "${label_args[@]}" \
-            --rootfs /rpm-ostree \
-            --output oci:/run/out/image
+          #
+          # The anchor is attempted, not required. rpm-ostree 2026.2 PANICS
+          # inside ostree-ext chunking when the previous build does not line
+          # up with the rootfs it is chunking (a bare assertion on package
+          # counts, "2290 != 2501", reproduced locally against our current
+          # rechunk-made :stable). A failed anchor must cost users a bigger
+          # download, never a build. This also self-heals: once :stable is
+          # itself produced here, the anchor has a shape this tool wrote.
+          if [ ${#prev_args[@]} -gt 0 ]; then
+            if ! chunk "${prev_args[@]}"; then
+              echo "::warning::chunking with --previous-build failed; retrying without the anchor (updates will be a larger delta this once)"
+              sudo rm -rf "${OUT_DIR:?}/image"
+              chunk
+            fi
+          else
+            chunk
+          fi
 
           [ -f "${OUT_DIR}/image/index.json" ] || {
             echo "::error::chunker produced no OCI image at ${OUT_DIR}/image"

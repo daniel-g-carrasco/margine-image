@@ -419,17 +419,18 @@ jobs:
         # ~1 GB instead of OOM.
         run: |
           set -euo pipefail
-          ROOTFS=/tmp/margine-sbom-rootfs
-          sudo rm -rf "$ROOTFS"
-          sudo mkdir -p "$ROOTFS"
           # Create (don't start) a container off the image — `podman export`
           # only needs the filesystem, not a running process. Idempotent
           # name via --replace.
           sudo podman container create --replace --name sbom-export \
             --entrypoint /bin/true \
             "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
-          sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
-          sudo podman container rm sbom-export
+          # Mount, don't export: `podman export | tar -x` wrote a second
+          # full copy of the ~19 GB rootfs and ran the runner out of disk
+          # on 26.04, whose cleanup frees less than the old one did.
+          # syft and the checks only read, so mounted layers are enough.
+          ROOTFS="$(sudo podman mount sbom-export)"
+          [ -n "$ROOTFS" ] || { echo "::error::could not mount the image for SBOM"; exit 1; }
           # syft as user against the on-disk dir. --source-name puts the
           # original image ref in the SBOM metadata so the consumer can
           # tell which image it describes.
@@ -452,7 +453,9 @@ jobs:
           echo "Kernel in image: $KVER"
           # Reclaim the ~14 GB used by the expanded rootfs before rechunk
           # runs — rechunk needs disk for its own staging.
-          sudo rm -rf "$ROOTFS"
+          # Nothing to reclaim: the rootfs was mounted, not copied.
+          sudo podman unmount sbom-export >/dev/null || true
+          sudo podman container rm sbom-export >/dev/null || true
 
       - name: Upload SBOM as workflow artifact (handoff to sign job)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

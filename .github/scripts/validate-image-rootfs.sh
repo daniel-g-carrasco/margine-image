@@ -20,11 +20,18 @@ set -euo pipefail
 
 IMAGE_REF="${1:?usage: validate-image-rootfs.sh <image-ref>}"
 
+# MOUNT the image, do not export it. `podman export | tar -x` wrote a
+# second full copy of a ~19 GB rootfs to the runner disk and started
+# failing with "No space left on device" on ubuntu-26.04, whose cleanup
+# frees less than the old one did (2026-08-20). Mounting reads the
+# layers already on disk: no copy, no extraction, seconds instead of
+# minutes. The checks below are all read-only, so a mount is all they
+# ever needed.
 podman container create --replace --name validate-fs \
   --entrypoint /bin/true "$IMAGE_REF" >/dev/null
-ROOTFS=$(mktemp -d)
-trap 'rm -rf "$ROOTFS"; podman rm validate-fs >/dev/null 2>&1 || true' EXIT
-podman export validate-fs | tar -C "$ROOTFS" -xf -
+trap 'podman unmount validate-fs >/dev/null 2>&1 || true; podman rm validate-fs >/dev/null 2>&1 || true' EXIT
+ROOTFS=$(podman mount validate-fs)
+[[ -n "$ROOTFS" && -d "$ROOTFS" ]] || { echo "::error::could not mount $IMAGE_REF"; exit 1; }
 
 fail=0
 check_file() { [[ -f "$ROOTFS/$1" ]] || { echo "::error::missing file $1 ($2)"; fail=1; }; }

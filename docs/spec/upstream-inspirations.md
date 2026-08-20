@@ -14,12 +14,12 @@ go stale silently.
 
 | Upstream | Role for Margine | Derivation level | Files / patterns of ours | Last reviewed |
 | --- | --- | --- | --- | --- |
-| [Bluefin DX](https://github.com/ublue-os/bluefin) | The `FROM` base of every Margine image; we ship as their image + small delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-06-07 |
-| [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-06-07 |
-| [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-06-07 |
-| [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-06-07 |
-| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the tool Bluefin uses internally | **GH Action consumer** (we use their `@v1.2.4` action) | step `ReChunk image` in `margine-image/.github/workflows/build.yml` | 2026-06-07 |
-| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-06-07 |
+| [Bluefin DX](https://github.com/ublue-os/bluefin) | The `FROM` base of every Margine image; we ship as their image + small delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-08-21 |
+| [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-08-21 |
+| [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-08-21 |
+| [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-08-21 |
+| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the tool Bluefin uses internally | **GH Action consumer** (we use their `@v1.2.4` action) | step `ReChunk image` in `margine-image/.github/workflows/build.yml` | 2026-08-21 |
+| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-08-21 |
 
 ---
 
@@ -245,6 +245,51 @@ issue when activity is non-trivial. See
 `project_todo_check-upstreams-cron.md` in
 the project's internal notes for the reminder to
 implement the cron job.
+
+---
+
+## Review log
+
+### 2026-08-21 (issue #333)
+
+Six upstreams had new commits since 2026-06-07; Origami and rechunk had
+none. What the skim turned up, in order of how much it matters to us:
+
+- **The ecosystem is leaving `hhd-dev/rechunk` behind.** Bazzite now
+  rechunks with `rpm-ostree compose build-chunked-oci`, passing labels
+  as `--label` arguments (ublue-os/bazzite 625bebb, "fix(ci): Maintain
+  labels through rootless rechunk"), and image-template moved to
+  `chunkah`. We still consume the rechunk action at v1.2.4, whose own
+  README describes itself as a stopgap until the ostree-rs-ext changes
+  land upstream. Nothing is broken and there is no hurry, but the tool
+  we depend on is now maintained for fewer and fewer consumers, and a
+  migration should be a deliberate decision rather than a forced one.
+- **Bazzite hit our label problem and solved it the same way.** Their
+  commit above exists because rechunking drops labels, which is exactly
+  the bug that left `base.digest` missing and the /status page unable to
+  say whether Margine was built on the current Bluefin (our #358).
+  Independent confirmation that re-stamping labels at the rechunk step
+  is the right shape of fix, not a local hack.
+- **OpenGamingCollective improved their kernel key import** ("fix:
+  Improve kernel key import process"). Same domain as our MOK enrollment,
+  which issue #353 has just shown to be the part users actually stumble
+  on. Worth reading before the next change to `custom-kernel/install.sh`.
+- **CachyOS has released 7.2**; we ship 7.1.8 through the
+  `bieszczaders/kernel-cachyos` COPR, which tracks its own cadence.
+  Nothing to do, noted so the gap is not a surprise later.
+- **travier/fedora-atomic-desktops-sealed** spent the period on
+  `image-builder` compatibility, Fedora's signed systemd-boot RPM, and
+  `bootc install to-filesystem` with LUKS + cryptenroll + shim. Directly
+  relevant to ADR-0007 (sealed bootable images) whenever that resumes.
+- **Rootless CI** shows up in both Bazzite and image-template. We build
+  with `sudo buildah`. Not a problem today, but if we ever revisit the
+  build's privileges, that is the direction upstream has taken.
+- **cosign**: image-template moved to v3; we were already there (v3.0.6,
+  pinned for CVE-2026-39395). Nothing to do.
+- **MorrOS** rebased off Bazzite instead of image-template. Their
+  architectural pattern is what we cite, and that has not changed.
+
+No change was required in any of the derivations this document records.
 
 ---
 

@@ -56,7 +56,7 @@ log "Setting MokManager timeout to direct entry"
 mokutil --timeout -1 || log "WARN: failed to set MokTimeout; continuing"
 
 log "Importing Margine MOK request"
-if printf '%s\n%s\n' 'margine-os' 'margine-os' | mokutil --import "$MOK_CERT"; then
+if printf '%s\n%s\n' 'margine' 'margine' | mokutil --import "$MOK_CERT"; then
   log "MOK import request submitted — shim should launch MokManager on the next boot"
 else
   log "WARN: mokutil import failed — first-boot mok-enroll.service remains fallback"

@@ -295,7 +295,7 @@ This section documents the procedure as it actually ships. Source code:
 | `MOK.key` (RSA 2048 private) | GitHub Actions secret `MOK_KEY`; local backup at `~/data/technology/00-admin/security/encryption/margine-image-keys/MOK.key` (chmod 600) | **private — never committed** |
 | `MOK.pem` (X.509 certificate, PEM) | `margine-image/secrets/MOK.pem` (committed) and GH Actions secret `MOK_CERT` | public |
 | `MOK.der` (X.509 certificate, DER) | `margine-image/secrets/MOK.der` (committed) | public |
-| MOK enrollment passphrase | **Not a secret.** Hardcoded constant `MOK_PASSWORD="margine-os"` in `margine-image/build_files/custom-kernel/install.sh`. Public by design: the user types it at the MOK Manager screen, the live-ISO dialog prints it, and these docs spell it out — routing it through a GitHub Actions secret would imply a confidentiality that does not exist. The old `MOK_PASSWORD` repo secret was **removed 2026-06-12** (the build no longer consumes it; only `MOK_KEY` + `MOK_CERT` are staged). This string only gates the one-shot physical-presence trust handoff on first boot. | public-by-design |
+| MOK enrollment passphrase | **Not a secret.** Hardcoded constant `MOK_PASSWORD="margine"` in `margine-image/build_files/custom-kernel/install.sh`. Public by design: the user types it at the MOK Manager screen, the live-ISO dialog prints it, and these docs spell it out — routing it through a GitHub Actions secret would imply a confidentiality that does not exist. The old `MOK_PASSWORD` repo secret was **removed 2026-06-12** (the build no longer consumes it; only `MOK_KEY` + `MOK_CERT` are staged). This string only gates the one-shot physical-presence trust handoff on first boot. | public-by-design |
 
 The cert fingerprint at the time of this writing is
 `DF:C0:A7:0A:8B:90:EC:8F:01:04:1C:F7:7C:05:F0:79:76:B8:CC:72:BC:8C:38:F4:6D:26:5D:DA:6C:1E:55:B1`.
@@ -311,9 +311,9 @@ The cert fingerprint at the time of this writing is
 
 ### ISO install user experience
 
-1. During Anaconda `%post --nochroot`, the installer locates `/usr/share/cert/MOK.der` in the target deployment and runs `mokutil --timeout -1` plus `mokutil --import` with the `margine-os` passphrase.
+1. During Anaconda `%post --nochroot`, the installer locates `/usr/share/cert/MOK.der` in the target deployment and runs `mokutil --timeout -1` plus `mokutil --import` with the `margine` passphrase.
 2. On the first post-install reboot, shim notices the pending request and presents the **MOK Manager** screen before the installed system starts.
-3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots into Margine.
+3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine`), and reboots into Margine.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
 ### Titanoboa live ISO (ADR-0008, in migration)
@@ -321,7 +321,7 @@ The cert fingerprint at the time of this writing is
 [ADR-0008](adr/0008-titanoboa-migration-plan.md) moves the ISO build from
 bootc-image-builder to Titanoboa. The MOK staging logic is unchanged — it
 ports verbatim into `live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks`
-(same `mokutil --timeout -1` + `mokutil --import` with the `margine-os`
+(same `mokutil --timeout -1` + `mokutil --import` with the `margine`
 passphrase, same `/usr/share/cert/MOK.der`, same "do not write
 `/var/.mok-enrolled`" so the service fallback still recovers). The
 post-install MOK Manager experience above is identical.
@@ -337,7 +337,7 @@ Margine MOK is enrolled. The supported flow is therefore:
 1. Disable Secure Boot in firmware to boot the Margine live ISO.
 2. Install Margine (Anaconda stages the MOK request, as above).
 3. Re-enable Secure Boot.
-4. MOK Manager prompts on the next reboot; enroll with `margine-os`.
+4. MOK Manager prompts on the next reboot; enroll with `margine`.
 5. The installed CachyOS kernel now boots under Secure Boot.
 
 This is the documented trade-off for shipping a single distinguishing
@@ -347,7 +347,7 @@ kernel in both environments rather than a separate signed live kernel.
 
 1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
 2. The user reboots again. The firmware presents the **MOK Manager** screen.
-3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine-os`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.dev/docs/first-boot>.
+3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.dev/docs/first-boot>.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
 ### Recovery if MOK enrollment is missed

@@ -128,7 +128,7 @@ for the migration:
    `sbsign`** on the resulting UKI binary, using the Margine MOK
    as the signing key.
 4. **Drop `mok-enroll.service`.** First-boot UX no longer has the
-   MOK Manager screen (good — saves the "passphrase margine-os"
+   MOK Manager screen (good — saves the "passphrase margine"
    workflow). Document the change in `/docs/first-boot` on the
    site (currently the central place we teach the MOK step).
 5. **Replace GRUB config with systemd-boot loader entries.**

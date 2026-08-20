@@ -45,7 +45,7 @@ the declarative spec and configuration helpers, and the live ISO.
 
 **Out of scope / not a vulnerability:**
 
-- **The MOK enrollment passphrase `margine-os` is public by design.** A MOK
+- **The MOK enrollment passphrase `margine` is public by design.** A MOK
   passphrase only authorizes enrolling the *already-built, already-signed*
   Margine key on the local machine during a physically-present reboot — it
   is not a secret and grants no remote capability. See the

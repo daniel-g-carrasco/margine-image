@@ -195,7 +195,7 @@ systemctl reboot
 ```
 
 → MOK Manager screen → Enroll MOK → Continue → Yes → passphrase
-**`margine-os`** (current value of the `MOK_PASSWORD` GH Actions secret,
+**`margine`** (current value of the `MOK_PASSWORD` GH Actions secret,
 rotated 2026-06-06 from the original 24-char base64 to a short
 human-typable string — same pattern as Bazzite's `ublue-os`). Reboot.
 

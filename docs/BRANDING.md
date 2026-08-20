@@ -60,7 +60,7 @@ These five cut across almost every touchpoint below:
 | Anaconda installer **window icon** | `live-env/src/build.sh` | `AnacondaInstaller`, `_wmid in`, `StartupWMClass` |
 | Installer product/storage config | `live-env/src/anaconda/profile.d/margine.conf` | `variant_id`, `default_partitioning` |
 | "Secure Boot is disabled" notice | `live-env/src/build.sh` | `margine-live-sb-notice` |
-| MOK passphrase / enrollment | `build_files/custom-kernel/install.sh` | `margine-os`, `mok-enroll` |
+| MOK passphrase / enrollment | `build_files/custom-kernel/install.sh` | `margine`, `mok-enroll` |
 | First-login bootstrap + notification | `build_files/system_files/etc/xdg/autostart/margine-first-boot*.desktop` | `first-boot-bootstrap`, `first-boot-status` |
 | Update notifications | `build_files/system_files/usr/libexec/margine*` (units in `…/usr/lib/systemd/user/`) | `margine-notify` |
 | Notification icon on the lock screen | `build_files/system_files/usr/libexec/margine/margine-notify` | `app_icon`, `image-path` |
@@ -347,7 +347,7 @@ A one-shot autostart (`/etc/xdg/autostart/margine-live-sb-notice.desktop` →
 `/usr/libexec/margine-live-sb-notice`) that, **only in the live session and only
 if SB is off** (`mokutil --sb-state`), shows a `zenity --info` explaining that
 Margine supports Secure Boot, how to enroll (boot-menu MokManager or first-boot,
-passphrase `margine-os`), and links the docs. Idempotent via a marker in
+passphrase `margine`), and links the docs. Idempotent via a marker in
 `$XDG_RUNTIME_DIR` (falls back to `/tmp`).
 
 **Gotchas**
@@ -364,7 +364,7 @@ passphrase `margine-os`), and links the docs. Idempotent via a marker in
 ## 9. Secure Boot / MOK (installed system)
 
 **File:** `build_files/custom-kernel/install.sh`.
-- **Passphrase:** `margine-os` — **public by design** (printed on the ISO + docs;
+- **Passphrase:** `margine` — **public by design** (printed on the ISO + docs;
   users type it into MokManager). Only the *signing key* is secret.
 - Kernel + all modules (incl. NVIDIA) signed with the Margine MOK at build; a
   sha256 check fails the build if the kernel changes after signing. One key → one
@@ -374,6 +374,12 @@ passphrase `margine-os`), and links the docs. Idempotent via a marker in
   `/var/.mok-enrolled`.
 - ISO offers `Enroll Secure Boot key (MokManager)` (chainloads `mmx64.efi`) so the
   key can be enrolled from the boot menu before install.
+
+**Gotcha:** keep the passphrase LETTERS ONLY. MokManager runs in the
+firmware with a US layout assumed, so a hyphen or any symbol lands on a
+different key for Italian/German/French users, who are typing it blind
+(issue #353). It protects nothing, so there is nothing to trade against
+typability.
 
 **Gotcha:** the installer stages its own MOK cert via
 `…/anaconda/post-scripts/secureboot-enroll-key.ks`; the installed-system path

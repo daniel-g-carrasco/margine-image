@@ -47,7 +47,16 @@ done
 # inviting a pointless "rotation" that would only break the docs.
 # Keep it a simple constant; if it ever changes, update the live-ISO
 # dialog (live-env/src/build.sh) and the install docs together.
-MOK_PASSWORD="margine-os"
+# LETTERS ONLY, no hyphen, no symbols (2026-08-20, issue #353).
+# MokManager runs in the firmware, before any keyboard layout exists, so
+# it assumes US. On an Italian keyboard the key printed "-" sends "/";
+# German and French shift other symbols around too. The user types this
+# blind, at a blue screen that already unnerves people, and gets a
+# rejection they cannot explain. It buys no security either — the value
+# is public by design (see below) — so there is nothing to weigh
+# against typability. ublue-os reached the same conclusion:
+# "universalblue", letters only.
+MOK_PASSWORD="margine"
 
 # Validate that key and cert match.
 openssl pkey -in "$SIGNING_KEY"  -noout >/dev/null \

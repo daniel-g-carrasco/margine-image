@@ -1317,7 +1317,7 @@ path arrived only with ADR 0006's CachyOS decision. Prove the boring baseline fi
 | `MOK.key` (RSA-2048 private) | GitHub Actions secret `MOK_KEY` + offline backup, chmod 600 | **private, never committed** |
 | `MOK.pem` (X.509 cert, PEM) | committed at `margine-image/secrets/MOK.pem` + secret `MOK_CERT` | public |
 | `MOK.der` (same cert, DER) | committed at `margine-image/secrets/MOK.der`, shipped in-image | public |
-| `MOK_PASSWORD` | hardcoded constant `MOK_PASSWORD="margine-os"` in `build_files/custom-kernel/install.sh` | **public by design** (§4.6) |
+| `MOK_PASSWORD` | hardcoded constant `MOK_PASSWORD="margine"` in `build_files/custom-kernel/install.sh` | **public by design** (§4.6) |
 
 The build refuses to proceed with mismatched material. A wrong-cert build would produce an
 image whose kernel can never be trusted, discovered only at a user's boot screen:
@@ -1482,7 +1482,7 @@ Mechanics worth knowing:
   armed with zero installer cooperation.
 
 The user-visible rebase flow is therefore: rebase → reboot (service stages the request) →
-reboot again → MokManager → type `margine-os` → done. Two reboots; the kernel chain is verified
+reboot again → MokManager → type `margine` → done. Two reboots; the kernel chain is verified
 on every boot thereafter.
 
 ## 4.5 The ISO path: stage the request *before* the first installed boot
@@ -1522,7 +1522,7 @@ if mokutil --test-key "$MOK_CERT" >/dev/null 2>&1; then
   log "Margine MOK is already enrolled — nothing to import"; exit 0
 fi
 mokutil --timeout -1 || log "WARN: failed to set MokTimeout; continuing"
-if printf '%s\n%s\n' 'margine-os' 'margine-os' | mokutil --import "$MOK_CERT"; then
+if printf '%s\n%s\n' 'margine' 'margine' | mokutil --import "$MOK_CERT"; then
   log "MOK import request submitted — shim should launch MokManager on the next boot"
 fi
 %end
@@ -1562,7 +1562,7 @@ sloppy, because the password is not a secret-keeping mechanism:
   anyway; knowing Margine's adds nothing. An attacker *without* root can't stage a request at
   all. The password protects against exactly one thing, a user confirming a request they did
   not initiate, and a documented distro-wide value preserves that property: users are told
-  "if the screen asks for a passphrase and `margine-os` works, this is the Margine request."
+  "if the screen asks for a passphrase and `margine` works, this is the Margine request."
 - Precedent: Universal Blue ships the same pattern with their public `ublue-os` key passphrase
   for Bazzite/Bluefin akmod signing. Margine copied it deliberately.
 
@@ -1572,7 +1572,7 @@ sloppy, because the password is not a secret-keeping mechanism:
 > docs, and a US-layout keymap.
 > **Root cause:** treating a public-by-design value as if it were a secret; entropy bought
 > nothing and cost typability.
-> **Fix:** rotate `MOK_PASSWORD` to the short human-typable `margine-os` (same pattern as
+> **Fix:** rotate `MOK_PASSWORD` to a short human-typable value (same pattern as
 > ublue-os) and print it in the install docs. Recorded in
 > `docs/spec/07-secure-boot-tpm2.md` ("rotated 2026-06-06 […] so users can
 > type it at the MOK Manager screen without copy-paste").
@@ -3042,7 +3042,7 @@ Pinning is only half a policy; the other half is keeping the pins fresh and the 
 
 ## 8.6 Secrets handling in GHA
 
-Margine's CI holds three secrets: `MOK_KEY`, `MOK_CERT` (kernel signing) and `COSIGN_PRIVATE_KEY`. (The mokutil enrollment passphrase is *not* a secret: it's a hardcoded constant `MOK_PASSWORD="margine-os"` in `custom-kernel/install.sh`, public by design; §4.6.) Handling rules visible in the workflow:
+Margine's CI holds three secrets: `MOK_KEY`, `MOK_CERT` (kernel signing) and `COSIGN_PRIVATE_KEY`. (The mokutil enrollment passphrase is *not* a secret: it's a hardcoded constant `MOK_PASSWORD="margine"` in `custom-kernel/install.sh`, public by design; §4.6.) Handling rules visible in the workflow:
 
 ```yaml
 # margine-image/.github/workflows/build.yml
@@ -3677,7 +3677,7 @@ log "Setting MokManager timeout to direct entry"
 mokutil --timeout -1 || log "WARN: failed to set MokTimeout; continuing"
 
 log "Importing Margine MOK request"
-if printf '%s\n%s\n' 'margine-os' 'margine-os' | mokutil --import "$MOK_CERT"; then
+if printf '%s\n%s\n' 'margine' 'margine' | mokutil --import "$MOK_CERT"; then
   log "MOK import request submitted — shim should launch MokManager on the next boot"
 else
   log "WARN: mokutil import failed — first-boot mok-enroll.service remains fallback"

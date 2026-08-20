@@ -1,0 +1,156 @@
+name: Stale image alarm
+
+# The 2026-08 outage lasted ten days before anyone noticed, and the reason
+# is that nothing in the pipeline watches the CLOCK. Every existing signal
+# is edge-triggered: a build fails, ntfy fires; a build never starts, and
+# the whole system stays quiet with the last green run still on the page.
+# status.json reports the age of :stable but nobody reads it.
+#
+# So: one job, once a day, that asks the only question that matters to a
+# user sitting in front of `ujust margine-update` — how old is the image
+# they would actually get? It alarms on two channels on purpose:
+#   - ntfy, for the push notification;
+#   - a FAILING workflow run, so the alarm survives a dead ntfy topic and
+#     shows up red in the Actions list and in GitHub's own e-mail.
+# It stays red every day until a fresh image lands, which is the point:
+# a one-shot notification is exactly what got missed last time.
+
+on:
+  schedule:
+    - cron: "37 7 * * *" # daily, clear of status-json (06:17) and countme (07:43)
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: "Age in days above which :stable counts as stale"
+        required: false
+        default: "9"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stale-image-alarm
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: How old is :stable?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Inspect :stable and measure its age
+        id: age
+        env:
+          # 9 days, not 7: the scheduled build runs weekly (Sundays 04:00
+          # UTC) on top of the push-triggered ones, so a single missed
+          # Sunday is the smallest real failure worth waking up for, and
+          # it trips this two days later instead of waiting for the next
+          # week to pass unnoticed.
+          MAX_AGE: ${{ inputs.max_age_days || '9' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          # Authenticated inspect: 5000 req/h instead of the anonymous 100.
+          skopeo login ghcr.io -u "${{ github.actor }}" -p "$GH_TOKEN"
+
+          IMAGE="ghcr.io/${{ github.repository_owner }}/margine:stable"
+          # A registry blip must not read as "the image is fine". If the
+          # inspect fails we alarm, with a different message.
+          if ! RAW="$(skopeo inspect "docker://${IMAGE}" 2>&1)"; then
+            {
+              echo "state=unreachable"
+              echo "age="
+              echo "detail<<EOF"
+              printf '%s\n' "$RAW" | tail -3
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CREATED="$(jq -r '.Created // empty' <<<"$RAW")"
+          DIGEST="$(jq -r '.Digest // empty' <<<"$RAW")"
+          if [ -z "$CREATED" ]; then
+            echo "state=unreachable" >> "$GITHUB_OUTPUT"
+            echo "age=" >> "$GITHUB_OUTPUT"
+            echo "detail=inspect returned no Created field" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # date -d handles the RFC3339 the registry returns, fractional
+          # seconds included.
+          CREATED_EPOCH="$(date -u -d "$CREATED" +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          AGE_DAYS=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
+
+          echo "Image:   $IMAGE"
+          echo "Digest:  $DIGEST"
+          echo "Created: $CREATED"
+          echo "Age:     $AGE_DAYS days (threshold $MAX_AGE)"
+
+          if [ "$AGE_DAYS" -gt $(( MAX_AGE * 2 )) ]; then
+            STATE=critical
+          elif [ "$AGE_DAYS" -gt "$MAX_AGE" ]; then
+            STATE=stale
+          else
+            STATE=fresh
+          fi
+          {
+            echo "state=$STATE"
+            echo "age=$AGE_DAYS"
+            echo "created=${CREATED:0:10}"
+            echo "digest=$DIGEST"
+            echo "threshold=$MAX_AGE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Notify ntfy
+        if: steps.age.outputs.state != 'fresh'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+          STATE:     ${{ steps.age.outputs.state }}
+          AGE:       ${{ steps.age.outputs.age }}
+          CREATED:   ${{ steps.age.outputs.created }}
+          THRESHOLD: ${{ steps.age.outputs.threshold }}
+          DETAIL:    ${{ steps.age.outputs.detail }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NTFY_URL:-}" ]; then
+            echo "NTFY_TOPIC_URL secret not set, skipping notification."
+            exit 0
+          fi
+          if [ "$STATE" = "unreachable" ]; then
+            TITLE="Cannot inspect :stable"
+            PRIO="high"
+            TAGS="warning,mag"
+            MSG="skopeo could not read ghcr.io/margine:stable. Registry blip, or the tag is gone. ${DETAIL}"
+          elif [ "$STATE" = "critical" ]; then
+            TITLE=":stable is ${AGE} days old"
+            PRIO="urgent"
+            TAGS="rotating_light,hourglass"
+            MSG="Published ${CREATED}. More than twice the ${THRESHOLD}-day threshold: the pipeline has stopped producing images. This is the ten-day outage repeating."
+          else
+            TITLE=":stable is ${AGE} days old"
+            PRIO="high"
+            TAGS="hourglass,construction"
+            MSG="Published ${CREATED}, past the ${THRESHOLD}-day threshold. Check whether the build is failing or simply not running."
+          fi
+          curl -fsS -X POST \
+            -H "Title: ${TITLE}" \
+            -H "Priority: ${PRIO}" \
+            -H "Tags: ${TAGS}" \
+            -H "Actions: view, Open Actions, ${{ github.server_url }}/${{ github.repository }}/actions" \
+            -d "${MSG}" \
+            "$NTFY_URL" >/dev/null
+
+      - name: Fail the run while the image is stale
+        # Deliberate: this run stays red every day until a fresh image is
+        # published. The red X in the Actions list and GitHub's e-mail are
+        # the channel that does not depend on ntfy being alive.
+        if: steps.age.outputs.state != 'fresh'
+        run: |
+          echo "::error::ghcr.io/margine:stable is ${{ steps.age.outputs.age }} days old (state: ${{ steps.age.outputs.state }})"
+          exit 1
+
+      - name: Report a fresh image
+        if: steps.age.outputs.state == 'fresh'
+        run: echo ":stable is ${{ steps.age.outputs.age }} days old, within the ${{ steps.age.outputs.threshold }}-day threshold."

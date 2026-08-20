@@ -502,7 +502,9 @@ jobs:
         # artefact that actually gets published.
         run: |
           set -euo pipefail
-          IMG="localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
+          # The rechunked image, not the pre-rechunk one: rechunk is the
+          # step that could plausibly mangle vmlinuz, so verifying its
+          # input would prove nothing.
           CID="$(sudo podman create "${{ steps.rechunk.outputs.ref }}" true)"
           trap 'sudo podman rm -f "$CID" >/dev/null 2>&1 || true' EXIT
           MNT="$(sudo podman mount "$CID")"

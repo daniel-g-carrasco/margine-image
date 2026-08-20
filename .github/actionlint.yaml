@@ -1,0 +1,8 @@
+# actionlint validates `runs-on:` against a hardcoded list of GitHub-hosted
+# labels, and 1.7.12 predates ubuntu-26.04. Until the upstream list catches
+# up, declare the label here so the linter accepts it. This is the documented
+# escape hatch for labels actionlint does not know yet; it is NOT a
+# self-hosted runner, and the entry goes away once actionlint ships the label.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

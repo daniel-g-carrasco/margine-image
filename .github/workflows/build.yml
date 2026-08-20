@@ -135,7 +135,7 @@ jobs:
     # On pull_request, only build for PRs explicitly labeled `vm-test`.
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 150, not 90 (2026-08-18): merging custom-kernel and build.sh
     # into one RUN removed the layer commit that tore the rpmdb,
     # and with it the layer cache for that stage — 'Build image'
@@ -160,11 +160,11 @@ jobs:
       - name: Maximize build space
         # ubuntu-24.04 has ~14 GiB of free disk by default; we need
         # ~30+ GiB for the buildah cache + base image + Margine layers
-        # + rechunk staging. This action removes Android/Haskell/.NET/
-        # Swift/CodeQL/GHC pre-installed bundles, freeing ~30 GiB.
-        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
-        with:
-          remove-codeql: true
+        # + rechunk staging. v10 (the pin Bluefin uses) rm -rf's the
+        # pre-installed toolchain directories instead of apt-removing
+        # packages, which is why it survives 26.04: v9 died there on
+        # `Unable to locate package powershell`.
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
 
       - name: Checkout
         # SHA-pinned for supply-chain safety. Comment is the human-readable
@@ -200,12 +200,24 @@ jobs:
         run: |
           set -euo pipefail
           conf=/etc/containers/storage.conf
+
+          # 26.04 gets podman from apt and ships no storage.conf at all,
+          # which is the healthy case: kernel overlay, no /usr/local/bin
+          # bundle. Nothing to fix, and nothing to fail over.
+          if [ ! -f "$conf" ]; then
+            echo "no $conf — podman is using its defaults, nothing to harden"
+            podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+            exit 0
+          fi
+
           echo "==> before"
           grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
           podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
 
-          # Comment out the userspace mount program (kernel overlay), and
-          # drop fsync=0 from the mount options. Nothing else is touched.
+          # Only relevant on a runner that points containers-storage at a
+          # userspace mount program (the 24.04 August bundle): that
+          # fuse-overlayfs tore the rpmdb across layer commits. Drop it and
+          # fsync=0 if present; leave everything else the runner sets.
           sudo sed -i -E 's|^(\s*mount_program\s*=)|# \1|' "$conf"
           sudo sed -i -E 's/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
 
@@ -407,17 +419,18 @@ jobs:
         # ~1 GB instead of OOM.
         run: |
           set -euo pipefail
-          ROOTFS=/tmp/margine-sbom-rootfs
-          sudo rm -rf "$ROOTFS"
-          sudo mkdir -p "$ROOTFS"
           # Create (don't start) a container off the image — `podman export`
           # only needs the filesystem, not a running process. Idempotent
           # name via --replace.
           sudo podman container create --replace --name sbom-export \
             --entrypoint /bin/true \
             "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
-          sudo podman export sbom-export | sudo tar -C "$ROOTFS" -xf -
-          sudo podman container rm sbom-export
+          # Mount, don't export: `podman export | tar -x` wrote a second
+          # full copy of the ~19 GB rootfs and ran the runner out of disk
+          # on 26.04, whose cleanup frees less than the old one did.
+          # syft and the checks only read, so mounted layers are enough.
+          ROOTFS="$(sudo podman mount sbom-export)"
+          [ -n "$ROOTFS" ] || { echo "::error::could not mount the image for SBOM"; exit 1; }
           # syft as user against the on-disk dir. --source-name puts the
           # original image ref in the SBOM metadata so the consumer can
           # tell which image it describes.
@@ -440,7 +453,9 @@ jobs:
           echo "Kernel in image: $KVER"
           # Reclaim the ~14 GB used by the expanded rootfs before rechunk
           # runs — rechunk needs disk for its own staging.
-          sudo rm -rf "$ROOTFS"
+          # Nothing to reclaim: the rootfs was mounted, not copied.
+          sudo podman unmount sbom-export >/dev/null || true
+          sudo podman container rm sbom-export >/dev/null || true
 
       - name: Upload SBOM as workflow artifact (handoff to sign job)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -511,7 +526,7 @@ jobs:
   sign:
     name: Cosign sign (by digest) + SBOM attach + sign
     needs: build_push
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 30 min: cosign sign is ~10s, but syft on the 14 GB Margine image
     # is 5-8 min (RPM database scan + Flatpak inventory + OCI layer
     # walk), and `oras attach` re-uploads the SBOM blob (~5 MB) +
@@ -532,9 +547,7 @@ jobs:
         # ~14 GB free → not enough. Previously this job hit a runner
         # shutdown signal at ~11 min into syft (OOM / no space) before
         # we added this step. Audit §6.1 + PR #52/#53 follow-up.
-        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
-        with:
-          remove-codeql: true
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
 
       - name: Install Cosign
         # SHA-pinned for supply-chain safety. v3.10.1 pulls cosign v3.0.6
@@ -657,7 +670,7 @@ jobs:
   notify:
     name: ntfy notification
     needs: [build_push, sign]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Run after both upstream jobs settle, regardless of their outcome.
     if: always()

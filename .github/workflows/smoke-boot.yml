@@ -67,7 +67,7 @@ jobs:
     if: >-
       github.event_name != 'workflow_run'
       || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60   # bib ~5min + first-boot ~12-15min + slack for a slow apt mirror
     # (40 -> 60 on 2026-06-17: a 37-min transient apt hang in "Install QEMU"
     # ate the whole 40-min budget before the boot ran — run 27719837482.)

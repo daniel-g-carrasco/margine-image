@@ -130,7 +130,7 @@ jobs:
     # The weekly NVIDIA auto-refresh (workflow_run) only needs the nvidia
     # ISO — don't burn 45 runner-minutes rebuilding the stable qcow2.
     if: github.event_name != 'workflow_run'
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     # BIB is ~15-17 min, sha256 + artifact upload ~1-3 min. 45 is a
     # comfortable cap for the build half of the pipeline.
     timeout-minutes: 45
@@ -162,7 +162,9 @@ jobs:
       - name: Maximize build space
         # ubuntu-24.04 has ~14 GiB free by default; bootc-image-builder
         # needs ~30 GiB scratch for qcow2/ISO build + buildah cache.
-        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
 
       - name: Mount container storage on a BTRFS loopback
         # Same fix the Titanoboa ISO job below has carried since 2026-06:
@@ -346,7 +348,7 @@ jobs:
 
   build_iso_titanoboa:
     name: Build Live ISO (Titanoboa)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     # squashfs at zstd-19 over a ~14 GB rootfs dominates wall-clock.
     timeout-minutes: 90
     # Default ISO path since 2026-06-11 (ADR-0008 Phase 5): installation
@@ -366,7 +368,9 @@ jobs:
       packages: write
     steps:
       - name: Maximize build space
-        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -594,13 +598,15 @@ jobs:
     # real install must reach neither Internet Archive nor the site date bump.
     needs: build_iso_titanoboa
     if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
     steps:
       - name: Maximize build space
-        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -663,7 +669,7 @@ jobs:
       always() && github.event_name != 'pull_request'
       && needs.build_iso_titanoboa.result == 'success'
       && (needs.install_gate.result == 'success' || needs.install_gate.result == 'skipped')
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     # 350 = IA upload headroom for a SLOW-BUT-MOVING ingest (2026-06-09:
     # a ~9 GB ISO legitimately took >3 h). A STALLED transfer no longer
     # burns this budget: ia-upload-iso.sh aborts an attempt when the
@@ -975,7 +981,7 @@ jobs:
     # so WITHOUT the explicit event guard the tag check would pass and the
     # nvidia refresh would bump the stable date. Never bump on workflow_run.
     if: success() && github.event_name != 'pull_request' && github.event_name != 'workflow_run' && (inputs.image_tag == '' || inputs.image_tag == 'stable')
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1025,7 +1031,7 @@ jobs:
     name: ntfy notification (aggregated)
     needs: [build_disk, build_iso_titanoboa, install_gate, publish_ia, bump_site]
     if: always()
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Sends one curl; needs nothing from the token.
     permissions: {}

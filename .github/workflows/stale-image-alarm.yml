@@ -1,4 +1,4 @@
-name: Stale image alarm
+name: Stale image / ISO alarm
 
 # The 2026-08 outage lasted ten days before anyone noticed, and the reason
 # is that nothing in the pipeline watches the CLOCK. Every existing signal
@@ -6,9 +6,14 @@ name: Stale image alarm
 # the whole system stays quiet with the last green run still on the page.
 # status.json reports the age of :stable but nobody reads it.
 #
-# So: one job, once a day, that asks the only question that matters to a
-# user sitting in front of `ujust margine-update` — how old is the image
-# they would actually get? It alarms on two channels on purpose:
+# So: one job, once a day, that asks the only question that matters to
+# someone on the receiving end. For an existing user sitting in front of
+# `ujust margine-update`, how old is the image they would get? For a new
+# user on the download page, how old is the ISO they would burn? Margine
+# ships two products and only one of them is rebuilt automatically, so
+# the ISO can quietly rot while the image stays fresh, which is exactly
+# what it did: on 2026-08-21 the image was hours old and the published
+# ISO was three weeks old. It alarms on two channels on purpose:
 #   - ntfy, for the push notification;
 #   - a FAILING workflow run, so the alarm survives a dead ntfy topic and
 #     shows up red in the Actions list and in GitHub's own e-mail.
@@ -24,6 +29,10 @@ on:
         description: "Age in days above which :stable counts as stale"
         required: false
         default: "9"
+      iso_max_age_days:
+        description: "Age in days above which the published ISO counts as stale"
+        required: false
+        default: "30"
 
 permissions:
   contents: read
@@ -142,15 +151,77 @@ jobs:
             -d "${MSG}" \
             "$NTFY_URL" >/dev/null
 
-      - name: Fail the run while the image is stale
-        # Deliberate: this run stays red every day until a fresh image is
-        # published. The red X in the Actions list and GitHub's e-mail are
-        # the channel that does not depend on ntfy being alive.
-        if: steps.age.outputs.state != 'fresh'
+      - name: Inspect the published ISO and measure its age
+        id: iso
+        # The image rebuilds on every push to main; the ISO only ever
+        # builds on a manual workflow_dispatch of build-disk.yml. Nothing
+        # schedules it, so it ages until someone remembers, and the
+        # download page keeps handing new users whatever was last
+        # published. 30 days, not 9: the ISO is deliberately a slower
+        # product, and a new install catches up on first update anyway.
+        # This one never fails the run on its own inspection error, only
+        # on a genuinely old ISO: archive.org is a third party and its
+        # flakiness must not be able to turn the image alarm red.
+        env:
+          ISO_MAX_AGE: ${{ inputs.iso_max_age_days || '30' }}
+        continue-on-error: true
         run: |
-          echo "::error::ghcr.io/margine:stable is ${{ steps.age.outputs.age }} days old (state: ${{ steps.age.outputs.state }})"
+          set -euo pipefail
+          API="https://archive.org/advancedsearch.php?q=identifier:margine-live-iso-*&fl%5B%5D=identifier&rows=50&output=json"
+          if ! RAW="$(curl -fsSL --retry 3 --max-time 60 "$API")"; then
+            echo "::warning::could not query archive.org for the published ISO"
+            echo "state=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The identifier carries the build date (margine-live-iso-YYYYMMDD),
+          # which is what the site's header shows. Sorting them lexically
+          # is sorting them by date.
+          LATEST="$(jq -r '[.response.docs[].identifier | select(test("^margine-live-iso-[0-9]{8}$"))] | sort | last // empty' <<<"$RAW")"
+          if [ -z "$LATEST" ]; then
+            echo "::warning::no dated margine-live-iso item found on archive.org"
+            echo "state=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          YMD="${LATEST##*-}"
+          AGE_DAYS=$(( ( $(date -u +%s) - $(date -u -d "${YMD:0:4}-${YMD:4:2}-${YMD:6:2}" +%s) ) / 86400 ))
+          echo "Latest ISO: $LATEST ($AGE_DAYS days old, threshold $ISO_MAX_AGE)"
+          {
+            echo "identifier=$LATEST"
+            echo "age=$AGE_DAYS"
+            echo "threshold=$ISO_MAX_AGE"
+            echo "state=$([ "$AGE_DAYS" -gt "$ISO_MAX_AGE" ] && echo stale || echo fresh)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Notify ntfy about the ISO
+        if: steps.iso.outputs.state == 'stale'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${NTFY_URL:-}" ] || { echo "NTFY_TOPIC_URL secret not set, skipping notification."; exit 0; }
+          curl -fsS -X POST \
+            -H "Title: The published ISO is ${{ steps.iso.outputs.age }} days old" \
+            -H "Priority: default" \
+            -H "Tags: cd,hourglass" \
+            -d "${{ steps.iso.outputs.identifier }} is what margine.dev still offers new users. The ISO only builds on a manual dispatch of build-disk.yml." \
+            "$NTFY_URL" >/dev/null
+
+      - name: Fail the run while something is stale
+        # Deliberate: this run stays red every day until a fresh image (or
+        # ISO) is published. The red X in the Actions list and GitHub's
+        # e-mail are the channel that does not depend on ntfy being alive.
+        if: steps.age.outputs.state != 'fresh' || steps.iso.outputs.state == 'stale'
+        run: |
+          if [ "${{ steps.age.outputs.state }}" != "fresh" ]; then
+            echo "::error::ghcr.io/margine:stable is ${{ steps.age.outputs.age }} days old (state: ${{ steps.age.outputs.state }})"
+          fi
+          if [ "${{ steps.iso.outputs.state }}" = "stale" ]; then
+            echo "::error::${{ steps.iso.outputs.identifier }} is ${{ steps.iso.outputs.age }} days old, past the ${{ steps.iso.outputs.threshold }}-day threshold"
+          fi
           exit 1
 
-      - name: Report a fresh image
-        if: steps.age.outputs.state == 'fresh'
-        run: echo ":stable is ${{ steps.age.outputs.age }} days old, within the ${{ steps.age.outputs.threshold }}-day threshold."
+      - name: Report a fresh image and ISO
+        if: steps.age.outputs.state == 'fresh' && steps.iso.outputs.state != 'stale'
+        run: |
+          echo ":stable is ${{ steps.age.outputs.age }} days old, within the ${{ steps.age.outputs.threshold }}-day threshold."
+          echo "Latest ISO: ${{ steps.iso.outputs.identifier || 'unknown' }} (${{ steps.iso.outputs.age || '?' }} days)."

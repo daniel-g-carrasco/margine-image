@@ -200,12 +200,24 @@ jobs:
         run: |
           set -euo pipefail
           conf=/etc/containers/storage.conf
+
+          # 26.04 gets podman from apt and ships no storage.conf at all,
+          # which is the healthy case: kernel overlay, no /usr/local/bin
+          # bundle. Nothing to fix, and nothing to fail over.
+          if [ ! -f "$conf" ]; then
+            echo "no $conf — podman is using its defaults, nothing to harden"
+            podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
+            exit 0
+          fi
+
           echo "==> before"
           grep -E '^\s*(driver|mountopt|mount_program)' "$conf" || true
           podman info --format 'driver={{.Store.GraphDriverName}} opts={{.Store.GraphOptions}}'
 
-          # Comment out the userspace mount program (kernel overlay), and
-          # drop fsync=0 from the mount options. Nothing else is touched.
+          # Only relevant on a runner that points containers-storage at a
+          # userspace mount program (the 24.04 August bundle): that
+          # fuse-overlayfs tore the rpmdb across layer commits. Drop it and
+          # fsync=0 if present; leave everything else the runner sets.
           sudo sed -i -E 's|^(\s*mount_program\s*=)|# \1|' "$conf"
           sudo sed -i -E 's/,fsync=0//; s/fsync=0,//; s/"fsync=0"/""/' "$conf"
 

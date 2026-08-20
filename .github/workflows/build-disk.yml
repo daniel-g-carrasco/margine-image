@@ -58,6 +58,19 @@ on:
   # bump the site): the qcow2 job and the GPU-less QEMU boot-test are
   # skipped, publish goes to margine-nvidia-iso-<date>, the site's stable
   # date is NOT bumped.
+  # The stable ISO, weekly. Until 2026-08-21 nothing here was scheduled:
+  # the image rebuilt on every push and every Sunday, the NVIDIA ISO
+  # refreshed itself through the workflow_run below, and the ISO the
+  # download page actually offers only ever appeared when someone
+  # remembered to dispatch this workflow by hand. It had been sitting at
+  # 31 July for three weeks, and the header on margine.dev was reporting
+  # that faithfully. 07:00 UTC on Sunday: after build.yml (04:00) has
+  # produced the image and smoke-boot has promoted it to :stable, and
+  # after the NVIDIA chain (05:00) so the two ISO runs queue instead of
+  # racing. A schedule event carries no inputs, so image_tag resolves
+  # empty, which every decision point below already reads as 'stable'.
+  schedule:
+    - cron: '0 7 * * 0'
   workflow_run:
     workflows: ["Build Margine NVIDIA variant (experimental)"]
     types: [completed]
@@ -129,7 +142,9 @@ jobs:
     name: Build disk (${{ matrix.image }} / ${{ matrix.disk-type }})
     # The weekly NVIDIA auto-refresh (workflow_run) only needs the nvidia
     # ISO — don't burn 45 runner-minutes rebuilding the stable qcow2.
-    if: github.event_name != 'workflow_run'
+    # Same for the weekly stable run: the deliverable is the ISO, and the
+    # qcow2 stays on the dispatch path where someone asked for it.
+    if: github.event_name != 'workflow_run' && github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     # BIB is ~15-17 min, sha256 + artifact upload ~1-3 min. 45 is a
     # comfortable cap for the build half of the pipeline.
@@ -359,6 +374,7 @@ jobs:
     # upstream build-nvidia run actually succeeded.
     if: >-
       github.event_name == 'workflow_dispatch'
+      || github.event_name == 'schedule'
       || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))
       || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
@@ -597,7 +613,10 @@ jobs:
     # flatpak-bake fix and every stable run since): a stable ISO that fails a
     # real install must reach neither Internet Archive nor the site date bump.
     needs: build_iso_titanoboa
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
+    # schedule included deliberately: an unattended weekly publish is the
+    # LAST place to relax the gate that blocks a broken ISO from reaching
+    # Internet Archive and the site date.
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:

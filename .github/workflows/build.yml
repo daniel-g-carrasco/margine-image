@@ -135,7 +135,7 @@ jobs:
     # On pull_request, only build for PRs explicitly labeled `vm-test`.
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 150, not 90 (2026-08-18): merging custom-kernel and build.sh
     # into one RUN removed the layer commit that tore the rpmdb,
     # and with it the layer cache for that stage — 'Build image'
@@ -511,7 +511,7 @@ jobs:
   sign:
     name: Cosign sign (by digest) + SBOM attach + sign
     needs: build_push
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 30 min: cosign sign is ~10s, but syft on the 14 GB Margine image
     # is 5-8 min (RPM database scan + Flatpak inventory + OCI layer
     # walk), and `oras attach` re-uploads the SBOM blob (~5 MB) +
@@ -657,7 +657,7 @@ jobs:
   notify:
     name: ntfy notification
     needs: [build_push, sign]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # Run after both upstream jobs settle, regardless of their outcome.
     if: always()

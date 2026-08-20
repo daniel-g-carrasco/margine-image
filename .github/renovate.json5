@@ -3,7 +3,14 @@
   extends: [
     'config:best-practices',
   ],
-  rebaseWhen: 'never',
+  // 'behind-base-branch', not 'never' (2026-08-20): with 'never' a
+  // Renovate PR stayed pinned to whatever main looked like when it was
+  // opened. Its checks were therefore stale, automerge would not touch
+  // it, and a human had to press "Update branch" to make anything run
+  // again — twice by hand on the o-tiling PR during the August build
+  // outage. Rebasing when main moves is what makes the automation
+  // self-sufficient: fresh checks, then Renovate merges on its own.
+  rebaseWhen: 'behind-base-branch',
   packageRules: [
     {
       matchDepNames: [

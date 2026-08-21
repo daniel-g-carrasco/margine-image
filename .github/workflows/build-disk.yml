@@ -364,8 +364,21 @@ jobs:
   build_iso_titanoboa:
     name: Build Live ISO (Titanoboa)
     runs-on: ubuntu-24.04
-    # squashfs at zstd-19 over a ~14 GB rootfs dominates wall-clock.
-    timeout-minutes: 90
+    # squashfs at zstd-19 dominates wall-clock, and the rootfs it chews
+    # through is no longer the ~14 GB this budget was written for.
+    # Measured on the 2026-08-20 dispatch, which the 90-minute cap killed
+    # at 60% of the compression with everything else already done:
+    #
+    #   22:32  job starts
+    #   23:09  mksquashfs starts (37 min of pull + margine-live build)
+    #   23:12  compression at 0%
+    #   00:02  compression at 60%, cancelled by the timeout
+    #
+    # 49 minutes for 60% puts mksquashfs alone at ~82, so a full run needs
+    # roughly 125 and 90 was never going to be enough again. 180 leaves
+    # headroom for a slow runner without letting a genuine hang sit all
+    # night, which matters more now that this runs unattended every Sunday.
+    timeout-minutes: 180
     # Default ISO path since 2026-06-11 (ADR-0008 Phase 5): installation
     # validated end-to-end in a VM (live GNOME session + Anaconda WebUI).
     # On PRs it still only runs with the iso-test label (the build is

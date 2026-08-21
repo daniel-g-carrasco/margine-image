@@ -483,15 +483,17 @@ jobs:
         # holding the keys to what we publish, one less image to pull, and a
         # chunker that always matches the rootfs it chunks.
         #
-        # Output is an oci-archive, and the steps below (podman create for the
-        # Secure Boot check, skopeo copy for the push) take it unchanged: both
-        # accept the transport prefix exactly as they accepted the action's
-        # `oci:` directory. The directory form is NOT interchangeable here.
-        # This build tried it first and rpm-ostree died half a second in with
-        #   failed to invoke method OpenImageOptional:
-        #   open /run/out/image/index.json: no such file or directory
-        # because it opens the destination expecting an existing OCI layout.
-        # oci-archive is also the form Bazzite uses.
+        # Output is an `oci:` DIRECTORY, the same shape the action produced,
+        # and that shape is worth the trouble: pushing the archive form cost
+        # 5m28s against 1m39s for a directory, because skopeo unpacks a tar
+        # as it goes. Getting there needs two things nothing documents.
+        # rpm-ostree opens the destination before writing (OpenImageOptional),
+        # so the directory has to already be a valid, empty OCI layout, and
+        # the reference has to be explicit. Miss either and it dies in half a
+        # second:
+        #   no directory      -> open .../index.json: no such file or directory
+        #   no tag            -> more than one image in oci, choose an image
+        # Both reproduced locally, which is the only reason this works.
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           KVER: ${{ steps.sbom.outputs.kver }}
@@ -508,7 +510,11 @@ jobs:
           set -euo pipefail
           OUT_DIR="${RUNNER_TEMP}/chunk-out"
           sudo rm -rf "$OUT_DIR"
-          mkdir -p "$OUT_DIR"
+          # Seed a valid, empty OCI layout for the chunker to open.
+          mkdir -p "$OUT_DIR/image/blobs/sha256"
+          printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
+          printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
+            > "$OUT_DIR/image/index.json"
 
           # The chunker keeps ONLY what it is handed, exactly like the action
           # did, so this list is the whole identity of the published image.
@@ -574,14 +580,16 @@ jobs:
             --bootc --max-layers 127 --format-version 2 \
             "${label_args[@]}" \
             --rootfs /rpm-ostree \
-            --output oci-archive:/run/out/chunked.oci
+            --output oci:/run/out/image:latest
 
-          [ -s "${OUT_DIR}/chunked.oci" ] || {
-            echo "::error::chunker produced no image at ${OUT_DIR}/chunked.oci"
+          # An empty manifests array is what we seeded, so a still-empty one
+          # means the chunker opened the layout and wrote nothing into it.
+          [ "$(sudo jq '.manifests | length' "${OUT_DIR}/image/index.json")" -gt 0 ] || {
+            echo "::error::chunker left ${OUT_DIR}/image without a manifest"
             exit 1
           }
-          ls -lh "${OUT_DIR}/chunked.oci"
-          echo "ref=oci-archive:${OUT_DIR}/chunked.oci" >> "$GITHUB_OUTPUT"
+          sudo du -sh "${OUT_DIR}/image"
+          echo "ref=oci:${OUT_DIR}/image" >> "$GITHUB_OUTPUT"
 
           # ~19 GB of source image nobody reads again: the validators and the
           # SBOM both ran before this step, everything after works off the

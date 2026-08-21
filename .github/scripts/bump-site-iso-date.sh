@@ -16,12 +16,32 @@ RUN_URL="${RUN_URL:-https://github.com/daniel-g-carrasco/margine-image/actions}"
 SITE_REPO="daniel-g-carrasco/margine-os-1084ca72"
 
 NEW_DATE="$(date -u +%Y%m%d)"
+
+# Where the constant lives. It moved out of the landing-page route into a
+# shared module when the site header started showing the ISO date on every
+# page (site PR #182). Both locations are searched, in the new-first order,
+# so this script works whichever side of that change the site checkout is
+# on and the two repos can merge in either order.
+DATE_FILE=""
+for f in src/lib/release.ts src/routes/index.tsx; do
+  if [[ -f "$f" ]] && grep -qE 'LATEST_ISO_DATE = "[0-9]+"' "$f"; then
+    DATE_FILE="$f"
+    break
+  fi
+done
+
+if [[ -z "$DATE_FILE" ]]; then
+  echo "::error::Could not find LATEST_ISO_DATE in src/lib/release.ts or src/routes/index.tsx"
+  exit 1
+fi
+echo "LATEST_ISO_DATE lives in $DATE_FILE"
+
 # Match the line shape exactly: `const LATEST_ISO_DATE = "YYYYMMDD";`
-OLD_DATE="$(grep -oE 'LATEST_ISO_DATE = "[0-9]+"' src/routes/index.tsx \
+OLD_DATE="$(grep -oE 'LATEST_ISO_DATE = "[0-9]+"' "$DATE_FILE" \
   | head -1 | grep -oE '[0-9]+' || true)"
 
 if [[ -z "$OLD_DATE" ]]; then
-  echo "::error::Could not find LATEST_ISO_DATE in src/routes/index.tsx"
+  echo "::error::LATEST_ISO_DATE in $DATE_FILE does not carry a date"
   exit 1
 fi
 if [[ "$OLD_DATE" == "$NEW_DATE" ]]; then
@@ -31,7 +51,7 @@ fi
 echo "Bumping LATEST_ISO_DATE: $OLD_DATE → $NEW_DATE"
 
 sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
-  src/routes/index.tsx
+  "$DATE_FILE"
 
 # Versioned ISO filename (margine-<date>.iso) — keeps the direct-HTTP link in
 # sync with the renamed upload so the downloaded file carries the version.
@@ -45,13 +65,23 @@ if [[ -n "${NEW_FILE:-}" ]]; then
   fi
 fi
 
-# Keep the file prettier-clean: the site lints with prettier and a raw
-# sed edit has left index.tsx unformatted before (site PR #151 had to
-# hand-fix it). Best effort — a formatting hiccup must not block a
-# release bump. Pinned to the site's devDependency version.
+# Keep the edited files prettier-clean: the site lints with prettier and a
+# raw sed edit has left index.tsx unformatted before (site PR #151 had to
+# hand-fix it). Best effort: a formatting hiccup must not block a release
+# bump.
+#
+# The version is read from the site's own package.json rather than pinned
+# here. It used to be hardcoded at 3.8.4 while the site had moved to
+# 3.8.5, which is a quiet way to commit formatting the site's own check
+# would then reject. Whatever the site declares is by definition the
+# version that agrees with the repo.
 if command -v npx >/dev/null 2>&1; then
-  npx --yes prettier@3.8.4 --write src/routes/index.tsx \
-    || echo "::warning::prettier pass failed — committing the raw edit"
+  PRETTIER_VER="$(grep -oE '"prettier": *"[0-9][^"]*"' package.json \
+    | head -1 | grep -oE '[0-9][^"]*' || true)"
+  PRETTIER_SPEC="prettier${PRETTIER_VER:+@${PRETTIER_VER}}"
+  echo "Formatting with ${PRETTIER_SPEC}"
+  npx --yes "$PRETTIER_SPEC" --write "$DATE_FILE" src/routes/index.tsx \
+    || echo "::warning::prettier pass failed, committing the raw edit"
 fi
 
 # If a PR for the same target date already exists on the head branch

@@ -38,6 +38,88 @@ for f in "$SIGNING_KEY" "$SIGNING_CERT"; do
   [[ -f "$f" ]] || { err "Missing secret: $f"; exit 1; }
 done
 
+# --- Third-party signing keys: pin the fingerprints ----------------------
+# This build bootstraps two third-party repos from a URL: RPMFusion (a
+# release RPM installed straight from download1.rpmfusion.org) and, for
+# the NVIDIA variant, NVIDIA's CUDA .repo file. In both cases the thing we
+# fetch carries the very key that will then judge everything that repo
+# serves, which makes the signature check circular: whoever can swap the
+# package or the repo file can swap the key along with it, and dnf -y
+# imports it without a word. HTTPS proves we reached the host we asked
+# for; it proves nothing about what that host is currently serving.
+#
+# So pin the fingerprints and refuse to build when what lands on disk is
+# not what we expect. Borrowed from OpenGamingCollective, who hardened the
+# same shape of trust in their kernel build (upstream review 2026-08,
+# issue #333): fetch the key from the authoritative place, then confirm
+# the fingerprint instead of assuming it.
+#
+# Verified 2026-08-21 against rpmfusion-{free,nonfree}-release-44 and the
+# fingerprints published on https://rpmfusion.org/keys. These rotate
+# rarely; when they do, this fails loudly and the new fingerprint must be
+# checked by hand before it is written here. That is the intended
+# behaviour: a silent key change is exactly what this exists to catch.
+# shellcheck disable=SC2034  # read indirectly as ${!fprvar} in verify_rpmfusion_keys
+RPMFUSION_FREE_FPR="E9A491A3DE247814E7E067EAE06F8ECDD651FF2E"
+# shellcheck disable=SC2034  # read indirectly as ${!fprvar}
+RPMFUSION_NONFREE_FPR="79BDB88F9BBF73910FD4095B6A2AF96194843C65"
+
+# NVIDIA rotates the CUDA repo key per Fedora release (fedora44 ->
+# 73CD9B30), so this is a per-release map rather than one constant. A
+# Fedora bump with no entry here stops the NVIDIA build with an
+# explanation instead of trusting whatever the new key turns out to be.
+# shellcheck disable=SC2034  # read indirectly as ${!_fprvar}, per Fedora release
+NVIDIA_CUDA_FPR_44="129994480EC63D2789BC98E490DFED2F73CD9B30"
+
+# gpg comes from the base image (gnupg2); nothing to install at build time.
+# GNUPGHOME is pinned explicitly because buildah RUN starts from a bare
+# environment: gpg wants a home directory it can create, and the first
+# build to try this failed with an empty fingerprint and no explanation,
+# because stderr was being thrown away. It is not thrown away now.
+key_fingerprint() {
+  local out
+  export GNUPGHOME="${GNUPGHOME:-/run/margine-gnupg}"
+  mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+  if ! out="$(gpg --batch --no-options --show-keys --with-colons "$1" 2>&1)"; then
+    err "gpg could not read $1:"
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    return 1
+  fi
+  printf '%s\n' "$out" | awk -F: '/^fpr:/{print $10; exit}'
+}
+
+verify_key_fpr() {
+  local file="$1" expected="$2" label="$3" actual
+  if [[ ! -f "$file" ]]; then
+    err "$label: expected key file $file, not found"
+    return 1
+  fi
+  actual="$(key_fingerprint "$file")" || actual=""
+  if [[ "$actual" != "$expected" ]]; then
+    err "$label: GPG key fingerprint mismatch, refusing to build"
+    err "  expected: $expected"
+    err "  on disk:  ${actual:-<unreadable>}"
+    return 1
+  fi
+  log "$label: key fingerprint verified ($expected)"
+  return 0
+}
+
+# Verifies the key files a rpmfusion-<flavor>-release RPM just dropped in
+# /etc/pki/rpm-gpg. Called BEFORE any package is pulled from those repos,
+# which is the only moment the check is worth anything.
+verify_rpmfusion_keys() {
+  local ver flavor fprvar rc=0
+  ver="$(rpm -E %fedora)"
+  for flavor in "$@"; do
+    fprvar="RPMFUSION_${flavor^^}_FPR"
+    verify_key_fpr \
+      "/etc/pki/rpm-gpg/RPM-GPG-KEY-rpmfusion-${flavor}-fedora-${ver}" \
+      "${!fprvar}" "rpmfusion-${flavor}" || rc=1
+  done
+  return $rc
+}
+
 # The MOK *enrollment passphrase* is PUBLIC BY DESIGN: every installer
 # must type it into MokManager, the live-ISO Secure Boot dialog prints
 # it, and the install docs spell it out. Only the signing KEY above is
@@ -275,6 +357,7 @@ V4L2_OK=0
 if disable_akmodsbuild; then
   if dnf -y install \
         "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+     && verify_rpmfusion_keys free \
      && dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=noscripts \
         akmod-v4l2loopback; then
     if akmods --force --verbose --kernels "$KERNEL_VERSION" --kmod v4l2loopback; then
@@ -343,6 +426,24 @@ if [[ "${ENABLE_NVIDIA:-0}" == "1" ]]; then
   _repo_url="https://developer.download.nvidia.com/compute/cuda/repos/fedora${_verid}/${_arch}/cuda-fedora${_verid}.repo"
   curl -fsSL --retry 5 --retry-delay 10 -o /etc/yum.repos.d/nvidia.repo "$_repo_url" \
     || { err "no NVIDIA CUDA repo for fedora${_verid}/${_arch} (or fetch failed)"; exit 1; }
+
+  # Import NVIDIA's key ourselves, fingerprint first, so dnf never has to
+  # auto-import whatever the repo file happens to point at today.
+  _fprvar="NVIDIA_CUDA_FPR_${_verid}"
+  if [[ -z "${!_fprvar:-}" ]]; then
+    err "no pinned NVIDIA CUDA key fingerprint for fedora${_verid}."
+    err "Fetch the gpgkey from ${_repo_url%/*}/, verify the fingerprint against"
+    err "NVIDIA's published value, then add NVIDIA_CUDA_FPR_${_verid} near the"
+    err "top of this script."
+    exit 1
+  fi
+  _keyurl="$(awk -F= '/^gpgkey[[:space:]]*=/{sub(/^[[:space:]]+/, "", $2); print $2; exit}' /etc/yum.repos.d/nvidia.repo)"
+  [[ -n "$_keyurl" ]] || { err "NVIDIA repo file carries no gpgkey line"; exit 1; }
+  curl -fsSL --retry 5 --retry-delay 10 -o /run/nvidia-cuda-key.asc "$_keyurl" \
+    || { err "could not fetch the NVIDIA CUDA signing key from $_keyurl"; exit 1; }
+  verify_key_fpr /run/nvidia-cuda-key.asc "${!_fprvar}" "nvidia-cuda" || exit 1
+  rpm --import /run/nvidia-cuda-key.asc
+  rm -f /run/nvidia-cuda-key.asc
 
   # kmod source + matching userland from the SINGLE NVIDIA repo, one
   # transaction → no kmod/userland version skew. The excludepkgs setopt
@@ -455,6 +556,9 @@ FEDORA_VER=$(rpm -E %fedora)
 dnf -y install \
   "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${FEDORA_VER}.noarch.rpm" \
   "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${FEDORA_VER}.noarch.rpm"
+
+# Both keys checked before a single package is pulled from either repo.
+verify_rpmfusion_keys free nonfree || exit 1
 
 # gstreamer1-plugins-{bad,ugly} complete the codec swap the declarations
 # YAML specifies (host_packages.baseline.codec_replacement.install) —

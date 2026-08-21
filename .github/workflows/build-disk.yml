@@ -681,6 +681,7 @@ jobs:
           # and neither was: the disk was simply too small for a ~19.5 GB
           # image plus a 37-app Flatpak bake. qcow2 is sparse, so the extra
           # 40G costs nothing until it is written.
+          qemu-img create -f qcow2 target.qcow2 60G
           sudo -E .github/scripts/qemu-install-wait.sh \
             --cdrom "$ISO" --disk target.qcow2 \
             --kernel ./ci-vmlinuz --initrd ./ci-initrd.img \

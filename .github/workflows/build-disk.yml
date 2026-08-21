@@ -364,8 +364,21 @@ jobs:
   build_iso_titanoboa:
     name: Build Live ISO (Titanoboa)
     runs-on: ubuntu-24.04
-    # squashfs at zstd-19 over a ~14 GB rootfs dominates wall-clock.
-    timeout-minutes: 90
+    # squashfs at zstd-19 dominates wall-clock, and the rootfs it chews
+    # through is no longer the ~14 GB this budget was written for.
+    # Measured on the 2026-08-20 dispatch, which the 90-minute cap killed
+    # at 60% of the compression with everything else already done:
+    #
+    #   22:32  job starts
+    #   23:09  mksquashfs starts (37 min of pull + margine-live build)
+    #   23:12  compression at 0%
+    #   00:02  compression at 60%, cancelled by the timeout
+    #
+    # 49 minutes for 60% puts mksquashfs alone at ~82, so a full run needs
+    # roughly 125 and 90 was never going to be enough again. 180 leaves
+    # headroom for a slow runner without letting a genuine hang sit all
+    # night, which matters more now that this runs unattended every Sunday.
+    timeout-minutes: 180
     # Default ISO path since 2026-06-11 (ADR-0008 Phase 5): installation
     # validated end-to-end in a VM (live GNOME session + Anaconda WebUI).
     # On PRs it still only runs with the iso-test label (the build is
@@ -657,7 +670,18 @@ jobs:
         run: |
           set -euo pipefail
           ISO="$(ls ./iso/*.iso | head -1)"
-          qemu-img create -f qcow2 target.qcow2 20G
+          # 60G, was 20G (2026-08-21). The 20 was written when the image
+          # fit in it. It does not any more: the 2026-08-21 gate run died
+          # in anaconda's post-install scripts with
+          #   [Errno 28] No space left on device
+          # and the failure then wore two convincing disguises. The install
+          # was cut short, so /var/log/anaconda never landed on the target,
+          # and the SELinux relabel never ran, so /var/lib/flatpak stayed
+          # var_t instead of var_lib_t. Both looked like image regressions
+          # and neither was: the disk was simply too small for a ~19.5 GB
+          # image plus a 37-app Flatpak bake. qcow2 is sparse, so the extra
+          # 40G costs nothing until it is written.
+          qemu-img create -f qcow2 target.qcow2 60G
           sudo -E .github/scripts/qemu-install-wait.sh \
             --cdrom "$ISO" --disk target.qcow2 \
             --kernel ./ci-vmlinuz --initrd ./ci-initrd.img \

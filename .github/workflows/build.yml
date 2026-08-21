@@ -471,42 +471,143 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-      - name: ReChunk image
+      - name: Chunk the image (rpm-ostree compose build-chunked-oci)
         id: rechunk
-        uses: hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2 # v1.2.4
-        with:
-          ref: ${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
-          version: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
-          labels: |
-            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.description=${{ env.IMAGE_DESC }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository }}
-            org.opencontainers.image.vendor=${{ github.repository_owner }}
-            org.opencontainers.image.licenses=Apache-2.0
-            io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
-            io.artifacthub.package.license=Apache-2.0
-            containers.bootc=1
-            dev.margine.kernel=${{ steps.sbom.outputs.kver }}
-            org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
-            org.opencontainers.image.base.name=${{ steps.basedigest.outputs.name }}
-            org.opencontainers.image.created=${{ steps.date.outputs.date }}
-            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/README.md
-            io.artifacthub.package.deprecated=false
-            io.artifacthub.package.prerelease=false
-          revision: ${{ github.sha }}
+        # Was hhd-dev/rechunk@v1.2.4 until 2026-08-21. That action wraps a
+        # container image of its own and describes itself as a stopgap until
+        # the work lands in ostree-rs-ext; meanwhile the ecosystem moved on
+        # without it (upstream review, issue #333): Bazzite chunks with
+        # rpm-ostree directly, image-template went to chunkah. The tool the
+        # action stood in for now ships INSIDE our own image (rpm-ostree
+        # 2026.2), so we run it from there: one less third-party action
+        # holding the keys to what we publish, one less image to pull, and a
+        # chunker that always matches the rootfs it chunks.
+        #
+        # Output is an `oci:` DIRECTORY, the same shape the action produced,
+        # and that shape is worth the trouble: pushing the archive form cost
+        # 5m28s against 1m39s for a directory, because skopeo unpacks a tar
+        # as it goes. Getting there needs two things nothing documents.
+        # rpm-ostree opens the destination before writing (OpenImageOptional),
+        # so the directory has to already be a valid, empty OCI layout, and
+        # the reference has to be explicit. Miss either and it dies in half a
+        # second:
+        #   no directory      -> open .../index.json: no such file or directory
+        #   no tag            -> more than one image in oci, choose an image
+        # Both reproduced locally, which is the only reason this works.
+        env:
+          SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
+          KVER: ${{ steps.sbom.outputs.kver }}
+          VERSION: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
+          REVISION: ${{ github.sha }}
+          IMAGE_DESC: ${{ env.IMAGE_DESC }}
+          IMAGE_KEYWORDS: ${{ env.IMAGE_KEYWORDS }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BASE_DIGEST: ${{ steps.basedigest.outputs.digest }}
+          BASE_NAME: ${{ steps.basedigest.outputs.name }}
+          CREATED: ${{ steps.date.outputs.date }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="${RUNNER_TEMP}/chunk-out"
+          sudo rm -rf "$OUT_DIR"
+          # Seed a valid, empty OCI layout for the chunker to open.
+          mkdir -p "$OUT_DIR/image/blobs/sha256"
+          printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
+          printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
+            > "$OUT_DIR/image/index.json"
 
-      # NOTE on labels above: rechunk keeps only what it is handed, so
-      # anything stamped on the pre-rechunk image is lost. The list is
-      # now the full set docker/metadata-action produces, checked against
-      # a published image on 2026-08-21: base.digest fixed the visible
-      # symptom, and base.name, created and the three artifacthub fields
-      # were still quietly falling off the end. base.digest
-      # was exactly that casualty — status.json's
-      # baseDigestMatchesBluefin came back null on every build, which is
-      # why the /status page could show Margine as "Current" while it
-      # was built from a two-week-old Bluefin (2026-08-19). Same reason
-      # dev.margine.kernel is re-stamped here.
+          # The chunker keeps ONLY what it is handed, exactly like the action
+          # did, so this list is the whole identity of the published image.
+          # ostree.bootable and ostree.linux are in here because the action
+          # used to add them for us: a local run of build-chunked-oci proved
+          # they simply vanish otherwise, and bootc-era tooling reads them.
+          labels=(
+            "org.opencontainers.image.title=${IMAGE_NAME}"
+            "org.opencontainers.image.description=${IMAGE_DESC}"
+            "org.opencontainers.image.source=https://github.com/${REPO}"
+            "org.opencontainers.image.url=https://github.com/${REPO}"
+            "org.opencontainers.image.vendor=${OWNER}"
+            "org.opencontainers.image.licenses=Apache-2.0"
+            "org.opencontainers.image.version=${VERSION}"
+            "org.opencontainers.image.revision=${REVISION}"
+            "org.opencontainers.image.created=${CREATED}"
+            "org.opencontainers.image.base.digest=${BASE_DIGEST}"
+            "org.opencontainers.image.base.name=${BASE_NAME}"
+            "io.artifacthub.package.keywords=${IMAGE_KEYWORDS}"
+            "io.artifacthub.package.license=Apache-2.0"
+            "io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${REPO}/${REVISION}/README.md"
+            "io.artifacthub.package.deprecated=false"
+            "io.artifacthub.package.prerelease=false"
+            "containers.bootc=1"
+            "dev.margine.kernel=${KVER}"
+            "ostree.bootable=true"
+            "ostree.linux=${KVER}"
+          )
+          label_args=()
+          for l in "${labels[@]}"; do
+            [ -n "${l#*=}" ] || { echo "::warning::empty label ${l%%=*}, skipping"; continue; }
+            label_args+=(--label "$l")
+          done
+
+          # NO --previous-build, and that is a tested decision rather than an
+          # omission. The flag anchors the layer plan to an existing image so
+          # an update stays a small delta, which sounds exactly like something
+          # we want. In rpm-ostree 2026.2 it panics on our image, twice over:
+          #
+          #   against our registry :stable   assertion left == right failed,
+          #                                  2290 != 2501  (chunking.rs:694)
+          #   against its own output         assertion left == right failed,
+          #                                  1734 != 0     (chunking.rs:423)
+          #
+          # Both reproduced locally on the real 19.5 GB rootfs, so it is not a
+          # registry or transport accident. Wiring it up behind a fallback
+          # would burn two and a half minutes crashing on every single build
+          # for a benefit that never arrives.
+          #
+          # Nothing is lost relative to what we shipped yesterday: the rechunk
+          # action was never passed prev-ref either. Bazzite, the largest fleet
+          # on this exact code path, also chunks without an anchor. The plan is
+          # computed per package and is stable in practice; revisit if a future
+          # rpm-ostree fixes the assertion.
+          #
+          # --max-layers 127 and --format-version 2 match what Bazzite ships.
+          sudo podman run --rm --pull=never --privileged \
+            --mount=type=image,src="$SRC",target=/rpm-ostree \
+            --volume "${OUT_DIR}:/run/out:Z" \
+            --entrypoint /usr/bin/rpm-ostree \
+            "$SRC" \
+            compose build-chunked-oci \
+            --bootc --max-layers 127 --format-version 2 \
+            "${label_args[@]}" \
+            --rootfs /rpm-ostree \
+            --output oci:/run/out/image:latest
+
+          # An empty manifests array is what we seeded, so a still-empty one
+          # means the chunker opened the layout and wrote nothing into it.
+          [ "$(sudo jq '.manifests | length' "${OUT_DIR}/image/index.json")" -gt 0 ] || {
+            echo "::error::chunker left ${OUT_DIR}/image without a manifest"
+            exit 1
+          }
+          sudo du -sh "${OUT_DIR}/image"
+          echo "ref=oci:${OUT_DIR}/image" >> "$GITHUB_OUTPUT"
+
+          # ~19 GB of source image nobody reads again: the validators and the
+          # SBOM both ran before this step, everything after works off the
+          # chunked output. Reclaimed before the push needs the room.
+          sudo podman rmi -f "$SRC" >/dev/null 2>&1 || true
+          df -h / | tail -1
+
+      # WHY THE LABEL LIST ABOVE IS THE WHOLE TRUTH: chunking rewrites the
+      # image from the rootfs up, so every label stamped during the build is
+      # gone unless it is handed to the chunker here. That is not a theory.
+      # base.digest went missing for months, which left status.json's
+      # baseDigestMatchesBluefin null on every build and let the /status page
+      # call Margine "Current" while it was built on a two-week-old Bluefin
+      # (2026-08-19). Then base.name, created and three artifacthub fields
+      # turned out to be missing too, found by diffing a published image
+      # against what docker/metadata-action generates (2026-08-21). If you add
+      # a label anywhere else in this workflow, add it here as well or it will
+      # not survive to the registry.
 
       - name: Verify the shipped kernel is still MOK-signed
         # Bluefin runs a secureboot check on the built image; we only

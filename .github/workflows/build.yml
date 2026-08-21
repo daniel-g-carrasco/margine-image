@@ -483,9 +483,15 @@ jobs:
         # holding the keys to what we publish, one less image to pull, and a
         # chunker that always matches the rootfs it chunks.
         #
-        # Output stays an `oci:` directory so the steps below (podman create
-        # for the Secure Boot check, skopeo copy for the push) keep the exact
-        # contract the action gave them.
+        # Output is an oci-archive, and the steps below (podman create for the
+        # Secure Boot check, skopeo copy for the push) take it unchanged: both
+        # accept the transport prefix exactly as they accepted the action's
+        # `oci:` directory. The directory form is NOT interchangeable here.
+        # This build tried it first and rpm-ostree died half a second in with
+        #   failed to invoke method OpenImageOptional:
+        #   open /run/out/image/index.json: no such file or directory
+        # because it opens the destination expecting an existing OCI layout.
+        # oci-archive is also the form Bazzite uses.
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           KVER: ${{ steps.sbom.outputs.kver }}
@@ -568,13 +574,14 @@ jobs:
             --bootc --max-layers 127 --format-version 2 \
             "${label_args[@]}" \
             --rootfs /rpm-ostree \
-            --output oci:/run/out/image
+            --output oci-archive:/run/out/chunked.oci
 
-          [ -f "${OUT_DIR}/image/index.json" ] || {
-            echo "::error::chunker produced no OCI image at ${OUT_DIR}/image"
+          [ -s "${OUT_DIR}/chunked.oci" ] || {
+            echo "::error::chunker produced no image at ${OUT_DIR}/chunked.oci"
             exit 1
           }
-          echo "ref=oci:${OUT_DIR}/image" >> "$GITHUB_OUTPUT"
+          ls -lh "${OUT_DIR}/chunked.oci"
+          echo "ref=oci-archive:${OUT_DIR}/chunked.oci" >> "$GITHUB_OUTPUT"
 
           # ~19 GB of source image nobody reads again: the validators and the
           # SBOM both ran before this step, everything after works off the

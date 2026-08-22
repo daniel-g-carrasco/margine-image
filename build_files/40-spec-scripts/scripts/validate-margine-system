@@ -865,6 +865,50 @@ if rpm -q steam >/dev/null 2>&1 || flatpak info --system com.valvesoftware.Steam
 fi
 
 # ---------------------------------------------------------------------------
+hdr "9d. Printing: the driverless discovery path"
+# ---------------------------------------------------------------------------
+# Margine does not configure printers. It relies on CUPS finding
+# driverless network printers by itself, which is only true while three
+# unglamorous pieces stay in place. On 2026-08-01 we assumed they were
+# not enough and force-enabled cups-browsed on top; that produced a
+# duplicate queue which, three weeks later, ate a print job. The fix was
+# to remove the addition, so what is left has to be checked rather than
+# assumed.
+if [[ -f /usr/lib/systemd/system/avahi-daemon.service ]]; then
+  ok "avahi-daemon unit present (mDNS: how the printer announces itself)"
+else
+  bad "avahi-daemon unit missing — no printer will ever be discovered"
+fi
+
+if grep -qE '^hosts:.*mdns' /etc/nsswitch.conf 2>/dev/null; then
+  ok "nss-mdns wired into nsswitch.conf (resolves the printer's .local name)"
+else
+  bad "nsswitch.conf has no mdns in the hosts line — .local printer names will not resolve"
+fi
+
+if [[ -f /usr/lib/systemd/system/cups.socket ]]; then
+  ok "cups.socket present (cupsd starts on demand when an app prints)"
+else
+  bad "cups.socket missing — printing will not start on demand"
+fi
+
+# The regression guard proper: cups-browsed enabled again would rebuild
+# the duplicate queue. Fedora's preset is disabled and Margine no longer
+# overrides it.
+if [[ -e /usr/lib/systemd/system/multi-user.target.wants/cups-browsed.service \
+   || -e /etc/systemd/system/multi-user.target.wants/cups-browsed.service ]]; then
+  bad "cups-browsed is enabled — it creates a second, breakable queue for printers CUPS already finds (see /etc/cups/cups-browsed.conf)"
+else
+  ok "cups-browsed left disabled (Fedora's preset), no duplicate queues"
+fi
+
+if grep -qE '^[[:space:]]*CreateIPPPrinterQueues[[:space:]]+No' /etc/cups/cups-browsed.conf 2>/dev/null; then
+  ok "cups-browsed config would not auto-create IPP queues even if enabled"
+else
+  warn "CreateIPPPrinterQueues is not No — enabling cups-browsed would duplicate discovered printers"
+fi
+
+# ---------------------------------------------------------------------------
 hdr "10. Failed services (regression detector)"
 # ---------------------------------------------------------------------------
 if (( ! IS_LIVE )); then

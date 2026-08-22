@@ -709,6 +709,65 @@ margine-home-stock:
     case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
     margine-restore-stock-home --apply
 
+# Remove the duplicate, broken printer queues cups-browsed left behind.
+[group('Margine')]
+margine-printers-repair:
+    #!/usr/bin/bash
+    set -uo pipefail
+    echo "== Repair duplicated printer queues =="
+    echo
+    echo "Until 2026-08-22 Margine enabled cups-browsed, which created its own"
+    echo "local queue for every network printer CUPS had already discovered by"
+    echo "itself. The result was the same printer listed twice, and the extra"
+    echo "one stops printing the moment cups-browsed loses track of where the"
+    echo "printer is:"
+    echo
+    echo "  No destination host name supplied by cups-browsed"
+    echo
+    echo "Margine no longer enables that service. This removes the queues it"
+    echo "made. Your printer does NOT disappear: CUPS discovers it on its own"
+    echo "and creates a queue the moment you print. Queues you added yourself"
+    echo "are left alone: only the implicitclass:// ones are touched."
+    echo
+
+    mapfile -t STALE < <(lpstat -v 2>/dev/null \
+      | awk '/implicitclass:/ {sub(/:$/, "", $3); print $3}')
+
+    if (( ${#STALE[@]} == 0 )); then
+      echo "Nothing to repair: no cups-browsed queues on this machine."
+      echo
+      echo "Printers CUPS can see right now:"
+      lpstat -e 2>/dev/null | sed 's/^/  /' || echo "  (none: is the printer on and on this network?)"
+      exit 0
+    fi
+
+    echo "Queues created by cups-browsed:"
+    printf '  %s\n' "${STALE[@]}"
+    echo
+    read -rp "Remove them? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+
+    for q in "${STALE[@]}"; do
+      if sudo lpadmin -x "$q"; then
+        echo "  removed $q"
+      else
+        echo "  could not remove $q"
+      fi
+    done
+
+    if systemctl is-enabled cups-browsed >/dev/null 2>&1; then
+      echo
+      echo "cups-browsed is still enabled on this machine, so it would recreate"
+      echo "them. Disabling it."
+      sudo systemctl disable --now cups-browsed
+    fi
+
+    echo
+    echo "Printers CUPS can see now:"
+    lpstat -e 2>/dev/null | sed 's/^/  /'
+    echo
+    echo "Reopen any app that was already running: print dialogs cache this list."
+
 # Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]
 margine-doctor:

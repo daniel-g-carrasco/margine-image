@@ -67,15 +67,21 @@ log "Installed: /etc/skel/.config/no-show-user-motd (disables Bluefin MOTD for n
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Network printers should just appear — cups-browsed, dnssd-only
+# Network printers: nothing to enable, CUPS already finds them
 # ---------------------------------------------------------------------------
-# Fedora ships cups-browsed disabled (post-CVE-2024-47176 posture), so a
-# fresh install shows "No destinations added" and every print dialog
-# offers only Save-to-PDF until the user manually adds the printer.
-# Margine enables the service with the hardened dnssd-only config shipped
-# in system_files/etc/cups/cups-browsed.conf (the vulnerable legacy CUPS
-# browsing protocol stays off): driverless network printers materialize
-# as local queues automatically and every app, Flatpaks included, sees
-# them with zero clicks.
-systemctl -f enable cups-browsed.service
-log "Enabled cups-browsed (dnssd-only) — network printers auto-appear"
+# This block used to force-enable cups-browsed. It was reverted on
+# 2026-08-22 after it stopped a print on the reference host: see the
+# long note in system_files/etc/cups/cups-browsed.conf.
+#
+# Short version: CUPS discovers driverless printers itself. avahi-daemon
+# is enabled by Fedora's preset, nss-mdns is already in nsswitch.conf,
+# and the print dialog lists the printer with nothing installed and
+# nothing enabled. cups-browsed on top of that produced a second,
+# permanent queue for the same machine, one that accepts jobs and then
+# stops the printer as soon as its discovery state goes stale.
+#
+# Nothing replaces the systemctl call because nothing needs to: the
+# working path was already there. validate-margine-system checks the
+# pieces it depends on, so a regression is caught by CI rather than by
+# someone standing at a printer.
+log "Printing: relying on CUPS driverless discovery (cups-browsed left disabled)"

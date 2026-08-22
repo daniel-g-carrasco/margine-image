@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -101,6 +102,52 @@ def apply_schema(schema: str, values: dict[str, Any], dry: bool) -> None:
         run(["gsettings", "set", schema, key, gvariant(value)], dry)
 
 
+# GSConnect stores the device name your phone sees in its own dconf key,
+# writing it once, on first run, from the machine's hostname. Anyone who
+# rebased to Margine from Bluefin (the documented upgrade path) had that
+# first run happen while the machine still answered "bluefin", so their
+# phone keeps pairing with a laptop called bluefin forever. The image
+# fixing DEFAULT_HOSTNAME cannot reach it: the value is user state,
+# already written, and nothing re-derives it.
+#
+# Cleared rather than overwritten, because the schema default is "" and
+# GSConnect falls back to the hostname when it is empty. That keeps the
+# name following the hostname instead of freezing a second literal in.
+#
+# ONLY when the stored value is exactly "bluefin": someone who typed
+# their own device name deliberately must keep it, and this script runs
+# on every bootstrap.
+GSCONNECT_KEY = "/org/gnome/shell/extensions/gsconnect/name"
+INHERITED_NAME = "bluefin"
+
+
+def fix_gsconnect_name(dry: bool) -> None:
+    dconf = shutil.which("dconf")
+    if not dconf:
+        return
+    try:
+        current = subprocess.run(
+            [dconf, "read", GSCONNECT_KEY],
+            capture_output=True, text=True, timeout=10, check=False,
+        ).stdout.strip().strip("'")
+    except (OSError, subprocess.SubprocessError):
+        return
+
+    if current != INHERITED_NAME:
+        return
+
+    print(f"gsconnect name: {current!r} inherited from Bluefin", end="")
+    if dry:
+        print(" [would clear, falls back to hostname]")
+        return
+    try:
+        subprocess.run([dconf, "reset", GSCONNECT_KEY], timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        print(" [could not clear]")
+        return
+    print(f" [cleared, will use {os.uname().nodename!r}]")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -121,6 +168,8 @@ def main() -> int:
 
     if forge:
         apply_schema(FORGE_SCHEMA, forge, dry)
+
+    fix_gsconnect_name(dry)
 
     if dry:
         print("\ndry-run only: no settings were changed")

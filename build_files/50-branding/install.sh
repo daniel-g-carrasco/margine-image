@@ -529,8 +529,16 @@ fi
 log "Baking HiDPI GRUB font (margine.pf2)"
 # Variable-font filename carries an axis suffix (NotoSansMono[wght].ttf); glob it.
 _grub_ttf="$(ls /usr/share/fonts/google-noto-vf/NotoSansMono*.ttf 2>/dev/null | head -1)"
-[[ -n "$_grub_ttf" && -f "$_grub_ttf" ]] || { log "ERROR: Noto Sans Mono TTF not found under /usr/share/fonts/google-noto-vf/ — cannot bake GRUB font"; exit 1; }
-command -v grub2-mkfont >/dev/null 2>&1 || { log "ERROR: grub2-mkfont missing — cannot bake GRUB font"; exit 1; }
+[[ -n "$_grub_ttf" && -f "$_grub_ttf" ]] || { log "ERROR: Noto Sans Mono TTF not found under /usr/share/fonts/google-noto-vf/, cannot bake GRUB font"; exit 1; }
+# grub2-mkfont lives in grub2-tools-extra. bluefin-dx ships it; the plain
+# Bluefin image does not (measured on projectbluefin/bluefin:testing,
+# 2026-08-25), so install it only when the base lacks it. Same rule as the
+# other "the base used to bring this" layers: a no-op on today's base.
+if ! command -v grub2-mkfont >/dev/null 2>&1; then
+  log "base lacks grub2-tools-extra (grub2-mkfont), installing"
+  retry 3 30 dnf -y install --setopt=install_weak_deps=False grub2-tools-extra
+fi
+command -v grub2-mkfont >/dev/null 2>&1 || { log "ERROR: grub2-mkfont missing, cannot bake GRUB font"; exit 1; }
 install -d -m0755 /usr/lib/bootupd/grub2-static/fonts
 grub2-mkfont -s 36 -n "Margine" \
   -o /usr/lib/bootupd/grub2-static/fonts/margine.pf2 "$_grub_ttf" \

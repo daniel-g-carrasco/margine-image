@@ -17,6 +17,21 @@
 #   rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 # =============================================================================
 
+# ----- Base image, as a build argument ---------------------------------------
+# Default unchanged: Bluefin DX on the Fedora track. Declared as an ARG so
+# a build can be pointed at another base without editing this file:
+#
+#   buildah build --build-arg BASE_IMAGE=ghcr.io/projectbluefin/bluefin:testing
+#
+# Why this exists (2026-08-25): Universal Blue is moving Bluefin to the
+# projectbluefin organisation and has written "no more -dx images" once
+# developer tooling moves to userspace (ujust devmode). The -dx tag we are
+# FROM will one day stop being refreshed. build_files/15-devstack backfills
+# what -dx used to add whenever the base lacks it, so the switch is this
+# one line plus a proven trial build (build.yml, workflow_dispatch with
+# base_image), not a rewrite under pressure.
+ARG BASE_IMAGE=ghcr.io/ublue-os/bluefin-dx:stable
+
 # ----- Build context: scripts that should NOT end up in the final image -----
 FROM scratch AS ctx
 COPY build_files /
@@ -28,8 +43,8 @@ COPY build_files /
 # 2026-06-06 so there is no installer/flatpaks-gaming any more.
 COPY installer/flatpaks-base    /installer-flatpaks-base
 
-# ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----
-FROM ghcr.io/ublue-os/bluefin-dx:stable
+# ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) unless overridden -----
+FROM ${BASE_IMAGE}
 
 # ----- Custom kernel: CachyOS via COPR + MOK signing -----
 # Mounts the custom-kernel scripts from the ctx layer and the MOK signing

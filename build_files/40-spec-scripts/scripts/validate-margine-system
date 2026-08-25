@@ -202,9 +202,11 @@ for g in audio disk kvm tty utmp tss dbus polkitd; do
     || bad "group '$g' MISSING"
 done
 
-# Wheel-user group membership. Margine inherits bluefin-dx-groups.service
-# from Bluefin DX, which at boot should add every wheel-group member to
-# docker, incus-admin, and libvirt (one-shot). On the 2026-06-04 fresh
+# Wheel-user group membership. On a Bluefin DX base this is
+# bluefin-dx-groups.service; when the base lacks it, Margine ships its own
+# margine-dev-groups.service (15-devstack) doing the same thing. Either way
+# every wheel-group member should end up in docker, incus-admin and
+# libvirt (one-shot). On the 2026-06-04 fresh
 # install daniel saw "[FAILED] Failed to start bluefin-dx-groups.service"
 # at boot — the service has Restart=on-failure RestartSec=30 so it usually
 # succeeds on retry, but this check verifies the END STATE (the user IS
@@ -225,7 +227,7 @@ else
       if [[ "$USER_GROUPS" == *" $required "* ]]; then
         ok "user '$u' is in group '$required' (bluefin-dx-groups effect OK)"
       else
-        bad "user '$u' is NOT in group '$required' — bluefin-dx-groups.service may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
+        bad "user '$u' is NOT in group '$required' — the dev-groups service (bluefin-dx-groups or margine-dev-groups) may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
       fi
     done
   done

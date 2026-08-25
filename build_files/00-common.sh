@@ -9,6 +9,7 @@
 set -euo pipefail
 
 log() { printf '[margine-build] %s\n' "$*"; }
+err() { printf '[margine-build] ERROR: %s\n' "$*" >&2; }
 
 # retry_curl <url> <output_path> — fetch with the same brownout-tolerance
 # the kernel-cachyos COPR install uses. Branding asset pulls from
@@ -83,3 +84,57 @@ retry() {
 # every sub-script gets the same value without recomputing.
 export FEDORA_VER="${FEDORA_VER:-$(rpm -E %fedora 2>/dev/null || echo 44)}"
 export BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%d)}"
+
+# --- Third-party signing keys: verify fingerprints before trusting a repo --
+# Moved here from custom-kernel/install.sh (2026-08-25) so 15-devstack can
+# pin the Docker and Microsoft repo keys the same way. The RPMFusion and
+# NVIDIA constants stay in custom-kernel, the Docker/VS Code ones in
+# 15-devstack: each script owns the fingerprints it consumes.
+# gpg comes from the base image (gnupg2); nothing to install at build time.
+# GNUPGHOME is pinned explicitly because buildah RUN starts from a bare
+# environment: gpg wants a home directory it can create, and the first
+# build to try this failed with an empty fingerprint and no explanation,
+# because stderr was being thrown away. It is not thrown away now.
+key_fingerprint() {
+  local out
+  export GNUPGHOME="${GNUPGHOME:-/run/margine-gnupg}"
+  mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
+  if ! out="$(gpg --batch --no-options --show-keys --with-colons "$1" 2>&1)"; then
+    err "gpg could not read $1:"
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    return 1
+  fi
+  printf '%s\n' "$out" | awk -F: '/^fpr:/{print $10; exit}'
+}
+
+verify_key_fpr() {
+  local file="$1" expected="$2" label="$3" actual
+  if [[ ! -f "$file" ]]; then
+    err "$label: expected key file $file, not found"
+    return 1
+  fi
+  actual="$(key_fingerprint "$file")" || actual=""
+  if [[ "$actual" != "$expected" ]]; then
+    err "$label: GPG key fingerprint mismatch, refusing to build"
+    err "  expected: $expected"
+    err "  on disk:  ${actual:-<unreadable>}"
+    return 1
+  fi
+  log "$label: key fingerprint verified ($expected)"
+  return 0
+}
+
+# Verifies the key files a rpmfusion-<flavor>-release RPM just dropped in
+# /etc/pki/rpm-gpg. Called BEFORE any package is pulled from those repos,
+# which is the only moment the check is worth anything.
+verify_rpmfusion_keys() {
+  local ver flavor fprvar rc=0
+  ver="$(rpm -E %fedora)"
+  for flavor in "$@"; do
+    fprvar="RPMFUSION_${flavor^^}_FPR"
+    verify_key_fpr \
+      "/etc/pki/rpm-gpg/RPM-GPG-KEY-rpmfusion-${flavor}-fedora-${ver}" \
+      "${!fprvar}" "rpmfusion-${flavor}" || rc=1
+  done
+  return $rc
+}

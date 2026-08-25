@@ -1,0 +1,14 @@
+[Unit]
+Description=Add wheel members to the docker, incus-admin and libvirt groups
+# Margine's stand-in for bluefin-dx-groups.service. Enabled by
+# build_files/15-devstack only when the base does not ship Bluefin's.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/margine-dev-groups
+Restart=on-failure
+RestartSec=30
+StartLimitInterval=0
+
+[Install]
+WantedBy=default.target

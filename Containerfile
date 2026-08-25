@@ -68,6 +68,12 @@ ARG NVIDIA_KMOD=nvidia-open
 # Haswell, AMD before Zen, Intel Celeron/Pentium "N" up to Jasper Lake).
 # build-lts.yml passes --build-arg KERNEL_FLAVOR=lts and publishes :lts.
 ARG KERNEL_FLAVOR=default
+# /tmp is a tmpfs mount with an explicit 1777 mode: buildah gives the
+# tmpfs the mode of the directory underneath, and the plain Bluefin image
+# ships /tmp as 0755 (bluefin-dx has 1777). akmods builds kmods as the
+# unprivileged akmods user and could not create its tempdir there
+# (v4l2loopback silently missing on the trial base, 2026-08-25). At runtime
+# systemd's tmp.mount owns /tmp, so this only matters during the build.
 # custom-kernel and the Margine modifications share ONE layer on
 # purpose (2026-08-18). Committing the kernel layer on its own is what
 # tore the rpmdb on current runners: the RUN after it opened with a
@@ -79,7 +85,7 @@ ARG KERNEL_FLAVOR=default
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
-    --mount=type=tmpfs,dst=/tmp \
+    --mount=type=tmpfs,dst=/tmp,tmpfs-mode=1777 \
     --mount=type=secret,id=mok-key,target=/run/margine-certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/run/margine-certs/MOK.pem \
     env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" KERNEL_FLAVOR="${KERNEL_FLAVOR}" /ctx/custom-kernel/install.sh \
@@ -96,7 +102,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
-    --mount=type=tmpfs,dst=/tmp \
+    --mount=type=tmpfs,dst=/tmp,tmpfs-mode=1777 \
     /ctx/build-margine-extensions.sh
 
 # ----- Build-residue sweep + lint: verify final image is a valid bootc container -----

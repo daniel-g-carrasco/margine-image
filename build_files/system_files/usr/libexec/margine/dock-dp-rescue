@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Bring up an external monitor that a USB-C dock failed to announce.
+#
+# THE BUG THIS WORKS AROUND
+#
+# On the Framework Laptop 13 (AMD Ryzen 7040), plugging in a USB-C dock
+# while the system is running often brings up everything except the
+# screen. The dock's USB side enumerates perfectly: mouse, keyboard,
+# hubs, ethernet. DisplayPort Alt Mode is simply never entered, so the
+# cable's lanes stay assigned to USB and there is no video signal at all.
+#
+# Measured on the reference host, 2026-08-25, with the screen dark:
+#
+#   USB side               all dock devices present
+#   DP connectors          none "connected"
+#   forcing a GPU re-probe no change, kernel logs nothing
+#   kernel log             ucsi_acpi USBC000:00: UCSI_GET_PDOS failed (-5)
+#
+# That last line is the tell. This is not the GPU and not the desktop:
+# nothing downstream can find a signal that was never negotiated. The
+# machine's UCSI implementation (the firmware interface that runs USB-C
+# port negotiation) botches the alt-mode entry, and it is a known weak
+# spot on this hardware.
+#
+# WHAT FIXES IT
+#
+# Re-binding the ucsi_acpi driver makes the connector state be read from
+# scratch, and the dock enters DisplayPort on the second attempt. Also
+# measured: the screen came up immediately, and the cost is the dock's
+# USB devices dropping and returning within about one second.
+#
+# A data role swap was tried first and the port refuses it, so it is not
+# in here.
+#
+# WHY THIS IS NARROW ON PURPOSE
+#
+# Gated on the exact machine that needs it. On hardware whose UCSI works,
+# this would be a pointless one-second blink of every dock device every
+# time you plug in a dock with no monitor attached. If another model
+# turns out to need it, add its DMI string here with the evidence, the
+# same way this one has it.
+set -uo pipefail
+
+DMI_VENDOR=/sys/class/dmi/id/sys_vendor
+DMI_PRODUCT=/sys/class/dmi/id/product_name
+UCSI_DRV=/sys/bus/platform/drivers/ucsi_acpi
+STAMP=/run/margine-dock-dp-rescue.stamp
+# One rescue per minute. Rebinding re-creates the very typec devices
+# whose appearance triggers this script, so without a rate limit a dock
+# that never negotiates DisplayPort would have us rebinding forever.
+COOLDOWN=60
+# Long enough for the normal path to win on its own. When alt mode is
+# entered correctly the connector shows up well inside this window, and
+# the script then does nothing at all.
+GRACE=6
+
+FORCE=0
+[ "${1:-}" = "--force" ] && FORCE=1
+
+log() {
+  logger -t margine-dock-dp-rescue -- "$*"
+  (( FORCE )) && echo "$*"
+}
+
+# --force is how `ujust margine-dock-wake` gets here: someone with a
+# different machine, or a different dock, asking for the same rescue by
+# hand. It skips the model gate and the grace period, because a person
+# typing a command has already waited.
+if (( ! FORCE )); then
+  case "$(cat "$DMI_VENDOR" 2>/dev/null)/$(cat "$DMI_PRODUCT" 2>/dev/null)" in
+    "Framework/Laptop 13 (AMD Ryzen 7040Series)") ;;
+    *) exit 0 ;;
+  esac
+fi
+
+dp_connected() {
+  local f
+  for f in /sys/class/drm/card*-DP-*/status; do
+    # Exact match: "disconnected" contains "connected", and a substring
+    # test here would report every dark port as a working one.
+    [ "$(cat "$f" 2>/dev/null)" = "connected" ] && return 0
+  done
+  return 1
+}
+
+typec_partner_present() {
+  local p
+  for p in /sys/class/typec/port[0-9]-partner; do
+    [ -e "$p" ] && return 0
+  done
+  return 1
+}
+
+(( FORCE )) || sleep "$GRACE"
+
+# Nothing to rescue: either the screen arrived on its own, or the dock is
+# gone again, or there is no dock at all.
+if dp_connected; then
+  log "a DisplayPort output is already connected, nothing to rescue"
+  exit 0
+fi
+if ! typec_partner_present; then
+  log "no USB-C device attached, nothing to rescue"
+  exit 0
+fi
+
+if (( ! FORCE )) && [ -f "$STAMP" ]; then
+  now=$(date +%s)
+  then=$(cat "$STAMP" 2>/dev/null || echo 0)
+  if (( now - then < COOLDOWN )); then
+    log "skipped: rescued $((now - then))s ago, inside the ${COOLDOWN}s cooldown"
+    exit 0
+  fi
+fi
+date +%s > "$STAMP"
+
+[ -w "$UCSI_DRV/unbind" ] || { log "ucsi_acpi driver not bindable, giving up"; exit 0; }
+
+dev=$(basename "$(readlink -f /sys/bus/platform/drivers/ucsi_acpi/USBC*)" 2>/dev/null)
+[ -n "$dev" ] || dev=USBC000:00
+
+log "no DisplayPort after ${GRACE}s with a dock attached, re-initialising ucsi_acpi ($dev)"
+echo "$dev" > "$UCSI_DRV/unbind" 2>/dev/null || { log "unbind failed"; exit 0; }
+sleep 2
+echo "$dev" > "$UCSI_DRV/bind" 2>/dev/null || { log "bind failed, the port is now unmanaged until replug"; exit 1; }
+sleep 5
+
+if dp_connected; then
+  log "display came up after re-initialising the controller"
+else
+  log "display still absent; the dock may simply have no monitor attached"
+fi

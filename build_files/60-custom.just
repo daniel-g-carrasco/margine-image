@@ -768,6 +768,30 @@ margine-printers-repair:
     echo
     echo "Reopen any app that was already running: print dialogs cache this list."
 
+# Wake an external monitor a USB-C dock plugged in but never announced.
+[group('Margine')]
+margine-dock-wake:
+    #!/usr/bin/bash
+    set -uo pipefail
+    echo "== Wake a dock display =="
+    echo
+    echo "For when you plug in a USB-C dock and everything arrives except"
+    echo "the screen: mouse, keyboard and ethernet work, the monitor stays"
+    echo "black. That means DisplayPort Alt Mode was never entered, so"
+    echo "there is no video signal for anything downstream to find."
+    echo
+    echo "This re-initialises the USB-C controller, which makes the port"
+    echo "negotiate again. The dock's USB devices drop and come back in"
+    echo "about a second."
+    echo
+    echo "On a Framework 13 AMD this also happens automatically on plug-in;"
+    echo "this command is for other machines, other docks, and for when the"
+    echo "automatic attempt did not stick."
+    echo
+    read -rp "Try it? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    sudo /usr/libexec/margine/dock-dp-rescue --force
+
 # Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]
 margine-doctor:

@@ -126,7 +126,9 @@ typec_partner_present() {
 # Parsed out of lsusb because the kernel exposes no sysfs path for BOS
 # descriptors. If usbutils is missing or its wording changes, this
 # returns "no opinion" and the model list below decides instead.
+BILLBOARD_VERDICT=none
 billboard_reports_failure() {
+  BILLBOARD_VERDICT=none
   command -v lsusb >/dev/null 2>&1 || return 1
   local d i vid pid verdict
   for d in /sys/bus/usb/devices/*/; do
@@ -150,6 +152,7 @@ billboard_reports_failure() {
           }
           state = ""
         }')
+      BILLBOARD_VERDICT="$verdict"
       case "$verdict" in
         dp-failed)
           log "billboard on $vid:$pid: DisplayPort mode did not configure"
@@ -227,10 +230,21 @@ sleep 2
 echo "$dev" > "$UCSI_DRV/bind" 2>/dev/null || { log "bind failed, the port is now unmanaged until replug"; exit 1; }
 sleep 5
 
+# The outcome is about the NEGOTIATION, not about a screen. Measured on
+# 2026-08-25 with the monitor cable pulled from the dock: after the
+# rebind the dock reported "configuration successful" with no display
+# anywhere. That is a rescue that worked, and the next plug-in must not
+# be refused because of it. Only "still not configured" is a failure,
+# because that is the one case a rebind loop can grow from.
 if dp_connected; then
   echo "$(date +%s) ok" > "$STAMP"
   log "display came up after re-initialising the controller"
+elif billboard_reports_failure; then
+  log "DisplayPort still not configured after re-initialising; backing off"
+elif [ "$BILLBOARD_VERDICT" = "dp-ok" ]; then
+  echo "$(date +%s) ok" > "$STAMP"
+  log "DisplayPort negotiated, no display attached to the dock"
 else
-  log "display still absent; the dock may simply have no monitor attached"
+  log "display still absent and the dock gives no verdict; backing off"
 fi
 exit 0

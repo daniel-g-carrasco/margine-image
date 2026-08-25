@@ -53,9 +53,15 @@ DMI_VENDOR=/sys/class/dmi/id/sys_vendor
 DMI_PRODUCT=/sys/class/dmi/id/product_name
 UCSI_DRV=/sys/bus/platform/drivers/ucsi_acpi
 STAMP=/run/margine-dock-dp-rescue.stamp
-# One rescue per minute. Rebinding re-creates the very typec devices
-# whose appearance triggers this script, so without a rate limit a dock
-# that never negotiates DisplayPort would have us rebinding forever.
+# Back off for a minute, but ONLY after a rescue that did not bring the
+# screen up. Rebinding re-creates the very typec devices whose
+# appearance triggers this script, so a dock that never negotiates
+# DisplayPort would otherwise have us rebinding forever: that is the one
+# case the cooldown exists for. A rescue that worked needs no cooldown,
+# and the first version applied one anyway, keyed on time alone. On
+# 2026-08-25 that refused two genuine plug-ins out of four ("rescued 46s
+# ago"), which from the user's side looked exactly like the bug we were
+# fixing. The stamp therefore records the outcome, not just the time.
 COOLDOWN=60
 # Long enough for the normal path to win on its own. When alt mode is
 # entered correctly the connector shows up well inside this window, and
@@ -197,13 +203,18 @@ fi
 
 if (( ! FORCE )) && [ -f "$STAMP" ]; then
   now=$(date +%s)
-  then=$(cat "$STAMP" 2>/dev/null || echo 0)
-  if (( now - then < COOLDOWN )); then
-    log "skipped: rescued $((now - then))s ago, inside the ${COOLDOWN}s cooldown"
+  last_at=0; last_outcome=failed
+  read -r last_at last_outcome < "$STAMP" 2>/dev/null || true
+  # A stamp with no outcome (older format, or a run that died before
+  # writing one) counts as failed: the cautious reading.
+  if [ "${last_outcome:-failed}" = "failed" ] && (( now - ${last_at:-0} < COOLDOWN )); then
+    log "skipped: a rescue failed $((now - last_at))s ago, backing off for ${COOLDOWN}s"
     exit 0
   fi
 fi
-date +%s > "$STAMP"
+# Written as "failed" first: if the script dies between here and the
+# verdict below, the next trigger backs off instead of piling on.
+echo "$(date +%s) failed" > "$STAMP"
 
 [ -w "$UCSI_DRV/unbind" ] || { log "ucsi_acpi driver not bindable, giving up"; exit 0; }
 
@@ -217,6 +228,7 @@ echo "$dev" > "$UCSI_DRV/bind" 2>/dev/null || { log "bind failed, the port is no
 sleep 5
 
 if dp_connected; then
+  echo "$(date +%s) ok" > "$STAMP"
   log "display came up after re-initialising the controller"
 else
   log "display still absent; the dock may simply have no monitor attached"

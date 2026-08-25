@@ -6,6 +6,15 @@
 # is plugged in. The helper then waits, does nothing if DisplayPort shows
 # up on its own, and only re-initialises the controller if it does not.
 #
+# It is NOT triggered by plugging a monitor into an already attached
+# dock. Measured on 2026-08-25 with udevadm monitor across three
+# plug/unplug cycles of the monitor cable: 38 drm events, zero typec
+# events. That is what makes this safe to run by default: a file copy
+# over the dock's ethernet cannot be interrupted by someone attaching a
+# screen, because nothing here fires. The only moment the dock's devices
+# can blink is within about eight seconds of attaching the dock itself,
+# and only when the dock reports the video negotiation failed.
+#
 # systemd-run, not a direct RUN+=: udev kills anything still running
 # after a short timeout, and this helper deliberately waits several
 # seconds before deciding. Running it inline would guarantee it is killed

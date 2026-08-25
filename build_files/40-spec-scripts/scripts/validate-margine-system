@@ -909,6 +909,32 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+hdr "9e. Dock display rescue (the pieces the udev path depends on)"
+# ---------------------------------------------------------------------------
+# A USB-C dock that comes up without its monitor is rescued by a udev
+# rule, a helper, and lsusb to read the dock's own verdict. Each is a
+# separate package or file, and losing any one of them degrades silently:
+# the rule never fires, or the helper is missing, or the gate falls back
+# to a model list. Checked, not assumed, for the same reason the printing
+# section above exists.
+[[ -f /usr/lib/udev/rules.d/61-margine-dock-dp-rescue.rules ]] \
+  && ok "dock rescue udev rule present" \
+  || bad "61-margine-dock-dp-rescue.rules missing — a dock that skips DisplayPort stays dark"
+[[ -x /usr/libexec/margine/dock-dp-rescue ]] \
+  && ok "dock-dp-rescue helper present and executable" \
+  || bad "/usr/libexec/margine/dock-dp-rescue missing or not executable"
+if command -v lsusb >/dev/null 2>&1; then
+  ok "lsusb present (usbutils): the rescue can read the dock's billboard verdict"
+else
+  warn "lsusb missing — the dock rescue cannot ask the dock and falls back to its model list"
+fi
+if grep -q -- '--collect' /usr/lib/udev/rules.d/61-margine-dock-dp-rescue.rules 2>/dev/null; then
+  ok "rescue unit is collected on failure (no stuck failed unit can block later rescues)"
+else
+  bad "dock rescue rule lacks --collect: one failed run would refuse every later rescue until reboot"
+fi
+
+# ---------------------------------------------------------------------------
 hdr "10. Failed services (regression detector)"
 # ---------------------------------------------------------------------------
 if (( ! IS_LIVE )); then

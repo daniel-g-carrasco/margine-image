@@ -72,8 +72,8 @@ fi
 # plain Bluefin base has none of them (trial build of 2026-08-25). Same
 # rule: install only what is missing, so today's base sees no change.
 # google-noto-sans-cjk-fonts is deliberately absent: the plain base ships
-# its successor google-noto-sans-cjk-vf-fonts, so the declaration is what
-# needs updating, not the image. dash-to-dock is not an RPM on any base:
+# its successor google-noto-sans-cjk-vf-fonts, and 14-fonts (separate PR
+# from main) moves the declaration and today's image to the vf package. dash-to-dock is not an RPM on any base:
 # Bluefin bakes it from upstream as an unpackaged extension (#379 fixed
 # the declaration that listed the Fedora package).
 DECLARED_PKGS=(

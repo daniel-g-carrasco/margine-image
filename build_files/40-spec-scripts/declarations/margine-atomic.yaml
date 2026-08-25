@@ -407,7 +407,7 @@ host_packages:
       - liberation-serif-fonts
       - liberation-mono-fonts
       - google-noto-color-emoji-fonts
-      - google-noto-sans-cjk-fonts
+      - google-noto-sans-cjk-vf-fonts   # variable build; 14-fonts replaces the static google-noto-sans-cjk-fonts a base may ship
   optional_after_validation:
     intel_gpu_extras:
       - libva-intel-media-driver

@@ -73,8 +73,9 @@ fi
 # rule: install only what is missing, so today's base sees no change.
 # google-noto-sans-cjk-fonts is deliberately absent: the plain base ships
 # its successor google-noto-sans-cjk-vf-fonts, so the declaration is what
-# needs updating, not the image. gnome-shell-extension-dash-to-dock is
-# declared too but absent from today's image as well: out of scope here.
+# needs updating, not the image. dash-to-dock is not an RPM on any base:
+# Bluefin bakes it from upstream as an unpackaged extension (#379 fixed
+# the declaration that listed the Fedora package).
 DECLARED_PKGS=(
   mesa-demos vulkan-tools                  # media_diagnostics
   rocminfo rocm-opencl                     # amd_gpu_extras

@@ -345,7 +345,15 @@ if disable_akmodsbuild; then
       # akmods always returns 0; check for *.failed.log explicitly
       V4L2_FAILED=0
       for _f in /var/cache/akmods/v4l2loopback/*-for-"$KERNEL_VERSION".failed.log; do
-        [[ -f "$_f" ]] && V4L2_FAILED=1 && break
+        if [[ -f "$_f" ]]; then
+          V4L2_FAILED=1
+          # Show the cause in the build log: a bare "[FAILED]" from akmods
+          # hid why the module did not build on the plain Bluefin base
+          # (trial build of 2026-08-25).
+          log "v4l2loopback build FAILED, tail of $_f:"
+          tail -n 40 "$_f" | sed 's/^/[v4l2loopback] /' || true
+          break
+        fi
       done
       if (( V4L2_FAILED == 0 )); then
         V4L2_OK=1

@@ -44,6 +44,29 @@
       ],
     },
     {
+      // Wait a day before proposing these three. Every one of them is
+      // pinned by the sha256 of a GitHub RELEASE ASSET, and a release is
+      // not atomic: the tag exists, Renovate sees it, the PR opens, and
+      // the zip is still uploading. On 2026-08-24 the o-tiling PR lost
+      // that race by nineteen minutes:
+      //
+      //   15:04:13  fix-sha:  curl 404 on the release asset
+      //   15:20:31  build:    same 404, after three retries
+      //   15:23:29  upstream: asset finally published
+      //
+      // Two red checks and a manual re-run, for a bump that was fine.
+      // The comment at the top of this file records the same dance
+      // happening by hand twice in August. A day is generous against a
+      // window measured in minutes, and none of these three is
+      // security-critical enough to want it sooner.
+      matchDepNames: [
+        'oliwebd/o-tiling',
+        'Genymobile/scrcpy',
+        'daniel-g-carrasco/wayland-scroll-factor',
+      ],
+      minimumReleaseAge: '1 day',
+    },
+    {
       // Anything baked into the image must prove it BUILDS before it
       // merges: the vm-test label makes build.yml run the full 30-min
       // image build (validators included) on the PR.

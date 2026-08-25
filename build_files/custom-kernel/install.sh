@@ -64,6 +64,12 @@ RPMFUSION_FREE_FPR="E9A491A3DE247814E7E067EAE06F8ECDD651FF2E"
 # shellcheck disable=SC2034  # read indirectly as ${!fprvar}
 RPMFUSION_NONFREE_FPR="79BDB88F9BBF73910FD4095B6A2AF96194843C65"
 
+# negativo17 "fedora-multimedia": where gstreamer1-plugins-bad and -ugly come
+# from. Verified 2026-08-25 against https://negativo17.org/repos/RPM-GPG-KEY-slaanesh
+# (first key in the file; the second is its companion).
+# shellcheck disable=SC2034
+NEGATIVO17_FPR="0C5D0F470484AE2FC40A9B6597F3008993E8909B"
+
 # NVIDIA rotates the CUDA repo key per Fedora release (fedora44 ->
 # 73CD9B30), so this is a per-release map rather than one constant. A
 # Fedora bump with no entry here stops the NVIDIA build with an
@@ -526,6 +532,25 @@ systemctl disable scx_loader.service 2>/dev/null || true
 # base image we transiently enable RPMFusion ONLY for this install,
 # then disable and remove the .repo file so the base stays clean
 # of third-party repos (same pattern as kernel-cachyos COPR above).
+# gstreamer1-plugins-bad / -ugly resolve from negativo17's fedora-multimedia,
+# NOT from RPMFusion. On Bluefin DX that repo file ships in the base
+# (enabled=0) and the packages are already installed, so the install below
+# was silently a no-op and nobody noticed the repo was never enabled. On a
+# base without negativo17 (projectbluefin/bluefin, 2026-08-25 trial) the
+# same line dies with "No match for argument: gstreamer1-plugins-bad". So:
+# make sure the repo exists, with its key verified first, enable it for
+# this one transaction only, and leave it disabled like every other
+# third-party repo in the image.
+if [[ ! -f /etc/yum.repos.d/negativo17-fedora-multimedia.repo ]]; then
+  log "negativo17 fedora-multimedia repo absent from the base, adding it (key pinned)"
+  retry_curl_strict https://negativo17.org/repos/RPM-GPG-KEY-slaanesh /run/negativo17.asc
+  verify_key_fpr /run/negativo17.asc "$NEGATIVO17_FPR" "negativo17" || exit 1
+  rpm --import /run/negativo17.asc
+  retry_curl_strict https://negativo17.org/repos/fedora-multimedia.repo /etc/yum.repos.d/negativo17-fedora-multimedia.repo
+  sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/negativo17-fedora-multimedia.repo
+  rm -f /run/negativo17.asc
+fi
+
 log "Enabling RPMFusion transiently for mangohud + goverlay + steam-devices"
 FEDORA_VER=$(rpm -E %fedora)
 dnf -y install \
@@ -546,7 +571,7 @@ verify_rpmfusion_keys free nonfree || exit 1
 # freeworld build (verified: bundles libgstx265.so, libgstva.so,
 # nvcodec/msdk/qsv, fdkaac), so the handbook's codec promises hold.
 # RPMFusion stays enabled ONLY for mangohud/goverlay/steam-devices.
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad gstreamer1-plugins-ugly' \
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia mangohud goverlay steam-devices gstreamer1-plugins-bad gstreamer1-plugins-ugly' \
   || { err "creator-tier RPM install failed after 5 attempts; aborting"; exit 1; }
 
 # ---------------------------------------------------------------------------

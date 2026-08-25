@@ -71,6 +71,24 @@ GRACE=6
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
+# The switch. This runs by default because the gate is the dock's own
+# verdict and a healthy setup is never touched, but anything that rebinds
+# a kernel driver on plug-in must be one command away from off. The file
+# lives in /etc, which persists across image updates on an ostree system.
+#   ujust margine-dock-rescue off     writes "off"
+#   ujust margine-dock-rescue on      writes "on"
+# Absent file means the default below. --force ignores the switch: a
+# person typing the manual command has already decided.
+SWITCH=/etc/margine/dock-dp-rescue
+DEFAULT_ENABLED=1
+if (( ! FORCE )); then
+  case "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" in
+    off) exit 0 ;;
+    on)  ;;
+    *)   (( DEFAULT_ENABLED )) || exit 0 ;;
+  esac
+fi
+
 log() {
   logger -t margine-dock-dp-rescue -- "$*"
   if (( FORCE )); then echo "$*"; fi

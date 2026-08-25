@@ -768,6 +768,38 @@ margine-printers-repair:
     echo
     echo "Reopen any app that was already running: print dialogs cache this list."
 
+# Turn the automatic dock display rescue on or off (default: on).
+[group('Margine')]
+margine-dock-rescue $STATE="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+    SWITCH=/etc/margine/dock-dp-rescue
+    case "$STATE" in
+      on|off)
+        sudo mkdir -p /etc/margine
+        printf '%s\n' "$STATE" | sudo tee "$SWITCH" >/dev/null
+        echo "Automatic dock display rescue: $STATE"
+        [ "$STATE" = off ] && echo "The manual command still works: ujust margine-dock-wake"
+        ;;
+      status)
+        cur="$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null || true)"
+        case "$cur" in
+          on|off) echo "Automatic dock display rescue: $cur (set in $SWITCH)" ;;
+          *)      echo "Automatic dock display rescue: on (default; no $SWITCH)" ;;
+        esac
+        echo
+        echo "What it does: when a USB-C dock is plugged in and reports that"
+        echo "DisplayPort was never set up, the USB-C controller is re-initialised"
+        echo "so the external monitor comes up. It never touches a dock that"
+        echo "negotiated fine, monitor or not. Last decisions:"
+        journalctl -b --no-pager -t margine-dock-dp-rescue 2>/dev/null | tail -6 | sed 's/^/  /'
+        echo
+        echo "ujust margine-dock-rescue off   |   ujust margine-dock-rescue on"
+        ;;
+      *)
+        echo "usage: ujust margine-dock-rescue [on|off|status]"; exit 1 ;;
+    esac
+
 # Wake an external monitor a USB-C dock plugged in but never announced.
 [group('Margine')]
 margine-dock-wake:

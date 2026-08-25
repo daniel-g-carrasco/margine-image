@@ -10,5 +10,15 @@
 # after a short timeout, and this helper deliberately waits several
 # seconds before deciding. Running it inline would guarantee it is killed
 # before it can do anything useful.
+#
+# The fixed unit name is deliberate: the rebind re-creates port0-partner,
+# which fires this rule again while the first run is still sleeping, and
+# systemd refusing a second unit of the same name is exactly the
+# de-duplication wanted. --collect keeps that from turning into a trap:
+# without it a run that exits non-zero (bind failed) leaves a "failed"
+# unit behind, and every later plug-in would be refused the same way
+# until someone runs systemctl reset-failed. Measured on the reference
+# host 2026-08-25: dock plugged in with the screen dark, rule fired,
+# rescue logged, screen up seven seconds later.
 ACTION=="add", SUBSYSTEM=="typec", KERNEL=="port[0-9]-partner", \
-  RUN+="/usr/bin/systemd-run --no-block --unit=margine-dock-dp-rescue --description='Rescue a dock display the USB-C negotiation missed' /usr/libexec/margine/dock-dp-rescue"
+  RUN+="/usr/bin/systemd-run --no-block --collect --unit=margine-dock-dp-rescue --description='Rescue a dock display the USB-C negotiation missed' /usr/libexec/margine/dock-dp-rescue"

@@ -14,11 +14,15 @@
 # The fixed unit name is deliberate: the rebind re-creates port0-partner,
 # which fires this rule again while the first run is still sleeping, and
 # systemd refusing a second unit of the same name is exactly the
-# de-duplication wanted. --collect keeps that from turning into a trap:
-# without it a run that exits non-zero (bind failed) leaves a "failed"
-# unit behind, and every later plug-in would be refused the same way
-# until someone runs systemctl reset-failed. Measured on the reference
-# host 2026-08-25: dock plugged in with the screen dark, rule fired,
-# rescue logged, screen up seven seconds later.
+# de-duplication wanted. --collect keeps that from being a trap, and the
+# trap is not hypothetical: on 2026-08-25 the helper had a bug that made
+# it exit 1 after a SUCCESSFUL rescue, the failed unit stayed loaded, and
+# the next four plug-ins fired this rule and were all refused a unit of
+# that name. Nothing was logged, because nothing ran. With --collect a
+# failed unit is unloaded as soon as it stops, so a bad run costs one
+# rescue, not every rescue until reboot.
+#
+# Measured on the reference host 2026-08-25: dock plugged in with the
+# screen dark, rule fired, rescue logged, screen up seven seconds later.
 ACTION=="add", SUBSYSTEM=="typec", KERNEL=="port[0-9]-partner", \
   RUN+="/usr/bin/systemd-run --no-block --collect --unit=margine-dock-dp-rescue --description='Rescue a dock display the USB-C negotiation missed' /usr/libexec/margine/dock-dp-rescue"

@@ -67,7 +67,15 @@ FORCE=0
 
 log() {
   logger -t margine-dock-dp-rescue -- "$*"
-  (( FORCE )) && echo "$*"
+  if (( FORCE )); then echo "$*"; fi
+  # Always succeed. The first version ended in `(( FORCE )) && echo`,
+  # which returns 1 whenever FORCE is 0, and since a log call is the last
+  # thing this script does, every unattended run exited 1. systemd kept
+  # the transient unit around as "failed", and every later plug-in was
+  # refused a unit of the same name. One successful rescue, then four
+  # silent non-starts, all on 2026-08-25. The exit status of a helper
+  # that runs under a fixed unit name is not cosmetic.
+  return 0
 }
 
 # --force is how `ujust margine-dock-wake` gets here: someone asking for
@@ -213,3 +221,4 @@ if dp_connected; then
 else
   log "display still absent; the dock may simply have no monitor attached"
 fi
+exit 0

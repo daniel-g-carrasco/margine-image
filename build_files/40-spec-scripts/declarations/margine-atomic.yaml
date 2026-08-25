@@ -348,11 +348,20 @@ host_packages:
       - gnome-tweaks
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
-      - gnome-shell-extension-dash-to-dock
       - gnome-shell-extension-gsconnect
-      - gnome-shell-extension-workspace-indicator
       - adw-gtk3-theme
       - showtime
+    gnome_tools_shipped_note: >
+      dash-to-dock is NOT an RPM in the image: the Bluefin base bakes it
+      from upstream as an unpackaged extension
+      (/usr/share/gnome-shell/extensions/dash-to-dock@micxgx.gmail.com,
+      owned by no package; same on bluefin-dx and on plain Bluefin,
+      checked 2026-08-25). validate-margine-system checks it by UUID and
+      gsettings schema, which is the right test. It used to be listed
+      above as gnome-shell-extension-dash-to-dock, which only proved the
+      Fedora package exists in the repos, never that the image had it.
+      gnome-shell-extension-workspace-indicator was listed too and the
+      image has never shipped it (no RPM, no extension directory).
     gnome_tools_note: >
       Tiling extension: we use o-tiling (o-tiling@oliwebd.github.com),
       not Forge or Tiling Shell. Forge is marked "Needs a new maintainer"
@@ -690,13 +699,13 @@ gnome:
       - hide-cursor@elcste.com
       - caffeine@patapon.info     # daniel asked for a "keep screen awake" toggle; awake@vixalien.com is upstream-deprecated, points users to Caffeine
     installed_but_not_enabled_note: >
-      These are still installed (host layer or user_install) but NOT in
-      the enable list, so configure-gnome-extensions leaves them off.
-      They can still be turned on per-session via Extensions Manager.
-        - workspace-indicator@gnome-shell-extensions.gcampax.github.com
-            Fedora-packaged numeric workspace indicator (top-right
-            dropdown). Available as a fallback if the user wants the
-            current workspace number visible.
+      Nothing today. workspace-indicator@gnome-shell-extensions.gcampax.github.com
+      (Fedora's numeric top-bar workspace indicator) used to be listed
+      here as "installed but not enabled", but the image does not ship
+      it (checked 2026-08-25: no RPM, no extension directory). A user who
+      wants the current workspace number in the top bar layers
+      gnome-shell-extension-workspace-indicator or installs it from
+      Extensions Manager; configure-gnome-extensions leaves it alone.
     user_install_note: >
       These extensions are NOT in Fedora 44 repos. install-user-extensions
       installs each entry from either extensions.gnome.org (when ego_id

@@ -266,7 +266,7 @@ The phase 1 GNOME extension set:
 | `appindicatorsupport@rgcjonas.gmail.com` | Fedora (`gnome-shell-extension-appindicator`) | legacy tray icons (Bitwarden, Steam, etc.) |
 | `bazaar-integration@kolunmi.github.io` | inherited from Bluefin DX | Bazaar app store integration |
 | `blur-my-shell@aunetx` | Fedora (`gnome-shell-extension-blur-my-shell`) | transparent/blurred top bar + overview + dash |
-| `dash-to-dock@micxgx.gmail.com` | Fedora (`gnome-shell-extension-dash-to-dock`) | fixed semi-transparent dock with running-app dots |
+| `dash-to-dock@micxgx.gmail.com` | inherited from Bluefin (baked from upstream, no RPM) | fixed semi-transparent dock with running-app dots |
 | `gradia-integration@alexandervanhee.github.io` | inherited from Bluefin DX | screenshot-edit tool integration |
 | `gsconnect@andyholmes.github.io` | Fedora (`gnome-shell-extension-gsconnect`) | KDE Connect for GNOME |
 | `search-light@icedman.github.com` | Bluefin-baked; **not enabled by Margine** | superseded by GNOME-native search (Super = overview, Super+Space = app-grid); stays installed + patched so it can be re-enabled |
@@ -371,7 +371,7 @@ gsettings get org.gnome.desktop.interface icon-theme
 gsettings get org.gnome.mutter dynamic-workspaces
 gsettings get org.gnome.desktop.wm.preferences workspace-names
 gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-4
-gnome-extensions list --enabled | grep workspace-indicator
+gnome-extensions list --enabled | grep dash-to-dock
 gsettings get org.gnome.shell.extensions.o-tiling focus-left
 gsettings get org.gnome.shell.extensions.o-tiling toggle-floating
 cat ~/.config/user-dirs.dirs

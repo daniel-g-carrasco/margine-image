@@ -24,17 +24,21 @@ GNOME distinguishes five surfaces, each with its own gsettings schema:
 | Extension | `org.gnome.shell.extensions.o-tiling` | o-tiling tiling actions (keys live directly under the schema, not a `.keybindings` sub-path) |
 
 A 6th surface — `org.gnome.mutter` + `org.gnome.desktop.wm.preferences` —
-controls the workspace model (`dynamic-workspaces=true`) and workspace names.
-The numeric top-bar workspace indicator is provided by Fedora's packaged
-`workspace-indicator@gnome-shell-extensions.gcampax.github.com` extension.
+controls the workspace model (`dynamic-workspaces=false`, five fixed
+workspaces) and workspace names.
+Margine ships no top-bar workspace indicator: the workspace number is
+what you typed (Super+1..5). Fedora's packaged
+`workspace-indicator@gnome-shell-extensions.gcampax.github.com` is an
+optional layer (`gnome-shell-extension-workspace-indicator`) or an
+Extensions Manager install for anyone who wants it visible.
 
 ## Workspace model
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `dynamic-workspaces` | `true` | Avoids pre-creating ten empty workspaces; GNOME creates/removes them as windows move |
+| `dynamic-workspaces` | `false` | Five fixed workspaces, set by 30-gnome-defaults; Super+1..5 always land on the same one |
 | `workspace-names` | `1` ... `10` | Gives GNOME/extension UIs numeric labels where they expose workspace names |
-| `count` | `10` | Declarative static fallback; only written to `num-workspaces` if `dynamic=false` |
+| `num-workspaces` | `5` | The fixed count (reaffirmed 2026-06-15, NOT 10); the declaration carries the same value |
 
 GNOME's native `switch-to-workspace-N` bindings only activate existing
 workspaces. They do not create workspace 4 if only workspaces 1 and 2 exist.
@@ -224,10 +228,10 @@ gsettings get org.gnome.desktop.wm.keybindings close                   # ['<Supe
 gsettings get org.gnome.shell.keybindings toggle-application-view      # ['<Super>space', '<Super>r']
 gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
 gsettings get org.gnome.shell.extensions.o-tiling toggle-floating
-gsettings get org.gnome.mutter dynamic-workspaces                      # true
+gsettings get org.gnome.mutter dynamic-workspaces                      # false
 gsettings get org.gnome.desktop.wm.preferences workspace-names          # ['1', ...]
 gsettings get org.gnome.desktop.wm.keybindings switch-to-workspace-4    # ['<Super>4']
-gnome-extensions list --enabled | grep workspace-indicator
+gnome-extensions list --enabled | grep dash-to-dock
 ```
 
 GNOME Settings → Keyboard → View and Customize Shortcuts shows the same
@@ -265,7 +269,7 @@ If you ever disable it and want it back:
 
 ```sh
 scripts/configure-gnome-extensions --apply
-gnome-extensions list --enabled | grep -E 'o-tiling|workspace-indicator'
+gnome-extensions list --enabled | grep o-tiling
 ```
 
 o-tiling has its own preferences window (`gnome-extensions prefs

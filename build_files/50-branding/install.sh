@@ -534,9 +534,17 @@ _grub_ttf="$(ls /usr/share/fonts/google-noto-vf/NotoSansMono*.ttf 2>/dev/null | 
 # Bluefin image does not (measured on projectbluefin/bluefin:testing,
 # 2026-08-25), so install it only when the base lacks it. Same rule as the
 # other "the base used to bring this" layers: a no-op on today's base.
+# Pin it to the EVR of the grub2-tools already in the base: the grub2
+# subpackages require each other at the exact version, so a bare install
+# would upgrade the whole bootloader stack (grub2-efi-x64, grub2-pc,
+# grub2-common) as a side effect of fetching a 5 MiB build tool. Fedora's
+# updates-archive repo (enabled by default) keeps every pushed build, so
+# the matching EVR is always there: measured transaction on the new base
+# is grub2-tools-extra + mtools, nothing else.
 if ! command -v grub2-mkfont >/dev/null 2>&1; then
-  log "base lacks grub2-tools-extra (grub2-mkfont), installing"
-  retry 3 30 dnf -y install --setopt=install_weak_deps=False grub2-tools-extra
+  _grub_evr="$(rpm -q --qf '%{EVR}' grub2-tools)"
+  log "base lacks grub2-tools-extra (grub2-mkfont), installing it at the base's grub2 EVR ${_grub_evr}"
+  retry 3 30 dnf -y install --setopt=install_weak_deps=False "grub2-tools-extra-${_grub_evr}"
 fi
 command -v grub2-mkfont >/dev/null 2>&1 || { log "ERROR: grub2-mkfont missing, cannot bake GRUB font"; exit 1; }
 install -d -m0755 /usr/lib/bootupd/grub2-static/fonts

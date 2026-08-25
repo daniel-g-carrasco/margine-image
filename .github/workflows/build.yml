@@ -136,18 +136,28 @@ jobs:
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
     runs-on: ubuntu-26.04
-    # 90 (2026-08-20). The 150 this replaces was budgeted for a
-    # 46-minute 'Build image', which was never really the cost of
-    # merging custom-kernel and build.sh into one RUN: it was the old
-    # runner's fuse-overlayfs spending twelve minutes committing the
-    # kernel layer. On ubuntu-26.04 the merged build measures 12
-    # minutes, so the merge costs nothing and there is no layer cache
-    # worth splitting the RUN to recover. Measured end to end on
-    # 2026-08-20: 12 build + 11 SBOM + 9 rechunk + 2 push = 35 min.
-    # 90 is 2.5x that, enough for a GHCR push that stalls into its
-    # retries, and short enough that a real hang is caught the same
-    # morning instead of running all day.
-    timeout-minutes: 90
+    # 120 (2026-08-24), and this number now comes from a distribution
+    # rather than from one lucky run.
+    #
+    # The 90 it replaces was set on 2026-08-20 off a single 35-minute
+    # measurement and the reassuring arithmetic "90 is 2.5x that". Four
+    # builds of the same code since:
+    #
+    #   2026-08-21  60 min   (chunking 1095s)
+    #   2026-08-23  43 min   (chunking  619s)
+    #   2026-08-24  49 min   (chunking  838s)
+    #   2026-08-24  67 min   (chunking 1431s)
+    #
+    # Chunking alone swings better than 2x on identical input, so the
+    # job does too. 35 was the fast tail, not the typical case, and 90
+    # left barely twenty minutes over the slowest run observed.
+    #
+    # 120 keeps roughly 2x over the worst seen while still catching a
+    # genuine hang the same morning. The earlier note about the merged
+    # RUN and the missing layer cache stands: on ubuntu-26.04 the merge
+    # costs nothing, and there is no cache worth splitting it to
+    # recover.
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write

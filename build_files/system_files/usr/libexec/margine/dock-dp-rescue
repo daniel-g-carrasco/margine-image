@@ -114,21 +114,40 @@ typec_partner_present() {
 # returns "no opinion" and the model list below decides instead.
 billboard_reports_failure() {
   command -v lsusb >/dev/null 2>&1 || return 1
-  local d i vid pid modes
+  local d i vid pid verdict
   for d in /sys/bus/usb/devices/*/; do
     for i in "$d"*/bInterfaceClass; do
       [ -f "$i" ] || continue
       [ "$(cat "$i" 2>/dev/null)" = "11" ] || continue
       vid=$(cat "$d/idVendor" 2>/dev/null); pid=$(cat "$d/idProduct" 2>/dev/null)
-      modes=$(lsusb -v -d "$vid:$pid" 2>/dev/null | grep -iE "^ *Alternate Mode [0-9]+ *:")
-      [ -n "$modes" ] || continue
-      # At least one advertised mode is not reported as successful.
-      if grep -qiv "configuration successful" <<<"$modes"; then
-        log "billboard on $vid:$pid reports a mode that did not configure"
-        return 0
-      fi
-      log "billboard on $vid:$pid reports every mode configured, leaving it alone"
-      return 1
+      # Only the DisplayPort mode counts (VESA SVID 0xFF01). A dock that
+      # also advertises Thunderbolt (0x8087) will report THAT mode as
+      # "not attempted" on every laptop without Thunderbolt, forever,
+      # while its DisplayPort works fine. Judging "any mode not
+      # successful" would rescue such a dock on every plug-in: a
+      # one-second blink of every device, for nothing. lsusb prints each
+      # mode's state on one line and its wSVID on the next, so pair them.
+      verdict=$(lsusb -v -d "$vid:$pid" 2>/dev/null | awk '
+        /^ *Alternate Mode [0-9]+ *:/ { state = $0; next }
+        /^ *wSVID\[[0-9]+\]/ && state != "" {
+          if (toupper($2) == "0XFF01") {
+            print (state ~ /configuration successful/) ? "dp-ok" : "dp-failed"
+            exit
+          }
+          state = ""
+        }')
+      case "$verdict" in
+        dp-failed)
+          log "billboard on $vid:$pid: DisplayPort mode did not configure"
+          return 0 ;;
+        dp-ok)
+          log "billboard on $vid:$pid: DisplayPort mode configured, leaving it alone"
+          return 1 ;;
+        *)
+          # No DisplayPort mode advertised, or the descriptor was not
+          # readable: no opinion, let the model list decide.
+          continue ;;
+      esac
     done
   done
   return 1

@@ -1,4 +1,4 @@
-name: Stale image / ISO alarm
+name: Stale image / ISO / base alarm
 
 # The 2026-08 outage lasted ten days before anyone noticed, and the reason
 # is that nothing in the pipeline watches the CLOCK. Every existing signal
@@ -33,6 +33,10 @@ on:
         description: "Age in days above which the published ISO counts as stale"
         required: false
         default: "30"
+      base_max_age_days:
+        description: "Age in days above which the upstream base image counts as stale"
+        required: false
+        default: "14"
 
 permissions:
   contents: read
@@ -206,11 +210,68 @@ jobs:
             -d "${{ steps.iso.outputs.identifier }} is what margine.dev still offers new users. The ISO only builds on a manual dispatch of build-disk.yml." \
             "$NTFY_URL" >/dev/null
 
+      - name: Inspect the upstream base image and measure its age
+        id: base
+        # Margine is FROM ghcr.io/ublue-os/bluefin-dx:stable, and that tag
+        # has a shelf life nobody has dated: Universal Blue is moving
+        # Bluefin to the projectbluefin organisation and has said there
+        # will be "no more -dx images" once developer tooling moves to
+        # userspace (ujust devmode). When that happens the tag will either
+        # vanish or quietly stop being refreshed, and every Margine build
+        # after that would silently ship an ageing base. Bluefin promotes
+        # :stable weekly, so 14 days means two missed promotions. The tag
+        # disappearing is its own alarm, never a silent pass.
+        env:
+          BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
+          BASE_MAX_AGE: ${{ inputs.base_max_age_days || '14' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          echo "image=$BASE_IMAGE" >> "$GITHUB_OUTPUT"
+          if ! RAW="$(skopeo inspect --no-tags "docker://${BASE_IMAGE}" 2>&1)"; then
+            echo "::warning::could not inspect ${BASE_IMAGE}: ${RAW##*$'\n'}"
+            echo "state=gone" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CREATED="$(jq -r '.Created // empty' <<<"$RAW")"
+          VERSION="$(jq -r '.Labels["org.opencontainers.image.version"] // "?"' <<<"$RAW")"
+          [ -n "$CREATED" ] || { echo "state=gone" >> "$GITHUB_OUTPUT"; exit 0; }
+          AGE_DAYS=$(( ( $(date -u +%s) - $(date -u -d "$CREATED" +%s) ) / 86400 ))
+          echo "Base: $BASE_IMAGE  version $VERSION  created ${CREATED:0:10}  age ${AGE_DAYS}d (threshold ${BASE_MAX_AGE}d)"
+          {
+            echo "age=$AGE_DAYS"
+            echo "version=$VERSION"
+            echo "threshold=$BASE_MAX_AGE"
+            echo "state=$([ "$AGE_DAYS" -gt "$BASE_MAX_AGE" ] && echo stale || echo fresh)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Notify ntfy about the base image
+        if: steps.base.outputs.state == 'stale' || steps.base.outputs.state == 'gone'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+          STATE: ${{ steps.base.outputs.state }}
+          AGE: ${{ steps.base.outputs.age }}
+          IMAGE: ${{ steps.base.outputs.image }}
+        run: |
+          set -euo pipefail
+          [ -n "${NTFY_URL:-}" ] || { echo "NTFY_TOPIC_URL secret not set, skipping notification."; exit 0; }
+          if [ "$STATE" = "gone" ]; then
+            TITLE="The upstream base image cannot be read"
+            MSG="${IMAGE} no longer inspects. If Bluefin has retired the -dx tag, every future Margine build is blocked until the FROM moves (see the Dakota analysis note, 2026-08-25)."
+            PRIO="urgent"; TAGS="rotating_light,package"
+          else
+            TITLE="The upstream base is ${AGE} days old"
+            MSG="${IMAGE} has not been refreshed in ${AGE} days. Bluefin promotes :stable weekly; either upstream is stuck or the -dx tag is being wound down."
+            PRIO="high"; TAGS="hourglass,package"
+          fi
+          curl -fsS -X POST -H "Title: ${TITLE}" -H "Priority: ${PRIO}" -H "Tags: ${TAGS}" -d "${MSG}" "$NTFY_URL" >/dev/null
+
       - name: Fail the run while something is stale
         # Deliberate: this run stays red every day until a fresh image (or
         # ISO) is published. The red X in the Actions list and GitHub's
         # e-mail are the channel that does not depend on ntfy being alive.
-        if: steps.age.outputs.state != 'fresh' || steps.iso.outputs.state == 'stale'
+        if: steps.age.outputs.state != 'fresh' || steps.iso.outputs.state == 'stale' || steps.base.outputs.state == 'stale' || steps.base.outputs.state == 'gone'
         run: |
           if [ "${{ steps.age.outputs.state }}" != "fresh" ]; then
             echo "::error::ghcr.io/margine:stable is ${{ steps.age.outputs.age }} days old (state: ${{ steps.age.outputs.state }})"
@@ -218,10 +279,15 @@ jobs:
           if [ "${{ steps.iso.outputs.state }}" = "stale" ]; then
             echo "::error::${{ steps.iso.outputs.identifier }} is ${{ steps.iso.outputs.age }} days old, past the ${{ steps.iso.outputs.threshold }}-day threshold"
           fi
+          case "${{ steps.base.outputs.state }}" in
+            gone)  echo "::error::upstream base ${{ steps.base.outputs.image }} cannot be inspected: the -dx tag may have been retired" ;;
+            stale) echo "::error::upstream base ${{ steps.base.outputs.image }} is ${{ steps.base.outputs.age }} days old, past the ${{ steps.base.outputs.threshold }}-day threshold" ;;
+          esac
           exit 1
 
       - name: Report a fresh image and ISO
-        if: steps.age.outputs.state == 'fresh' && steps.iso.outputs.state != 'stale'
+        if: steps.age.outputs.state == 'fresh' && steps.iso.outputs.state != 'stale' && steps.base.outputs.state != 'stale' && steps.base.outputs.state != 'gone'
         run: |
           echo ":stable is ${{ steps.age.outputs.age }} days old, within the ${{ steps.age.outputs.threshold }}-day threshold."
           echo "Latest ISO: ${{ steps.iso.outputs.identifier || 'unknown' }} (${{ steps.iso.outputs.age || '?' }} days)."
+          echo "Upstream base: ${{ steps.base.outputs.image }} version ${{ steps.base.outputs.version || '?' }}, ${{ steps.base.outputs.age || '?' }} days old."

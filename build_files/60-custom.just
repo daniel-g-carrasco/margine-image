@@ -813,8 +813,10 @@ margine-dock-wake:
     echo "there is no video signal for anything downstream to find."
     echo
     echo "This re-initialises the USB-C controller, which makes the port"
-    echo "negotiate again. The dock's USB devices drop and come back in"
-    echo "about a second."
+    echo "negotiate again. EVERYTHING on the dock drops and comes back in"
+    echo "about a second: mouse, keyboard, USB drives, and the dock's"
+    echo "ethernet port. A file copy running over that ethernet, or from a"
+    echo "USB drive on the dock, will be interrupted. Finish it first."
     echo
     echo "On a Framework 13 AMD this also happens automatically on plug-in;"
     echo "this command is for other machines, other docks, and for when the"

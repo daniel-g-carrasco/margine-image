@@ -14,9 +14,15 @@
 # below finds the package already present and does nothing, so the image
 # is byte-for-byte what it was. On a base without DX (ghcr.io/projectbluefin/
 # bluefin, or plain Bluefin) it installs exactly the pieces Margine's
-# declarations (margine-atomic.yaml, host_packages.virtualization) and
-# validators (group membership) depend on. Nothing more: Bluefin DX also
-# ships cockpit, bpf tooling, rocm and a dozen others that Margine never
+# declarations (margine-atomic.yaml) and validators (group membership)
+# depend on. Two classes: the virtualisation/container/IDE stack (sections
+# 1-4), and the host packages margine-atomic.yaml declares that were only
+# ever present because DX shipped them (section 1b: diagnostics, fonts,
+# the tray extension the dconf defaults enable, tmux, rocminfo...). Found
+# by diffing a build on the plain base against today's image (2026-08-25:
+# 418 packages present today and absent there; 17 of them declared).
+# Nothing more: DX also ships cockpit, bpf tooling, the rest of rocm,
+# qemu for a dozen foreign architectures and others that Margine never
 # asked for, and this is not the place to start.
 #
 # Third-party repos are handled the way custom-kernel handles RPMFusion
@@ -57,6 +63,35 @@ if (( ${#NEED[@]} == 0 )); then
   log "virtualisation + container tooling already in the base (${#FEDORA_PKGS[@]} packages present)"
 else
   log "base lacks ${#NEED[@]} packages, installing: ${NEED[*]}"
+  retry 3 30 dnf -y install --setopt=install_weak_deps=False "${NEED[@]}"
+fi
+
+# --- 1b. Host packages the declaration promises, that only DX carried ----
+# Each of these is listed in margine-atomic.yaml (section in the comment)
+# and is present in today's image only because Bluefin DX ships it; the
+# plain Bluefin base has none of them (trial build of 2026-08-25). Same
+# rule: install only what is missing, so today's base sees no change.
+# google-noto-sans-cjk-fonts is deliberately absent: the plain base ships
+# its successor google-noto-sans-cjk-vf-fonts, so the declaration is what
+# needs updating, not the image. gnome-shell-extension-dash-to-dock is
+# declared too but absent from today's image as well: out of scope here.
+DECLARED_PKGS=(
+  mesa-demos vulkan-tools                  # media_diagnostics
+  rocminfo rocm-opencl                     # amd_gpu_extras
+  lm_sensors powertop powerstat smartmontools  # hardware_diagnostics
+  gnome-shell-extension-appindicator       # gnome_tools: enabled by 30-gnome-defaults
+  jetbrains-mono-fonts cascadia-code-fonts # fonts
+  tmux glow                                # core_cli
+  podman-tui                               # container_tooling
+  vkBasalt                                 # desktop_host_helpers
+  python3-pip                              # build_essentials
+  virt-install                             # not declared: the margine-vm just recipes call it
+)
+mapfile -t NEED < <(missing "${DECLARED_PKGS[@]}")
+if (( ${#NEED[@]} == 0 )); then
+  log "declared host packages already in the base (${#DECLARED_PKGS[@]} present)"
+else
+  log "base lacks ${#NEED[@]} declared host packages, installing: ${NEED[*]}"
   retry 3 30 dnf -y install --setopt=install_weak_deps=False "${NEED[@]}"
 fi
 
@@ -133,7 +168,7 @@ done
 # --- 5. Prove it ---------------------------------------------------------
 # What this script promises the rest of the image. A base that still lacks
 # any of these after the steps above is not something to ship.
-for p in libvirt virt-manager qemu-kvm docker-ce code; do
+for p in libvirt virt-manager qemu-kvm docker-ce code "${DECLARED_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p still missing after devstack"; exit 1; }
 done
 for g in docker libvirt incus-admin; do

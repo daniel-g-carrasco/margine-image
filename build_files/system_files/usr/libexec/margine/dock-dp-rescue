@@ -32,13 +32,21 @@
 # A data role swap was tried first and the port refuses it, so it is not
 # in here.
 #
-# WHY THIS IS NARROW ON PURPOSE
+# WHEN IT FIRES
 #
-# Gated on the exact machine that needs it. On hardware whose UCSI works,
-# this would be a pointless one-second blink of every dock device every
-# time you plug in a dock with no monitor attached. If another model
-# turns out to need it, add its DMI string here with the evidence, the
-# same way this one has it.
+# The first version of this gated on the laptop model, which was honest
+# but poor: it helped one machine and left every other one to find the
+# manual command. The gate now asks the dock instead, which turns out to
+# report exactly what we need to know. See billboard_reports_failure().
+#
+# That distinction matters for the false positive worth avoiding: a dock
+# with no monitor plugged into it. There the negotiation succeeds and
+# there is simply nothing to show, the billboard says so, and we stay
+# quiet. Blinking every dock device for a second in that case would be a
+# regression for anyone using a dock as a plain hub.
+#
+# The model list survives as a fallback for docks that expose no usable
+# billboard descriptor.
 set -uo pipefail
 
 DMI_VENDOR=/sys/class/dmi/id/sys_vendor
@@ -62,16 +70,9 @@ log() {
   (( FORCE )) && echo "$*"
 }
 
-# --force is how `ujust margine-dock-wake` gets here: someone with a
-# different machine, or a different dock, asking for the same rescue by
-# hand. It skips the model gate and the grace period, because a person
-# typing a command has already waited.
-if (( ! FORCE )); then
-  case "$(cat "$DMI_VENDOR" 2>/dev/null)/$(cat "$DMI_PRODUCT" 2>/dev/null)" in
-    "Framework/Laptop 13 (AMD Ryzen 7040Series)") ;;
-    *) exit 0 ;;
-  esac
-fi
+# --force is how `ujust margine-dock-wake` gets here: someone asking for
+# the rescue by hand, on any machine. It skips every gate and the grace
+# period, because a person typing a command has already decided.
 
 dp_connected() {
   local f
@@ -91,6 +92,56 @@ typec_partner_present() {
   return 1
 }
 
+# Ask the dock whether DisplayPort actually failed, instead of inferring
+# it from the laptop model.
+#
+# A USB-C device with alternate modes exposes a Billboard descriptor, and
+# in it a two-bit state per mode: 00 error, 01 not attempted, 10 attempted
+# and unsuccessful, 11 successful. Measured on the reference host on
+# 2026-08-25, same dock, two plug-ins minutes apart:
+#
+#   screen up    bmConfigured 03   "Alternate Mode configuration successful"
+#   screen dark  bmConfigured 01   "Alternate Mode configuration not attempted"
+#
+# So it is live, per enumeration, and it tells the truth. That makes it a
+# far better gate than a list of laptop models: it fires on the machine
+# that has the problem, whoever made it, and it stays quiet on a dock
+# that entered DisplayPort fine and simply has no monitor plugged into
+# it, which is the false positive worth avoiding.
+#
+# Parsed out of lsusb because the kernel exposes no sysfs path for BOS
+# descriptors. If usbutils is missing or its wording changes, this
+# returns "no opinion" and the model list below decides instead.
+billboard_reports_failure() {
+  command -v lsusb >/dev/null 2>&1 || return 1
+  local d i vid pid modes
+  for d in /sys/bus/usb/devices/*/; do
+    for i in "$d"*/bInterfaceClass; do
+      [ -f "$i" ] || continue
+      [ "$(cat "$i" 2>/dev/null)" = "11" ] || continue
+      vid=$(cat "$d/idVendor" 2>/dev/null); pid=$(cat "$d/idProduct" 2>/dev/null)
+      modes=$(lsusb -v -d "$vid:$pid" 2>/dev/null | grep -iE "^ *Alternate Mode [0-9]+ *:")
+      [ -n "$modes" ] || continue
+      # At least one advertised mode is not reported as successful.
+      if grep -qiv "configuration successful" <<<"$modes"; then
+        log "billboard on $vid:$pid reports a mode that did not configure"
+        return 0
+      fi
+      log "billboard on $vid:$pid reports every mode configured, leaving it alone"
+      return 1
+    done
+  done
+  return 1
+}
+
+model_is_known_broken() {
+  case "$(cat "$DMI_VENDOR" 2>/dev/null)/$(cat "$DMI_PRODUCT" 2>/dev/null)" in
+    # Evidence: see the header of this file.
+    "Framework/Laptop 13 (AMD Ryzen 7040Series)") return 0 ;;
+  esac
+  return 1
+}
+
 (( FORCE )) || sleep "$GRACE"
 
 # Nothing to rescue: either the screen arrived on its own, or the dock is
@@ -102,6 +153,19 @@ fi
 if ! typec_partner_present; then
   log "no USB-C device attached, nothing to rescue"
   exit 0
+fi
+
+# The decision, in order of how much it knows: what the dock says about
+# its own negotiation first, the model list only as a fallback for docks
+# that expose no usable billboard.
+if (( ! FORCE )); then
+  if billboard_reports_failure; then
+    :
+  elif model_is_known_broken; then
+    log "no billboard verdict, but this model is known to miss DisplayPort"
+  else
+    exit 0
+  fi
 fi
 
 if (( ! FORCE )) && [ -f "$STAMP" ]; then

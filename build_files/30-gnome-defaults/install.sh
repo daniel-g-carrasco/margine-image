@@ -72,6 +72,16 @@ accent-color='yellow'
 # Hyprland chain are simply inert with only five workspaces (harmless).
 [org.gnome.mutter]
 dynamic-workspaces=false
+# Workspaces span every monitor, not just the primary. GNOME's default
+# (true) turns any second screen into a single static workspace: windows
+# there ignore Super+1..5, ignore the move-to-workspace binds, and the
+# whole Hyprland-style model Margine ships stops at the edge of the
+# primary display. Found on the reference host on 2026-08-25 with a 4K
+# on a dock: the laptop panel behaved "like a fixed workspace" and its
+# windows could not be driven by keyboard at all. With this false, a
+# workspace switch moves both screens together, which is what the
+# keybindings assume.
+workspaces-only-on-primary=false
 
 [org.gnome.desktop.wm.preferences]
 # Override Bluefin's num-workspaces=4 → 5 (Daniel's standing preference).

@@ -794,12 +794,18 @@ gnome:
     terminal_emulator: org.gnome.Ptyxis.desktop
   workspaces:
     note: >
-      STATIC 10-workspace model (Hyprland-style), with native SUPER+1..0
+      STATIC 5-workspace model (Hyprland-style), with native SUPER+1..5
       direct-jump bindings. Switched from dynamic on 2026-06-10: with
       dynamic workspaces, native move-to-workspace-N bindings silently do
       NOTHING when workspace N does not exist yet, so SUPER+SHIFT+N felt
-      broken. Static count=10 pre-creates them all, matching the
-      workspace-names below and the Hyprland muscle memory.
+      broken. A static count pre-creates them all, matching the
+      workspace-names below and the Hyprland muscle memory. FIVE, not
+      ten: Daniel's standing preference, and what the image's gschema
+      override ships; this note said 10 for two months while count was
+      already 5. One more thing dynamic mode leaves behind: GNOME rewrites
+      num-workspaces in the user's dconf as it grows and shrinks them, so
+      a host that ever ran dynamic can carry a stale 8 that shadows the
+      image default until `gsettings reset` clears it.
       Applied by scripts/configure-gnome-keybindings.
     dynamic: false
     # 5, not 10: static workspaces are all pre-created and always visible

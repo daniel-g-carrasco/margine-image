@@ -334,6 +334,15 @@ fi
 # v4l2loopback later as a one-off layer or via Flatpak (OBS has its
 # own GStreamer pipeline that doesn't need this module).
 log "Building v4l2loopback against $KERNEL_VERSION (best-effort)"
+# akmods builds as its own unprivileged user and rpmbuild writes its temp
+# files under /var/tmp. The plain Bluefin image ships no /var/tmp at all
+# (an empty /var; bootc creates it at boot via tmpfiles), so whatever rpm
+# transaction created it first left it 0755 root and the build died with
+# 'error creating temporary file /var/tmp/rpm-tmp.*: Permission denied'
+# (trial 7, 2026-08-25). Same fix as the /tmp tmpfs mode in the
+# Containerfile: world-writable with the sticky bit, before akmods runs.
+install -d -m 1777 /var/tmp
+chmod 1777 /tmp /var/tmp
 V4L2_OK=0
 if disable_akmodsbuild; then
   if dnf -y install \

@@ -602,7 +602,17 @@ retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y i
 # re-verifies the full recipe set resolves on the booted image.
 GAMING_BAKE=(steam lutris retroarch gamescope)
 log "Baking native-gaming 32-bit dependency closure: ${GAMING_BAKE[*]}"
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh "$@"' _ "${GAMING_BAKE[@]}" \
+# --enablerepo=fedora-multimedia, for the same reason the codec block
+# needs it: multilib wants each i686 library from the SAME family as its
+# installed x86_64 twin. The base's libfdk-aac is negativo17's (epoch 1)
+# and it obsoletes Fedora's and RPMFusion's fdk-aac, so steam's chain
+# (steam -> pipewire-alsa.i686 -> pipewire-libs.i686 -> libfdk-aac.so.2)
+# can only close with negativo17's own libfdk-aac.i686. On Bluefin DX that
+# i686 twin is already in the base and the repo is not consulted; on a
+# base without it (projectbluefin/bluefin:testing, 2026-08-25 trial) the
+# transaction is unresolvable without the repo. Enabled for this one
+# transaction, left disabled after, like everywhere else in this file.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia "$@"' _ "${GAMING_BAKE[@]}" \
   || { err "native-gaming closure install failed after 5 attempts (repo down or unresolvable multilib at build?); aborting"; exit 1; }
 dnf -y remove --no-autoremove "${GAMING_BAKE[@]}" \
   || { err "failed to strip gaming apps while keeping their deps; aborting"; exit 1; }

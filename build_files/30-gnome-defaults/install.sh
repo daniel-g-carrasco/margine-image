@@ -72,6 +72,14 @@ accent-color='yellow'
 # Hyprland chain are simply inert with only five workspaces (harmless).
 [org.gnome.mutter]
 dynamic-workspaces=false
+# workspaces-only-on-primary is left at GNOME's default (true): a second
+# monitor is one fixed workspace and Super+1..5 drive the primary only.
+# Considered flipping it on 2026-08-25 after the reference host felt
+# "strange" with a 4K on the dock; Daniel then said he preferred the
+# fixed second screen, which is also what GNOME ships. Windows still move
+# between monitors with o-tiling's Super+Shift+Ctrl+arrows. Anyone who
+# wants workspaces to span every screen sets it themselves:
+#   gsettings set org.gnome.mutter workspaces-only-on-primary false
 
 [org.gnome.desktop.wm.preferences]
 # Override Bluefin's num-workspaces=4 → 5 (Daniel's standing preference).

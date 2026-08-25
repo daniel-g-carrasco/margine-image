@@ -76,6 +76,13 @@ fi
 # from main) moves the declaration and today's image to the vf package. dash-to-dock is not an RPM on any base:
 # Bluefin bakes it from upstream as an unpackaged extension (#379 fixed
 # the declaration that listed the Fedora package).
+# vkBasalt is declared (desktop_host_helpers) and present in today's image,
+# but not because DX ships it: it is a leftover of the GAMING_BAKE
+# transaction in custom-kernel (lutris drags in vkBasalt and wine, the
+# four gaming packages are removed afterwards, their dependencies stay).
+# validate-margine-system counts it as half a gaming layer and warns on
+# every image today. The gaming layer is the user's (ujust margine-gaming),
+# so it is not backfilled here.
 DECLARED_PKGS=(
   mesa-demos vulkan-tools                  # media_diagnostics
   rocminfo rocm-opencl                     # amd_gpu_extras
@@ -84,7 +91,6 @@ DECLARED_PKGS=(
   jetbrains-mono-fonts cascadia-code-fonts # fonts
   tmux glow                                # core_cli
   podman-tui                               # container_tooling
-  vkBasalt                                 # desktop_host_helpers
   python3-pip                              # build_essentials
   virt-install                             # not declared: the margine-vm just recipes call it
 )

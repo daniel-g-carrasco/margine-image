@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+# Bring up an external monitor that a USB-C dock failed to announce.
+#
+# THE BUG THIS WORKS AROUND
+#
+# On the Framework Laptop 13 (AMD Ryzen 7040), plugging in a USB-C dock
+# while the system is running often brings up everything except the
+# screen. The dock's USB side enumerates perfectly: mouse, keyboard,
+# hubs, ethernet. DisplayPort Alt Mode is simply never entered, so the
+# cable's lanes stay assigned to USB and there is no video signal at all.
+#
+# Measured on the reference host, 2026-08-25, with the screen dark:
+#
+#   USB side               all dock devices present
+#   DP connectors          none "connected"
+#   forcing a GPU re-probe no change, kernel logs nothing
+#   kernel log             ucsi_acpi USBC000:00: UCSI_GET_PDOS failed (-5)
+#
+# That last line is the tell. This is not the GPU and not the desktop:
+# nothing downstream can find a signal that was never negotiated. The
+# machine's UCSI implementation (the firmware interface that runs USB-C
+# port negotiation) botches the alt-mode entry, and it is a known weak
+# spot on this hardware.
+#
+# WHAT FIXES IT
+#
+# Re-binding the ucsi_acpi driver makes the connector state be read from
+# scratch, and the dock enters DisplayPort on the second attempt. Also
+# measured: the screen came up immediately, and the cost is the dock's
+# USB devices dropping and returning within about one second.
+#
+# A data role swap was tried first and the port refuses it, so it is not
+# in here.
+#
+# WHEN IT FIRES
+#
+# The first version of this gated on the laptop model, which was honest
+# but poor: it helped one machine and left every other one to find the
+# manual command. The gate now asks the dock instead, which turns out to
+# report exactly what we need to know. See billboard_reports_failure().
+#
+# That distinction matters for the false positive worth avoiding: a dock
+# with no monitor plugged into it. There the negotiation succeeds and
+# there is simply nothing to show, the billboard says so, and we stay
+# quiet. Blinking every dock device for a second in that case would be a
+# regression for anyone using a dock as a plain hub.
+#
+# The model list survives as a fallback for docks that expose no usable
+# billboard descriptor.
+set -uo pipefail
+
+DMI_VENDOR=/sys/class/dmi/id/sys_vendor
+DMI_PRODUCT=/sys/class/dmi/id/product_name
+UCSI_DRV=/sys/bus/platform/drivers/ucsi_acpi
+STAMP=/run/margine-dock-dp-rescue.stamp
+# Back off for a minute, but ONLY after a rescue that did not bring the
+# screen up. Rebinding re-creates the very typec devices whose
+# appearance triggers this script, so a dock that never negotiates
+# DisplayPort would otherwise have us rebinding forever: that is the one
+# case the cooldown exists for. A rescue that worked needs no cooldown,
+# and the first version applied one anyway, keyed on time alone. On
+# 2026-08-25 that refused two genuine plug-ins out of four ("rescued 46s
+# ago"), which from the user's side looked exactly like the bug we were
+# fixing. The stamp therefore records the outcome, not just the time.
+COOLDOWN=60
+# Long enough for the normal path to win on its own. When alt mode is
+# entered correctly the connector shows up well inside this window, and
+# the script then does nothing at all.
+GRACE=6
+
+FORCE=0
+[ "${1:-}" = "--force" ] && FORCE=1
+
+# The switch. This runs by default because the gate is the dock's own
+# verdict and a healthy setup is never touched, but anything that rebinds
+# a kernel driver on plug-in must be one command away from off. The file
+# lives in /etc, which persists across image updates on an ostree system.
+#   ujust margine-dock-rescue off     writes "off"
+#   ujust margine-dock-rescue on      writes "on"
+# Absent file means the default below. --force ignores the switch: a
+# person typing the manual command has already decided.
+SWITCH=/etc/margine/dock-dp-rescue
+DEFAULT_ENABLED=1
+if (( ! FORCE )); then
+  case "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" in
+    off) exit 0 ;;
+    on)  ;;
+    *)   (( DEFAULT_ENABLED )) || exit 0 ;;
+  esac
+fi
+
+log() {
+  logger -t margine-dock-dp-rescue -- "$*"
+  if (( FORCE )); then echo "$*"; fi
+  # Always succeed. The first version ended in `(( FORCE )) && echo`,
+  # which returns 1 whenever FORCE is 0, and since a log call is the last
+  # thing this script does, every unattended run exited 1. systemd kept
+  # the transient unit around as "failed", and every later plug-in was
+  # refused a unit of the same name. One successful rescue, then four
+  # silent non-starts, all on 2026-08-25. The exit status of a helper
+  # that runs under a fixed unit name is not cosmetic.
+  return 0
+}
+
+# --force is how `ujust margine-dock-wake` gets here: someone asking for
+# the rescue by hand, on any machine. It skips every gate and the grace
+# period, because a person typing a command has already decided.
+
+dp_connected() {
+  local f
+  for f in /sys/class/drm/card*-DP-*/status; do
+    # Exact match: "disconnected" contains "connected", and a substring
+    # test here would report every dark port as a working one.
+    [ "$(cat "$f" 2>/dev/null)" = "connected" ] && return 0
+  done
+  return 1
+}
+
+typec_partner_present() {
+  local p
+  for p in /sys/class/typec/port[0-9]-partner; do
+    [ -e "$p" ] && return 0
+  done
+  return 1
+}
+
+# Ask the dock whether DisplayPort actually failed, instead of inferring
+# it from the laptop model.
+#
+# A USB-C device with alternate modes exposes a Billboard descriptor, and
+# in it a two-bit state per mode: 00 error, 01 not attempted, 10 attempted
+# and unsuccessful, 11 successful. Measured on the reference host on
+# 2026-08-25, same dock, two plug-ins minutes apart:
+#
+#   screen up    bmConfigured 03   "Alternate Mode configuration successful"
+#   screen dark  bmConfigured 01   "Alternate Mode configuration not attempted"
+#
+# So it is live, per enumeration, and it tells the truth. That makes it a
+# far better gate than a list of laptop models: it fires on the machine
+# that has the problem, whoever made it, and it stays quiet on a dock
+# that entered DisplayPort fine and simply has no monitor plugged into
+# it, which is the false positive worth avoiding.
+#
+# Parsed out of lsusb because the kernel exposes no sysfs path for BOS
+# descriptors. If usbutils is missing or its wording changes, this
+# returns "no opinion" and the model list below decides instead.
+BILLBOARD_VERDICT=none
+billboard_reports_failure() {
+  BILLBOARD_VERDICT=none
+  command -v lsusb >/dev/null 2>&1 || return 1
+  local d i vid pid verdict
+  for d in /sys/bus/usb/devices/*/; do
+    for i in "$d"*/bInterfaceClass; do
+      [ -f "$i" ] || continue
+      [ "$(cat "$i" 2>/dev/null)" = "11" ] || continue
+      vid=$(cat "$d/idVendor" 2>/dev/null); pid=$(cat "$d/idProduct" 2>/dev/null)
+      # Only the DisplayPort mode counts (VESA SVID 0xFF01). A dock that
+      # also advertises Thunderbolt (0x8087) will report THAT mode as
+      # "not attempted" on every laptop without Thunderbolt, forever,
+      # while its DisplayPort works fine. Judging "any mode not
+      # successful" would rescue such a dock on every plug-in: a
+      # one-second blink of every device, for nothing. lsusb prints each
+      # mode's state on one line and its wSVID on the next, so pair them.
+      verdict=$(lsusb -v -d "$vid:$pid" 2>/dev/null | awk '
+        /^ *Alternate Mode [0-9]+ *:/ { state = $0; next }
+        /^ *wSVID\[[0-9]+\]/ && state != "" {
+          if (toupper($2) == "0XFF01") {
+            print (state ~ /configuration successful/) ? "dp-ok" : "dp-failed"
+            exit
+          }
+          state = ""
+        }')
+      BILLBOARD_VERDICT="$verdict"
+      case "$verdict" in
+        dp-failed)
+          log "billboard on $vid:$pid: DisplayPort mode did not configure"
+          return 0 ;;
+        dp-ok)
+          log "billboard on $vid:$pid: DisplayPort mode configured, leaving it alone"
+          return 1 ;;
+        *)
+          # No DisplayPort mode advertised, or the descriptor was not
+          # readable: no opinion, let the model list decide.
+          continue ;;
+      esac
+    done
+  done
+  return 1
+}
+
+model_is_known_broken() {
+  case "$(cat "$DMI_VENDOR" 2>/dev/null)/$(cat "$DMI_PRODUCT" 2>/dev/null)" in
+    # Evidence: see the header of this file.
+    "Framework/Laptop 13 (AMD Ryzen 7040Series)") return 0 ;;
+  esac
+  return 1
+}
+
+(( FORCE )) || sleep "$GRACE"
+
+# Nothing to rescue: either the screen arrived on its own, or the dock is
+# gone again, or there is no dock at all.
+if dp_connected; then
+  log "a DisplayPort output is already connected, nothing to rescue"
+  exit 0
+fi
+if ! typec_partner_present; then
+  log "no USB-C device attached, nothing to rescue"
+  exit 0
+fi
+
+# The decision, in order of how much it knows: what the dock says about
+# its own negotiation first, the model list only as a fallback for docks
+# that expose no usable billboard.
+if (( ! FORCE )); then
+  if billboard_reports_failure; then
+    :
+  elif model_is_known_broken; then
+    log "no billboard verdict, but this model is known to miss DisplayPort"
+  else
+    exit 0
+  fi
+fi
+
+if (( ! FORCE )) && [ -f "$STAMP" ]; then
+  now=$(date +%s)
+  last_at=0; last_outcome=failed
+  read -r last_at last_outcome < "$STAMP" 2>/dev/null || true
+  # A stamp with no outcome (older format, or a run that died before
+  # writing one) counts as failed: the cautious reading.
+  if [ "${last_outcome:-failed}" = "failed" ] && (( now - ${last_at:-0} < COOLDOWN )); then
+    log "skipped: a rescue failed $((now - last_at))s ago, backing off for ${COOLDOWN}s"
+    exit 0
+  fi
+fi
+# Written as "failed" first: if the script dies between here and the
+# verdict below, the next trigger backs off instead of piling on.
+echo "$(date +%s) failed" > "$STAMP"
+
+[ -w "$UCSI_DRV/unbind" ] || { log "ucsi_acpi driver not bindable, giving up"; exit 0; }
+
+dev=$(basename "$(readlink -f /sys/bus/platform/drivers/ucsi_acpi/USBC*)" 2>/dev/null)
+[ -n "$dev" ] || dev=USBC000:00
+
+log "no DisplayPort after ${GRACE}s with a dock attached, re-initialising ucsi_acpi ($dev)"
+echo "$dev" > "$UCSI_DRV/unbind" 2>/dev/null || { log "unbind failed"; exit 0; }
+sleep 2
+echo "$dev" > "$UCSI_DRV/bind" 2>/dev/null || { log "bind failed, the port is now unmanaged until replug"; exit 1; }
+sleep 5
+
+# The outcome is about the NEGOTIATION, not about a screen. Measured on
+# 2026-08-25 with the monitor cable pulled from the dock: after the
+# rebind the dock reported "configuration successful" with no display
+# anywhere. That is a rescue that worked, and the next plug-in must not
+# be refused because of it. Only "still not configured" is a failure,
+# because that is the one case a rebind loop can grow from.
+if dp_connected; then
+  echo "$(date +%s) ok" > "$STAMP"
+  log "display came up after re-initialising the controller"
+elif billboard_reports_failure; then
+  log "DisplayPort still not configured after re-initialising; backing off"
+elif [ "$BILLBOARD_VERDICT" = "dp-ok" ]; then
+  echo "$(date +%s) ok" > "$STAMP"
+  log "DisplayPort negotiated, no display attached to the dock"
+else
+  log "display still absent and the dock gives no verdict; backing off"
+fi
+exit 0

@@ -1,0 +1,37 @@
+# Framework 13 AMD: rescue the external monitor a USB-C dock forgot to
+# announce. See /usr/libexec/margine/dock-dp-rescue for the evidence and
+# for why the workaround is gated to one machine.
+#
+# The trigger is the USB-C partner appearing, which is the moment a dock
+# is plugged in. The helper then waits, does nothing if DisplayPort shows
+# up on its own, and only re-initialises the controller if it does not.
+#
+# It is NOT triggered by plugging a monitor into an already attached
+# dock. Measured on 2026-08-25 with udevadm monitor across three
+# plug/unplug cycles of the monitor cable: 38 drm events, zero typec
+# events. That is what makes this safe to run by default: a file copy
+# over the dock's ethernet cannot be interrupted by someone attaching a
+# screen, because nothing here fires. The only moment the dock's devices
+# can blink is within about eight seconds of attaching the dock itself,
+# and only when the dock reports the video negotiation failed.
+#
+# systemd-run, not a direct RUN+=: udev kills anything still running
+# after a short timeout, and this helper deliberately waits several
+# seconds before deciding. Running it inline would guarantee it is killed
+# before it can do anything useful.
+#
+# The fixed unit name is deliberate: the rebind re-creates port0-partner,
+# which fires this rule again while the first run is still sleeping, and
+# systemd refusing a second unit of the same name is exactly the
+# de-duplication wanted. --collect keeps that from being a trap, and the
+# trap is not hypothetical: on 2026-08-25 the helper had a bug that made
+# it exit 1 after a SUCCESSFUL rescue, the failed unit stayed loaded, and
+# the next four plug-ins fired this rule and were all refused a unit of
+# that name. Nothing was logged, because nothing ran. With --collect a
+# failed unit is unloaded as soon as it stops, so a bad run costs one
+# rescue, not every rescue until reboot.
+#
+# Measured on the reference host 2026-08-25: dock plugged in with the
+# screen dark, rule fired, rescue logged, screen up seven seconds later.
+ACTION=="add", SUBSYSTEM=="typec", KERNEL=="port[0-9]-partner", \
+  RUN+="/usr/bin/systemd-run --no-block --collect --unit=margine-dock-dp-rescue --description='Rescue a dock display the USB-C negotiation missed' /usr/libexec/margine/dock-dp-rescue"

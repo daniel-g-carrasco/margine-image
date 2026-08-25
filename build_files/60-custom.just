@@ -768,6 +768,64 @@ margine-printers-repair:
     echo
     echo "Reopen any app that was already running: print dialogs cache this list."
 
+# Turn the automatic dock display rescue on or off (default: on).
+[group('Margine')]
+margine-dock-rescue $STATE="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+    SWITCH=/etc/margine/dock-dp-rescue
+    case "$STATE" in
+      on|off)
+        sudo mkdir -p /etc/margine
+        printf '%s\n' "$STATE" | sudo tee "$SWITCH" >/dev/null
+        echo "Automatic dock display rescue: $STATE"
+        [ "$STATE" = off ] && echo "The manual command still works: ujust margine-dock-wake"
+        ;;
+      status)
+        cur="$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null || true)"
+        case "$cur" in
+          on|off) echo "Automatic dock display rescue: $cur (set in $SWITCH)" ;;
+          *)      echo "Automatic dock display rescue: on (default; no $SWITCH)" ;;
+        esac
+        echo
+        echo "What it does: when a USB-C dock is plugged in and reports that"
+        echo "DisplayPort was never set up, the USB-C controller is re-initialised"
+        echo "so the external monitor comes up. It never touches a dock that"
+        echo "negotiated fine, monitor or not. Last decisions:"
+        journalctl -b --no-pager -t margine-dock-dp-rescue 2>/dev/null | tail -6 | sed 's/^/  /'
+        echo
+        echo "ujust margine-dock-rescue off   |   ujust margine-dock-rescue on"
+        ;;
+      *)
+        echo "usage: ujust margine-dock-rescue [on|off|status]"; exit 1 ;;
+    esac
+
+# Wake an external monitor a USB-C dock plugged in but never announced.
+[group('Margine')]
+margine-dock-wake:
+    #!/usr/bin/bash
+    set -uo pipefail
+    echo "== Wake a dock display =="
+    echo
+    echo "For when you plug in a USB-C dock and everything arrives except"
+    echo "the screen: mouse, keyboard and ethernet work, the monitor stays"
+    echo "black. That means DisplayPort Alt Mode was never entered, so"
+    echo "there is no video signal for anything downstream to find."
+    echo
+    echo "This re-initialises the USB-C controller, which makes the port"
+    echo "negotiate again. EVERYTHING on the dock drops and comes back in"
+    echo "about a second: mouse, keyboard, USB drives, and the dock's"
+    echo "ethernet port. A file copy running over that ethernet, or from a"
+    echo "USB drive on the dock, will be interrupted. Finish it first."
+    echo
+    echo "On a Framework 13 AMD this also happens automatically on plug-in;"
+    echo "this command is for other machines, other docks, and for when the"
+    echo "automatic attempt did not stick."
+    echo
+    read -rp "Try it? [y/N] " ans
+    case "$ans" in [yY]|[yY][eE][sS]) ;; *) echo "Aborted."; exit 0 ;; esac
+    sudo /usr/libexec/margine/dock-dp-rescue --force
+
 # Run all Margine validators (the "is my system as shipped?" check).
 [group('Margine')]
 margine-doctor:

@@ -14,6 +14,11 @@ name: Build Margine LTS variant (experimental, x86-64-v2)
 # proves only that the image builds and the kernel is signed; whether it
 # boots on real v2 hardware is what the reporter of #382 can tell us.
 on:
+  # TEMPORARY, remove before merge: lets the branch build itself while the
+  # workflow does not exist on main yet (workflow_dispatch needs that).
+  # Push-triggered runs publish :lts-test, never :lts.
+  push:
+    branches: ['kernel/lts-variant']
   workflow_dispatch:
     inputs:
       tag:
@@ -59,6 +64,13 @@ jobs:
           printf '%s' "$MOK_KEY"  > /tmp/margine-secrets/MOK.key
           printf '%s' "$MOK_CERT" > /tmp/margine-secrets/MOK.pem
           chmod 600 /tmp/margine-secrets/*
+      - name: Resolve the tag to push
+        run: |
+          TAG="${{ inputs.tag }}"
+          [ -n "$TAG" ] || TAG=lts
+          [ "${{ github.event_name }}" = push ] && TAG=lts-test
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "will push :$TAG"
       - name: Build LTS variant (build-arg KERNEL_FLAVOR=lts)
         run: |
           set -euo pipefail
@@ -70,25 +82,25 @@ jobs:
             --build-arg "KERNEL_FLAVOR=lts" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
-            --tag "${IMG}:${{ inputs.tag || 'lts' }}" \
+            --tag "${IMG}:${TAG}" \
             .
-          sudo buildah images "${IMG}:${{ inputs.tag || 'lts' }}"
+          sudo buildah images "${IMG}:${TAG}"
       - name: Prove the kernel is the LTS one and is signed
         run: |
           set -euo pipefail
-          IMG="ghcr.io/${{ github.repository_owner }}/margine:${{ inputs.tag || 'lts' }}"
+          IMG="ghcr.io/${{ github.repository_owner }}/margine:${TAG}"
           KVER="$(sudo podman run --rm --entrypoint /bin/bash "$IMG" -c 'ls /usr/lib/modules')"
           echo "kernel in image: $KVER"
           case "$KVER" in *cachylts*) ;; *) echo "::error::expected a cachylts kernel, got $KVER"; exit 1;; esac
           command -v sbverify >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq sbsigntool; }
-          sudo podman run --rm --entrypoint /bin/cat "$IMG" "/usr/lib/modules/$KVER/vmlinuz" > /tmp/vmlinuz
+          sudo podman run --rm --entrypoint /bin/cat "$IMG" "/usr/lib/modules/$KVER/vmlinuz" | tee /tmp/vmlinuz >/dev/null
           sbverify --list /tmp/vmlinuz | grep -qi "Margine" || { echo "::error::vmlinuz is not signed with the Margine key"; exit 1; }
           echo "vmlinuz signed with the Margine key"
       - name: Push experimental tag
         run: |
           IMG="ghcr.io/${{ github.repository_owner }}/margine"
-          sudo buildah push "${IMG}:${{ inputs.tag || 'lts' }}"
-          echo "Pushed ${IMG}:${{ inputs.tag || 'lts' }}: EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
+          sudo buildah push "${IMG}:${TAG}"
+          echo "Pushed ${IMG}:${TAG}: EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
       - name: Wipe staged secrets
         if: always()
         run: rm -rf /tmp/margine-secrets

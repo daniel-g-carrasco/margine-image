@@ -72,7 +72,7 @@ operations.
 | | |
 | --- | --- |
 | 🎬 **Complete media stack from first boot** | Mesa freeworld with proprietary codecs (not shipped in Fedora's stock Mesa for licensing reasons), VA-API and VDPAU hardware video acceleration, full ffmpeg with H.264 / H.265/HEVC / AAC / MP3 / AC3 / DTS, and the GStreamer plugin set. DRM content in Firefox- and Chromium-based browsers works without additional setup. |
-| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; ISO installs stage the public key in Anaconda before the first post-install reboot, while rebases use a one-shot service fallback. Secure Boot remains enabled once the MOK is enrolled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. |
+| ⚡ **CachyOS kernel, signed for Secure Boot** | Mainline kernel from the [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/) COPR, which includes the BORE scheduler (lower-latency desktop response under load) and several upstream-pending performance patches. The kernel image and every kernel module are signed at build time with the Margine MOK; ISO installs stage the public key in Anaconda before the first post-install reboot, while rebases use a one-shot service fallback. Secure Boot remains enabled once the MOK is enrolled and the kernel chain of trust is verified at every boot. Userspace BPF schedulers from the sibling [`kernel-cachyos-addons`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos-addons/) COPR ship in base Margine; `scx_loader` stays off by default and can be enabled explicitly with `ujust margine-scheduler <name>` or the desktop picker. Requires an x86-64-v3 CPU (AVX2); see [Install](#install). |
 | 🛡 **Immutable filesystem, atomic upgrades** | The `/usr` tree is part of the bootc deployment and is mounted read-only. Software updates pull a new OCI image from the registry and stage it as a new deployment; the previous deployment is kept on disk. If the new deployment fails to boot or misbehaves, `bootc rollback` switches back to the previous one at the next reboot. Daily updates are orchestrated in the background by Bluefin's `uupd.timer`. |
 | 🪟 **GNOME with a tiling workflow** | Stock GNOME Shell, configured with the [o-tiling](https://github.com/oliwebd/o-tiling) extension (binary-tree auto-split inspired by Hyprland) and a Hyprland-style keybinding set: `Super+H/J/K/L` to move focus, `Super+Return` for the terminal, `Super+E` for Files, `Super+period` for the emoji picker, and `Super+number` for workspaces (the full, conflict-resolved set lives in the keyboard reference). Hide Cursor, Caffeine, and the Smile emoji-picker companion are added to the default Bluefin extension set; Blur My Shell, Search Light and LogoMenu are removed. None of this is enforced — the Extensions Manager remains fully functional and any choice is reversible. |
 | 📦 **Curated application set, mostly instant** | ~29 Flatpak apps are **baked into `/var/lib/flatpak` at install time** by the Anaconda kickstart (Bazzite installer-image pattern — see [`installer/Containerfile`](installer/Containerfile)): Zen Browser, Thunderbird, Bitwarden, LibreOffice, Extension Manager, GNOME suite (Calculator, Calendar, clocks, Contacts, Maps, Weather, TextEditor, baobab, Characters, Logs, font-viewer), viewers (Loupe, Papers, Showtime, Snapshot, SoundRecorder), audio (Audacity, EasyEffects, Reaper, g4music, Blanket), Pinta, Apostrophe, Fragments. These are **ready in Activities at first login**, no first-boot wait. Four heavy creative apps (GIMP, Inkscape, darktable, OBS Studio) arrive within 5-15 min of first boot via [`flatpak-preinstall.service`](https://docs.flatpak.org/en/latest/system-installation.html#system-installation-list); a GNOME notification appears at first login telling the user they're coming, and a second notification when they're ready. Visual Studio Code is inherited from Bluefin DX (Microsoft repo, dev-container and remote-ssh extensions). |
@@ -111,6 +111,21 @@ ISO is built with [Titanoboa](https://github.com/ublue-os/titanoboa)
 (ADR-0008) and was validated end to end in a VM. Rebasing from
 Bluefin DX remains fully supported as the alternative. Current status:
 <https://margine.dev/docs/install-status>.
+
+**Hardware requirement: an x86-64-v3 CPU** (AVX2: Intel Haswell or
+newer, AMD Zen or newer; low-end Intel Celeron/Pentium "N" chips up to
+Jasper Lake do NOT qualify). Margine's kernel is built for x86-64-v3
+and there is no fallback kernel in the image: on an older CPU the boot
+stops right after GRUB with a black screen, on the live ISO as well as
+after a rebase. Check before you start, on any Linux:
+
+```sh
+/lib64/ld-linux-x86-64.so.2 --help | grep x86-64-v3
+# "x86-64-v3 (supported, searched)" = fine. No line = do not install Margine.
+```
+
+An LTS variant for x86-64-v2 CPUs is tracked in
+[#382](https://github.com/daniel-g-carrasco/margine-image/issues/382).
 
 Gaming is a one-command layer on top — `ujust margine-gaming` after
 first boot installs gamescope + vkBasalt and the seven gaming Flatpaks
@@ -156,10 +171,13 @@ Step-by-step walkthrough with screenshots:
 ### Option B — Rebase from Bluefin DX
 
 Fully supported alternative, handy if you already run a Fedora Atomic
-system. Install Bluefin DX stable, boot it once, then switch to the
-Margine image:
+system. Install Bluefin DX stable, boot it once, check that the CPU is
+x86-64-v3 (see the hardware requirement above; a rebase on an older CPU
+boots to a black screen and you will have to pick the previous
+deployment in GRUB to get back), then switch to the Margine image:
 
 ```sh
+/lib64/ld-linux-x86-64.so.2 --help | grep x86-64-v3   # must print a line
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 ```

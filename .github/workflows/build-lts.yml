@@ -14,11 +14,6 @@ name: Build Margine LTS variant (experimental, x86-64-v2)
 # proves only that the image builds and the kernel is signed; whether it
 # boots on real v2 hardware is what the reporter of #382 can tell us.
 on:
-  # TEMPORARY, remove before merge: lets the branch build itself while the
-  # workflow does not exist on main yet (workflow_dispatch needs that).
-  # Push-triggered runs publish :lts-test, never :lts.
-  push:
-    branches: ['kernel/lts-variant']
   workflow_dispatch:
     inputs:
       tag:
@@ -68,7 +63,7 @@ jobs:
         run: |
           TAG="${{ inputs.tag }}"
           [ -n "$TAG" ] || TAG=lts
-          [ "${{ github.event_name }}" = push ] && TAG=lts-test
+          [ "${{ github.event_name }}" = push ] && TAG=lts-test   # no push trigger any more; kept so a future test trigger cannot overwrite :lts
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "will push :$TAG"
       - name: Build LTS variant (build-arg KERNEL_FLAVOR=lts)

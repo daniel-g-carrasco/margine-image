@@ -68,12 +68,6 @@ ARG NVIDIA_KMOD=nvidia-open
 # Haswell, AMD before Zen, Intel Celeron/Pentium "N" up to Jasper Lake).
 # build-lts.yml passes --build-arg KERNEL_FLAVOR=lts and publishes :lts.
 ARG KERNEL_FLAVOR=default
-# /tmp is a tmpfs mount with an explicit 1777 mode: buildah gives the
-# tmpfs the mode of the directory underneath, and the plain Bluefin image
-# ships /tmp as 0755 (bluefin-dx has 1777). akmods builds kmods as the
-# unprivileged akmods user and could not create its tempdir there
-# (v4l2loopback silently missing on the trial base, 2026-08-25). At runtime
-# systemd's tmp.mount owns /tmp, so this only matters during the build.
 # /tmp is a tmpfs mount. buildah gives the tmpfs the mode of the
 # directory underneath, and the plain Bluefin image ships /tmp as 0755
 # (bluefin-dx has 1777); the unprivileged akmods user could not create

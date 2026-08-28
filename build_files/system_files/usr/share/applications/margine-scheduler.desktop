@@ -2,7 +2,7 @@
 Type=Application
 Name=Margine CPU Scheduler
 GenericName=sched_ext (BPF) scheduler picker
-Comment=Opt in to scx_loader and switch the active CPU scheduler at runtime. Margine ships with scx_loader off and uses kernel BORE until you turn it on here.
+Comment=Opt in to scx_loader and switch the active CPU scheduler at runtime. Margine ships with scx_loader off and uses the kernel's own scheduler until you turn it on here.
 Exec=/usr/libexec/margine/scheduler-picker
 Icon=margine-scheduler
 Terminal=false
@@ -43,7 +43,7 @@ Name=Switch to scx_rustland
 Exec=ptyxis -- bash -c "ujust margine-scheduler rustland; read -rp \"Press Enter to close... \""
 
 [Desktop Action off]
-Name=Turn scx off - return to kernel default (BORE)
+Name=Turn scx off - return to the kernel default scheduler
 Exec=ptyxis -- bash -c "ujust margine-scheduler off; read -rp \"Press Enter to close... \""
 
 [Desktop Action status]

@@ -30,6 +30,19 @@ const CONFIG = "/etc/scx_loader/config.toml";
 // All privileged work goes through this one helper so a scoped polkit rule
 // (49-margine-scheduler.rules) can ask once per session instead of every time.
 const HELPER = "/usr/libexec/margine/scheduler-apply";
+// What runs when no scx scheduler is loaded: BORE on the default CachyOS
+// kernel, plain EEVDF on the :lts variant (kernel-cachyos-lts has no BORE,
+// issue #382). Read from the running kernel's config, never assumed.
+const KERNEL_DEFAULT = (() => {
+  try {
+    const [, rel] = GLib.file_get_contents("/proc/sys/kernel/osrelease");
+    const kver = new TextDecoder().decode(rel).trim();
+    const [, cfg] = GLib.file_get_contents(`/usr/lib/modules/${kver}/config`);
+    return new TextDecoder().decode(cfg).includes("\nCONFIG_SCHED_BORE=y") ? "BORE" : "EEVDF";
+  } catch (e) {
+    return "EEVDF";
+  }
+})();
 
 // scx_loader modes. cli = scxctl --mode value (lowercase); conf = TOML
 // default_mode value (PascalCase enum); label = UI text.
@@ -208,7 +221,7 @@ const SchedulerWindow = GObject.registerClass(
       header.pack_start(refreshBtn);
       const menu = new Gio.Menu();
       menu.append("Re-check now", "app.refresh");
-      menu.append("Reset to kernel default (BORE)", "app.reset");
+      menu.append(`Reset to kernel default (${KERNEL_DEFAULT})`, "app.reset");
       menu.append("About Margine CPU Scheduler", "app.about");
       header.pack_end(
         new Gtk.MenuButton({ icon_name: "open-menu-symbolic", menu_model: menu, primary: true }),
@@ -238,7 +251,7 @@ const SchedulerWindow = GObject.registerClass(
       statusGroup.add(this._modeRow);
 
       this._resetRow = new Adw.ButtonRow({
-        title: "Reset to kernel default (BORE)",
+        title: `Reset to kernel default (${KERNEL_DEFAULT})`,
         start_icon_name: "edit-undo-symbolic",
       });
       this._resetRow.connect("activated", () => this._apply("off"));
@@ -248,7 +261,7 @@ const SchedulerWindow = GObject.registerClass(
       this._group = new Adw.PreferencesGroup({
         title: "Choose a scheduler",
         description:
-          "Margine runs a signed CachyOS/BORE kernel with pluggable sched_ext " +
+          `Margine runs a signed CachyOS kernel (${KERNEL_DEFAULT} by default) with pluggable sched_ext ` +
           "(BPF) schedulers. Tap one to switch to it — it applies live (no " +
           "reboot) and is saved as the boot default.",
       });
@@ -364,14 +377,14 @@ const SchedulerWindow = GObject.registerClass(
 
       const bootText = boot.sched
         ? `${boot.sched}${boot.mode ? ` / ${boot.mode}` : ""}`
-        : "kernel default (BORE)";
+        : `kernel default (${KERNEL_DEFAULT})`;
 
       this._statusIcon.remove_css_class("success");
       this._statusIcon.remove_css_class("dim-label");
       if (st.sched === "off") {
         this._statusIcon.icon_name = "system-shutdown-symbolic";
         this._statusIcon.add_css_class("dim-label");
-        this._statusRow.title = "Kernel default (BORE)";
+        this._statusRow.title = `Kernel default (${KERNEL_DEFAULT})`;
         this._statusRow.subtitle = `Live check · sched_ext off · on boot: ${bootText}`;
       } else if (st.sched === "unknown") {
         this._statusIcon.icon_name = "dialog-warning-symbolic";
@@ -422,7 +435,7 @@ const SchedulerWindow = GObject.registerClass(
       if (result.ok) {
         this._toast(
           name === "off"
-            ? "Reverted to the kernel default (BORE)"
+            ? `Reverted to the kernel default (${KERNEL_DEFAULT})`
             : `Now running scx_${name} (${m.label.replace(/ \(recommended\)$/, "")})`,
         );
       } else {

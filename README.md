@@ -265,6 +265,23 @@ contains local rpm-ostree modifications`); and avoid `rpm-ostree
 reset`, which removes the whole layer. The recipe prints the same
 trade-off warning before the install prompt.
 
+### Option D — LTS variant for x86-64-v2 CPUs (experimental)
+
+The default kernel needs an x86-64-v3 CPU (AVX2). For an older
+processor (Intel before Haswell, AMD before Zen, Intel Celeron/Pentium
+"N" up to Jasper Lake) there is `margine:lts`: the same image with the
+`kernel-cachyos-lts` kernel, built for x86-64-v2, signed with the same
+key. You keep the sched_ext scheduler picker; you lose BORE and run the
+6.18 LTS kernel instead of the current mainline. Rebase only, no ISO,
+and it has not been booted on real x86-64-v2 hardware yet (issue #382):
+
+```sh
+rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:lts
+systemctl reboot
+```
+
+Then the same two one-time steps as Option B.
+
 ### Post-install verification
 
 ```sh

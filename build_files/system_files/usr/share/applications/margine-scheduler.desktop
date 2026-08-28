@@ -43,7 +43,7 @@ Name=Switch to scx_rustland
 Exec=ptyxis -- bash -c "ujust margine-scheduler rustland; read -rp \"Press Enter to close... \""
 
 [Desktop Action off]
-Name=Turn scx off - return to kernel default (BORE)
+Name=Turn scx off - return to the kernel default scheduler
 Exec=ptyxis -- bash -c "ujust margine-scheduler off; read -rp \"Press Enter to close... \""
 
 [Desktop Action status]

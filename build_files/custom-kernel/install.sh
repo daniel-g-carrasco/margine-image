@@ -64,6 +64,12 @@ RPMFUSION_FREE_FPR="E9A491A3DE247814E7E067EAE06F8ECDD651FF2E"
 # shellcheck disable=SC2034  # read indirectly as ${!fprvar}
 RPMFUSION_NONFREE_FPR="79BDB88F9BBF73910FD4095B6A2AF96194843C65"
 
+# negativo17 "fedora-multimedia": where gstreamer1-plugins-bad and -ugly come
+# from. Verified 2026-08-25 against https://negativo17.org/repos/RPM-GPG-KEY-slaanesh
+# (first key in the file; the second is its companion).
+# shellcheck disable=SC2034
+NEGATIVO17_FPR="0C5D0F470484AE2FC40A9B6597F3008993E8909B"
+
 # NVIDIA rotates the CUDA repo key per Fedora release (fedora44 ->
 # 73CD9B30), so this is a per-release map rather than one constant. A
 # Fedora bump with no entry here stops the NVIDIA build with an
@@ -71,54 +77,8 @@ RPMFUSION_NONFREE_FPR="79BDB88F9BBF73910FD4095B6A2AF96194843C65"
 # shellcheck disable=SC2034  # read indirectly as ${!_fprvar}, per Fedora release
 NVIDIA_CUDA_FPR_44="129994480EC63D2789BC98E490DFED2F73CD9B30"
 
-# gpg comes from the base image (gnupg2); nothing to install at build time.
-# GNUPGHOME is pinned explicitly because buildah RUN starts from a bare
-# environment: gpg wants a home directory it can create, and the first
-# build to try this failed with an empty fingerprint and no explanation,
-# because stderr was being thrown away. It is not thrown away now.
-key_fingerprint() {
-  local out
-  export GNUPGHOME="${GNUPGHOME:-/run/margine-gnupg}"
-  mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
-  if ! out="$(gpg --batch --no-options --show-keys --with-colons "$1" 2>&1)"; then
-    err "gpg could not read $1:"
-    printf '%s\n' "$out" | sed 's/^/    /' >&2
-    return 1
-  fi
-  printf '%s\n' "$out" | awk -F: '/^fpr:/{print $10; exit}'
-}
-
-verify_key_fpr() {
-  local file="$1" expected="$2" label="$3" actual
-  if [[ ! -f "$file" ]]; then
-    err "$label: expected key file $file, not found"
-    return 1
-  fi
-  actual="$(key_fingerprint "$file")" || actual=""
-  if [[ "$actual" != "$expected" ]]; then
-    err "$label: GPG key fingerprint mismatch, refusing to build"
-    err "  expected: $expected"
-    err "  on disk:  ${actual:-<unreadable>}"
-    return 1
-  fi
-  log "$label: key fingerprint verified ($expected)"
-  return 0
-}
-
-# Verifies the key files a rpmfusion-<flavor>-release RPM just dropped in
-# /etc/pki/rpm-gpg. Called BEFORE any package is pulled from those repos,
-# which is the only moment the check is worth anything.
-verify_rpmfusion_keys() {
-  local ver flavor fprvar rc=0
-  ver="$(rpm -E %fedora)"
-  for flavor in "$@"; do
-    fprvar="RPMFUSION_${flavor^^}_FPR"
-    verify_key_fpr \
-      "/etc/pki/rpm-gpg/RPM-GPG-KEY-rpmfusion-${flavor}-fedora-${ver}" \
-      "${!fprvar}" "rpmfusion-${flavor}" || rc=1
-  done
-  return $rc
-}
+# key_fingerprint / verify_key_fpr / verify_rpmfusion_keys now live in
+# 00-common.sh, shared with 15-devstack (2026-08-25).
 
 # The MOK *enrollment passphrase* is PUBLIC BY DESIGN: every installer
 # must type it into MokManager, the live-ISO Secure Boot dialog prints
@@ -374,6 +334,15 @@ fi
 # v4l2loopback later as a one-off layer or via Flatpak (OBS has its
 # own GStreamer pipeline that doesn't need this module).
 log "Building v4l2loopback against $KERNEL_VERSION (best-effort)"
+# akmods builds as its own unprivileged user and rpmbuild writes its temp
+# files under /var/tmp. The plain Bluefin image ships no /var/tmp at all
+# (an empty /var; bootc creates it at boot via tmpfiles), so whatever rpm
+# transaction created it first left it 0755 root and the build died with
+# 'error creating temporary file /var/tmp/rpm-tmp.*: Permission denied'
+# (trial 7, 2026-08-25). Same fix as the /tmp tmpfs mode in the
+# Containerfile: world-writable with the sticky bit, before akmods runs.
+install -d -m 1777 /var/tmp
+chmod 1777 /tmp /var/tmp
 V4L2_OK=0
 if disable_akmodsbuild; then
   if dnf -y install \
@@ -385,7 +354,15 @@ if disable_akmodsbuild; then
       # akmods always returns 0; check for *.failed.log explicitly
       V4L2_FAILED=0
       for _f in /var/cache/akmods/v4l2loopback/*-for-"$KERNEL_VERSION".failed.log; do
-        [[ -f "$_f" ]] && V4L2_FAILED=1 && break
+        if [[ -f "$_f" ]]; then
+          V4L2_FAILED=1
+          # Show the cause in the build log: a bare "[FAILED]" from akmods
+          # hid why the module did not build on the plain Bluefin base
+          # (trial build of 2026-08-25).
+          log "v4l2loopback build FAILED, tail of $_f:"
+          tail -n 40 "$_f" | sed 's/^/[v4l2loopback] /' || true
+          break
+        fi
       done
       if (( V4L2_FAILED == 0 )); then
         V4L2_OK=1
@@ -572,6 +549,25 @@ systemctl disable scx_loader.service 2>/dev/null || true
 # base image we transiently enable RPMFusion ONLY for this install,
 # then disable and remove the .repo file so the base stays clean
 # of third-party repos (same pattern as kernel-cachyos COPR above).
+# gstreamer1-plugins-bad / -ugly resolve from negativo17's fedora-multimedia,
+# NOT from RPMFusion. On Bluefin DX that repo file ships in the base
+# (enabled=0) and the packages are already installed, so the install below
+# was silently a no-op and nobody noticed the repo was never enabled. On a
+# base without negativo17 (projectbluefin/bluefin, 2026-08-25 trial) the
+# same line dies with "No match for argument: gstreamer1-plugins-bad". So:
+# make sure the repo exists, with its key verified first, enable it for
+# this one transaction only, and leave it disabled like every other
+# third-party repo in the image.
+if [[ ! -f /etc/yum.repos.d/negativo17-fedora-multimedia.repo ]]; then
+  log "negativo17 fedora-multimedia repo absent from the base, adding it (key pinned)"
+  retry_curl_strict https://negativo17.org/repos/RPM-GPG-KEY-slaanesh /run/negativo17.asc
+  verify_key_fpr /run/negativo17.asc "$NEGATIVO17_FPR" "negativo17" || exit 1
+  rpm --import /run/negativo17.asc
+  retry_curl_strict https://negativo17.org/repos/fedora-multimedia.repo /etc/yum.repos.d/negativo17-fedora-multimedia.repo
+  sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/negativo17-fedora-multimedia.repo
+  rm -f /run/negativo17.asc
+fi
+
 log "Enabling RPMFusion transiently for mangohud + goverlay + steam-devices"
 FEDORA_VER=$(rpm -E %fedora)
 dnf -y install \
@@ -592,7 +588,7 @@ verify_rpmfusion_keys free nonfree || exit 1
 # freeworld build (verified: bundles libgstx265.so, libgstva.so,
 # nvcodec/msdk/qsv, fdkaac), so the handbook's codec promises hold.
 # RPMFusion stays enabled ONLY for mangohud/goverlay/steam-devices.
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh mangohud goverlay steam-devices gstreamer1-plugins-bad gstreamer1-plugins-ugly' \
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia mangohud goverlay steam-devices gstreamer1-plugins-bad gstreamer1-plugins-ugly' \
   || { err "creator-tier RPM install failed after 5 attempts; aborting"; exit 1; }
 
 # ---------------------------------------------------------------------------
@@ -623,7 +619,17 @@ retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y i
 # re-verifies the full recipe set resolves on the booted image.
 GAMING_BAKE=(steam lutris retroarch gamescope)
 log "Baking native-gaming 32-bit dependency closure: ${GAMING_BAKE[*]}"
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh "$@"' _ "${GAMING_BAKE[@]}" \
+# --enablerepo=fedora-multimedia, for the same reason the codec block
+# needs it: multilib wants each i686 library from the SAME family as its
+# installed x86_64 twin. The base's libfdk-aac is negativo17's (epoch 1)
+# and it obsoletes Fedora's and RPMFusion's fdk-aac, so steam's chain
+# (steam -> pipewire-alsa.i686 -> pipewire-libs.i686 -> libfdk-aac.so.2)
+# can only close with negativo17's own libfdk-aac.i686. On Bluefin DX that
+# i686 twin is already in the base and the repo is not consulted; on a
+# base without it (projectbluefin/bluefin:testing, 2026-08-25 trial) the
+# transaction is unresolvable without the repo. Enabled for this one
+# transaction, left disabled after, like everywhere else in this file.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia "$@"' _ "${GAMING_BAKE[@]}" \
   || { err "native-gaming closure install failed after 5 attempts (repo down or unresolvable multilib at build?); aborting"; exit 1; }
 dnf -y remove --no-autoremove "${GAMING_BAKE[@]}" \
   || { err "failed to strip gaming apps while keeping their deps; aborting"; exit 1; }

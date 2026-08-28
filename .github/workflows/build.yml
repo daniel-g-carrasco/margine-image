@@ -113,6 +113,15 @@ on:
     # Bluefin DX changes even if there are no commits to this repo.
     - cron: '0 4 * * 0'
   workflow_dispatch:
+    inputs:
+      base_image:
+        description: >-
+          Trial build against another base (e.g.
+          ghcr.io/projectbluefin/bluefin:testing). Publishes :trial tags
+          only, never :candidate, so smoke-boot cannot promote it. Empty =
+          the Containerfile default.
+        required: false
+        default: ""
 
 env:
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
@@ -248,6 +257,27 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
+      - name: Resolve the base image and the publish tag
+        id: base
+        # A build against a non-default base is an EXPERIMENT. It must
+        # publish under :trial and never touch :candidate: smoke-boot
+        # promotes whatever :candidate points at, and a trial base would
+        # otherwise become :stable on every user's next update.
+        env:
+          BASE_OVERRIDE: ${{ github.event.inputs.base_image || '' }}
+        run: |
+          set -euo pipefail
+          DEFAULT_BASE="$(sed -nE 's/^ARG BASE_IMAGE=(.*)$/\1/p' Containerfile | head -1)"
+          if [ -n "$BASE_OVERRIDE" ]; then
+            echo "base=$BASE_OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "publish_tag=trial" >> "$GITHUB_OUTPUT"
+            echo "::notice::TRIAL build against $BASE_OVERRIDE (publishes :trial only)"
+          else
+            echo "base=$DEFAULT_BASE" >> "$GITHUB_OUTPUT"
+            echo "publish_tag=${CANDIDATE_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+
       - name: Resolve base image digest (best-effort)
         # Stamp the bluefin-dx:stable digest this image is built FROM as the
         # standard OCI base.digest label. The status.json producer compares
@@ -261,7 +291,7 @@ jobs:
         run: |
           # Emitted before the network call: the name is a constant and must
           # survive a skopeo hiccup, which only costs us the digest.
-          BASE_REF="ghcr.io/ublue-os/bluefin-dx:stable"
+          BASE_REF="${{ steps.base.outputs.base }}"
           echo "name=${BASE_REF}" >> "$GITHUB_OUTPUT"
           command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
           DIGEST="$(skopeo inspect --no-tags "docker://${BASE_REF}" --format '{{.Digest}}' 2>/dev/null || echo '')"
@@ -299,8 +329,8 @@ jobs:
           # (transient, expected to be GC'd by the stale-tag cleanup
           # job; users rebase the lab VM to it for smoke testing).
           tags: |
-            type=raw,value=${{ env.CANDIDATE_TAG }},enable=${{ github.event_name != 'pull_request' }}
-            type=raw,value=${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }},enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=${{ steps.base.outputs.publish_tag }},enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=${{ steps.base.outputs.publish_tag }}.${{ steps.date.outputs.ymd }},enable=${{ github.event_name != 'pull_request' }}
             type=ref,event=pr,prefix=pr-,enable=${{ github.event_name == 'pull_request' }}
           labels: |
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
@@ -365,6 +395,7 @@ jobs:
             --file ./Containerfile \
             --format docker \
             --layers \
+            --build-arg BASE_IMAGE="${{ steps.base.outputs.base }}" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
             "${TAG_ARGS[@]}" \
@@ -507,7 +538,7 @@ jobs:
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           KVER: ${{ steps.sbom.outputs.kver }}
-          VERSION: ${{ env.CANDIDATE_TAG }}.${{ steps.date.outputs.ymd }}
+          VERSION: ${{ steps.base.outputs.publish_tag }}.${{ steps.date.outputs.ymd }}
           REVISION: ${{ github.sha }}
           IMAGE_DESC: ${{ env.IMAGE_DESC }}
           IMAGE_KEYWORDS: ${{ env.IMAGE_KEYWORDS }}

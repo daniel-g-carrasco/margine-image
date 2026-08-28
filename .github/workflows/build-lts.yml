@@ -91,6 +91,18 @@ jobs:
           sudo podman run --rm --entrypoint /bin/cat "$IMG" "/usr/lib/modules/$KVER/vmlinuz" | tee /tmp/vmlinuz >/dev/null
           sbverify --list /tmp/vmlinuz | grep -qi "Margine" || { echo "::error::vmlinuz is not signed with the Margine key"; exit 1; }
           echo "vmlinuz signed with the Margine key"
+          # A plain buildah build inherits the base image's labels, so :lts
+          # showed bluefin-dx's stock kernel as ostree.linux and the base's
+          # creation date. Set the ones a reader relies on.
+          C="$(sudo buildah from "$IMG")"
+          sudo buildah config \
+            --label "ostree.linux=$KVER" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "org.opencontainers.image.version=${TAG}.$(date -u +%Y%m%d)" \
+            --label "org.opencontainers.image.description=Margine OS, LTS kernel variant for x86-64-v2 CPUs (experimental): kernel-cachyos-lts, MOK-signed" \
+            "$C"
+          sudo buildah commit --rm "$C" "$IMG" >/dev/null
+          sudo buildah inspect --type image --format '{{index .ImageAnnotations "ostree.linux"}}{{index .Docker.Config.Labels "ostree.linux"}}' "$IMG" | head -1
       - name: Push experimental tag
         run: |
           IMG="ghcr.io/${{ github.repository_owner }}/margine"

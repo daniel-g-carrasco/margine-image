@@ -188,10 +188,10 @@ fi
 hdr "4. CachyOS kernel + Secure Boot signature"
 # ---------------------------------------------------------------------------
 
-if [[ "$KVER" =~ cachyos ]]; then
-  ok "kernel version contains 'cachyos'"
+if [[ "$KVER" =~ cachy ]]; then
+  ok "kernel version contains 'cachy' (cachyos1 default or cachylts1 LTS variant)"
 else
-  warn "kernel does not contain 'cachyos' — Margine swaps to CachyOS kernel; this is unexpected"
+  warn "kernel does not contain 'cachy'; Margine swaps to a CachyOS kernel, this is unexpected"
 fi
 
 if [[ -f "$VMLINUZ" ]] && command -v sbverify >/dev/null; then

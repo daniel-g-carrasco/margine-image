@@ -1,0 +1,94 @@
+name: Build Margine LTS variant (experimental, x86-64-v2)
+# EXPERIMENTAL, issue #382.
+#
+# The default Margine kernel (kernel-cachyos) is built for x86-64-v3 and
+# hangs at decompression on x86-64-v2 CPUs, before it can print anything;
+# a bootc image carries no fallback kernel. This variant is the SAME image
+# with kernel-cachyos-lts instead: built for x86-64-v2, sched_ext kept (the
+# scheduler picker works), BORE dropped, 6.18 LTS instead of the current
+# mainline. MOK-signed with the same key, one enrollment.
+#
+# Same tier as the NVIDIA variant: manual or weekly, plain build + push,
+# no chunking, no smoke gate, no promotion, no ISO. It pushes :lts (pass
+# another tag for throwaway runs). CI has no x86-64-v2 CPU, so a green run
+# proves only that the image builds and the kernel is signed; whether it
+# boots on real v2 hardware is what the reporter of #382 can tell us.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "image tag to push (:lts is the one documented; use lts-test for throwaway runs)"
+        default: lts
+        type: string
+  schedule:
+    # Sun 06:00 UTC: after the stable build (04:00) and the NVIDIA one
+    # (05:00), so the three heavy builds do not compete for runners.
+    - cron: '0 6 * * 0'
+permissions: {}
+concurrency:
+  group: build-lts
+  cancel-in-progress: true
+jobs:
+  build-lts:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write   # push the :lts tag to GHCR
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h / | tail -1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+      - name: Stage MOK secrets for BuildKit
+        env:
+          MOK_KEY: ${{ secrets.MOK_KEY }}
+          MOK_CERT: ${{ secrets.MOK_CERT }}
+        run: |
+          mkdir -p /tmp/margine-secrets
+          chmod 700 /tmp/margine-secrets
+          printf '%s' "$MOK_KEY"  > /tmp/margine-secrets/MOK.key
+          printf '%s' "$MOK_CERT" > /tmp/margine-secrets/MOK.pem
+          chmod 600 /tmp/margine-secrets/*
+      - name: Build LTS variant (build-arg KERNEL_FLAVOR=lts)
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/${{ github.repository_owner }}/margine"
+          sudo -E buildah build \
+            --file ./Containerfile \
+            --format docker \
+            --layers \
+            --build-arg "KERNEL_FLAVOR=lts" \
+            --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
+            --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
+            --tag "${IMG}:${{ inputs.tag || 'lts' }}" \
+            .
+          sudo buildah images "${IMG}:${{ inputs.tag || 'lts' }}"
+      - name: Prove the kernel is the LTS one and is signed
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/${{ github.repository_owner }}/margine:${{ inputs.tag || 'lts' }}"
+          KVER="$(sudo podman run --rm --entrypoint /bin/bash "$IMG" -c 'ls /usr/lib/modules')"
+          echo "kernel in image: $KVER"
+          case "$KVER" in *cachylts*) ;; *) echo "::error::expected a cachylts kernel, got $KVER"; exit 1;; esac
+          command -v sbverify >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq sbsigntool; }
+          sudo podman run --rm --entrypoint /bin/cat "$IMG" "/usr/lib/modules/$KVER/vmlinuz" > /tmp/vmlinuz
+          sbverify --list /tmp/vmlinuz | grep -qi "Margine" || { echo "::error::vmlinuz is not signed with the Margine key"; exit 1; }
+          echo "vmlinuz signed with the Margine key"
+      - name: Push experimental tag
+        run: |
+          IMG="ghcr.io/${{ github.repository_owner }}/margine"
+          sudo buildah push "${IMG}:${{ inputs.tag || 'lts' }}"
+          echo "Pushed ${IMG}:${{ inputs.tag || 'lts' }}: EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
+      - name: Wipe staged secrets
+        if: always()
+        run: rm -rf /tmp/margine-secrets

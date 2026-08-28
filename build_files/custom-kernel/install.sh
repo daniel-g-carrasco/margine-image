@@ -156,6 +156,27 @@ COPR_REPO="bieszczaders/kernel-cachyos"
 KERNEL_PKG="kernel-cachyos"
 KERNEL_DEVEL_PKG="kernel-cachyos-devel-matched"
 KERNEL_PACKAGES=(kernel-cachyos kernel-cachyos-core kernel-cachyos-modules "$KERNEL_DEVEL_PKG")
+# Kernel flavour (build-arg KERNEL_FLAVOR, issue #382). The default
+# kernel-cachyos is built for x86-64-v3 (CONFIG_X86_64_VERSION=3, read
+# from the package) and hangs at decompression on an x86-64-v2 CPU, before
+# it can print anything; the image has no fallback kernel. kernel-cachyos-lts
+# is built for x86-64-v2 (=2), keeps sched_ext (the scheduler picker works)
+# and drops BORE. NVIDIA on top of the LTS kernel is untested: refused.
+KERNEL_FLAVOR="${KERNEL_FLAVOR:-default}"
+case "$KERNEL_FLAVOR" in
+  default) ;;
+  lts)
+    KERNEL_PKG="kernel-cachyos-lts"
+    KERNEL_DEVEL_PKG="kernel-cachyos-lts-devel-matched"
+    KERNEL_PACKAGES=(kernel-cachyos-lts kernel-cachyos-lts-core kernel-cachyos-lts-modules "$KERNEL_DEVEL_PKG")
+    if [[ "${ENABLE_NVIDIA:-0}" == "1" ]]; then
+      err "KERNEL_FLAVOR=lts with ENABLE_NVIDIA=1 is not supported (never built, never tested)"
+      exit 1
+    fi
+    log "Kernel flavour: lts (kernel-cachyos-lts, x86-64-v2, no BORE)"
+    ;;
+  *) err "unknown KERNEL_FLAVOR '$KERNEL_FLAVOR' (default|lts)"; exit 1 ;;
+esac
 # TRANSIENT packages are installed for build time only and removed at the end.
 # sbsigntools provides sbsign/sbverify; akmods is needed for v4l2loopback (best-effort).
 TRANSIENT=(akmods sbsigntools "$KERNEL_DEVEL_PKG")

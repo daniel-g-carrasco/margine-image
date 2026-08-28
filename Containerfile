@@ -47,6 +47,12 @@ FROM ghcr.io/ublue-os/bluefin-dx:stable
 # mounted, hence the only place the nvidia kmod can be built AND MOK-signed.
 ARG ENABLE_NVIDIA=0
 ARG NVIDIA_KMOD=nvidia-open
+# Kernel flavour (issue #382). default = kernel-cachyos, built for x86-64-v3
+# (AVX2) with BORE; lts = kernel-cachyos-lts, built for x86-64-v2, sched_ext
+# but no BORE, for CPUs the default kernel cannot boot on (Intel before
+# Haswell, AMD before Zen, Intel Celeron/Pentium "N" up to Jasper Lake).
+# build-lts.yml passes --build-arg KERNEL_FLAVOR=lts and publishes :lts.
+ARG KERNEL_FLAVOR=default
 # custom-kernel and the Margine modifications share ONE layer on
 # purpose (2026-08-18). Committing the kernel layer on its own is what
 # tore the rpmdb on current runners: the RUN after it opened with a
@@ -61,7 +67,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=secret,id=mok-key,target=/run/margine-certs/MOK.key \
     --mount=type=secret,id=mok-cert,target=/run/margine-certs/MOK.pem \
-    env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" /ctx/custom-kernel/install.sh \
+    env ENABLE_NVIDIA="${ENABLE_NVIDIA}" NVIDIA_KMOD="${NVIDIA_KMOD}" KERNEL_FLAVOR="${KERNEL_FLAVOR}" /ctx/custom-kernel/install.sh \
  && /ctx/build.sh
 
 # ----- Margine GNOME extensions: bake o-tiling + hide-cursor system-wide -----

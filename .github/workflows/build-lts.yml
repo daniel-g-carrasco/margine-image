@@ -8,11 +8,18 @@ name: Build Margine LTS variant (experimental, x86-64-v2)
 # scheduler picker works), BORE dropped, 6.18 LTS instead of the current
 # mainline. MOK-signed with the same key, one enrollment.
 #
-# Same tier as the NVIDIA variant: manual or weekly, plain build + push,
-# no chunking, no smoke gate, no promotion, no ISO. It pushes :lts (pass
-# another tag for throwaway runs). CI has no x86-64-v2 CPU, so a green run
-# proves only that the image builds and the kernel is signed; whether it
-# boots on real v2 hardware is what the reporter of #382 can tell us.
+# Same tier as the NVIDIA variant: manual or weekly, no smoke gate, no
+# promotion, no ISO. It pushes :lts (pass another tag for throwaway runs).
+# CI has no x86-64-v2 CPU, so a green run proves only that the image builds
+# and the kernel is signed; whether it boots on real v2 hardware is what the
+# reporter of #382 can tell us.
+#
+# The image goes through the SAME chunking step as :stable (rpm-ostree
+# compose build-chunked-oci, issue #386): a plain buildah build has one
+# layer per RUN and shares nothing with the chunked :stable, so switching
+# between the two meant re-downloading the whole OS (76 of 77 layers, 8 GB).
+# Chunked the same way, the two variants can share every layer whose
+# content is identical, which should be everything but the kernel.
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +35,11 @@ permissions: {}
 concurrency:
   group: build-lts
   cancel-in-progress: true
+env:
+  IMAGE_NAME: margine
+  IMAGE_DESC: "Margine OS, LTS kernel variant for x86-64-v2 CPUs (experimental): kernel-cachyos-lts, MOK-signed"
+  IMAGE_KEYWORDS: "bootc,fedora,bluefin,cachyos,lts,x86-64-v2"
+  BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
 jobs:
   build-lts:
     runs-on: ubuntu-26.04
@@ -36,7 +48,7 @@ jobs:
       contents: read
       packages: write   # push the :lts tag to GHCR
     steps:
-      - name: Free disk space
+      - name: Free disk space (the chunker needs a second copy of the image)
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
             /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
@@ -49,6 +61,23 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+      - name: Resolve the tag, the date and the base digest
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          [ -n "$TAG" ] || TAG=lts
+          [ "${{ github.event_name }}" = push ] && TAG=lts-test
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          DIGEST="$(skopeo inspect --no-tags "docker://${BASE_IMAGE}" --format '{{.Digest}}' 2>/dev/null || echo '')"
+          {
+            echo "tag=$TAG"
+            echo "ymd=$(date -u +%Y%m%d)"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "base_digest=${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+          echo "will push :$TAG, base ${BASE_IMAGE} digest ${DIGEST:-<unresolved>}"
       - name: Stage MOK secrets for BuildKit
         env:
           MOK_KEY: ${{ secrets.MOK_KEY }}
@@ -59,17 +88,9 @@ jobs:
           printf '%s' "$MOK_KEY"  > /tmp/margine-secrets/MOK.key
           printf '%s' "$MOK_CERT" > /tmp/margine-secrets/MOK.pem
           chmod 600 /tmp/margine-secrets/*
-      - name: Resolve the tag to push
-        run: |
-          TAG="${{ inputs.tag }}"
-          [ -n "$TAG" ] || TAG=lts
-          [ "${{ github.event_name }}" = push ] && TAG=lts-test   # no push trigger any more; kept so a future test trigger cannot overwrite :lts
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
-          echo "will push :$TAG"
       - name: Build LTS variant (build-arg KERNEL_FLAVOR=lts)
         run: |
           set -euo pipefail
-          IMG="ghcr.io/${{ github.repository_owner }}/margine"
           sudo -E buildah build \
             --file ./Containerfile \
             --format docker \
@@ -77,13 +98,17 @@ jobs:
             --build-arg "KERNEL_FLAVOR=lts" \
             --secret id=mok-key,src=/tmp/margine-secrets/MOK.key \
             --secret id=mok-cert,src=/tmp/margine-secrets/MOK.pem \
-            --tag "${IMG}:${TAG}" \
+            --tag "localhost/${IMAGE_NAME}:lts-build" \
             .
-          sudo buildah images "${IMG}:${TAG}"
+          sudo buildah images "localhost/${IMAGE_NAME}:lts-build"
+      - name: Wipe staged secrets
+        if: always()
+        run: rm -rf /tmp/margine-secrets
       - name: Prove the kernel is the LTS one and is signed
+        id: kernel
         run: |
           set -euo pipefail
-          IMG="ghcr.io/${{ github.repository_owner }}/margine:${TAG}"
+          IMG="localhost/${IMAGE_NAME}:lts-build"
           KVER="$(sudo podman run --rm --entrypoint /bin/bash "$IMG" -c 'ls /usr/lib/modules')"
           echo "kernel in image: $KVER"
           case "$KVER" in *cachylts*) ;; *) echo "::error::expected a cachylts kernel, got $KVER"; exit 1;; esac
@@ -91,23 +116,86 @@ jobs:
           sudo podman run --rm --entrypoint /bin/cat "$IMG" "/usr/lib/modules/$KVER/vmlinuz" | tee /tmp/vmlinuz >/dev/null
           sbverify --list /tmp/vmlinuz | grep -qi "Margine" || { echo "::error::vmlinuz is not signed with the Margine key"; exit 1; }
           echo "vmlinuz signed with the Margine key"
-          # A plain buildah build inherits the base image's labels, so :lts
-          # showed bluefin-dx's stock kernel as ostree.linux and the base's
-          # creation date. Set the ones a reader relies on.
-          C="$(sudo buildah from "$IMG")"
-          sudo buildah config \
-            --label "ostree.linux=$KVER" \
-            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "org.opencontainers.image.version=${TAG}.$(date -u +%Y%m%d)" \
-            --label "org.opencontainers.image.description=Margine OS, LTS kernel variant for x86-64-v2 CPUs (experimental): kernel-cachyos-lts, MOK-signed" \
-            "$C"
-          sudo buildah commit --rm "$C" "$IMG" >/dev/null
-          sudo buildah inspect --type image --format '{{index .ImageAnnotations "ostree.linux"}}{{index .Docker.Config.Labels "ostree.linux"}}' "$IMG" | head -1
-      - name: Push experimental tag
+          echo "kver=$KVER" >> "$GITHUB_OUTPUT"
+      - name: Chunk the image (rpm-ostree compose build-chunked-oci, same as :stable)
+        id: rechunk
+        env:
+          SRC: localhost/${{ env.IMAGE_NAME }}:lts-build
+          KVER: ${{ steps.kernel.outputs.kver }}
+          VERSION: ${{ steps.meta.outputs.tag }}.${{ steps.meta.outputs.ymd }}
+          REVISION: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BASE_DIGEST: ${{ steps.meta.outputs.base_digest }}
+          CREATED: ${{ steps.meta.outputs.created }}
         run: |
-          IMG="ghcr.io/${{ github.repository_owner }}/margine"
-          sudo buildah push "${IMG}:${TAG}"
-          echo "Pushed ${IMG}:${TAG}: EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
-      - name: Wipe staged secrets
-        if: always()
-        run: rm -rf /tmp/margine-secrets
+          set -euo pipefail
+          # Same invocation as build.yml: the chunker is the rpm-ostree that ships
+          # inside the image itself, mounted read-only; output is an oci: directory
+          # pre-seeded so rpm-ostree can open it, then pushed with skopeo.
+          OUT_DIR="${RUNNER_TEMP}/chunk-out"
+          sudo rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR/image/blobs/sha256"
+          printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
+          printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
+            > "$OUT_DIR/image/index.json"
+          labels=(
+            "org.opencontainers.image.title=${IMAGE_NAME}"
+            "org.opencontainers.image.description=${IMAGE_DESC}"
+            "org.opencontainers.image.source=https://github.com/${REPO}"
+            "org.opencontainers.image.url=https://github.com/${REPO}"
+            "org.opencontainers.image.vendor=${OWNER}"
+            "org.opencontainers.image.licenses=Apache-2.0"
+            "org.opencontainers.image.version=${VERSION}"
+            "org.opencontainers.image.revision=${REVISION}"
+            "org.opencontainers.image.created=${CREATED}"
+            "org.opencontainers.image.base.digest=${BASE_DIGEST}"
+            "org.opencontainers.image.base.name=${BASE_IMAGE}"
+            "io.artifacthub.package.keywords=${IMAGE_KEYWORDS}"
+            "io.artifacthub.package.license=Apache-2.0"
+            "io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${REPO}/${REVISION}/README.md"
+            "io.artifacthub.package.deprecated=false"
+            "io.artifacthub.package.prerelease=true"
+            "containers.bootc=1"
+            "dev.margine.kernel=${KVER}"
+            "dev.margine.kernel-flavor=lts"
+            "ostree.bootable=true"
+            "ostree.linux=${KVER}"
+          )
+          label_args=()
+          for l in "${labels[@]}"; do
+            [ -n "${l#*=}" ] || { echo "::warning::empty label ${l%%=*}, skipping"; continue; }
+            label_args+=(--label "$l")
+          done
+          sudo podman run --rm --pull=never --privileged \
+            --mount=type=image,src="$SRC",target=/rpm-ostree \
+            --volume "${OUT_DIR}:/run/out:Z" \
+            --entrypoint /usr/bin/rpm-ostree \
+            "$SRC" \
+            compose build-chunked-oci \
+            --bootc --max-layers 127 --format-version 2 \
+            "${label_args[@]}" \
+            --rootfs /rpm-ostree \
+            --output oci:/run/out/image:latest
+          [ "$(sudo jq '.manifests | length' "${OUT_DIR}/image/index.json")" -gt 0 ] || {
+            echo "::error::chunker left ${OUT_DIR}/image without a manifest"
+            exit 1
+          }
+          sudo du -sh "${OUT_DIR}/image"
+          echo "ref=oci:${OUT_DIR}/image" >> "$GITHUB_OUTPUT"
+          sudo podman rmi -f "$SRC" >/dev/null 2>&1 || true
+          df -h / | tail -1
+      - name: Push the chunked image
+        run: |
+          set -euo pipefail
+          IMG_FULL="ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}"
+          IMG_FULL="${IMG_FULL,,}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          for tag in "$TAG" "${TAG}.${{ steps.meta.outputs.ymd }}"; do
+            sudo skopeo copy --retry-times 5 \
+              --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              --digestfile=/tmp/digest.txt \
+              "${{ steps.rechunk.outputs.ref }}" \
+              "docker://${IMG_FULL}:${tag}"
+          done
+          echo "Pushed ${IMG_FULL}:${TAG} @ $(cat /tmp/digest.txt): EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."

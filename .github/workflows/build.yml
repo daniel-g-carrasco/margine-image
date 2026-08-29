@@ -644,14 +644,17 @@ jobs:
               sudo podman pull "$CHUNKAH_REF" && break
               echo "chunkah pull attempt $attempt failed, retrying in 10s"; sleep 10
             done
-            CHUNKAH_CONFIG_STR="$(sudo podman inspect "$SRC")"
+            # The source image's config (labels, env) goes in through a file:
+            # `podman inspect` of this image is far too large for the command
+            # line (first attempt died with "sudo: Argument list too long").
+            sudo podman inspect "$SRC" > "${OUT_DIR}/config.json"
             sudo podman run --rm --pull=never \
               --security-opt label=type:unconfined_t \
               --mount=type=image,src="$SRC",target=/chunkah,ro \
               --volume "${OUT_DIR}:/run/out:Z" \
               -e CHUNKAH_ROOTFS=/chunkah \
-              -e "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
               "$CHUNKAH_REF" build \
+              --config /run/out/config.json \
               --max-layers 127 \
               --prune /sysroot/ \
               --label ostree.commit- \

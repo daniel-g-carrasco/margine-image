@@ -57,7 +57,7 @@ sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
 # sync with the renamed upload so the downloaded file carries the version.
 if [[ -n "${NEW_FILE:-}" ]]; then
   if grep -qE 'LATEST_ISO_FILE = `margine-\$\{LATEST_ISO_DATE\}\.iso`' src/routes/index.tsx; then
-    echo "LATEST_ISO_FILE derives from LATEST_ISO_DATE on the site — nothing to set"
+    echo "LATEST_ISO_FILE derives from LATEST_ISO_DATE on the site, nothing to set"
   elif grep -q 'LATEST_ISO_FILE = "[^"]*"' src/routes/index.tsx; then
     sed -i "s|LATEST_ISO_FILE = \"[^\"]*\"|LATEST_ISO_FILE = \"$NEW_FILE\"|" \
       src/routes/index.tsx

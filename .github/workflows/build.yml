@@ -647,7 +647,7 @@ jobs:
             # The source image's config (labels, env) goes in through a file:
             # `podman inspect` of this image is far too large for the command
             # line (first attempt died with "sudo: Argument list too long").
-            sudo podman inspect "$SRC" > "${OUT_DIR}/config.json"
+            sudo podman inspect "$SRC" | sudo tee "${OUT_DIR}/config.json" >/dev/null
             sudo podman run --rm --pull=never \
               --security-opt label=type:unconfined_t \
               --mount=type=image,src="$SRC",target=/chunkah,ro \

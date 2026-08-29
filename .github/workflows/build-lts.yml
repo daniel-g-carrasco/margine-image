@@ -21,11 +21,6 @@ name: Build Margine LTS variant (experimental, x86-64-v2)
 # Chunked the same way, the two variants can share every layer whose
 # content is identical, which should be everything but the kernel.
 on:
-  # TEMPORARY, remove before merge: lets the branch build itself while the
-  # workflow on main does not have this shape yet. Push-triggered runs
-  # publish :lts-test, never :lts.
-  push:
-    branches: ['lts/chunk-like-stable']
   workflow_dispatch:
     inputs:
       tag:

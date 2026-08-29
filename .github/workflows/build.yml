@@ -114,6 +114,15 @@ on:
     - cron: '0 4 * * 0'
   workflow_dispatch:
     inputs:
+      chunker:
+        description: >-
+          Layer chunker for this run. rpm-ostree (default) is what :stable
+          ships. chunkah (coreos/chunkah, what the new Bluefin uses) is an
+          EXPERIMENT for measuring update deltas (bootc-dev/bootc#1885):
+          it publishes :trial only.
+        type: choice
+        options: [rpm-ostree, chunkah]
+        default: rpm-ostree
       base_image:
         description: >-
           Trial build against another base (e.g.
@@ -265,6 +274,7 @@ jobs:
         # otherwise become :stable on every user's next update.
         env:
           BASE_OVERRIDE: ${{ github.event.inputs.base_image || '' }}
+          CHUNKER: ${{ github.event.inputs.chunker || 'rpm-ostree' }}
         run: |
           set -euo pipefail
           DEFAULT_BASE="$(sed -nE 's/^ARG BASE_IMAGE=(.*)$/\1/p' Containerfile | head -1)"
@@ -272,6 +282,10 @@ jobs:
             echo "base=$BASE_OVERRIDE" >> "$GITHUB_OUTPUT"
             echo "publish_tag=trial" >> "$GITHUB_OUTPUT"
             echo "::notice::TRIAL build against $BASE_OVERRIDE (publishes :trial only)"
+          elif [ "$CHUNKER" != "rpm-ostree" ]; then
+            echo "base=$DEFAULT_BASE" >> "$GITHUB_OUTPUT"
+            echo "publish_tag=trial" >> "$GITHUB_OUTPUT"
+            echo "::notice::TRIAL build chunked with $CHUNKER (publishes :trial only)"
           else
             echo "base=$DEFAULT_BASE" >> "$GITHUB_OUTPUT"
             echo "publish_tag=${CANDIDATE_TAG}" >> "$GITHUB_OUTPUT"
@@ -537,6 +551,9 @@ jobs:
         # Both reproduced locally, which is the only reason this works.
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
+          CHUNKER: ${{ github.event.inputs.chunker || 'rpm-ostree' }}
+          # coreos/chunkah, pinned the way projectbluefin/actions pins it (v0.6.0).
+          CHUNKAH_REF: quay.io/coreos/chunkah:v0.6.0@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
           KVER: ${{ steps.sbom.outputs.kver }}
           VERSION: ${{ steps.base.outputs.publish_tag }}.${{ steps.date.outputs.ymd }}
           REVISION: ${{ github.sha }}
@@ -551,11 +568,15 @@ jobs:
           set -euo pipefail
           OUT_DIR="${RUNNER_TEMP}/chunk-out"
           sudo rm -rf "$OUT_DIR"
-          # Seed a valid, empty OCI layout for the chunker to open.
-          mkdir -p "$OUT_DIR/image/blobs/sha256"
-          printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
-          printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
-            > "$OUT_DIR/image/index.json"
+          mkdir -p "$OUT_DIR"
+          if [ "$CHUNKER" = "rpm-ostree" ]; then
+            # Seed a valid, empty OCI layout for rpm-ostree to open (chunkah
+            # writes its own).
+            mkdir -p "$OUT_DIR/image/blobs/sha256"
+            printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
+            printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
+              > "$OUT_DIR/image/index.json"
+          fi
 
           # The chunker keeps ONLY what it is handed, exactly like the action
           # did, so this list is the whole identity of the published image.
@@ -612,16 +633,43 @@ jobs:
           # rpm-ostree fixes the assertion.
           #
           # --max-layers 127 and --format-version 2 match what Bazzite ships.
-          sudo podman run --rm --pull=never --privileged \
-            --mount=type=image,src="$SRC",target=/rpm-ostree \
-            --volume "${OUT_DIR}:/run/out:Z" \
-            --entrypoint /usr/bin/rpm-ostree \
-            "$SRC" \
-            compose build-chunked-oci \
-            --bootc --max-layers 127 --format-version 2 \
-            "${label_args[@]}" \
-            --rootfs /rpm-ostree \
-            --output oci:/run/out/image:latest
+          if [ "$CHUNKER" = "chunkah" ]; then
+            # EXPERIMENT (bootc-dev/bootc#1885): chunk with coreos/chunkah instead,
+            # the way projectbluefin/actions does for RPM images (rootfs mounted
+            # read-only at /chunkah, the source image's config passed in
+            # CHUNKAH_CONFIG_STR so its labels carry over, --prune /sysroot/,
+            # the two ostree labels dropped). Same --max-layers as rpm-ostree.
+            # Published as :trial only (see the base step): never :candidate.
+            for attempt in 1 2 3; do
+              sudo podman pull "$CHUNKAH_REF" && break
+              echo "chunkah pull attempt $attempt failed, retrying in 10s"; sleep 10
+            done
+            CHUNKAH_CONFIG_STR="$(sudo podman inspect "$SRC")"
+            sudo podman run --rm --pull=never \
+              --security-opt label=type:unconfined_t \
+              --mount=type=image,src="$SRC",target=/chunkah,ro \
+              --volume "${OUT_DIR}:/run/out:Z" \
+              -e CHUNKAH_ROOTFS=/chunkah \
+              -e "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
+              "$CHUNKAH_REF" build \
+              --max-layers 127 \
+              --prune /sysroot/ \
+              --label ostree.commit- \
+              --label ostree.final-diffid- \
+              "${label_args[@]}" \
+              --output oci:/run/out/image
+          else
+            sudo podman run --rm --pull=never --privileged \
+              --mount=type=image,src="$SRC",target=/rpm-ostree \
+              --volume "${OUT_DIR}:/run/out:Z" \
+              --entrypoint /usr/bin/rpm-ostree \
+              "$SRC" \
+              compose build-chunked-oci \
+              --bootc --max-layers 127 --format-version 2 \
+              "${label_args[@]}" \
+              --rootfs /rpm-ostree \
+              --output oci:/run/out/image:latest
+          fi
 
           # An empty manifests array is what we seeded, so a still-empty one
           # means the chunker opened the layout and wrote nothing into it.

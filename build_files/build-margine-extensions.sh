@@ -166,6 +166,23 @@ install_otiling() {
     ls -la "${target}"
     exit 1
   fi
+  # margine: survive the lock screen (2026-08-29). Without "session-modes"
+  # GNOME Shell disables every extension when the screen locks and re-enables
+  # it on unlock; o-tiling then tears its tiling forest down and rebuilds it
+  # from the live windows, and that rebuild re-assigns windows to workspaces:
+  # with a fullscreen window on the active workspace the others slid down one
+  # workspace at every unlock (journal: "o-tiling: [INFO] disable" at lock,
+  # "enable" at unlock, then the re-attach). Declaring user + unlock-dialog
+  # keeps it loaded through the lock screen, the pattern GNOME's review
+  # guidelines prescribe for exactly this. pop-shell issues #957 and #217.
+  python3 - "${target}/metadata.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["session-modes"] = ["user", "unlock-dialog"]
+json.dump(d, open(p, "w"), indent=4)
+PY
+  log "o-tiling: metadata.json session-modes = user, unlock-dialog (stays loaded across the lock screen)"
   assert_shell_compat "${target}"
 
   # HOTFIX (2026-07-04, pending upstream in oliwebd/o-tiling): v2.9.5's
@@ -322,7 +339,7 @@ for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@m
     python3 -c "
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(f'name={d.get(\"name\",\"?\")} shell-version={\",\".join(map(str, d.get(\"shell-version\", [])))}')
+print(f'name={d.get(\"name\",\"?\")} shell-version={\",\".join(map(str, d.get(\"shell-version\", [])))} session-modes={\",\".join(d.get(\"session-modes\", [])) or \"-\"}')
 " "${EXT_DIR}/${uuid}/metadata.json"
   else
     printf '  %s: MISSING\n' "${uuid}"

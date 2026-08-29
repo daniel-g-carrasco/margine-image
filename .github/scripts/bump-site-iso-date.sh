@@ -56,7 +56,9 @@ sed -i "s|LATEST_ISO_DATE = \"$OLD_DATE\"|LATEST_ISO_DATE = \"$NEW_DATE\"|" \
 # Versioned ISO filename (margine-<date>.iso) — keeps the direct-HTTP link in
 # sync with the renamed upload so the downloaded file carries the version.
 if [[ -n "${NEW_FILE:-}" ]]; then
-  if grep -q 'LATEST_ISO_FILE = "[^"]*"' src/routes/index.tsx; then
+  if grep -qE 'LATEST_ISO_FILE = `margine-\$\{LATEST_ISO_DATE\}\.iso`' src/routes/index.tsx; then
+    echo "LATEST_ISO_FILE derives from LATEST_ISO_DATE on the site, nothing to set"
+  elif grep -q 'LATEST_ISO_FILE = "[^"]*"' src/routes/index.tsx; then
     sed -i "s|LATEST_ISO_FILE = \"[^\"]*\"|LATEST_ISO_FILE = \"$NEW_FILE\"|" \
       src/routes/index.tsx
     echo "Set LATEST_ISO_FILE = $NEW_FILE"
@@ -99,7 +101,14 @@ fi
 # same-day re-dispatch.
 git config user.email "noreply@margine.dev"
 git config user.name "margine-bump-bot"
-git add src/routes/index.tsx
+# Stage the file that carries the date (src/lib/release.ts since site #182)
+# AND index.tsx (LATEST_ISO_FILE). Staging only index.tsx is what shipped a
+# site whose header said 2026-07-31 while the download button said
+# margine-20260823.iso, with an HTTP link made of the old identifier and
+# the new file name (2026-08-23 to 2026-08-29).
+git add "$DATE_FILE" src/routes/index.tsx
+git diff --cached --name-only | grep -qx "$DATE_FILE" \
+  || { echo "::error::$DATE_FILE is not staged: the date bump would be lost"; exit 1; }
 git commit -m "chore(release): bump LATEST_ISO_DATE to ${NEW_DATE}
 
 Auto-bump by margine-image build-disk.yml after a successful IA publish.

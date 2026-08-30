@@ -419,6 +419,117 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# o-tiling: keep its UI off the lock screen (2026-08-30).
+# ---------------------------------------------------------------------------
+# install_otiling declares session-modes user + unlock-dialog so the tiling
+# forest survives lock/unlock (windows used to slide a workspace at every
+# unlock, #388). The price: GNOME keeps the extension loaded on the lock
+# screen, and its panel button, its workspace-number switcher and its Quick
+# Settings toggle stayed visible and clickable there (reported by Daniel on
+# 2026-08-30). The stock unlock-dialog panel is empty on the left and shows
+# only a11y/keyboard/quickSettings on the right; an extension that lives
+# through the lock screen must hide what it adds. This patch hides the three
+# while sessionMode.isLocked, leaves any interactive tiling mode, and restores
+# them on unlock. Anchored on two exact lines of enable()/disable(): an
+# upstream rewrite must STOP the build, never ship a lock screen with our UI.
+if [[ -f "$OTILING_EXT" ]]; then
+  if grep -q 'margine: lock-screen hygiene' "$OTILING_EXT"; then
+    log "o-tiling lock-screen UI patch already present"
+  elif python3 - "$OTILING_EXT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+a = "        _toggle_quick_settings_indicator(ext.settings.quick_settings_toggle());\n"
+d = "        delete globalThis.oTilingExtension;\n"
+if s.count(a) != 1 or s.count(d) != 1:
+    sys.exit(1)
+add = """        // margine: lock-screen hygiene. session-modes keeps this extension loaded
+        // through the lock screen (so the tiling forest survives lock/unlock);
+        // nothing of its UI may be usable there: hide the panel button, the
+        // workspace-number switcher and the Quick Settings toggle while locked,
+        // leave any interactive mode, and restore them on unlock.
+        if (!ext._margine_lock_ui_signal) {
+            const applyLockState = () => {
+                const locked = sessionMode.isLocked;
+                if (indicator?.button)
+                    indicator.button.visible = !locked && !ext.settings.hide_panel_icon();
+                if (workspace_number_indicator?.button)
+                    workspace_number_indicator.button.visible = !locked;
+                if (quick_settings_indicator) {
+                    quick_settings_indicator.visible = !locked;
+                    for (const item of quick_settings_indicator.quickSettingsItems ?? [])
+                        item.visible = !locked;
+                }
+                // The panel-transparency stylesheet paints #panel with !important
+                // in every mode, lock screen included: pull it while locked.
+                if (locked) {
+                    ext.exit_modes();
+                    ext.panel_transparency_handler?.disable();
+                } else {
+                    ext.panel_transparency_handler?.enable();
+                }
+            };
+            ext._margine_lock_ui_signal = sessionMode.connect('updated', applyLockState);
+            applyLockState();
+        }
+"""
+dadd = """        if (ext?._margine_lock_ui_signal) {
+            sessionMode.disconnect(ext._margine_lock_ui_signal);
+            ext._margine_lock_ui_signal = 0;
+        }
+"""
+s = s.replace(a, a + add, 1).replace(d, dadd + d, 1)
+open(p, "w").write(s)
+PYEOF
+  then
+    log "o-tiling: panel button, workspace switcher and Quick Settings toggle hidden while the screen is locked"
+  else
+    log "ERROR: o-tiling enable()/disable() anchors for the lock-screen patch not found (upstream changed?), refusing to ship its UI on the lock screen"
+    exit 1
+  fi
+fi
+
+# The panel-transparency CSS o-tiling injects also targets #panel.login-screen
+# and #panel.unlock-screen, so the lock screen got a dark band across the top
+# where GNOME draws a transparent panel (Daniel, 2026-08-30, after the first
+# lock-screen patch). Drop the two selectors; the user-session panel keeps
+# its transparency setting.
+OTILING_PT="${EXT_DIR}/o-tiling@oliwebd.github.com/ui/panel_transparency.js"
+if [[ -f "$OTILING_PT" ]]; then
+  if grep -q 'margine: lock-screen hygiene' "$OTILING_PT"; then
+    log "o-tiling panel CSS lock-screen patch already present"
+  elif python3 - "$OTILING_PT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """#panel,
+#panel.solid,
+#panel:overview,
+#panel.login-screen,
+#panel.unlock-screen {
+"""
+new = """/* margine: lock-screen hygiene. GNOME draws the login and unlock panels
+   transparent; do not paint a dark band over the lock screen. */
+#panel,
+#panel.solid,
+#panel:overview {
+"""
+if s.count(old) != 1:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "o-tiling: panel transparency CSS no longer touches the login and unlock panels"
+  else
+    log "ERROR: o-tiling panel_transparency.js selector block not found (upstream changed?), refusing to paint the lock screen"
+    exit 1
+  fi
+else
+  log "ERROR: o-tiling ui/panel_transparency.js not found, the patch target is gone"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Register our extensions' gschemas into the GLOBAL schema set.
 # ---------------------------------------------------------------------------
 # build.sh's 30-gnome-defaults stage copies + compiles the global schema set,

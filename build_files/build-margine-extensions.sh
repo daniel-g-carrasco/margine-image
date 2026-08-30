@@ -483,6 +483,46 @@ PYEOF
   fi
 fi
 
+# The panel-transparency CSS o-tiling injects also targets #panel.login-screen
+# and #panel.unlock-screen, so the lock screen got a dark band across the top
+# where GNOME draws a transparent panel (Daniel, 2026-08-30, after the first
+# lock-screen patch). Drop the two selectors; the user-session panel keeps
+# its transparency setting.
+OTILING_PT="${EXT_DIR}/o-tiling@oliwebd.github.com/ui/panel_transparency.js"
+if [[ -f "$OTILING_PT" ]]; then
+  if grep -q 'margine: lock-screen hygiene' "$OTILING_PT"; then
+    log "o-tiling panel CSS lock-screen patch already present"
+  elif python3 - "$OTILING_PT" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """#panel,
+#panel.solid,
+#panel:overview,
+#panel.login-screen,
+#panel.unlock-screen {
+"""
+new = """/* margine: lock-screen hygiene. GNOME draws the login and unlock panels
+   transparent; do not paint a dark band over the lock screen. */
+#panel,
+#panel.solid,
+#panel:overview {
+"""
+if s.count(old) != 1:
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new, 1))
+PYEOF
+  then
+    log "o-tiling: panel transparency CSS no longer touches the login and unlock panels"
+  else
+    log "ERROR: o-tiling panel_transparency.js selector block not found (upstream changed?), refusing to paint the lock screen"
+    exit 1
+  fi
+else
+  log "ERROR: o-tiling ui/panel_transparency.js not found, the patch target is gone"
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Register our extensions' gschemas into the GLOBAL schema set.
 # ---------------------------------------------------------------------------

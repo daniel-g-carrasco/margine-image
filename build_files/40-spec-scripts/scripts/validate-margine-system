@@ -743,6 +743,11 @@ elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
     else
       warn "o-tiling metadata.json lacks session-modes unlock-dialog: it is torn down at every lock and windows may slide workspaces on unlock"
     fi
+    if grep -q 'margine: lock-screen hygiene' "$OT_SYS/extension.js" 2>/dev/null; then
+      ok "o-tiling hides its panel and Quick Settings UI on the lock screen"
+    else
+      warn "o-tiling lock-screen UI patch NOT in the loaded extension.js: its workspace switcher and toggle stay usable on the lock screen"
+    fi
     if grep -q 'margine: session-only toggle' "$OT_SYS/extension.js" 2>/dev/null; then
       ok "o-tiling session-only toggle patch present (no dconf foot-gun)"
     else

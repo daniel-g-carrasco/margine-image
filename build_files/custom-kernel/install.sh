@@ -113,6 +113,43 @@ cmp -s "$_tmp1" "$_tmp2" \
 rm -f "$_tmp1" "$_tmp2"
 
 COPR_REPO="bieszczaders/kernel-cachyos"
+# COPR signing keys, pinned by fingerprint like RPMFusion and NVIDIA. Read
+# from https://download.copr.fedorainfracloud.org/results/<owner>/<project>/pubkey.gpg
+# on 2026-08-30.
+COPR_CACHYOS_FPR="537DEED33436B0367F5B26D5B3E3132CF10859CF"
+COPR_ADDONS_FPR="A98571785D3845AEF14B16B1CDD249F6F4033A98"
+
+# copr_enable_direct <owner/project> <fingerprint>
+# Writes the repo file `dnf copr enable` would write, without talking to
+# the COPR API. The API (copr.fedorainfracloud.org/api_3/rpmrepo/...) is
+# the fragile half of COPR: on 2026-08-30 it timed out for hours (curl 28,
+# five attempts each) and killed three builds in a row, while the download
+# backend answered in under a second. Packages, metadata and the signing
+# key all live on the backend, so the API is not needed at all. Same repo
+# id as dnf's, so --enablerepo/--disablerepo and the scrub globs still work.
+copr_enable_direct() {
+  local project="$1" fpr="$2"
+  local owner="${project%%/*}" name="${project##*/}"
+  local base="https://download.copr.fedorainfracloud.org/results/${owner}/${name}"
+  local key="/run/copr-${name}.gpg"
+  local repo="/etc/yum.repos.d/_copr:copr.fedorainfracloud.org:${owner}:${name}.repo"
+  retry_curl_strict "${base}/pubkey.gpg" "$key" || return 1
+  verify_key_fpr "$key" "$fpr" "copr ${project}" || return 1
+  rpm --import "$key"
+  cat > "$repo" <<REPOEOF
+[copr:copr.fedorainfracloud.org:${owner}:${name}]
+name=Copr repo for ${name} owned by ${owner}
+baseurl=${base}/fedora-\$releasever-\$basearch/
+type=rpm-md
+skip_if_unavailable=False
+gpgcheck=1
+gpgkey=file://${key}
+repo_gpgcheck=0
+enabled=1
+enabled_metadata=1
+REPOEOF
+  log "COPR ${project}: repo written against the download backend (no API), key pinned"
+}
 KERNEL_PKG="kernel-cachyos"
 KERNEL_DEVEL_PKG="kernel-cachyos-devel-matched"
 KERNEL_PACKAGES=(kernel-cachyos kernel-cachyos-core kernel-cachyos-modules "$KERNEL_DEVEL_PKG")
@@ -276,7 +313,7 @@ dnf -y remove \
 rm -rf /usr/lib/modules/* || true
 
 log "Enabling COPR: $COPR_REPO"
-dnf -y copr enable "$COPR_REPO"
+copr_enable_direct "$COPR_REPO" "$COPR_CACHYOS_FPR" || exit 1
 
 # On self-hosted runners, /var/cache is a persistent BuildKit cache
 # mount. A previous failed download (e.g. a partial RPM with bad
@@ -502,12 +539,11 @@ fi
 # COPR just for the install, then disable + scrub the repo file so user
 # systems don't pull random updates from it outside our pipeline.
 log "Enabling kernel-cachyos-addons COPR for scx-scheds"
-dnf -y copr enable bieszczaders/kernel-cachyos-addons
+copr_enable_direct bieszczaders/kernel-cachyos-addons "$COPR_ADDONS_FPR" || exit 1
 # Same COPR host as the kernel (copr.fedorainfracloud.org), same 5xx /
 # Curl-timeout brownouts — same shared retry helper.
 retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh scx-scheds' \
   || { err "scx-scheds install FAILED after 5 attempts (kernel-cachyos-addons COPR likely down)"; exit 1; }
-dnf -y copr disable bieszczaders/kernel-cachyos-addons || true
 rm -f /etc/yum.repos.d/_copr*kernel-cachyos-addons*.repo
 log "scx-scheds installed:"
 ls /usr/bin/scx_* 2>/dev/null | sed 's|^/usr/bin/||' | sort

@@ -51,7 +51,8 @@ def run(argv, timeout=30):
 def local_state():
     """Booted / staged / rollback deployments from rpm-ostree."""
     out = run(["rpm-ostree", "status", "--json"])
-    state = {"booted": None, "staged": None, "rollback": None, "layered": []}
+    state = {"booted": None, "staged": None, "rollback": None, "layered": [],
+             "booted_digest": "", "staged_digest": ""}
     if not out:
         return state
     try:
@@ -61,10 +62,17 @@ def local_state():
     seen_booted = False
     for dep in deployments:
         version = dep.get("version") or (dep.get("checksum") or "")[:12]
+        # The manifest digest is the only identity that survives two builds
+        # published under the same version label (both stable builds of
+        # 2026-08-30 were candidate.20260830): margine-status already judges
+        # by digest, this GUI said "Up to Date" on the older one.
+        digest = (dep.get("base-commit-meta") or {}).get("ostree.manifest-digest") or ""
         if dep.get("staged"):
             state["staged"] = version
+            state["staged_digest"] = digest
         elif dep.get("booted"):
             state["booted"] = version
+            state["booted_digest"] = digest
             seen_booted = True
             state["layered"] = sorted(
                 set(dep.get("requested-packages") or []) | set(dep.get("packages") or [])
@@ -83,6 +91,7 @@ class SystemWindow(Adw.ApplicationWindow):
 
         self._state = {}
         self._latest = None
+        self._latest_digest = ""
         self._busy = False
 
         self._toasts = Adw.ToastOverlay()
@@ -288,7 +297,25 @@ class SystemWindow(Adw.ApplicationWindow):
             self._action_button.set_visible(False)
             return
 
-        if self._latest and booted != self._latest:
+        booted_digest = self._state.get("booted_digest") or ""
+        latest_digest = getattr(self, "_latest_digest", "") or ""
+        if booted_digest and latest_digest:
+            # Same identity check margine-status uses: digests, not labels.
+            if booted_digest != latest_digest:
+                self._hero_icon.set_from_icon_name("software-update-available-symbolic")
+                self._hero_title.set_text("Update Available")
+                if booted == self._latest:
+                    self._hero_body.set_text(
+                        f"A newer build of {self._latest} is published. Two builds can share "
+                        "a version label on the same day; this machine runs the older one."
+                    )
+                else:
+                    self._hero_body.set_text(
+                        f"You are on {booted}. The published version is {self._latest}."
+                    )
+                self._set_action("Download Update", suggested=True)
+                return
+        elif self._latest and booted != self._latest:
             self._hero_icon.set_from_icon_name("software-update-available-symbolic")
             self._hero_title.set_text("Update Available")
             self._hero_body.set_text(f"You are on {booted}. The published version is {self._latest}.")
@@ -312,16 +339,21 @@ class SystemWindow(Adw.ApplicationWindow):
             out = run(
                 [
                     "skopeo", "inspect", "--no-tags", f"docker://{IMAGE}",
-                    "--format", "{{ index .Labels \"org.opencontainers.image.version\" }}",
+                    "--format",
+                    "{{.Digest}} {{ index .Labels \"org.opencontainers.image.version\" }}",
                 ],
                 timeout=60,
             ).strip()
-            GLib.idle_add(self._set_latest, out or None)
+            digest, _, version = out.partition(" ")
+            if not version:
+                digest, version = "", out
+            GLib.idle_add(self._set_latest, version or None, digest or "")
 
         GLib.Thread.new(None, worker)
 
-    def _set_latest(self, latest):
+    def _set_latest(self, latest, latest_digest=""):
         self._latest = latest
+        self._latest_digest = latest_digest
         self._update_banner()
         return False
 
@@ -438,6 +470,7 @@ class SystemWindow(Adw.ApplicationWindow):
             )
         else:
             self._latest = None
+            self._latest_digest = ""
             self._refresh()
 
     def _reboot(self):

@@ -644,13 +644,15 @@ jobs:
               sudo podman pull "$CHUNKAH_REF" && break
               echo "chunkah pull attempt $attempt failed, retrying in 10s"; sleep 10
             done
+            # An image mount is read-only unless rw=true is asked for; podman
+            # rejects a bare "ro" ("invalid mount option", second trial).
             # The source image's config (labels, env) goes in through a file:
             # `podman inspect` of this image is far too large for the command
             # line (first attempt died with "sudo: Argument list too long").
             sudo podman inspect "$SRC" | sudo tee "${OUT_DIR}/config.json" >/dev/null
             sudo podman run --rm --pull=never \
               --security-opt label=type:unconfined_t \
-              --mount=type=image,src="$SRC",target=/chunkah,ro \
+              --mount=type=image,src="$SRC",target=/chunkah \
               --volume "${OUT_DIR}:/run/out:Z" \
               -e CHUNKAH_ROOTFS=/chunkah \
               "$CHUNKAH_REF" build \

@@ -460,8 +460,14 @@ add = """        // margine: lock-screen hygiene. session-modes keeps this exten
                     for (const item of quick_settings_indicator.quickSettingsItems ?? [])
                         item.visible = !locked;
                 }
-                if (locked)
+                // The panel-transparency stylesheet paints #panel with !important
+                // in every mode, lock screen included: pull it while locked.
+                if (locked) {
                     ext.exit_modes();
+                    ext.panel_transparency_handler?.disable();
+                } else {
+                    ext.panel_transparency_handler?.enable();
+                }
             };
             ext._margine_lock_ui_signal = sessionMode.connect('updated', applyLockState);
             applyLockState();

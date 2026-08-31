@@ -334,13 +334,17 @@ runtime through `scx_loader`. The gaming variant (gamescope, vkBasalt, the
 gaming Flatpaks) is opt-in via `ujust margine-gaming` on top of the
 same kernel — no separate image.
 
-**Build pipeline**: GitHub-hosted `ubuntu-24.04` runner (the
-self-hosted PVE builder was decommissioned 2026-06-01 after a ZFS
-spacemap corruption took the host down). The image is built with a
-direct `sudo -E buildah build` shell call — the same pattern Bazzite
-uses, not the `redhat-actions/buildah-build` action — then run
-through [`hhd-dev/rechunk`](https://github.com/hhd-dev/rechunk) so
-the OCI layers stay reproducible across upstream base rebases. All
+**Build pipeline**: GitHub-hosted `ubuntu-26.04` runner for the image
+(`ubuntu-24.04` for the disk and ISO jobs; the self-hosted PVE builder
+was decommissioned 2026-06-01 after a ZFS spacemap corruption took the
+host down). The image is built with a direct `sudo -E buildah build`
+shell call, the same pattern Bazzite uses, not the
+`redhat-actions/buildah-build` action, then split into content-based
+layers with [`coreos/chunkah`](https://github.com/coreos/chunkah)
+(default since 2026-08-31, on measured update deltas: 74% of the bytes
+shared between two builds a day apart against 65% with rpm-ostree's
+`build-chunked-oci`, which stays one `workflow_dispatch` away as the
+way back). All
 GitHub Actions are SHA-pinned (e.g. `actions/upload-artifact@<sha> #
 v7.0.1`) rather than tag-pinned, to avoid the `tj-actions/changed-
 files`-style supply-chain attack vector. Cosign signs the pushed
@@ -415,8 +419,9 @@ under [`docs/spec/`](docs/spec/) in this repo.
   for the MOK-signing kernel script.
 - [**MorrOS**](https://github.com/morrolinux/morros) — CI workflow
   patterns.
-- [**hhd-dev/rechunk**](https://github.com/hhd-dev/rechunk) — ostree
-  rechunking action.
+- [**coreos/chunkah**](https://github.com/coreos/chunkah), content-based
+  OCI layers; before it, rpm-ostree's `build-chunked-oci` and, until
+  2026-08, [**hhd-dev/rechunk**](https://github.com/hhd-dev/rechunk).
 - [**Internet Archive**](https://archive.org/) — permanent mirror
   and BitTorrent seed for the ISOs.
 

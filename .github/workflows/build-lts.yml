@@ -23,6 +23,11 @@ name: Build Margine LTS variant (experimental, x86-64-v2)
 on:
   workflow_dispatch:
     inputs:
+      chunker:
+        description: "Layer chunker: chunkah (default, same as :stable) or rpm-ostree (the way back)"
+        type: choice
+        options: [chunkah, rpm-ostree]
+        default: chunkah
       tag:
         description: "image tag to push (:lts is the one documented; use lts-test for throwaway runs)"
         default: lts
@@ -117,10 +122,12 @@ jobs:
           sbverify --list /tmp/vmlinuz | grep -qi "Margine" || { echo "::error::vmlinuz is not signed with the Margine key"; exit 1; }
           echo "vmlinuz signed with the Margine key"
           echo "kver=$KVER" >> "$GITHUB_OUTPUT"
-      - name: Chunk the image (rpm-ostree compose build-chunked-oci, same as :stable)
+      - name: Chunk the image (same chunker as :stable)
         id: rechunk
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:lts-build
+          CHUNKER: ${{ inputs.chunker || 'chunkah' }}
+          CHUNKAH_REF: quay.io/coreos/chunkah:v0.6.0@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
           KVER: ${{ steps.kernel.outputs.kver }}
           VERSION: ${{ steps.meta.outputs.tag }}.${{ steps.meta.outputs.ymd }}
           REVISION: ${{ github.sha }}
@@ -130,15 +137,18 @@ jobs:
           CREATED: ${{ steps.meta.outputs.created }}
         run: |
           set -euo pipefail
-          # Same invocation as build.yml: the chunker is the rpm-ostree that ships
-          # inside the image itself, mounted read-only; output is an oci: directory
-          # pre-seeded so rpm-ostree can open it, then pushed with skopeo.
+          # Same invocation and the same chunker as build.yml: :lts must be
+          # chunked like :stable or the two share no layers (#386). chunkah by
+          # default since 2026-08-31, rpm-ostree kept as the way back.
           OUT_DIR="${RUNNER_TEMP}/chunk-out"
           sudo rm -rf "$OUT_DIR"
-          mkdir -p "$OUT_DIR/image/blobs/sha256"
-          printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
-          printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
-            > "$OUT_DIR/image/index.json"
+          mkdir -p "$OUT_DIR"
+          if [ "$CHUNKER" = "rpm-ostree" ]; then
+            mkdir -p "$OUT_DIR/image/blobs/sha256"
+            printf '{"imageLayoutVersion":"1.0.0"}' > "$OUT_DIR/image/oci-layout"
+            printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}' \
+              > "$OUT_DIR/image/index.json"
+          fi
           labels=(
             "org.opencontainers.image.title=${IMAGE_NAME}"
             "org.opencontainers.image.description=${IMAGE_DESC}"
@@ -167,16 +177,37 @@ jobs:
             [ -n "${l#*=}" ] || { echo "::warning::empty label ${l%%=*}, skipping"; continue; }
             label_args+=(--label "$l")
           done
-          sudo podman run --rm --pull=never --privileged \
-            --mount=type=image,src="$SRC",target=/rpm-ostree \
-            --volume "${OUT_DIR}:/run/out:Z" \
-            --entrypoint /usr/bin/rpm-ostree \
-            "$SRC" \
-            compose build-chunked-oci \
-            --bootc --max-layers 127 --format-version 2 \
-            "${label_args[@]}" \
-            --rootfs /rpm-ostree \
-            --output oci:/run/out/image:latest
+          if [ "$CHUNKER" = "chunkah" ]; then
+            for attempt in 1 2 3; do
+              sudo podman pull "$CHUNKAH_REF" && break
+              echo "chunkah pull attempt $attempt failed, retrying in 10s"; sleep 10
+            done
+            sudo podman inspect "$SRC" | sudo tee "${OUT_DIR}/config.json" >/dev/null
+            sudo podman run --rm --pull=never \
+              --security-opt label=type:unconfined_t \
+              --mount=type=image,src="$SRC",target=/chunkah \
+              --volume "${OUT_DIR}:/run/out:Z" \
+              -e CHUNKAH_ROOTFS=/chunkah \
+              "$CHUNKAH_REF" build \
+              --config /run/out/config.json \
+              --max-layers 127 \
+              --prune /sysroot/ \
+              --label ostree.commit- \
+              --label ostree.final-diffid- \
+              "${label_args[@]}" \
+              --output oci:/run/out/image
+          else
+            sudo podman run --rm --pull=never --privileged \
+              --mount=type=image,src="$SRC",target=/rpm-ostree \
+              --volume "${OUT_DIR}:/run/out:Z" \
+              --entrypoint /usr/bin/rpm-ostree \
+              "$SRC" \
+              compose build-chunked-oci \
+              --bootc --max-layers 127 --format-version 2 \
+              "${label_args[@]}" \
+              --rootfs /rpm-ostree \
+              --output oci:/run/out/image:latest
+          fi
           [ "$(sudo jq '.manifests | length' "${OUT_DIR}/image/index.json")" -gt 0 ] || {
             echo "::error::chunker left ${OUT_DIR}/image without a manifest"
             exit 1

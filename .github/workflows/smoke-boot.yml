@@ -162,15 +162,18 @@ jobs:
           # the first chunkah candidate (6.7 GB compressed, 143 MiB more
           # than rpm-ostree's) died at 'min-free-space-percent 3% would
           # be exceeded' during bootc install (run 33417319484).
-          # BIB pinned to the same digest build-disk.yml uses — this
-          # workflow floated on :latest --pull=newer until 2026-06-12.
+          # BIB bumped to the 2026-06-18 build (an EXPERIMENT for the chunkah
+          # candidate: the 2026-05-29 pin rejects customizations.filesystem for
+          # qcow2 and its auto-sized disk dies at min-free-space-percent on the
+          # 6.7 GB chunkah image; build-disk.yml still holds the old pin until
+          # this proves itself).
           sudo podman run --rm \
             --privileged \
             --security-opt label=type:unconfined_t \
             -v "$(pwd)/output:/output" \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
             -v "$(pwd)/disk_config/disk.toml:/config.toml:ro" \
-            quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905 \
+            quay.io/centos-bootc/bootc-image-builder@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b \
             --type qcow2 \
             --rootfs btrfs \
             "$IMG"

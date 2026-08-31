@@ -255,6 +255,19 @@ implement the cron job.
 Six upstreams had new commits since 2026-06-07; Origami and rechunk had
 none. What the skim turned up, in order of how much it matters to us:
 
+- **Chunker: chunkah is the default since 2026-08-31 (measured).** Same
+  image, same base, two builds one day apart: `rpm-ostree compose
+  build-chunked-oci` without `--previous-build` (blocked by
+  bootc-dev/bootc#1885, two assertions reproduced on our image) shared
+  84/128 layers, 4071 MiB of 6234 (65%); `coreos/chunkah` v0.6.0 shared
+  106/127, 4764 MiB of 6377 (74%), about 600 MB less per daily update,
+  and chunked in 3 min 14 s against 10 min 0 s. Price: 143 MiB larger
+  image, and the first chunkah `:stable` shares nothing with the
+  rpm-ostree ones (one full download, then the deltas). `rpm-ostree`
+  stays one `workflow_dispatch` away (`chunker=rpm-ostree`), in
+  `build.yml` and `build-lts.yml` alike, because `:lts` must be chunked
+  like `:stable` or the two share no layers (#386).
+
 - **The ecosystem is leaving `hhd-dev/rechunk` behind.** Bazzite now
   rechunks with `rpm-ostree compose build-chunked-oci`, passing labels
   as `--label` arguments (ublue-os/bazzite 625bebb, "fix(ci): Maintain

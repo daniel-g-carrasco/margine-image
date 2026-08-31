@@ -116,13 +116,12 @@ on:
     inputs:
       chunker:
         description: >-
-          Layer chunker for this run. rpm-ostree (default) is what :stable
-          ships. chunkah (coreos/chunkah, what the new Bluefin uses) is an
-          EXPERIMENT for measuring update deltas (bootc-dev/bootc#1885):
-          it publishes :trial only.
+          Layer chunker for this run. chunkah (coreos/chunkah, the default
+          since 2026-08-31) or rpm-ostree (the previous chunker, kept as the
+          way back: a dispatch, not a PR). Both publish normally.
         type: choice
-        options: [rpm-ostree, chunkah]
-        default: rpm-ostree
+        options: [chunkah, rpm-ostree]
+        default: chunkah
       base_image:
         description: >-
           Trial build against another base (e.g.
@@ -274,7 +273,7 @@ jobs:
         # otherwise become :stable on every user's next update.
         env:
           BASE_OVERRIDE: ${{ github.event.inputs.base_image || '' }}
-          CHUNKER: ${{ github.event.inputs.chunker || 'rpm-ostree' }}
+          CHUNKER: ${{ github.event.inputs.chunker || 'chunkah' }}
         run: |
           set -euo pipefail
           DEFAULT_BASE="$(sed -nE 's/^ARG BASE_IMAGE=(.*)$/\1/p' Containerfile | head -1)"
@@ -282,10 +281,6 @@ jobs:
             echo "base=$BASE_OVERRIDE" >> "$GITHUB_OUTPUT"
             echo "publish_tag=trial" >> "$GITHUB_OUTPUT"
             echo "::notice::TRIAL build against $BASE_OVERRIDE (publishes :trial only)"
-          elif [ "$CHUNKER" != "rpm-ostree" ]; then
-            echo "base=$DEFAULT_BASE" >> "$GITHUB_OUTPUT"
-            echo "publish_tag=trial" >> "$GITHUB_OUTPUT"
-            echo "::notice::TRIAL build chunked with $CHUNKER (publishes :trial only)"
           else
             echo "base=$DEFAULT_BASE" >> "$GITHUB_OUTPUT"
             echo "publish_tag=${CANDIDATE_TAG}" >> "$GITHUB_OUTPUT"
@@ -526,7 +521,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-      - name: Chunk the image (rpm-ostree compose build-chunked-oci)
+      - name: Chunk the image (chunkah; rpm-ostree kept as the way back)
         id: rechunk
         # Was hhd-dev/rechunk@v1.2.4 until 2026-08-21. That action wraps a
         # container image of its own and describes itself as a stopgap until
@@ -551,7 +546,7 @@ jobs:
         # Both reproduced locally, which is the only reason this works.
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
-          CHUNKER: ${{ github.event.inputs.chunker || 'rpm-ostree' }}
+          CHUNKER: ${{ github.event.inputs.chunker || 'chunkah' }}
           # coreos/chunkah, pinned the way projectbluefin/actions pins it (v0.6.0).
           CHUNKAH_REF: quay.io/coreos/chunkah:v0.6.0@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
           KVER: ${{ steps.sbom.outputs.kver }}
@@ -634,12 +629,20 @@ jobs:
           #
           # --max-layers 127 and --format-version 2 match what Bazzite ships.
           if [ "$CHUNKER" = "chunkah" ]; then
-            # EXPERIMENT (bootc-dev/bootc#1885): chunk with coreos/chunkah instead,
-            # the way projectbluefin/actions does for RPM images (rootfs mounted
-            # read-only at /chunkah, the source image's config passed in
-            # CHUNKAH_CONFIG_STR so its labels carry over, --prune /sysroot/,
-            # the two ostree labels dropped). Same --max-layers as rpm-ostree.
-            # Published as :trial only (see the base step): never :candidate.
+            # Default since 2026-08-31 (Daniel's call, on measured numbers).
+            # Same image, same base, two builds one day apart: rpm-ostree
+            # build-chunked-oci without --previous-build (blocked by
+            # bootc-dev/bootc#1885) shared 84/128 layers, 4071 MiB of 6234
+            # (65%); chunkah v0.6.0 shared 106/127, 4764 MiB of 6377 (74%),
+            # about 600 MB less to download per daily update, and chunked in
+            # 3 min 14 s against 10 min 0 s. Price: the image is 143 MiB
+            # larger, and the FIRST chunkah :stable shares nothing with the
+            # rpm-ostree ones (different layer schemes): one full download,
+            # then the deltas. Invoked the way projectbluefin/actions does for
+            # RPM images: rootfs mounted read-only at /chunkah, the source
+            # image's config passed as a file so its labels carry over,
+            # --prune /sysroot/, the two ostree labels dropped, same
+            # --max-layers as rpm-ostree. rpm-ostree stays one dispatch away.
             for attempt in 1 2 3; do
               sudo podman pull "$CHUNKAH_REF" && break
               echo "chunkah pull attempt $attempt failed, retrying in 10s"; sleep 10

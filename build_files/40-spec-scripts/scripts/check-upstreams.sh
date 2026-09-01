@@ -46,6 +46,23 @@ declare -A repos=(
   # and starts pushing production-signed images, Margine has to plan
   # the custom-kernel rewrite.
   [sealed-images]="travier/fedora-atomic-desktops-sealed"
+  # chunkah — the chunker behind every :stable and :lts since 2026-08-31,
+  # pinned by digest (v0.6.0) in build.yml / build-lts.yml. A new release
+  # is a reason to re-measure layer sharing; coreos/chunkah#160 (mtime
+  # clamp) is the issue our 99-cleanup.sh normalisation works around.
+  [chunkah]="coreos/chunkah"
+)
+
+# Upstreams whose canonical home is GitLab (path with namespace). Counted
+# through the public GitLab API; no token needed for public projects.
+declare -A gitlab_repos=(
+  # RakuOS — the closest cousin Margine has: Fedora base-atomic + CachyOS
+  # kernel + MOK-signed modules + chunkah at build time + a persistent
+  # dnf overlay ("hybrid atomic"), with GNOME/KDE/COSMIC/Niri editions
+  # and x86-64-v3/v4 builds. The GitHub org RakuOS/* is a stale mirror
+  # (last push 2026-07), so watch GitLab.
+  [rakuos-base]="rakuos/images/rakuos-base"
+  [rakuos-gnome]="rakuos/images/rakuos-gnome"
 )
 
 LAST_REVIEWED=$(grep -oE '202[0-9]-[0-9]{2}-[0-9]{2}' "$DOC" | sort -u | tail -1)
@@ -74,10 +91,25 @@ for name in $(echo "${!repos[@]}" | tr ' ' '\n' | sort); do
   fi
 done
 
+for name in $(echo "${!gitlab_repos[@]}" | tr ' ' '\n' | sort); do
+  repo="${gitlab_repos[$name]}"
+  enc="${repo//\//%2F}"
+  count=$(curl -fsS "https://gitlab.com/api/v4/projects/${enc}/repository/commits?since=${LAST_REVIEWED}T00:00:00Z&per_page=100" \
+            | jq 'length' 2>/dev/null || echo "?")
+  [[ "$count" == "100" ]] && count="100+"
+  if [[ "$count" =~ ^[0-9]+\+?$ ]] && [[ "$count" != "0" ]]; then
+    any_activity=1
+    printf "  %-15s %-30s  %s new commit(s)  →  https://gitlab.com/%s/-/commits/main\n" \
+      "$name" "$repo" "$count" "$repo"
+  else
+    printf "  %-15s %-30s  %s\n" "$name" "$repo" "${count} commit(s) (no review needed)"
+  fi
+done
+
 echo
 if (( any_activity )); then
   cat <<EOF
-For each upstream with new commits, skim the commit log on GitHub.
+For each upstream with new commits, skim the commit log on GitHub or GitLab.
 If anything affects what's listed in docs/upstream-inspirations.md
 (custom-kernel script for Origami, build pattern for MorrOS, action
 arguments for rechunk, gschema baseline for Bluefin, …) update the

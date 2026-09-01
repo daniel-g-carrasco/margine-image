@@ -460,9 +460,20 @@ class SystemWindow(Adw.ApplicationWindow):
     # ── actions ──────────────────────────────────────────────────────
 
     def _on_primary_action(self, _button):
+        # Same identity rule as the banner (#397): digests decide, labels
+        # are the fallback. Comparing labels alone made this button a
+        # no-op on the second build of a day — the banner said "Update
+        # Available" (digests differ) but the click compared
+        # candidate.YYYYMMDD to itself and fell through to a refresh.
+        booted_digest = self._state.get("booted_digest") or ""
+        latest_digest = getattr(self, "_latest_digest", "") or ""
+        if booted_digest and latest_digest:
+            update_available = booted_digest != latest_digest
+        else:
+            update_available = bool(self._latest) and self._state.get("booted") != self._latest
         if self._state.get("staged"):
             self._reboot()
-        elif self._latest and self._state.get("booted") != self._latest:
+        elif self._latest and update_available:
             self._run_command(
                 ["pkexec", SYSTEM_UPDATE],
                 title="Downloading Update",

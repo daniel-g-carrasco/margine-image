@@ -667,7 +667,23 @@ log "Baking native-gaming 32-bit dependency closure: ${GAMING_BAKE[*]}"
 # transaction, left disabled after, like everywhere else in this file.
 retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia "$@"' _ "${GAMING_BAKE[@]}" \
   || { err "native-gaming closure install failed after 5 attempts (repo down or unresolvable multilib at build?); aborting"; exit 1; }
-dnf -y remove --no-autoremove "${GAMING_BAKE[@]}" \
+# Remove by RESOLVED name, not by request name. dnf resolves the
+# install request "retroarch" to negativo17's RetroArch (it Provides
+# retroarch), but `dnf remove retroarch` matches only the literal
+# package name — so RetroArch silently stayed in every base image. That
+# leftover then broke `rpm-ostree upgrade` for gaming-native users on
+# 2026-09-02: their origin's dormant "retroarch" request hit
+# "installed RetroArch obsoletes retroarch provided by retroarch from
+# fedora - conflicting requests" (smoke run 33525326721 predicted it,
+# warn-only at the time).
+GAMING_BAKE_RESOLVED=()
+for p in "${GAMING_BAKE[@]}"; do
+  r="$(rpm -q --whatprovides "$p" --qf '%{NAME}\n' 2>/dev/null | head -1)"
+  [[ -n "$r" && "$r" != *"no package provides"* ]] || { err "cannot resolve baked app '$p' to an installed package; aborting"; exit 1; }
+  GAMING_BAKE_RESOLVED+=("$r")
+done
+log "Stripping baked gaming apps (resolved): ${GAMING_BAKE_RESOLVED[*]}"
+dnf -y remove --no-autoremove "${GAMING_BAKE_RESOLVED[@]}" \
   || { err "failed to strip gaming apps while keeping their deps; aborting"; exit 1; }
 log "Native-gaming 32-bit closure baked (apps removed, deps version-locked in base)"
 

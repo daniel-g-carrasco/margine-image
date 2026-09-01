@@ -163,12 +163,19 @@ if [[ -n "$BOOT_OK" ]]; then
       *)    echo "::warning::Layer C GUI probe gave no verdict (injection skipped or probe stuck) — see inject step + serial log." ;;
     esac
 
-    # ---- Gaming-native dry-run verdict — WARN-ONLY (same window) ----
+    # ---- Gaming-native dry-run verdict — GATING on FAIL ----
+    # (Daniel, 2026-09-02, after the RetroArch/retroarch depsolve broke
+    # updates for gaming-native users while this was warn-only: "questo
+    # tipo di cose NON deve ricapitare". A FAIL now blocks promotion;
+    # skip/timeout stay warnings so a stuck probe cannot wedge releases.)
     grep -E "MARGINE-GAMING-NATIVE" "$LOG" || true
     emit "gaming=${GAMING_RESULT:-none}"
     case "$GAMING_RESULT" in
       pass) echo "✓ Gaming-native layer resolves (rpm-ostree dry-run)" ;;
-      fail) echo "::warning::Gaming-native layer does NOT resolve — \`ujust margine-gaming-native\` would fail to depsolve (likely i686/x86_64 multilib skew). See serial log artifact. This will become gating." ;;
+      fail)
+        echo "::error::Gaming-native layer does NOT resolve — every gaming-native rpm-ostree upgrade (and ujust margine-gaming-native) would fail to depsolve. GATING: not promoting. See serial log artifact."
+        emit "passed=false"
+        exit 1 ;;
       skip) echo "::warning::Gaming-native check skipped (package list missing/empty in image)." ;;
       *)    echo "::warning::Gaming-native check gave no verdict (probe skipped or stuck) — see inject step + serial log." ;;
     esac

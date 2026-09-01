@@ -243,7 +243,7 @@ margine-gaming-native:
       Native RPMs (layered via rpm-ostree — requires reboot):
         - steam              (Valve Steam client, RPM Fusion non-free)
         - lutris             (open-source game manager)
-        - retroarch          (multi-emulator front-end)
+        - RetroArch          (multi-emulator front-end)
         - gamescope          (HDR / per-game compositor / scaling)
         - vkBasalt           (post-processing Vulkan layer)
 
@@ -311,7 +311,7 @@ margine-gaming-native-remove:
     set -euo pipefail
 
     echo "This will:"
-    echo "  - rpm-ostree uninstall steam, lutris, retroarch, gamescope, vkBasalt"
+    echo "  - rpm-ostree uninstall steam, lutris, RetroArch, gamescope, vkBasalt"
     echo "  - flatpak uninstall Heroic, Bottles, Protontricks, ProtonPlus"
     echo
     echo "  NOT touched (kept — useful for non-gaming workflows too):"

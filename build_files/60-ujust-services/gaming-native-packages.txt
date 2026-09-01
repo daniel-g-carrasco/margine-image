@@ -6,11 +6,16 @@
 #
 # Lines starting with # and blank lines are ignored. One package per line.
 #
+# RetroArch is the real package name (negativo17/fedora-multimedia; it
+# Provides and Obsoletes the older Fedora "retroarch"). Requesting the
+# lowercase name left a dormant, ambiguous request in users' origins
+# that exploded on 2026-09-02 when libdnf preferred Fedora's retroarch.
+#
 # steam pulls the 32-bit (i686) graphics stack — that multilib edge is
 # the fragile one (i686 mesa/llvm must version-match the baked x86_64),
 # which is exactly what the smoke-boot dry-run guards on each build.
 steam
 lutris
-retroarch
+RetroArch
 gamescope
 vkBasalt

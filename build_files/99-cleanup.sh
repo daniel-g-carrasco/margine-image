@@ -35,3 +35,25 @@ rmdir /var/lib/authselect 2>/dev/null || true
 # (a new step parking state in /var) is easy to spot next to the lint.
 echo "Remaining /var content after build-residue cleanup:"
 find /var -mindepth 1 -maxdepth 3 | sort
+
+# Deterministic mtimes for chunkah (2026-09-01).
+#
+# chunkah writes every tar entry with mtime = min(real mtime, clamp of
+# the component). For rpm-owned files the clamp is the package build
+# time, so those entries never move. For everything else (bigfiles,
+# unclaimed files, and the ancestor directories written into EVERY
+# layer) the clamp is the image's own Created time, i.e. the build
+# time, so the real mtime wins. Measured on candidate.20260831 vs
+# candidate.20260901: 32 of 127 layers differed, and a same-size pair
+# (bigfiles/libvulkan_intel_hasvk.so) had identical files and differed
+# only in the mtimes of "usr" and "usr/lib64", touched by that day's
+# package updates. Directories and files created during the build get
+# mtime 0 here, so those entries stop depending on when we built.
+# rpm-owned files are left alone (their mtimes are already stable, and
+# changing them would move every layer once). The installed system is
+# unaffected: ostree stores content with mtime 0 anyway.
+# --source-date-epoch would also do it, but it changes the image
+# Created (stale-image-alarm reads it) and chunkah's stability model
+# (coreos/chunkah#160).
+echo "Normalising mtimes of directories and build-created files"
+find / -xdev \( -type d -o -newer /ctx/99-cleanup.sh \) -exec touch -h -d @0 {} + 2>/dev/null || true

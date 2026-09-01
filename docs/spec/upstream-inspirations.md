@@ -18,10 +18,35 @@ go stale silently.
 | [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-08-21 |
 | [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-08-21 |
 | [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-08-21 |
-| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the tool Bluefin uses internally | **GH Action consumer** (we use their `@v1.2.4` action) | step `ReChunk image` in `margine-image/.github/workflows/build.yml` | 2026-08-21 |
-| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-08-21 |
+| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the GH Action we used until the chunker switch (rpm-ostree, then chunkah on 2026-08-31) | **Former GH Action consumer** (kept in the watch list for the ecosystem signal) | none since 2026-08; history in the "Chunker" note below | 2026-09-01 |
+| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-09-01 |
+| [coreos/chunkah](https://github.com/coreos/chunkah) | The chunker behind every `:stable` and `:lts` image since 2026-08-31: content-based layers planned from the rpmdb, no `--previous-build` needed | **Tool consumer** (pinned by digest, v0.6.0) | step `Chunk the image` in `build.yml` / `build-lts.yml`; `99-cleanup.sh` mtime normalisation (works around chunkah#160) | 2026-09-01 |
+| [RakuOS](https://gitlab.com/rakuos) (canonical on GitLab; the GitHub org is a stale mirror) | Closest cousin: Fedora `base-atomic` + CachyOS kernel + MOK-signed modules + chunkah at build time + persistent dnf overlay ("hybrid atomic"); GNOME/KDE/COSMIC/Niri editions, x86-64-v3/v4 builds | **Reference only** (no code copied) | none; watched for how they handle Secure Boot, the v3/v4 split (our #382) and the overlay model | 2026-09-01 |
 
 ---
+
+## RakuOS — reference only
+
+[RakuOS](https://rakuos.org/) is a "hybrid atomic" Fedora distribution
+built on `quay.io/fedora-ostree-desktops/base-atomic`, with the CachyOS
+kernel, DKMS modules signed at build time with a MOK key passed as a
+build secret (`build_files/drivers.sh`), chunkah run inside the
+Containerfile (`FROM quay.io/coreos/chunkah AS chunkah`, then
+`FROM oci-archive:out.ociarchive`), and a persistent overlay that lets
+users `dnf install` on top of the image and keeps those packages across
+updates (`rakuos-overlay-sync.service`, `rakuos reset-overlay`). Four
+desktop editions (GNOME, KDE, COSMIC, Niri), a Gamescope image, and
+separate x86-64-v3 / v4 Containerfiles. Sources live on GitLab under
+`rakuos/images/*` and `rakuos/packages/*` (Apache-2.0); the GitHub org
+`RakuOS/*` is a mirror that stopped in 2026-07.
+
+Why we watch it (added 2026-09-01, Daniel's request): it makes the same
+three choices Margine made (CachyOS kernel, MOK signing, chunkah) in a
+different order and with a different philosophy on mutability. Things to
+learn from their commit log: how they ship the v3/v4 split (our #382
+went the other way, an `:lts` variant), whether the build-time chunkah
+flow keeps `containers.bootc=1` and the ostree labels straight, and how
+the dnf overlay survives `bootc upgrade`. Nothing copied; no derivation.
 
 ## Origami Linux — direct code derivation
 

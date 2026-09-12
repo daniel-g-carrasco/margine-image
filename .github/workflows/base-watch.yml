@@ -1,0 +1,107 @@
+# Rebuild when the upstream base image moves, not just on Sundays.
+#
+# WHY THIS EXISTS (2026-09-13)
+#
+# Bluefin DX publishes a new :stable roughly weekly, on Mondays or
+# Tuesdays (stable-20260901, -20260908, ...). Margine rebuilt on Sunday
+# mornings, so every week the image people got was five days behind the
+# base it declares, and the status page said "Behind" for most of the
+# week. Daniel: "si può far sì che anche un update di bluefin triggeri il
+# build così da non essere mai behind?"
+#
+# Every six hours: read the digest of the base the Containerfile names,
+# compare it with the base digest recorded in the last image the
+# pipeline produced (:candidate carries org.opencontainers.image.base.
+# digest since #358), and if they differ dispatch build.yml and
+# build-lts.yml. build.yml has cancel-in-progress concurrency, so a
+# dispatch while a build is running would kill it: skip when one is
+# already queued or running and let the next tick catch up. The
+# dispatched build goes through smoke-boot like any other (its
+# workflow_run trigger has no event filter), so promotion stays gated.
+#
+# When the base tag is unreadable (registry blip, or the tag retired,
+# see stale-image-alarm.yml) this does nothing: the alarm owns that.
+name: Rebuild when the base image moves
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: base-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Compare base digest, dispatch builds if it moved
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compare the base digest with the last image built
+        id: cmp
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ghcr.io/${{ github.repository_owner }}/margine:candidate
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          # The base is whatever the Containerfile defaults to, so this
+          # survives the base switch without another edit.
+          BASE="$(sed -n 's/^ARG BASE_IMAGE=//p' Containerfile | head -1)"
+          [ -n "$BASE" ] || { echo "::error::ARG BASE_IMAGE not found in Containerfile"; exit 1; }
+          echo "base image: $BASE"
+          if ! BASE_RAW="$(skopeo inspect --no-tags "docker://${BASE}" 2>&1)"; then
+            echo "::warning::cannot inspect ${BASE}: ${BASE_RAW}. Nothing dispatched (stale-image-alarm owns this case)."
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE_DIGEST="$(jq -r '.Digest' <<<"$BASE_RAW")"
+          CAND_RAW="$(skopeo inspect --no-tags "docker://${CANDIDATE}")"
+          BUILT_ON="$(jq -r '.Labels["org.opencontainers.image.base.digest"] // empty' <<<"$CAND_RAW")"
+          echo "base now:      $BASE_DIGEST"
+          echo "last built on: ${BUILT_ON:-<no label>}"
+          if [ -z "$BUILT_ON" ]; then
+            echo "::warning:::candidate carries no base.digest label; cannot compare, nothing dispatched."
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$BASE_DIGEST" = "$BUILT_ON" ]; then
+            echo "Base unchanged since the last build."
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Base moved since the last build."
+            {
+              echo "moved=true"
+              echo "base_digest=$BASE_DIGEST"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch the builds
+        if: steps.cmp.outputs.moved == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_DIGEST: ${{ steps.cmp.outputs.base_digest }}
+        run: |
+          set -euo pipefail
+          for wf in build.yml build-lts.yml; do
+            # cancel-in-progress on build.yml: never dispatch on top of a
+            # live run, the next tick (6h) retries.
+            BUSY="$(gh run list --workflow "$wf" --branch main --status in_progress --json databaseId --jq 'length')"
+            QUEUED="$(gh run list --workflow "$wf" --branch main --status queued --json databaseId --jq 'length')"
+            if [ "$BUSY" != "0" ] || [ "$QUEUED" != "0" ]; then
+              echo "::notice::$wf already running or queued; not dispatching (base ${BASE_DIGEST:0:19}). Next tick retries."
+              continue
+            fi
+            gh workflow run "$wf" --ref main
+            echo "::notice::dispatched $wf because the base moved to ${BASE_DIGEST:0:19}"
+          done

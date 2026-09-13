@@ -16,7 +16,7 @@
 # of the finished image at ISO time, with Margine's own Anaconda profile.
 # An installed Margine has never carried an installer, and the spec
 # (docs/spec/06, "do not use the system Firefox RPM") ships Zen as a
-# Flatpak with org.mozilla.firefox as the Flatpak fallback. Daniel's call
+# Flatpak with org.mozilla.firefox as the Flatpak fallback. Decision
 # (2026-08-25): strip both on any base that brings them.
 #
 # Measured inside the trial image on the plain base: an explicit remove

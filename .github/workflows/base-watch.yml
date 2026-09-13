@@ -6,8 +6,8 @@
 # Tuesdays (stable-20260901, -20260908, ...). Margine rebuilt on Sunday
 # mornings, so every week the image people got was five days behind the
 # base it declares, and the status page said "Behind" for most of the
-# week. Daniel: "si può far sì che anche un update di bluefin triggeri il
-# build così da non essere mai behind?"
+# week. A base update should trigger a build, so the image is never
+# behind.
 #
 # Every six hours: read the digest of the base the Containerfile names,
 # compare it with the base digest recorded in the last image the

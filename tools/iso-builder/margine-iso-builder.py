@@ -131,7 +131,7 @@ class BuilderWindow(Adw.ApplicationWindow):
         tag:    stable id per FLOW ("ci-publish", "ci-base", …). GNOME
                 REPLACES a notification re-sent with the same id, so one flow
                 shows a single, self-updating card instead of piling three
-                stale milestones in the tray (Daniel, 2026-07-05).
+                stale milestones in the tray (2026-07-05).
         url:    adds an "Open run" button instead of dumping a raw link in
                 the body.
         failure: urgent priority, so reds stand out from milestones."""

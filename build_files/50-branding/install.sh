@@ -258,7 +258,7 @@ chmod 0644 /usr/share/margine/ascii-logo.txt
 # Without this, vanilla `fastfetch` (no --config) walks its own search
 # path: $XDG_CONFIG_HOME/fastfetch/config.jsonc (user, empty on a fresh
 # install) → /etc/fastfetch/config.jsonc (we own this slot) →
-# built-in default (= Fedora ASCII logo). Daniel noticed `fastfetch`
+# built-in default (= Fedora ASCII logo). `fastfetch` was noticed
 # was showing Fedora art instead of Margine even though
 # /usr/share/margine/ascii-logo.txt was correctly installed.
 # /etc/fastfetch/config.jsonc is a system_files symlink to

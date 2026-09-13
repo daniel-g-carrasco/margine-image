@@ -284,7 +284,7 @@ class BuildPage:
             return
         # The build runs as ROOT (pkexec) and the heavy work — mksquashfs /
         # xorriso — runs inside a Titanoboa podman container that conmon keeps
-        # ALIVE independently of the host process tree (Daniel, 2026-07-04:
+        # ALIVE independently of the host process tree (2026-07-04:
         # force_exit was EPERM-ignored; then the host tree died but xorriso in
         # the container marched on). So cancel does BOTH, root-side via pkexec:
         #   1. podman kill the worker container — Titanoboa runs it unnamed
@@ -366,7 +366,7 @@ class BuildPage:
             row.add_suffix(badge)
 
         # LABELED buttons, not bare icons: three mute glyphs in a row left
-        # Daniel hunting for "which one boots the VM?" (2026-07-04). The
+        # hunting for "which one boots the VM?" (2026-07-04). The
         # primary action carries icon+text; USB keeps a text label; only
         # Delete stays icon-only (trash is unambiguous and destructive
         # actions shouldn't invite casual clicks).

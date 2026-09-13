@@ -425,7 +425,7 @@ fi
 # forest survives lock/unlock (windows used to slide a workspace at every
 # unlock, #388). The price: GNOME keeps the extension loaded on the lock
 # screen, and its panel button, its workspace-number switcher and its Quick
-# Settings toggle stayed visible and clickable there (reported by Daniel on
+# Settings toggle stayed visible and clickable there (reported on
 # 2026-08-30). The stock unlock-dialog panel is empty on the left and shows
 # only a11y/keyboard/quickSettings on the right; an extension that lives
 # through the lock screen must hide what it adds. This patch hides the three
@@ -491,7 +491,7 @@ fi
 
 # The panel-transparency CSS o-tiling injects also targets #panel.login-screen
 # and #panel.unlock-screen, so the lock screen got a dark band across the top
-# where GNOME draws a transparent panel (Daniel, 2026-08-30, after the first
+# where GNOME draws a transparent panel (2026-08-30, after the first
 # lock-screen patch). Drop the two selectors; the user-session panel keeps
 # its transparency setting.
 OTILING_PT="${EXT_DIR}/o-tiling@oliwebd.github.com/ui/panel_transparency.js"

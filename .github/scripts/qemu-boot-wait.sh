@@ -164,7 +164,7 @@ if [[ -n "$BOOT_OK" ]]; then
     esac
 
     # ---- Gaming-native dry-run verdict — GATING on FAIL ----
-    # (Daniel, 2026-09-02, after the RetroArch/retroarch depsolve broke
+    # (2026-09-02, after the RetroArch/retroarch depsolve broke
     # updates for gaming-native users while this was warn-only: "questo
     # tipo di cose NON deve ricapitare". A FAIL now blocks promotion;
     # skip/timeout stay warnings so a stuck probe cannot wedge releases.)

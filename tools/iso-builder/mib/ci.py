@@ -129,7 +129,7 @@ class CiPage:
 
         self.pubstat_row = Adw.ActionRow(title="Last publish run", subtitle="—")
         # "Open" jumps to the run page — the run NUMBER must be inspectable
-        # before trusting a download (Daniel, 2026-07-03: the id was only shown
+        # before trusting a download (2026-07-03: the id was only shown
         # after pressing Download, inside the confirm dialog).
         self._pubstat_rid = None
         self.pubstat_open_btn = Gtk.Button(label="Open",
@@ -170,7 +170,7 @@ class CiPage:
         # inside the row (under title+subtitle) so ownership is unambiguous.
         # v2 lesson: PreferencesGroup appends non-row widgets AFTER its boxed
         # list, so a plain ci.add(bar) rendered every bar at the bottom of the
-        # group, detached from its button (Daniel, 2026-07-05). ActionRow has a
+        # group, detached from its button (2026-07-05). ActionRow has a
         # fixed layout, so these are custom Adw.PreferencesRows that mimic its
         # look (title / dim caption subtitle / suffix button) + the bar line.
         # show_text carries "NN% · phase · Xm elapsed · ~Ym left": the ETA is
@@ -873,7 +873,7 @@ class CiPage:
         self.pub_row.set_subtitle(text)
         if notify:
             # body used to carry a RAW run URL pasted into the card — ugly
-            # (Daniel, 2026-07-05). It rides an Open-run button instead now.
+            # (2026-07-05). It rides an Open-run button instead now.
             self.win.notify("Publish: " + text,
                             tag="ci-publish", url=body or None,
                             failure=("fail" in text or "cancelled" in text))
@@ -1118,7 +1118,7 @@ class CiPage:
             return
         self.dl_row.set_subtitle(label + " 0%")
         # Speed + ETA in the subtitle: archive.org often serves ~0.5-1 MB/s, so
-        # percent alone moves every ~90 s and reads as "stuck" (Daniel,
+        # percent alone moves every ~90 s and reads as "stuck" (2026-07-05,
         # 2026-07-04). prev/EMA over the 2 s ticks smooths the rate.
         state = {"live": True, "prev": 0, "rate": 0.0}
 

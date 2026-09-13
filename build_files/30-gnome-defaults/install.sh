@@ -65,7 +65,7 @@ accent-color='yellow'
 # GNOME's distro defaults win over Bluefin's, which is what we want
 # until we have an opinion.
 
-# Workspaces: a FIXED set of FIVE (Daniel's explicit, standing preference,
+# Workspaces: a FIXED set of FIVE (an explicit, standing preference of this image,
 # reaffirmed 2026-06-15 — NOT 10). dynamic-workspaces=false makes the count
 # fixed; with it true, num-workspaces is ignored and GNOME grows them
 # on demand. Super+1..5 switch to the five; the Super+6..0 binds from the
@@ -75,14 +75,14 @@ dynamic-workspaces=false
 # workspaces-only-on-primary is left at GNOME's default (true): a second
 # monitor is one fixed workspace and Super+1..5 drive the primary only.
 # Considered flipping it on 2026-08-25 after the reference host felt
-# "strange" with a 4K on the dock; Daniel then said he preferred the
+# "strange" with a 4K on the dock; the decision was to keep the
 # fixed second screen, which is also what GNOME ships. Windows still move
 # between monitors with o-tiling's Super+Shift+Ctrl+arrows. Anyone who
 # wants workspaces to span every screen sets it themselves:
 #   gsettings set org.gnome.mutter workspaces-only-on-primary false
 
 [org.gnome.desktop.wm.preferences]
-# Override Bluefin's num-workspaces=4 → 5 (Daniel's standing preference).
+# Override Bluefin's num-workspaces=4 → 5 (standing preference).
 num-workspaces=5
 
 [org.gnome.desktop.wm.keybindings]
@@ -115,8 +115,8 @@ auto-raise=false
 # `ujust margine-test-vm` and the ISO-creator GUI put their throwaway test VMs on
 # qemu:///session (rootless: reads ISOs straight from $HOME, no polkit). But
 # virt-manager's stock default is uris=[] and it only auto-adds qemu:///system on
-# first launch — so those session VMs are INVISIBLE in the default window (Daniel
-# hit this 2026-06-30: 48 GB of test VMs he couldn't see). Seed both connections
+# first launch — so those session VMs are INVISIBLE in the default window (I
+# hit this 2026-06-30: 48 GB of test VMs I could not see). Seed both connections
 # and autoconnect the session so a fresh Margine surfaces the test VMs the moment
 # virt-manager opens. Only sets the OOTB default; the GUI can still add/remove
 # connections (a user who edits the list just overrides this).

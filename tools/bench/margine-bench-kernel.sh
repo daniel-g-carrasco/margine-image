@@ -22,7 +22,7 @@
 #   * Benchmark tooling (perf, sysbench, stress-ng, and the OPTIONAL schbench)
 #     runs inside a THROWAWAY distrobox container (Fedora by default) created on
 #     demand. The container is given a DEDICATED scratch HOME via `--home` so it
-#     does NOT bind-mount or litter Daniel's real $HOME. If every required tool
+#     does NOT bind-mount or litter the real $HOME. If every required tool
 #     already exists on the host PATH, no container is created.
 #   * Tool availability is REAL: stress-ng, sysbench and perf are packaged in
 #     Fedora. schbench and hackbench are NOT in Fedora, so:

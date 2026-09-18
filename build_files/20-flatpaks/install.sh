@@ -119,6 +119,7 @@ mkdir -p /usr/share/flatpak/preinstall.d
       org.gnome.font-viewer \
       org.gnome.gitlab.somas.Apostrophe \
       com.github.PintaProject.Pinta \
+      be.alexandervanhee.gradia \
       org.audacityteam.Audacity \
       com.github.wwmm.easyeffects \
       com.github.neithern.g4music \

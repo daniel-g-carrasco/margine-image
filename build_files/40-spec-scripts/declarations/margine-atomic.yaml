@@ -492,6 +492,7 @@ flatpaks:
       - org.gimp.GIMP
       - org.inkscape.Inkscape
       - com.github.PintaProject.Pinta
+      - be.alexandervanhee.gradia  # screenshot annotation; pairs with the gradia-integration extension (2026-09-19)
       - org.darktable.Darktable
       - io.gitlab.adhami3310.Impression
     multimedia:
@@ -912,8 +913,13 @@ gnome:
         binding: '<Super>Escape'
         command: 'gnome-session-quit --logout'
       - name: screenshot_region
+        # Region capture straight into Gradia for annotation. Until
+        # 2026-09-19 this ran `gnome-screenshot -ac`, a binary the image
+        # does not carry, so the key did nothing. Full-screen and window
+        # captures stay with GNOME Shell (Print, Ctrl+Print); the
+        # gradia-integration extension adds "annotate" to those too.
         binding: '<Shift>Print'
-        command: 'gnome-screenshot -ac'
+        command: 'flatpak run be.alexandervanhee.gradia --screenshot=INTERACTIVE'
       - name: smile
         # Emoji picker. NB: bootstrap REPLACES the whole
         # custom-keybindings path list, which used to shadow the
@@ -995,6 +1001,7 @@ gnome:
           - org.gimp.GIMP.desktop
           - org.inkscape.Inkscape.desktop
           - com.github.PintaProject.Pinta.desktop
+          - be.alexandervanhee.gradia.desktop
         categories:
           - Graphics
           - 2DGraphics

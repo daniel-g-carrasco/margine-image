@@ -30,6 +30,12 @@ org.gnome.Logs
 org.gnome.font-viewer
 org.gnome.gitlab.somas.Apostrophe
 com.github.PintaProject.Pinta
+# Gradia — screenshot annotation (arrows, text, censor, backgrounds).
+# The gradia-integration GNOME extension inherited from Bluefin DX hooks
+# it into the Print flow, but nobody installed the app itself, so the
+# extension ran empty and Shift+Print pointed at a gnome-screenshot that
+# is not on the image. Baked here so both work out of the box.
+be.alexandervanhee.gradia
 org.audacityteam.Audacity
 com.github.wwmm.easyeffects
 # fm.reaper.Reaper — INTENTIONALLY EXCLUDED from BAKE 2026-06-05:

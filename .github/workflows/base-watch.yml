@@ -38,7 +38,7 @@ jobs:
   watch:
     name: Compare base digest, dispatch builds if it moved
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 120
     permissions:
       actions: write
       contents: read
@@ -105,3 +105,26 @@ jobs:
             gh workflow run "$wf" --ref main
             echo "::notice::dispatched $wf because the base moved to ${BASE_DIGEST:0:19}"
           done
+
+      - name: Wait for the image build, then run smoke-boot on the candidate
+        if: steps.cmp.outputs.moved == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A run started with GITHUB_TOKEN does not fire workflow_run for
+          # smoke-boot (GitHub's recursion guard), so the build dispatched
+          # above would sit unpromoted forever: seen on 2026-09-15, when
+          # candidate.20260915 was built and :stable stayed on the 13th.
+          # Wait for it here and start smoke-boot explicitly; a
+          # workflow_dispatch of smoke-boot promotes like a workflow_run.
+          sleep 60
+          RUN_ID="$(gh run list --workflow build.yml --branch main --event workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId')"
+          [ -n "$RUN_ID" ] || { echo "::warning::no dispatched build found to wait for"; exit 0; }
+          echo "waiting for build run $RUN_ID"
+          gh run watch "$RUN_ID" --exit-status --interval 60 || {
+            echo "::warning::build run $RUN_ID did not succeed; smoke-boot not started"
+            exit 0
+          }
+          gh workflow run smoke-boot.yml --ref main
+          echo "::notice::smoke-boot dispatched for the new :candidate"

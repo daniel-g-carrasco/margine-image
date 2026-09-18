@@ -492,6 +492,7 @@ flatpaks:
       - org.gimp.GIMP
       - org.inkscape.Inkscape
       - com.github.PintaProject.Pinta
+      - be.alexandervanhee.gradia  # screenshot annotation; pairs with the gradia-integration extension (2026-09-19)
       - org.darktable.Darktable
       - io.gitlab.adhami3310.Impression
     multimedia:
@@ -1000,6 +1001,7 @@ gnome:
           - org.gimp.GIMP.desktop
           - org.inkscape.Inkscape.desktop
           - com.github.PintaProject.Pinta.desktop
+          - be.alexandervanhee.gradia.desktop
         categories:
           - Graphics
           - 2DGraphics

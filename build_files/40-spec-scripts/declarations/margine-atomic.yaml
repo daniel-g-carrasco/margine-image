@@ -468,6 +468,7 @@ flatpaks:
       - org.mozilla.thunderbird_esr
       - org.libreoffice.LibreOffice
       - com.mattjakeman.ExtensionManager
+      - com.github.jeromerobert.pdfarranger  # merge, split, reorder PDF pages (2026-09-19)
     gnome_core:
       # Silverblue ships these as RPMs; Bluefin DX strips them; Margine
       # restores them as Flatpaks for a complete GNOME desktop without
@@ -493,12 +494,14 @@ flatpaks:
       - org.inkscape.Inkscape
       - com.github.PintaProject.Pinta
       - be.alexandervanhee.gradia  # screenshot annotation; pairs with the gradia-integration extension (2026-09-19)
+      - com.github.huluti.Curtail  # image compression (2026-09-19)
       - org.darktable.Darktable
       - io.gitlab.adhami3310.Impression
     multimedia:
       - com.github.neithern.g4music
       - org.audacityteam.Audacity
       - com.obsproject.Studio
+      - io.github.wartybix.Constrict  # video compression to a target size (2026-09-19)
       - com.github.wwmm.easyeffects
       - com.rafaelmardojai.Blanket
     system_utilities:
@@ -993,6 +996,7 @@ gnome:
           - org.libreoffice.LibreOffice.draw.desktop
           - org.libreoffice.LibreOffice.base.desktop
           - org.libreoffice.LibreOffice.math.desktop
+          - com.github.jeromerobert.pdfarranger.desktop
         categories:
           - Office
       - id: Graphics
@@ -1002,6 +1006,7 @@ gnome:
           - org.inkscape.Inkscape.desktop
           - com.github.PintaProject.Pinta.desktop
           - be.alexandervanhee.gradia.desktop
+          - com.github.huluti.Curtail.desktop
         categories:
           - Graphics
           - 2DGraphics
@@ -1028,6 +1033,7 @@ gnome:
         apps:
           - com.obsproject.Studio.desktop
           - org.gnome.Showtime.desktop
+          - io.github.wartybix.Constrict.desktop
         categories:
           - Video
           - AudioVideo

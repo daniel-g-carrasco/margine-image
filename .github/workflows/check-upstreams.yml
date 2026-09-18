@@ -41,7 +41,7 @@ concurrency:
 jobs:
   check:
     name: Run check-upstreams.sh + open tracking issue if needed
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout

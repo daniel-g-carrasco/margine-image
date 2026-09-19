@@ -8,9 +8,13 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fails=0
 
 mkdir -p "$T/bin"
+# The stubs are scripts: their variables must expand when THEY run.
+# shellcheck disable=SC2016
+{
 printf '#!/bin/sh\nshift 2 2>/dev/null\necho "$*" >> "$LOGFILE"\n' > "$T/bin/logger"
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/sleep"
 printf '#!/bin/sh\ncat "$LSUSB_OUT" 2>/dev/null\n' > "$T/bin/lsusb"
+}
 chmod +x "$T/bin/"*
 
 # new_root <name>: a Framework 13 AMD with no DisplayPort connected

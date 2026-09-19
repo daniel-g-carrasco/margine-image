@@ -71,9 +71,14 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # (switch moved, top-bar icon + windows frozen). Fixed in 2.8.11 via an
 # _indicator_updating guard; 2.8.17 is the current release. Schema keys
 # Margine overrides in 03-margine-o-tiling are unchanged in 2.8.17.
-OTILING_VERSION="v2.10.10"
+# 2.11.03 (2026-09-11) carries the upstream answer to the unlock
+# workspace shift: the BSP reconstruction now skips maximized and
+# fullscreen windows (oliwebd/o-tiling#89). Every Margine patch below
+# still applies cleanly; the session-modes one stays until the upstream
+# fix has been proven on real lock/unlock cycles.
+OTILING_VERSION="v2.11.03"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
-OTILING_SHA256="25a202cab399e8dd5fceec8a6a318cbc8fe19dbbbfe3263c8617372a29018798"
+OTILING_SHA256="98c0626c2a34f8eef15827721bdb91d4028faa8799b45833fcc6bf4f9c43e2d0"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
 # Shell major of the current base (50). When Bluefin bumps GNOME, the

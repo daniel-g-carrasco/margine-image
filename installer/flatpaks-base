@@ -31,6 +31,12 @@ com.github.PintaProject.Pinta
 # extension ran empty and Shift+Print pointed at a gnome-screenshot that
 # is not on the image. Baked here so both work out of the box.
 be.alexandervanhee.gradia
+# Curtail — lossless/lossy image compression before sharing.
+com.github.huluti.Curtail
+# Constrict — compress a video to a target size (chat/email limits).
+io.github.wartybix.Constrict
+# PDF Arranger — merge, split, rotate and reorder PDF pages.
+com.github.jeromerobert.pdfarranger
 org.audacityteam.Audacity
 com.github.wwmm.easyeffects
 # fm.reaper.Reaper — INTENTIONALLY EXCLUDED from BAKE 2026-06-05:

@@ -120,6 +120,9 @@ mkdir -p /usr/share/flatpak/preinstall.d
       org.gnome.gitlab.somas.Apostrophe \
       com.github.PintaProject.Pinta \
       be.alexandervanhee.gradia \
+      com.github.huluti.Curtail \
+      io.github.wartybix.Constrict \
+      com.github.jeromerobert.pdfarranger \
       org.audacityteam.Audacity \
       com.github.wwmm.easyeffects \
       com.github.neithern.g4music \

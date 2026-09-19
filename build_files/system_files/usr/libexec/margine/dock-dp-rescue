@@ -49,10 +49,13 @@
 # billboard descriptor.
 set -uo pipefail
 
-DMI_VENDOR=/sys/class/dmi/id/sys_vendor
-DMI_PRODUCT=/sys/class/dmi/id/product_name
-UCSI_DRV=/sys/bus/platform/drivers/ucsi_acpi
-STAMP=/run/margine-dock-dp-rescue.stamp
+# ROOT is empty in production. tests/dock-dp-rescue.test.sh points it at a
+# fake tree so the gates can be exercised without hardware.
+ROOT="${MARGINE_DOCK_RESCUE_ROOT:-}"
+DMI_VENDOR=$ROOT/sys/class/dmi/id/sys_vendor
+DMI_PRODUCT=$ROOT/sys/class/dmi/id/product_name
+UCSI_DRV=$ROOT/sys/bus/platform/drivers/ucsi_acpi
+STAMP=$ROOT/run/margine-dock-dp-rescue.stamp
 # Back off for a minute, but ONLY after a rescue that did not bring the
 # screen up. Rebinding re-creates the very typec devices whose
 # appearance triggers this script, so a dock that never negotiates
@@ -79,10 +82,18 @@ FORCE=0
 #   ujust margine-dock-rescue on      writes "on"
 # Absent file means the default below. --force ignores the switch: a
 # person typing the manual command has already decided.
-SWITCH=/etc/margine/dock-dp-rescue
+SWITCH=$ROOT/etc/margine/dock-dp-rescue
 DEFAULT_ENABLED=1
 if (( ! FORCE )); then
-  case "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" in
+  # Read the switch only if it is there. `tr < "$SWITCH" 2>/dev/null` does
+  # NOT silence a missing file: bash applies redirections left to right,
+  # the input one fails first, and the error goes to the original stderr.
+  # /etc/margine does not exist until the ujust recipe is used, so every
+  # run logged "line 85: ... No such file or directory" (12 times in one
+  # boot on the reference host, 2026-09).
+  switch_value=""
+  [[ -r "$SWITCH" ]] && switch_value="$(tr -d '[:space:]' < "$SWITCH")"
+  case "$switch_value" in
     off) exit 0 ;;
     on)  ;;
     *)   (( DEFAULT_ENABLED )) || exit 0 ;;
@@ -108,7 +119,7 @@ log() {
 
 dp_connected() {
   local f
-  for f in /sys/class/drm/card*-DP-*/status; do
+  for f in "$ROOT"/sys/class/drm/card*-DP-*/status; do
     # Exact match: "disconnected" contains "connected", and a substring
     # test here would report every dark port as a working one.
     [ "$(cat "$f" 2>/dev/null)" = "connected" ] && return 0
@@ -118,7 +129,7 @@ dp_connected() {
 
 typec_partner_present() {
   local p
-  for p in /sys/class/typec/port[0-9]-partner; do
+  for p in "$ROOT"/sys/class/typec/port[0-9]-partner; do
     [ -e "$p" ] && return 0
   done
   return 1
@@ -145,14 +156,16 @@ typec_partner_present() {
 # descriptors. If usbutils is missing or its wording changes, this
 # returns "no opinion" and the model list below decides instead.
 BILLBOARD_VERDICT=none
+BILLBOARD_SEEN=0
 billboard_reports_failure() {
   BILLBOARD_VERDICT=none
-  command -v lsusb >/dev/null 2>&1 || return 1
+  BILLBOARD_SEEN=0
   local d i vid pid verdict
-  for d in /sys/bus/usb/devices/*/; do
+  for d in "$ROOT"/sys/bus/usb/devices/*/; do
     for i in "$d"*/bInterfaceClass; do
       [ -f "$i" ] || continue
       [ "$(cat "$i" 2>/dev/null)" = "11" ] || continue
+      BILLBOARD_SEEN=1
       vid=$(cat "$d/idVendor" 2>/dev/null); pid=$(cat "$d/idProduct" 2>/dev/null)
       # Only the DisplayPort mode counts (VESA SVID 0xFF01). A dock that
       # also advertises Thunderbolt (0x8087) will report THAT mode as
@@ -161,6 +174,7 @@ billboard_reports_failure() {
       # successful" would rescue such a dock on every plug-in: a
       # one-second blink of every device, for nothing. lsusb prints each
       # mode's state on one line and its wSVID on the next, so pair them.
+      command -v lsusb >/dev/null 2>&1 || continue
       verdict=$(lsusb -v -d "$vid:$pid" 2>/dev/null | awk '
         /^ *Alternate Mode [0-9]+ *:/ { state = $0; next }
         /^ *wSVID\[[0-9]+\]/ && state != "" {
@@ -188,6 +202,45 @@ billboard_reports_failure() {
   return 1
 }
 
+# Is anything attached that could be a DisplayPort dock at all?
+#
+# The udev rule fires for EVERY USB-C partner, and on the reference host
+# that meant a rebind of ucsi_acpi at every boot and every time the
+# charger was plugged in (2026-09-19, 21:15: charger attached, "no
+# billboard verdict, but this model is known to miss DisplayPort",
+# controller re-initialised, PD negotiation interrupted for nothing).
+# Two partners were behind it: the empty HDMI expansion card, and the
+# charger.
+#
+# What sysfs can tell them apart, measured on the same machine with the
+# dock attached: this UCSI exposes NO identity/ directory and
+# number_of_alternate_modes=0 even for the dock, so USB identity and alt
+# modes are useless here. supports_usb_power_delivery is "no" for the
+# HDMI card and "yes" for both the dock and the charger. DisplayPort alt
+# mode is negotiated over PD messages, so a partner without PD can never
+# be a DisplayPort dock: that settles the HDMI card.
+pd_partner_present() {
+  local p
+  for p in "$ROOT"/sys/class/typec/port[0-9]-partner; do
+    [ "$(cat "$p/supports_usb_power_delivery" 2>/dev/null)" = "yes" ] && return 0
+  done
+  return 1
+}
+
+# The charger speaks PD too. What it never brings is USB devices, and a
+# dock always brings a hub: on the reference dock two removable hubs
+# (14b0:0184 and 14b0:016e) right under the root hubs. Root hubs report
+# removable=unknown and hubs soldered on a board report fixed, so
+# "removable hub" means "something external with ports was plugged in".
+external_hub_present() {
+  local d
+  for d in "$ROOT"/sys/bus/usb/devices/*/; do
+    [ "$(cat "$d/bDeviceClass" 2>/dev/null)" = "09" ] || continue
+    [ "$(cat "$d/removable" 2>/dev/null)" = "removable" ] && return 0
+  done
+  return 1
+}
+
 model_is_known_broken() {
   case "$(cat "$DMI_VENDOR" 2>/dev/null)/$(cat "$DMI_PRODUCT" 2>/dev/null)" in
     # Evidence: see the header of this file.
@@ -208,6 +261,11 @@ if ! typec_partner_present; then
   log "no USB-C device attached, nothing to rescue"
   exit 0
 fi
+# Silent on purpose: this is the common case (charger, expansion card,
+# USB stick) and it happens at every boot.
+if (( ! FORCE )) && ! pd_partner_present; then
+  exit 0
+fi
 
 # The decision, in order of how much it knows: what the dock says about
 # its own negotiation first, the model list only as a fallback for docks
@@ -215,8 +273,14 @@ fi
 if (( ! FORCE )); then
   if billboard_reports_failure; then
     :
+  elif [ "$BILLBOARD_VERDICT" = "dp-ok" ]; then
+    exit 0
+  elif (( ! BILLBOARD_SEEN )) && ! external_hub_present; then
+    # No billboard and no hub: a charger or a plain cable. The model
+    # list must not turn that into a rebind.
+    exit 0
   elif model_is_known_broken; then
-    log "no billboard verdict, but this model is known to miss DisplayPort"
+    log "no billboard verdict, but a dock is attached and this model is known to miss DisplayPort"
   else
     exit 0
   fi
@@ -239,7 +303,7 @@ echo "$(date +%s) failed" > "$STAMP"
 
 [ -w "$UCSI_DRV/unbind" ] || { log "ucsi_acpi driver not bindable, giving up"; exit 0; }
 
-dev=$(basename "$(readlink -f /sys/bus/platform/drivers/ucsi_acpi/USBC*)" 2>/dev/null)
+dev=$(basename "$(readlink -f "$UCSI_DRV"/USBC*)" 2>/dev/null)
 [ -n "$dev" ] || dev=USBC000:00
 
 log "no DisplayPort after ${GRACE}s with a dock attached, re-initialising ucsi_acpi ($dev)"

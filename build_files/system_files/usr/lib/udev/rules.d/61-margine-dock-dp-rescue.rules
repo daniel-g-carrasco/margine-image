@@ -15,6 +15,15 @@
 # can blink is within about eight seconds of attaching the dock itself,
 # and only when the dock reports the video negotiation failed.
 #
+# The match is deliberately wide and therefore NOT a gate: it fires for
+# every USB-C partner, which includes a charger, an empty HDMI expansion
+# card and a USB stick. udev cannot narrow it on this hardware: at "add"
+# time the partner's attributes are not settled, and this UCSI exposes no
+# identity and no alternate modes even for a real dock. All the deciding
+# happens in the helper (PD-capable partner, then billboard verdict, then
+# "is there an external hub"), and it must stay silent and harmless for
+# everything that is not a dock with a failed DisplayPort negotiation.
+#
 # systemd-run, not a direct RUN+=: udev kills anything still running
 # after a short timeout, and this helper deliberately waits several
 # seconds before deciding. Running it inline would guarantee it is killed

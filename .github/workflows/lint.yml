@@ -71,6 +71,12 @@ jobs:
           printf 'shellcheck over %d scripts\n' "$(( ${#SH[@]} + ${#BIN[@]} ))"
           shellcheck -S warning "${SH[@]}" "${BIN[@]}"
 
+      - name: dock-dp-rescue gates (fake sysfs, no hardware)
+        # The helper rebinds a kernel driver on plug-in: what it must NOT
+        # act on (charger, expansion card, healthy dock) is tested, not
+        # assumed. See tests/dock-dp-rescue.test.sh.
+        run: bash tests/dock-dp-rescue.test.sh
+
       - name: ruff (python build helpers)
         # Pinned: an unpinned `pipx run ruff` broke every PR when 0.16.0
         # widened the default rules (2026-07-23). Rules are locked in

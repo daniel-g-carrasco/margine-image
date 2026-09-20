@@ -102,3 +102,15 @@ case "$state" in
   *)        printf "  Couldn't compare deployment vs latest.\n" ;;
 esac
 printf '  %sFull flow: %s%s\n\n' "$c_dim" "$SITE" "$c_reset"
+
+# `ujust margine-update` needs the verdict, not just the text: with
+# MARGINE_STATUS_EXIT_STATE=1 the exit code carries it. Without the
+# variable this stays a read-only report that always exits 0.
+if [ "${MARGINE_STATUS_EXIT_STATE:-0}" = "1" ]; then
+  case "$state" in
+    current) exit 0 ;;
+    staged)  exit 10 ;;
+    behind)  exit 20 ;;
+    *)       exit 30 ;;
+  esac
+fi

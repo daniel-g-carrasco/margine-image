@@ -89,6 +89,41 @@ check_nonempty "usr/lib/bootupd/grub2-static/fonts/margine.pf2" "A.4.gfx"
 check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
 # The re-render runs automatically at boot (the bootloader on /boot isn't
 # updated by image upgrades) — assert the service ships AND is enabled.
+# No ordering cycles in the boot transaction. systemd "solves" a cycle by
+# deleting a job of its choosing: once that was tmpfiles-setup-dev and the
+# machine booted into emergency mode (2026-06-01); in 2026-09 a cycle sat
+# in margine-seed-etc-passwd.service for weeks, logged at every boot and
+# noticed by nobody. Evaluated against the image's own unit files.
+# A silent pass must mean "no cycle", not "the tool said nothing": first
+# prove on this runner that systemd-analyze reports a cycle built on purpose.
+cycle_selftest() {
+  local t; t="$(mktemp -d)"
+  printf '[Unit]\nWants=cyc-b.service\nAfter=cyc-b.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-a.service"
+  printf '[Unit]\nWants=cyc-a.service\nAfter=cyc-a.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-b.service"
+  # Capture first, grep after: verify exits non-zero when it finds
+  # problems, and under pipefail a `verify | grep -q` pipeline then counts
+  # as failed even though grep matched (that made this self-test fail on
+  # the first CI run while the tool was working fine).
+  local out
+  out="$(systemd-analyze verify --man=no "$t/cyc-a.service" "$t/cyc-b.service" 2>&1 || true)"
+  rm -rf "$t"
+  grep -qi "ordering cycle" <<<"$out"
+}
+if ! command -v systemd-analyze >/dev/null 2>&1; then
+  echo "::warning::systemd-analyze not available on this runner: ordering-cycle check skipped"
+elif ! cycle_selftest; then
+  echo "::warning::systemd-analyze did not report a deliberately cyclic pair: ordering-cycle check not trustworthy here, skipped"
+else
+  VERIFY_OUT="$(systemd-analyze --root="$ROOTFS" verify --man=no sysinit.target multi-user.target 2>&1 || true)"
+  CYCLES="$(grep -iE "ordering cycle" <<<"$VERIFY_OUT" || true)"
+  if [ -n "$CYCLES" ]; then
+    echo "::error::A.4.units ordering cycle in the image's boot transaction:"
+    echo "$CYCLES" | head -5
+    fail=1
+  else
+    echo "  ok: no ordering cycle in sysinit.target / multi-user.target (self-test passed)"
+  fi
+fi
 check_file "usr/lib/systemd/system/margine-grub-hidpi.service" "A.4.gfx"
 test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service" \
   || { echo "::error::A.4.gfx margine-grub-hidpi.service is not enabled (multi-user.target.wants symlink missing) — GRUB font won't auto-apply"; fail=1; }

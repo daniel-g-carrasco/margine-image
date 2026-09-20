@@ -100,15 +100,22 @@ cycle_selftest() {
   local t; t="$(mktemp -d)"
   printf '[Unit]\nWants=cyc-b.service\nAfter=cyc-b.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-a.service"
   printf '[Unit]\nWants=cyc-a.service\nAfter=cyc-a.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-b.service"
-  systemd-analyze verify --man=no "$t/cyc-a.service" "$t/cyc-b.service" 2>&1 | grep -qi "ordering cycle"
-  local rc=$?; rm -rf "$t"; return $rc
+  # Capture first, grep after: verify exits non-zero when it finds
+  # problems, and under pipefail a `verify | grep -q` pipeline then counts
+  # as failed even though grep matched (that made this self-test fail on
+  # the first CI run while the tool was working fine).
+  local out
+  out="$(systemd-analyze verify --man=no "$t/cyc-a.service" "$t/cyc-b.service" 2>&1 || true)"
+  rm -rf "$t"
+  grep -qi "ordering cycle" <<<"$out"
 }
 if ! command -v systemd-analyze >/dev/null 2>&1; then
   echo "::warning::systemd-analyze not available on this runner: ordering-cycle check skipped"
 elif ! cycle_selftest; then
   echo "::warning::systemd-analyze did not report a deliberately cyclic pair: ordering-cycle check not trustworthy here, skipped"
 else
-  CYCLES="$(systemd-analyze --root="$ROOTFS" verify --man=no sysinit.target multi-user.target 2>&1 | grep -iE "ordering cycle" || true)"
+  VERIFY_OUT="$(systemd-analyze --root="$ROOTFS" verify --man=no sysinit.target multi-user.target 2>&1 || true)"
+  CYCLES="$(grep -iE "ordering cycle" <<<"$VERIFY_OUT" || true)"
   if [ -n "$CYCLES" ]; then
     echo "::error::A.4.units ordering cycle in the image's boot transaction:"
     echo "$CYCLES" | head -5

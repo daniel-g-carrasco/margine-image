@@ -868,11 +868,28 @@ margine-status:
     @/usr/bin/margine-status
 
 # Pull the latest Margine :stable and stage it for the next reboot.
+# `ujust margine-update force` runs the update even when the image is
+# current (it also refreshes rpm-ostree layered packages).
 [group('Margine')]
-margine-update:
+margine-update FORCE="":
     #!/usr/bin/bash
     set -euo pipefail
-    /usr/bin/margine-status || true
+    # The verdict comes from margine-status, which compares image DIGESTS.
+    # Until 2026-09-20 this recipe printed "You're current, nothing to do"
+    # and then asked for the password and ran the whole update anyway,
+    # ending with "Reboot to switch into the new deployment" when there
+    # was none. Now: current or already staged means stop here, no sudo.
+    # Anything else (update available, registry unreachable, digest
+    # unreadable) still goes through the real update, which is the safe
+    # side to err on.
+    state=0
+    MARGINE_STATUS_EXIT_STATE=1 /usr/bin/margine-status || state=$?
+    if [ "{{ FORCE }}" != "force" ]; then
+      case "$state" in
+        0)  exit 0 ;;
+        10) echo "Reboot to switch into it:  systemctl reboot"; exit 0 ;;
+      esac
+    fi
     echo
     # The bootc-vs-rpm-ostree decision lives in ONE place,
     # /usr/libexec/margine/system-update, shared with the Margine System
@@ -881,8 +898,6 @@ margine-update:
     # client-layered deployment, e.g. after margine-gaming-native, so
     # layered systems must go through rpm-ostree.)
     sudo /usr/libexec/margine/system-update
-    echo
-    echo "Reboot to switch into it:  systemctl reboot"
 
 # Enable/disable/inspect GDM autologin (default: status, read-only).
 [group('Margine')]

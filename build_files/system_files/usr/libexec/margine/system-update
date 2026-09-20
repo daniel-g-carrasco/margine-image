@@ -41,5 +41,12 @@ else
   rpm-ostree upgrade
 fi
 
+# Say what actually happened. "Reboot to switch into the new deployment"
+# used to be printed unconditionally, also right after rpm-ostree's own
+# "No upgrade available."
 echo
-echo "Done. Reboot to switch into the new deployment."
+if rpm-ostree status --json 2>/dev/null | grep -q '"staged"[[:space:]]*:[[:space:]]*true'; then
+  echo "Done. A new deployment is staged: reboot to switch into it (systemctl reboot)."
+else
+  echo "Done. Nothing new was staged: this machine already runs the latest image."
+fi

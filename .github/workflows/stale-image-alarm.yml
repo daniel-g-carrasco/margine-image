@@ -48,7 +48,7 @@ concurrency:
 jobs:
   check:
     name: How old is :stable?
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Inspect :stable and measure its age

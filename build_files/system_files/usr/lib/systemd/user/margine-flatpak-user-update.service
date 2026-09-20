@@ -1,0 +1,15 @@
+[Unit]
+Description=Margine: update the Flatpak apps installed for this user
+Documentation=https://margine.dev/docs/updates-and-rollback
+# Nothing to do for accounts that never installed a per-user app.
+ConditionPathExistsGlob=%h/.local/share/flatpak/app/*
+
+[Service]
+Type=oneshot
+ExecCondition=/usr/libexec/margine/flatpak-update-precheck
+# --user: only this user's installation, which needs no privilege. The
+# system installation belongs to margine-flatpak-update.service.
+ExecStart=/usr/bin/flatpak update --user -y --noninteractive
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle

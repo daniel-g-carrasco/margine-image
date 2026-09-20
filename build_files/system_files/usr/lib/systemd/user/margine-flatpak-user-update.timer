@@ -1,0 +1,10 @@
+[Unit]
+Description=Margine: update this user's Flatpak apps, daily
+
+[Timer]
+OnCalendar=*-*-* 17:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

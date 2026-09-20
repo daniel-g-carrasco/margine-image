@@ -29,16 +29,22 @@ STRIKE_LIMIT=2
 
 log() { echo "margine-update-watchdog: $*"; }
 
-result="$(systemctl show uupd.service -p Result --value 2>/dev/null || true)"
+# The unit that failed: uupd.service by default (its drop-in fires the
+# plain margine-update-watchdog.service), or the instance name when fired
+# as margine-update-watchdog@<unit>.service (margine-flatpak-update.service
+# since 2026-09-20, when Flatpak updates moved out of uupd).
+UNIT="${1:-uupd.service}"
+
+result="$(systemctl show "$UNIT" -p Result --value 2>/dev/null || true)"
 if [ "$result" != "timeout" ]; then
-  log "uupd failed with result '$result' (not a hang); nothing to do."
+  log "$UNIT failed with result '$result' (not a hang); nothing to do."
   exit 0
 fi
 
 # The flatpak child logs inside uupd.service's cgroup, so its per-app
 # progress lines are attributed to the unit. The last one names the app
 # the run was chewing on when systemd killed it.
-culprit="$(journalctl -u uupd.service --since '-2 hours' --no-pager 2>/dev/null \
+culprit="$(journalctl -u "$UNIT" --since '-2 hours' --no-pager 2>/dev/null \
   | grep -oE '(Updating|Installing) (app|runtime)/[A-Za-z0-9._-]+' \
   | tail -1 | sed -E 's#.*(app|runtime)/##')"
 if [ -z "$culprit" ]; then
@@ -50,7 +56,7 @@ fi
 # known no-timeout hang. Anything else timing out is likely a transient
 # network problem where masking would be wrong.
 if ! flatpak info -m "$culprit" 2>/dev/null | grep -q '^\[Extra Data\]'; then
-  log "uupd hung around '$culprit', which is not an extra-data app; not masking (transient network?)."
+  log "$UNIT hung around '$culprit', which is not an extra-data app; not masking (transient network?)."
   exit 0
 fi
 

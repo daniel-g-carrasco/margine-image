@@ -1,0 +1,32 @@
+[Unit]
+Description=Margine: update system Flatpak apps
+Documentation=https://margine.dev/docs/updates-and-rollback
+Wants=network-online.target
+After=network-online.target
+# A hung run (an extra-data download with no timeout, 2026-06-28) is
+# killed by TimeoutStartSec and handed to the watchdog, which strikes and
+# eventually masks the culprit, as it does for uupd.
+OnFailure=margine-update-watchdog@%n.service
+
+[Service]
+Type=oneshot
+# Same spirit as uupd's hardware checks: not on a nearly empty battery,
+# not over a metered connection. A skipped run is not a failure.
+ExecCondition=/usr/libexec/margine/flatpak-update-precheck
+# WHY THIS IS NOT uupd'S JOB ANY MORE (2026-09-20)
+# uupd updates Flatpaks in two steps: a system one as root, then one per
+# logged-in user that runs plain `flatpak update -y`, WITHOUT --user, and
+# this cannot be configured (the module is all or nothing). Whenever the
+# system step leaves something undone (2026-09-18: the laptop suspended
+# four seconds into the run and the transaction crossed three suspend
+# cycles), the per-user step tries to deploy SYSTEM refs from a service,
+# polkit refuses ("Flatpak system operation Deploy not allowed for
+# user"), and uupd reports a failed update for what is only a leftover.
+# The same happened on 2026-09-15 with the gdm-greeter user. So uupd's
+# flatpak module is disabled in /etc/uupd/config.json and the work is
+# split the way the polkit model expects: this unit for the system
+# installation, margine-flatpak-user-update for each user's own.
+ExecStart=/usr/bin/flatpak update --system -y --noninteractive
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle

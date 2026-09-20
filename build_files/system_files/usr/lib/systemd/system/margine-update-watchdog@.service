@@ -1,0 +1,6 @@
+[Unit]
+Description=Margine: diagnose and self-heal a hung unattended update (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine-update-watchdog %i

@@ -1,0 +1,14 @@
+[Unit]
+Description=Margine: update system Flatpak apps, twice a day
+
+[Timer]
+# Wall-clock, not monotonic (monotonic timers freeze across suspend and
+# barely fire on a laptop). Two slots a day so a run interrupted by
+# suspend is picked up within hours, not the next night: flatpak
+# transactions are resumable, a second pass only fetches what is missing.
+OnCalendar=*-*-* 04,16:30
+Persistent=true
+RandomizedDelaySec=20min
+
+[Install]
+WantedBy=timers.target

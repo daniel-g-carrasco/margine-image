@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# ExecCondition for the Flatpak update units: exit 0 to run, non-zero to
+# skip (systemd records a skipped condition, not a failure).
+set -uo pipefail
+
+# Battery: run on AC, or above 20% (the threshold uupd uses).
+on_ac=0
+for s in /sys/class/power_supply/*/; do
+  [ "$(cat "$s/type" 2>/dev/null)" = "Mains" ] && [ "$(cat "$s/online" 2>/dev/null)" = "1" ] && on_ac=1
+done
+if (( ! on_ac )); then
+  for b in /sys/class/power_supply/BAT*/capacity; do
+    [ -r "$b" ] || continue
+    if (( $(cat "$b") < 20 )); then
+      echo "battery below 20% and not on AC, skipping this run"
+      exit 1
+    fi
+  done
+fi
+
+# Metered connection (phone tethering): never pull hundreds of MB there.
+if command -v nmcli >/dev/null 2>&1; then
+  # "yes", "yes (guessed)", "no", "no (guessed)" or "unknown"
+  case "$(nmcli -t -f METERED general status 2>/dev/null)" in
+    yes*) echo "metered connection, skipping this run"; exit 1 ;;
+  esac
+fi
+exit 0

@@ -11,6 +11,16 @@
 > chapter is kept for the design rationale (why the base-OS update boundary
 > must be respected — still valid); the "Decision" below is historical.
 
+> **2026-09-20: Flatpak updates run from Margine's own timers.** uupd still
+> drives the OS image, brew's catalog and distrobox, but its Flatpak module is
+> disabled in `/etc/uupd/config.json`: its per-user step runs `flatpak update`
+> without `--user`, which polkit refuses from a service whenever the system
+> step left anything undone, and the module cannot be configured. The work is
+> split the way the permission model expects: `margine-flatpak-update.timer`
+> (system installation, twice a day, watchdog on hangs) and
+> `margine-flatpak-user-update.timer` (each user's own apps, daily). Both skip
+> a run on a nearly empty battery or a metered connection.
+
 Margine Fedora Atomic needs a new update model. The old Arch/CachyOS
 `update-all` is not portable because it owns pacman, AUR, Snapper/ZFS, Limine,
 UKIs, and Secure Boot refresh paths that do not exist in the same form on

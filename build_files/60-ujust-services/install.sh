@@ -85,3 +85,33 @@ log "Installed: /etc/skel/.config/no-show-user-motd (disables Bluefin MOTD for n
 # pieces it depends on, so a regression is caught by CI rather than by
 # someone standing at a printer.
 log "Printing: relying on CUPS driverless discovery (cups-browsed left disabled)"
+
+# ---------------------------------------------------------------------------
+# Flatpak updates: Margine's own timers, not uupd's module
+# ---------------------------------------------------------------------------
+# uupd's per-user Flatpak step runs `flatpak update -y` without --user and
+# cannot be configured; from a service polkit refuses it any system work,
+# so every leftover of the system step turned into "uupd failed" (2026-09-15
+# and 09-19; full story in margine-flatpak-update.service). The module can
+# only be switched off as a whole, so it is, and margine-flatpak-update
+# (system) plus margine-flatpak-user-update (per user) do the work. uupd
+# keeps the OS image, brew's catalog and distrobox as before. /etc is
+# three-way merged on update: a machine that never edited this file
+# receives the new default, one that did keeps its own.
+UUPD_CONF=/etc/uupd/config.json
+mkdir -p /etc/uupd
+python3 - "$UUPD_CONF" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+conf = {}
+if os.path.exists(p):
+    with open(p) as f:
+        conf = json.load(f)
+conf.setdefault("modules", {}).setdefault("flatpak", {})["disable"] = True
+with open(p, "w") as f:
+    json.dump(conf, f, indent=4)
+    f.write("\n")
+PY
+python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); assert c["modules"]["flatpak"]["disable"] is True' "$UUPD_CONF" \
+  || { err "uupd config: flatpak module not disabled"; exit 1; }
+log "uupd: flatpak module disabled; Flatpak updates run from margine-flatpak-update.timer and margine-flatpak-user-update.timer"

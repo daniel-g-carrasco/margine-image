@@ -92,6 +92,15 @@ check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
 check_file "usr/lib/systemd/system/margine-grub-hidpi.service" "A.4.gfx"
 test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service" \
   || { echo "::error::A.4.gfx margine-grub-hidpi.service is not enabled (multi-user.target.wants symlink missing) — GRUB font won't auto-apply"; fail=1; }
+# Flatpak updates moved out of uupd (2026-09-20): both timers must be
+# shipped AND enabled, and uupd's module must be off, or apps never update.
+check_file "usr/lib/systemd/system/margine-flatpak-update.service" "A.4.flatpak-update"
+test -L "$ROOTFS/usr/lib/systemd/system/timers.target.wants/margine-flatpak-update.timer" \
+  || { echo "::error::A.4.flatpak-update margine-flatpak-update.timer is not enabled (timers.target.wants symlink missing): system Flatpaks would never update"; fail=1; }
+test -L "$ROOTFS/usr/lib/systemd/user/timers.target.wants/margine-flatpak-user-update.timer" \
+  || { echo "::error::A.4.flatpak-update margine-flatpak-user-update.timer is not enabled for users"; fail=1; }
+python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["modules"]["flatpak"]["disable"] is True else 1)' "$ROOTFS/etc/uupd/config.json" \
+  || { echo "::error::A.4.flatpak-update uupd's flatpak module is still enabled in /etc/uupd/config.json: its per-user step fails under polkit"; fail=1; }
 grep -q 'loadfont .*margine\.pf2' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
   || { echo "::error::A.4.gfx GRUB drop-in does not loadfont the baked margine.pf2 — menu stays tiny on HiDPI"; fail=1; }
 grep -q '^[[:space:]]*set gfxterm_font=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \

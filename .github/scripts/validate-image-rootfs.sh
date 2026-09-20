@@ -94,15 +94,28 @@ check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
 # machine booted into emergency mode (2026-06-01); in 2026-09 a cycle sat
 # in margine-seed-etc-passwd.service for weeks, logged at every boot and
 # noticed by nobody. Evaluated against the image's own unit files.
-if command -v systemd-analyze >/dev/null 2>&1; then
+# A silent pass must mean "no cycle", not "the tool said nothing": first
+# prove on this runner that systemd-analyze reports a cycle built on purpose.
+cycle_selftest() {
+  local t; t="$(mktemp -d)"
+  printf '[Unit]\nWants=cyc-b.service\nAfter=cyc-b.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-a.service"
+  printf '[Unit]\nWants=cyc-a.service\nAfter=cyc-a.service\n[Service]\nType=oneshot\nExecStart=/bin/true\n' > "$t/cyc-b.service"
+  systemd-analyze verify --man=no "$t/cyc-a.service" "$t/cyc-b.service" 2>&1 | grep -qi "ordering cycle"
+  local rc=$?; rm -rf "$t"; return $rc
+}
+if ! command -v systemd-analyze >/dev/null 2>&1; then
+  echo "::warning::systemd-analyze not available on this runner: ordering-cycle check skipped"
+elif ! cycle_selftest; then
+  echo "::warning::systemd-analyze did not report a deliberately cyclic pair: ordering-cycle check not trustworthy here, skipped"
+else
   CYCLES="$(systemd-analyze --root="$ROOTFS" verify --man=no sysinit.target multi-user.target 2>&1 | grep -iE "ordering cycle" || true)"
   if [ -n "$CYCLES" ]; then
     echo "::error::A.4.units ordering cycle in the image's boot transaction:"
     echo "$CYCLES" | head -5
     fail=1
+  else
+    echo "  ok: no ordering cycle in sysinit.target / multi-user.target (self-test passed)"
   fi
-else
-  echo "::warning::systemd-analyze not available on this runner: ordering-cycle check skipped"
 fi
 check_file "usr/lib/systemd/system/margine-grub-hidpi.service" "A.4.gfx"
 test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service" \

@@ -2,16 +2,25 @@
 Description=Margine: seed /etc/passwd + /etc/group from /usr/lib if stripped
 Documentation=https://github.com/daniel-g-carrasco/margine-image/blob/main/docs/spec/lessons-learned/2026-05-28-initramfs-and-bootc-labels.md
 DefaultDependencies=no
-# Run only AFTER local-fs-pre.target (so /etc exists as the overlay
-# upper layer is mounted) and BEFORE systemd-sysusers / systemd-tmpfiles
-# (so they see the seeded users). DO NOT add After=local-fs.target: it
-# creates an ordering cycle through systemd-tmpfiles-setup-dev.service,
-# which systemd resolves by disabling tmpfiles-setup-dev → /dev/disk
-# /by-uuid/* never gets populated → boot times out into emergency mode
-# (incident 2026-06-01). /usr is part of the immutable ostree commit
-# so it's available from the start; we don't need local-fs.target.
-After=local-fs-pre.target
-Before=systemd-sysusers.service systemd-tmpfiles-setup.service sysinit.target
+# Run exactly where systemd-sysusers would, one step earlier: after the
+# same two units sysusers orders itself after, and before sysusers, so it
+# and systemd-tmpfiles see the seeded users and groups. /etc is writable
+# from the start on an ostree system (the initrd sets it up) and /usr is
+# part of the immutable commit, so nothing about local filesystems is
+# needed.
+#
+# DO NOT order this after local-fs-pre.target or local-fs.target. Both
+# close an ordering cycle through systemd-tmpfiles-setup-dev.service,
+# which is Before=local-fs-pre.target: with local-fs.target it ended in
+# emergency mode (incident 2026-06-01, /dev/disk/by-uuid never populated),
+# and with local-fs-pre.target, which this unit used until 2026-09-20, the
+# cycle came back when systemd 259 made sysusers Before=tmpfiles-setup-dev
+# (seed -> sysusers -> tmpfiles-setup-dev -> local-fs-pre -> seed). systemd
+# logged "Found ordering cycle" at every boot and dropped a job to get
+# out of it; which job it drops is its choice, not ours.
+# validate-image-rootfs.sh now fails the build on any ordering cycle.
+After=systemd-remount-fs.service systemd-tmpfiles-setup-dev-early.service
+Before=systemd-sysusers.service systemd-tmpfiles-setup-dev.service systemd-tmpfiles-setup.service sysinit.target
 ConditionFileNotEmpty=/usr/lib/passwd
 
 [Service]

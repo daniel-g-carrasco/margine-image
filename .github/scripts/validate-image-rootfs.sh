@@ -89,6 +89,21 @@ check_nonempty "usr/lib/bootupd/grub2-static/fonts/margine.pf2" "A.4.gfx"
 check_exec "usr/libexec/margine/grub-hidpi-apply" "A.4.gfx"
 # The re-render runs automatically at boot (the bootloader on /boot isn't
 # updated by image upgrades) — assert the service ships AND is enabled.
+# No ordering cycles in the boot transaction. systemd "solves" a cycle by
+# deleting a job of its choosing: once that was tmpfiles-setup-dev and the
+# machine booted into emergency mode (2026-06-01); in 2026-09 a cycle sat
+# in margine-seed-etc-passwd.service for weeks, logged at every boot and
+# noticed by nobody. Evaluated against the image's own unit files.
+if command -v systemd-analyze >/dev/null 2>&1; then
+  CYCLES="$(systemd-analyze --root="$ROOTFS" verify --man=no sysinit.target multi-user.target 2>&1 | grep -iE "ordering cycle" || true)"
+  if [ -n "$CYCLES" ]; then
+    echo "::error::A.4.units ordering cycle in the image's boot transaction:"
+    echo "$CYCLES" | head -5
+    fail=1
+  fi
+else
+  echo "::warning::systemd-analyze not available on this runner: ordering-cycle check skipped"
+fi
 check_file "usr/lib/systemd/system/margine-grub-hidpi.service" "A.4.gfx"
 test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service" \
   || { echo "::error::A.4.gfx margine-grub-hidpi.service is not enabled (multi-user.target.wants symlink missing) — GRUB font won't auto-apply"; fail=1; }

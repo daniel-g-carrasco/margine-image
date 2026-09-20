@@ -109,6 +109,12 @@ for cb in ("Plymouth.SetRefreshFunction", "Plymouth.SetDisplayPasswordFunction")
     if cb not in s:
         print(f"FAIL: margine.script no longer registers {cb}")
         bad = True
+# Non-indexed Window.GetX()/GetY() must stay out of the layout maths: on
+# plymouth 24.004.60 they return the smallest display's offset, not 0, and
+# the wordmark lands off-centre on the big screen of a two-display setup.
+if re.search(r'Window\.Get[XY]\(\s*\)', code):
+    print("FAIL: margine.script uses non-indexed Window.GetX()/GetY() (off-centre logo with two displays)")
+    bad = True
 if not bad:
     print("  ok: margine.script balanced + registers refresh/password callbacks")
 sys.exit(1 if bad else 0)

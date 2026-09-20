@@ -52,7 +52,19 @@ logo.orig = Image("watermark.png");
 // not retained the way a flat global is (so the sprite was collected before it
 // drew), and the indexed multi-display calls are fragile at the early-KMS /
 // initramfs stage. A single centred logo is correct for the single-display
-// install; on a multi-monitor host it centres on the primary, which is fine.
+// install; on a multi-monitor host it lands on the centre of every display.
+//
+// NO Window.GetX()/GetY() IN THE FORMULAS (2026-09-20). With several displays
+// plymouth draws on a virtual canvas as large as the biggest one, and every
+// display shows the part of it around the canvas centre; the centre is simply
+// GetWidth()/2, GetHeight()/2, because the canvas origin is 0. The stock
+// example themes add the non-indexed Window.GetX()/GetY() to that, and in
+// plymouth 24.004.60 (Fedora 44) those return the offset of the SMALLEST
+// display instead of 0 (fixed upstream on 2025-12-01, "Ensure Window.GetX/Y()
+// returns 0 for correct multi-display centering"). Single display: offset 0,
+// nothing to see. Laptop panel 2880x1920 plus a 3840x2160 monitor: the
+// wordmark sat 480 px right and 120 px below the centre of the big screen.
+// Leaving the term out is correct on both the old and the fixed plymouth.
 //
 // Wrapped in a function so it can RE-RUN when the mode changes mid-boot: the
 // early-KMS framebuffer is often a different resolution than the final one
@@ -73,8 +85,8 @@ fun layout_logo () {
   if (!logo.sprite)
     logo.sprite = Sprite();
   logo.sprite.SetImage(logo.image);
-  logo.sprite.SetX(Window.GetX() + Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
-  logo.sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
+  logo.sprite.SetX(Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
+  logo.sprite.SetY(Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
 }
 layout_logo();
 
@@ -125,7 +137,7 @@ for (i = 0; i < ENTRY_COLUMNS; i++)
 
 // Vertical anchor for the dialog: below the centered logo. Recomputed live in
 // dialog_show() so it follows a mid-boot resolution change (see refresh_callback).
-dialog_top = Window.GetY() + Window.GetHeight() * 0.72;
+dialog_top = Window.GetHeight() * 0.72;
 
 // Dialog state so refresh_callback can re-flow the prompt after a resolution
 // change. Kept as FLAT globals (not under the `dialog` hash) so the lazy
@@ -153,13 +165,13 @@ fun dialog_show (prompt)
 
     // Recompute the anchor against the LIVE resolution, so re-running this after
     // a mode switch re-centres the prompt vertically (X is already live below).
-    dialog_top = Window.GetY() + Window.GetHeight() * 0.72;
+    dialog_top = Window.GetHeight() * 0.72;
 
     local.image;
 
     image = Image.Text(prompt, fg.red, fg.green, fg.blue);
     dialog.prompt_sprite.SetImage(image);
-    dialog.prompt_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.prompt_sprite.SetX(Window.GetWidth() / 2 - image.GetWidth() / 2);
     dialog.prompt_sprite.SetY(dialog_top);
     dialog.prompt_sprite.SetZ(10000);
     dialog.prompt_sprite.SetOpacity(1);
@@ -168,7 +180,7 @@ fun dialog_show (prompt)
 
     image = Image.Text(entry_line_text, dim.red, dim.green, dim.blue);
     dialog.line_sprite.SetImage(image);
-    dialog.line_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.line_sprite.SetX(Window.GetWidth() / 2 - image.GetWidth() / 2);
     dialog.line_sprite.SetY(dialog.line_y);
     dialog.line_sprite.SetZ(10000);
     dialog.line_sprite.SetOpacity(1);
@@ -180,7 +192,7 @@ fun dialog_set_input (input_text)
   {
     local.image = Image.Text(input_text, fg.red, fg.green, fg.blue);
     dialog.input_sprite.SetImage(image);
-    dialog.input_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
+    dialog.input_sprite.SetX(Window.GetWidth() / 2 - image.GetWidth() / 2);
     dialog.input_sprite.SetY(dialog.line_y - image.GetHeight() + 6);
     dialog.input_sprite.SetZ(10001);
     dialog.input_sprite.SetOpacity(1);
@@ -245,8 +257,8 @@ fun display_message_callback (text)
   {
     local.image = Image.Text(text, fg.red, fg.green, fg.blue);
     message_sprite.SetImage(image);
-    message_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - image.GetWidth() / 2);
-    message_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.9);
+    message_sprite.SetX(Window.GetWidth() / 2 - image.GetWidth() / 2);
+    message_sprite.SetY(Window.GetHeight() * 0.9);
     message_sprite.SetZ(10000);
     message_sprite.SetOpacity(1);
   }

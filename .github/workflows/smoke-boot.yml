@@ -90,9 +90,37 @@ jobs:
         # Without this step we hit "no space left on device" mid-
         # extraction (build #26919583711, 2026-06-04). Same action
         # that build-disk.yml uses for the same reason.
-        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
         with:
           remove-codeql: true
+
+      - name: Keep bwrap children in the parent AppArmor profile (Ubuntu 26.04)
+        # Ubuntu 26.04 ships the bwrap-userns-restrict AppArmor profile. It
+        # attaches to /usr/bin/bwrap by path, also inside a privileged
+        # podman container, and moves everything bwrap starts into
+        # "unpriv_bwrap", which has no capabilities. osbuild runs its
+        # stages under bwrap, so inside bootc-image-builder root lost
+        # CAP_CHOWN and the right to mount: ten "fchownat() ... Operation
+        # not permitted" lines, then "mount: /run/osbuild/containers/
+        # storage: permission denied" in org.osbuild.container-deploy (run
+        # 35461088814; the same job on ubuntu-24.04 shows neither). This is
+        # the override the bootc project uses on its own runners
+        # (bootc-dev/actions#55): through the profile's supported local
+        # include, children stay in "bwrap (enforce)". AppArmor stays on,
+        # both packaged profiles stay loaded. No-op where the profile is
+        # absent (ubuntu-24.04).
+        run: |
+          if sudo test -r /etc/apparmor.d/bwrap-userns-restrict &&
+             sudo test -r /sys/kernel/security/apparmor/profiles &&
+             sudo grep -qx 'bwrap (enforce)' /sys/kernel/security/apparmor/profiles; then
+            printf '%s\n' 'priority=100 allow file rwlkm /**,' 'priority=100 allow ix /**,' \
+              | sudo tee /etc/apparmor.d/local/bwrap-userns-restrict >/dev/null
+            sudo apparmor_parser -Q /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+            echo "bwrap AppArmor override installed"
+          else
+            echo "bwrap-userns-restrict not enforced on this runner, nothing to do"
+          fi
 
       - name: Install QEMU + OVMF + tools
         run: |

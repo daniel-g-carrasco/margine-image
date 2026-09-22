@@ -602,7 +602,7 @@ jobs:
           # Shared watcher (same script gates the qcow2 in smoke-boot).
           # Live-healthy markers: GDM session (live autologin) or livesys
           # completing; dracut emergency = instant fail.
-          sudo -E .github/scripts/qemu-boot-wait.sh \
+          sudo -E GITHUB_OUTPUT="$GITHUB_OUTPUT" .github/scripts/qemu-boot-wait.sh \
             --cdrom "$ISO" \
             --kernel ./ci-vmlinuz --initrd ./ci-initrd.img --append "$APPEND" \
             --log iso-serial.log \
@@ -613,7 +613,7 @@ jobs:
           # Overflow / read-only remount on low usable RAM (large iGPU UMA
           # carveouts) without blocking the ship. Flip to gating once proven.
           echo "=== constrained-RAM (2 GiB) boot pass (warn-only) ==="
-          sudo -E .github/scripts/qemu-boot-wait.sh \
+          sudo -E GITHUB_OUTPUT="$GITHUB_OUTPUT" .github/scripts/qemu-boot-wait.sh \
             --cdrom "$ISO" \
             --kernel ./ci-vmlinuz --initrd ./ci-initrd.img --append "$APPEND" \
             --mem 2048 \
@@ -740,13 +740,13 @@ jobs:
           # image plus a 37-app Flatpak bake. qcow2 is sparse, so the extra
           # 40G costs nothing until it is written.
           qemu-img create -f qcow2 target.qcow2 60G
-          sudo -E .github/scripts/qemu-install-wait.sh \
+          sudo -E GITHUB_OUTPUT="$GITHUB_OUTPUT" .github/scripts/qemu-install-wait.sh \
             --cdrom "$ISO" --disk target.qcow2 \
             --kernel ./ci-vmlinuz --initrd ./ci-initrd.img \
             --log install-serial.log --timeout 2400
 
       - name: Phase 2 — offline-verify the installed disk (qemu-nbd)
-        run: sudo -E .github/scripts/verify-install-disk.sh target.qcow2
+        run: sudo -E GITHUB_OUTPUT="$GITHUB_OUTPUT" .github/scripts/verify-install-disk.sh target.qcow2
 
       - name: Upload install-gate logs
         if: always()

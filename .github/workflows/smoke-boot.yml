@@ -239,7 +239,12 @@ jobs:
           set -euo pipefail
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
           echo "Booting: $QCOW"
-          sudo -E .github/scripts/qemu-boot-wait.sh \
+          # GITHUB_OUTPUT is named explicitly: on ubuntu-26.04 `sudo -E`
+          # no longer forwards it (sudoers env_reset plus a newer sudo
+          # that strips it), the script wrote passed=true into nothing,
+          # and the promote step below was skipped on every green boot
+          # (runs 35660088196 and 35693439770, 2026-09-21/22).
+          sudo -E GITHUB_OUTPUT="$GITHUB_OUTPUT" .github/scripts/qemu-boot-wait.sh \
             --disk "$QCOW" \
             --log serial.log \
             --timeout 1800 \
@@ -337,6 +342,14 @@ jobs:
       # bytes the QEMU boot exercised. No tag re-resolution: a build
       # finishing mid-smoke can no longer slip an untested digest into
       # :stable (review findings A1/A2, fixed 2026-06-12).
+      # A green boot step with no verdict is a plumbing failure, not a
+      # "nothing to promote": fail loudly instead of skipping.
+      - name: Boot verdict must have reached the workflow
+        if: success() && steps.boot.outputs.passed == ''
+        run: |
+          echo "::error::qemu-boot-wait.sh exited 0 but wrote no passed= output; the promote step would be skipped silently. Check how GITHUB_OUTPUT reaches the script under sudo."
+          exit 1
+
       - name: Promote candidate → stable (only if boot passed)
         if: success() && steps.boot.outputs.passed == 'true'
         env:

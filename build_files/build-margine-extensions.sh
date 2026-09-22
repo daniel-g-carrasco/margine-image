@@ -535,7 +535,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# o-tiling: Smile (the emoji picker, Super+.) floats by default (2026-08-30).
+# o-tiling: Smile (the emoji picker, Super+.) floats by default (2026-08-30),
+# and so does Live Captions (2026-09-22).
 # ---------------------------------------------------------------------------
 # Smile is a small picker that is meant to pop over the text you are typing
 # into; tiled, it takes half the workspace and shoves the editor aside.
@@ -546,10 +547,17 @@ fi
 # on the current monitor (mutter center-new-windows): Wayland gives no
 # caret position to third-party apps, so "next to the input" is not a
 # thing any picker can do.
+#
+# Live Captions (net.sapples.LiveCaptions) is a subtitle strip for any
+# audio playing on the machine: a thin window you park over the video or
+# the call, and it already asks to stay on top (keep-on-top defaults to
+# true). Tiled, it became half a workspace of captions and could not be
+# moved at all. Same identity rules as Smile: class = application id,
+# window titled "Live Captions".
 OTILING_FLOAT="${EXT_DIR}/o-tiling@oliwebd.github.com/floating_exceptions/config.js"
 if [[ -f "$OTILING_FLOAT" ]]; then
-  if grep -q "it.mijorus.smile" "$OTILING_FLOAT"; then
-    log "o-tiling: Smile already in the default float rules"
+  if grep -q "it.mijorus.smile" "$OTILING_FLOAT" && grep -q "net.sapples.LiveCaptions" "$OTILING_FLOAT"; then
+    log "o-tiling: Smile and Live Captions already in the default float rules"
   elif python3 - "$OTILING_FLOAT" <<'PYEOF'
 import sys
 p = sys.argv[1]
@@ -557,11 +565,13 @@ s = open(p).read()
 old = "    { class: 'Solaar' },\n"
 if s.count(old) != 1:
     sys.exit(1)
-new = old + "    { class: 'it.mijorus.smile' }, // margine: Smile emoji picker floats (Super+.)\n    { title: '^Smile$' },\n"
+new = (old
+       + "    { class: 'it.mijorus.smile' }, // margine: Smile emoji picker floats (Super+.)\n    { title: '^Smile$' },\n"
+       + "    { class: 'net.sapples.LiveCaptions' }, // margine: Live Captions is an overlay you place freely\n    { title: '^Live Captions$' },\n")
 open(p, "w").write(s.replace(old, new, 1))
 PYEOF
   then
-    log "o-tiling: Smile added to the default float rules"
+    log "o-tiling: Smile and Live Captions added to the default float rules"
   else
     log "ERROR: o-tiling DEFAULT_FLOAT_RULES anchor not found (upstream changed?), refusing to guess"
     exit 1

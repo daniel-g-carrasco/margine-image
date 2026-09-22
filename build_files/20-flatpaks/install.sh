@@ -96,6 +96,7 @@ mkdir -p /usr/share/flatpak/preinstall.d
       org.inkscape.Inkscape \
       org.darktable.Darktable \
       com.obsproject.Studio \
+      net.sapples.LiveCaptions \
       app.zen_browser.zen \
       org.mozilla.thunderbird_esr \
       com.bitwarden.desktop \

@@ -513,6 +513,7 @@ flatpaks:
       - org.gnome.DejaDup
       - org.gnome.Firmware
       - it.mijorus.smile
+      - net.sapples.LiveCaptions  # on-device captions for any audio; floats over the video (2026-09-22)
     documentation:
       # GTK 4 markdown viewer/editor (libadwaita). Used as the default
       # `.md` opener so docs in margine-fedora-atomic and similar repos
@@ -1075,6 +1076,7 @@ gnome:
         name: Utilities
         apps:
           - it.mijorus.smile.desktop
+          - net.sapples.LiveCaptions.desktop
           - io.gitlab.adhami3310.Impression.desktop
           - org.gnome.FileRoller.desktop
           - org.gnome.Characters.desktop

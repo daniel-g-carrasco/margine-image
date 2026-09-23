@@ -895,6 +895,9 @@ gnome:
       toggle_message_tray: '<Super>n'
       show_screenshot_ui: 'Print'
       screenshot_window:  '<Ctrl>Print'
+      # NB: GNOME's own `screenshot` (silent full-screen capture) also
+      # defaults to <Shift>Print and would win over the custom binding
+      # that opens Gradia; configure-gnome-keybindings clears it.
       show_screen_recording_ui: '<Super>Print'
     media_keys:
       screensaver:        '<Super><Ctrl>l'

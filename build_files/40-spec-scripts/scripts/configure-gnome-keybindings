@@ -95,6 +95,13 @@ SHELL_KEYS_TO_CLEAR = (
     # focus-active-notification defaults to <Super>n; we use that for
     # toggle-message-tray.
     "focus-active-notification",
+    # screenshot defaults to <Shift>Print (silent full-screen capture to
+    # Pictures/Screenshots). Margine gives that chord to the custom
+    # binding that opens Gradia for a region: a built-in shell binding
+    # wins over a custom one, so without clearing this the key looked
+    # dead and Gradia never opened (2026-09-23). Print (the screenshot
+    # UI) and <Ctrl>Print (window) stay as they are.
+    "screenshot",
 )
 
 # WM keybindings whose defaults shadow our intent.

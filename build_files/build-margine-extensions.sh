@@ -554,11 +554,28 @@ fi
 # true). Tiled, it became half a workspace of captions and could not be
 # moved at all. Same identity rules as Smile: class = application id,
 # window titled "Live Captions".
-OTILING_FLOAT="${EXT_DIR}/o-tiling@oliwebd.github.com/floating_exceptions/config.js"
-if [[ -f "$OTILING_FLOAT" ]]; then
-  if grep -q "it.mijorus.smile" "$OTILING_FLOAT" && grep -q "net.sapples.LiveCaptions" "$OTILING_FLOAT"; then
-    log "o-tiling: Smile and Live Captions already in the default float rules"
-  elif python3 - "$OTILING_FLOAT" <<'PYEOF'
+# WHICH FILE: o-tiling 2.11.x moved the rules the extension actually reads
+# into system/config.js (extension.js does `import * as Config from
+# './system/config.js'`), leaving a second, now dialog-only copy in
+# floating_exceptions/config.js. Patching that copy alone is what made
+# both Smile and Live Captions stay tiled on the images built between
+# 2026-09-20 and 2026-09-23: the list looked right in the exceptions
+# dialog and meant nothing at runtime. So patch EVERY file that defines
+# DEFAULT_FLOAT_RULES, then verify the runtime one really carries the
+# rules, and fail the build if it does not.
+OTILING_DIR="${EXT_DIR}/o-tiling@oliwebd.github.com"
+OTILING_RUNTIME_CONF="${OTILING_DIR}/$(sed -n "s#^import \\* as Config from '\\./\\(.*\\)';#\\1#p" "${OTILING_DIR}/extension.js" | head -1)"
+mapfile -t OTILING_RULE_FILES < <(grep -rl 'DEFAULT_FLOAT_RULES = \[' "${OTILING_DIR}" || true)
+if (( ${#OTILING_RULE_FILES[@]} == 0 )); then
+  log "ERROR: no file in o-tiling defines DEFAULT_FLOAT_RULES (upstream changed?), refusing to guess"
+  exit 1
+fi
+for f in "${OTILING_RULE_FILES[@]}"; do
+  if grep -q "net.sapples.LiveCaptions" "$f"; then
+    log "o-tiling: $(basename "$(dirname "$f")")/$(basename "$f") already carries the Margine float rules"
+    continue
+  fi
+  python3 - "$f" <<'PYEOF' || { log "ERROR: o-tiling DEFAULT_FLOAT_RULES anchor not found in $f (upstream changed?), refusing to guess"; exit 1; }
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -570,16 +587,19 @@ new = (old
        + "    { class: 'net.sapples.LiveCaptions' }, // margine: Live Captions is an overlay you place freely\n    { title: '^Live Captions$' },\n")
 open(p, "w").write(s.replace(old, new, 1))
 PYEOF
-  then
-    log "o-tiling: Smile and Live Captions added to the default float rules"
-  else
-    log "ERROR: o-tiling DEFAULT_FLOAT_RULES anchor not found (upstream changed?), refusing to guess"
-    exit 1
-  fi
-else
-  log "ERROR: o-tiling floating_exceptions/config.js not found, the patch target is gone"
+  log "o-tiling: float rules added to $(basename "$(dirname "$f")")/$(basename "$f")"
+done
+
+# The one that counts: the module extension.js imports as its config.
+if [[ ! -f "$OTILING_RUNTIME_CONF" ]]; then
+  log "ERROR: cannot tell which config module o-tiling loads (looked for the Config import in extension.js)"
   exit 1
 fi
+for needle in "it.mijorus.smile" "net.sapples.LiveCaptions"; do
+  grep -q "$needle" "$OTILING_RUNTIME_CONF" \
+    || { log "ERROR: ${OTILING_RUNTIME_CONF#"$EXT_DIR"/} does not carry the $needle float rule — the rules would be dead at runtime"; exit 1; }
+done
+log "o-tiling: runtime config ${OTILING_RUNTIME_CONF#"$EXT_DIR"/} verified to carry the Margine float rules"
 
 # ---------------------------------------------------------------------------
 # Register our extensions' gschemas into the GLOBAL schema set.

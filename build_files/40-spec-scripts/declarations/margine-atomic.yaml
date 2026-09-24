@@ -893,12 +893,16 @@ gnome:
       toggle_application_view: ['<Super>space', '<Super>r']
       toggle_overview:    '<Super><Shift>space'
       toggle_message_tray: '<Super>n'
-      show_screenshot_ui: 'Print'
-      screenshot_window:  '<Ctrl>Print'
+      # Every screenshot chord has a Print-free twin: compact keyboards
+      # (65%, 75%, most externals) have no Print key at all, or hide it
+      # behind an Fn layer that differs per model, and a shortcut nobody
+      # can press is a feature nobody has.
+      show_screenshot_ui: ['Print', '<Super><Shift>p']
+      screenshot_window:  ['<Ctrl>Print', '<Super><Shift>w']
       # NB: GNOME's own `screenshot` (silent full-screen capture) also
       # defaults to <Shift>Print and would win over the custom binding
       # that opens Gradia; configure-gnome-keybindings clears it.
-      show_screen_recording_ui: '<Super>Print'
+      show_screen_recording_ui: ['<Super>Print', '<Super><Shift>r']
     media_keys:
       screensaver:        '<Super><Ctrl>l'
     custom:
@@ -926,6 +930,10 @@ gnome:
         # captures stay with GNOME Shell (Print, Ctrl+Print); the
         # gradia-integration extension adds "annotate" to those too.
         binding: '<Shift>Print'
+        command: 'flatpak run be.alexandervanhee.gradia --screenshot=INTERACTIVE'
+      - name: screenshot_region_alt
+        # Same capture for keyboards without a Print key (a = annotate).
+        binding: '<Super><Shift>a'
         command: 'flatpak run be.alexandervanhee.gradia --screenshot=INTERACTIVE'
       - name: smile
         # Emoji picker. NB: bootstrap REPLACES the whole

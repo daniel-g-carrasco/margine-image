@@ -68,6 +68,7 @@ T = o-tiling).
 | **`SUPER+E`** | `nautilus` | **override of `SUPER SHIFT+F`** — `E` is the recurring desktop convention for "Explorer/Files" |
 | `SUPER CTRL+T` | `ptyxis -- btop` | btop lives in the toolbox; runs inside Ptyxis |
 | `SUPER+ESCAPE` | `gnome-session-quit --logout` | replaces the `open-session-actions-menu` helper |
+| `SUPER+SHIFT+P` / `SUPER+SHIFT+A` / `SUPER+SHIFT+W` / `SUPER+SHIFT+R` | screenshot UI / region into Gradia / window / screen recording | Print-free twins of the chords below: compact keyboards often have no Print key, or hide it on an Fn layer that differs per model |
 | `SHIFT+Print` | `flatpak run be.alexandervanhee.gradia --screenshot=INTERACTIVE` | region capture opened in Gradia for annotation (GNOME's built-in `screenshot` also claims this chord and wins over custom bindings, so it is cleared) (GNOME Shell keeps bare Print and CTRL+Print; the Gradia Integration extension adds an annotate action there). Replaced `gnome-screenshot -ac` on 2026-09-19: that binary is not on the image, the key was dead |
 | `SUPER+PERIOD` | `flatpak run it.mijorus.smile` | Smile emoji picker. **IBus's emoji panel also defaults to `<Super>period`** and grabs it at the input-method layer (you get emoji-input "special characters" instead of Smile), so Margine clears `org.freedesktop.ibus.panel.emoji hotkey` in `07-margine-custom-keybindings` |
 

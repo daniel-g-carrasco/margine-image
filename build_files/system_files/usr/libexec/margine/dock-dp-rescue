@@ -206,27 +206,18 @@ billboard_reports_failure() {
 #
 # The udev rule fires for EVERY USB-C partner, and on the reference host
 # that meant a rebind of ucsi_acpi at every boot and every time the
-# charger was plugged in (2026-09-19, 21:15: charger attached, "no
-# billboard verdict, but this model is known to miss DisplayPort",
-# controller re-initialised, PD negotiation interrupted for nothing).
-# Two partners were behind it: the empty HDMI expansion card, and the
-# charger.
+# charger was plugged in (2026-09-19). Two partners were behind it: the
+# empty HDMI expansion card, and the charger.
 #
-# What sysfs can tell them apart, measured on the same machine with the
-# dock attached: this UCSI exposes NO identity/ directory and
-# number_of_alternate_modes=0 even for the dock, so USB identity and alt
-# modes are useless here. supports_usb_power_delivery is "no" for the
-# HDMI card and "yes" for both the dock and the charger. DisplayPort alt
-# mode is negotiated over PD messages, so a partner without PD can never
-# be a DisplayPort dock: that settles the HDMI card.
-pd_partner_present() {
-  local p
-  for p in "$ROOT"/sys/class/typec/port[0-9]-partner; do
-    [ "$(cat "$p/supports_usb_power_delivery" 2>/dev/null)" = "yes" ] && return 0
-  done
-  return 1
-}
-
+# What sysfs can and cannot tell them apart, measured on the same machine:
+# this UCSI exposes NO identity/ directory and number_of_alternate_modes=0
+# even for the dock, so USB identity and alt modes are useless here. And
+# supports_usb_power_delivery is NOT a gate either: it read "yes" for the
+# dock on 2026-09-19, but "no" on 2026-09-26 with the same dock attached
+# and its DisplayPort negotiation failed, which is exactly the case to
+# rescue; a first version of this file used it and went silent on the one
+# plug-in that mattered. What is left, and holds: a dock always brings a
+# USB hub, and this one carries a Billboard descriptor with the verdict.
 # The charger speaks PD too. What it never brings is USB devices, and a
 # dock always brings a hub: on the reference dock two removable hubs
 # (14b0:0184 and 14b0:016e) right under the root hubs. Root hubs report
@@ -261,11 +252,6 @@ if ! typec_partner_present; then
   log "no USB-C device attached, nothing to rescue"
   exit 0
 fi
-# Silent on purpose: this is the common case (charger, expansion card,
-# USB stick) and it happens at every boot.
-if (( ! FORCE )) && ! pd_partner_present; then
-  exit 0
-fi
 
 # The decision, in order of how much it knows: what the dock says about
 # its own negotiation first, the model list only as a fallback for docks
@@ -276,8 +262,9 @@ if (( ! FORCE )); then
   elif [ "$BILLBOARD_VERDICT" = "dp-ok" ]; then
     exit 0
   elif (( ! BILLBOARD_SEEN )) && ! external_hub_present; then
-    # No billboard and no hub: a charger or a plain cable. The model
-    # list must not turn that into a rebind.
+    # No billboard and no hub: a charger, the empty expansion card, a
+    # plain cable. Silent on purpose, it happens at every boot, and the
+    # model list must not turn it into a rebind.
     exit 0
   elif model_is_known_broken; then
     log "no billboard verdict, but a dock is attached and this model is known to miss DisplayPort"

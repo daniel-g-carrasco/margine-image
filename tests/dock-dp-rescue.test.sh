@@ -61,13 +61,15 @@ run_case() {
 }
 
 new_root a; run_case "no partner, no switch file: silent, no stderr" quiet
-new_root b; partner port2 no;  run_case "empty HDMI expansion card (no PD): no rebind, no stderr" quiet
+new_root b; partner port2 no;  run_case "empty HDMI expansion card (no PD, no hub, no billboard): no rebind, no stderr" quiet
 [ -s "$R/log" ] && { echo "FAIL non-PD partner must not even log"; fails=$((fails+1)); }
 new_root c; partner port3 yes; run_case "charger (PD, no billboard, no hub) on a known-broken model: no rebind" quiet
 new_root d; partner port0 yes; hub; billboard failed; run_case "dock whose billboard says DisplayPort failed: rebind" rebind
+new_root d2; partner port0 no; hub; billboard failed; run_case "same dock reporting PD=no after a failed negotiation (2026-09-26): rebind" rebind
 new_root e; partner port0 yes; hub; billboard ok;     run_case "dock whose billboard says DisplayPort is fine: left alone" quiet
 new_root f; partner port0 yes; hub; billboard mute;   run_case "dock with an unreadable billboard on a known-broken model: fallback rebind" rebind
 new_root g; partner port0 yes; hub;                   run_case "dock with no billboard at all on a known-broken model: fallback rebind" rebind
+new_root g2; partner port0 no; hub;                   run_case "dock with no billboard and PD=no on a known-broken model: fallback rebind" rebind
 new_root h; partner port0 yes; hub; billboard failed; mkdir -p "$R/etc/margine"; echo off > "$R/etc/margine/dock-dp-rescue"; run_case "switch off beats a failed dock" quiet
 
 if (( fails )); then echo "$fails case(s) failed"; exit 1; fi

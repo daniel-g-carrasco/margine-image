@@ -36,6 +36,24 @@ rmdir /var/lib/authselect 2>/dev/null || true
 echo "Remaining /var content after build-residue cleanup:"
 find /var -mindepth 1 -maxdepth 3 | sort
 
+# SELinux: /home is the alias, /var/home the real path (2026-10-03).
+#
+# rpm-ostree's compose rewrites file_contexts.subs_dist so that /home maps
+# to /var/home (postprocess_subs_dist in rpm-ostree composepost.rs). The dx
+# layer of our base pulls a newer selinux-policy-targeted, whose RPM puts
+# the stock "/var/home /home" line back. With it, every lookup under the
+# real home path is rewritten to /home, where file_contexts.homedirs has no
+# rules, and comes back default_t: matchpathcon ~/.ssh says default_t, so
+# the first restorecon on a home breaks SSH key login (sshd_session_t
+# cannot read authorized_keys). Reported as ublue-os/bluefin#4976, fix
+# pending in #4979. Reapplied here, after the last package transaction,
+# with the same edit rpm-ostree makes; a no-op once the base is fixed.
+SUBS=/etc/selinux/targeted/contexts/files/file_contexts.subs_dist
+if [[ -f "$SUBS" ]]; then
+  sed -i -E 's|^(/var/home[[:space:]].*)$|# \1|' "$SUBS"
+  grep -qxE '/home[[:space:]]+/var/home' "$SUBS" || echo '/home /var/home' >> "$SUBS"
+fi
+
 # Deterministic mtimes for chunkah (2026-09-01).
 #
 # chunkah writes every tar entry with mtime = min(real mtime, clamp of

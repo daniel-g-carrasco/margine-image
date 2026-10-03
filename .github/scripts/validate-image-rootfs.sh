@@ -150,6 +150,20 @@ grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 check_exec "usr/bin/margine-keyring" "A.4.keyring"
 check_exec "usr/bin/seahorse" "A.4.keyring"
 
+# A.4.selinux-home — /home must map to /var/home, never the reverse
+# (ublue-os/bluefin#4976): with "/var/home /home" every path in a home
+# resolves to default_t and a restorecon breaks SSH key login.
+SUBS="etc/selinux/targeted/contexts/files/file_contexts.subs_dist"
+check_file "$SUBS" "A.4.selinux-home"
+if [[ -f "$ROOTFS/$SUBS" ]]; then
+  if grep -qE '^/var/home[[:space:]]' "$ROOTFS/$SUBS"; then
+    echo "::error::$SUBS maps /var/home to /home (A.4.selinux-home)"; fail=1
+  fi
+  if ! grep -qE '^/home[[:space:]]+/var/home[[:space:]]*$' "$ROOTFS/$SUBS"; then
+    echo "::error::$SUBS has no '/home /var/home' line (A.4.selinux-home)"; fail=1
+  fi
+fi
+
 # A.4.bis — desktop launchers have high-res icons and docs fallback
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"

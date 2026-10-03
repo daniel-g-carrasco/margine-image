@@ -76,9 +76,9 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # fullscreen windows (oliwebd/o-tiling#89). Every Margine patch below
 # still applies cleanly; the session-modes one stays until the upstream
 # fix has been proven on real lock/unlock cycles.
-OTILING_VERSION="v2.11.03"
+OTILING_VERSION="v2.12.01"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
-OTILING_SHA256="98c0626c2a34f8eef15827721bdb91d4028faa8799b45833fcc6bf4f9c43e2d0"
+OTILING_SHA256="4bc13ee298ac8be6b3ff22e961b1f0948998bb10f1ddae5c3dead45aff4875a0"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
 # Shell major of the current base (50). When Bluefin bumps GNOME, the

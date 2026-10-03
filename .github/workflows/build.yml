@@ -656,6 +656,13 @@ jobs:
             # `podman inspect` of this image is far too large for the command
             # line (first attempt died with "sudo: Argument list too long").
             sudo podman inspect "$SRC" | sudo tee "${OUT_DIR}/config.json" >/dev/null
+            # --prune /run/ (2026-10-03): buildah leaves an empty
+            # run/systemd/resolve/stub-resolv.conf behind (the mount point it
+            # binds the build's resolv.conf onto), with a new mtime on every
+            # build, and that one empty file moved the 184 MiB layer of
+            # unpackaged files on each update. /run is a tmpfs on every
+            # booted system, so nothing in the image's /run is ever visible;
+            # 99-cleanup.sh cannot remove it because it is mounted then.
             sudo podman run --rm --pull=never \
               --security-opt label=type:unconfined_t \
               --mount=type=image,src="$SRC",target=/chunkah \
@@ -665,6 +672,7 @@ jobs:
               --config /run/out/config.json \
               --max-layers 127 \
               --prune /sysroot/ \
+              --prune /run/ \
               --label ostree.commit- \
               --label ostree.final-diffid- \
               "${label_args[@]}" \

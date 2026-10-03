@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -58,6 +59,21 @@ ROUTES = [
 LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
 SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
 BASE_RE = re.compile(r"<base\b[^>]*>", re.IGNORECASE)
+# Cloudflare's Email Address Obfuscation rewrites anything that looks like
+# an address (GNOME extension UUIDs such as o-tiling@oliwebd.github.com,
+# for one) into "[email protected]" plus a hex blob that a /cdn-cgi script
+# decodes in the browser. Offline that script is gone (SCRIPT_RE drops it
+# anyway), so the text stayed "[email protected]"; and the blob is XORed
+# with a fresh random key on every response, so the mirror also changed
+# on every build. Decoded back to the original text here (2026-10-03).
+CF_EMAIL_RE = re.compile(
+    r"""<(?P<tag>a|span)\b[^>]*\bdata-cfemail\s*=\s*(['"])(?P<hex>[0-9a-fA-F]+)\2[^>]*>.*?</(?P=tag)\s*>""",
+    re.IGNORECASE | re.DOTALL,
+)
+CF_EMAIL_HREF_RE = re.compile(
+    r"""(?P<attr>\bhref\s*=\s*)(?P<quote>['"])[^'"]*/cdn-cgi/l/email-protection#(?P<hex>[0-9a-fA-F]+)(?P=quote)""",
+    re.IGNORECASE,
+)
 ATTR_RE_TEMPLATE = r"""\b{attr}\s*=\s*(['"])(.*?)\1"""
 URL_ATTR_RE = re.compile(r"""\b(?P<attr>href|src)\s*=\s*(?P<quote>['"])(?P<url>.*?)(?P=quote)""", re.IGNORECASE)
 # <img srcset> and <source srcset> — a comma-separated list of
@@ -284,9 +300,24 @@ def rewrite_srcset(html_text: str, route: str, output_dir: Path, base_url: str, 
     return SRCSET_ATTR_RE.sub(replace, html_text)
 
 
+def cf_decode(hex_text: str) -> str:
+    """Invert Cloudflare's email obfuscation: first byte is the XOR key."""
+    data = bytes.fromhex(hex_text)
+    return bytes(b ^ data[0] for b in data[1:]).decode("utf-8", errors="replace")
+
+
+def decode_cf_emails(html_text: str) -> str:
+    html_text = CF_EMAIL_RE.sub(lambda m: html.escape(cf_decode(m.group("hex")), quote=False), html_text)
+    return CF_EMAIL_HREF_RE.sub(
+        lambda m: f"{m.group('attr')}{m.group('quote')}mailto:{html.escape(cf_decode(m.group('hex')))}{m.group('quote')}",
+        html_text,
+    )
+
+
 def rewrite_html(html_text: str, route: str, output_dir: Path, base_url: str) -> str:
     current_dir = output_path_for_route(output_dir, route).parent
     html_text = BASE_RE.sub("", html_text)
+    html_text = decode_cf_emails(html_text)
     html_text = SCRIPT_RE.sub("", html_text)
     html_text = LINK_RE.sub(lambda match: inline_or_remove_link(match, base_url, output_dir, current_dir), html_text)
     html_text = rewrite_links(html_text, route, output_dir, base_url, current_dir)
@@ -369,8 +400,15 @@ def build_offline_docs(output_dir: Path, base_url: str) -> None:
     (output_dir / "manifest.txt").write_text("\n".join(routes) + "\n", encoding="utf-8")
     # Freshness stamp consumed by docs-refresh to decide whether the /usr
     # seed (image build) is newer than the /var mirror (runtime refresh
-    # by margine-docs-refresh.service). Epoch seconds.
-    (output_dir / "stamp").write_text(f"{int(time.time())}\n", encoding="utf-8")
+    # by margine-docs-refresh.service). Epoch seconds. The image build
+    # exports SOURCE_DATE_EPOCH (00-common.sh), so the seed's stamp no
+    # longer changes between two builds of the same content; it moves
+    # with the base image, and a runtime refresh (wall clock) is always
+    # newer than the seed it replaces, which is the intended order.
+    stamp = os.environ.get("SOURCE_DATE_EPOCH", "")
+    if not stamp.isdigit():
+        stamp = str(int(time.time()))
+    (output_dir / "stamp").write_text(f"{stamp}\n", encoding="utf-8")
 
 
 def main() -> int:

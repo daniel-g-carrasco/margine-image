@@ -180,7 +180,10 @@ if [[ -f "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" ]]; then
       && { echo "::error::mok-enroll.service still gates on a one-shot marker (A.4.mok)"; fail=1; }
   fi
 fi
-[[ -e "$ROOTFS/etc/systemd/system/multi-user.target.wants/mok-enroll.service" || -e "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/mok-enroll.service" ]] \
+# -L, not -e: `systemctl enable` in the build writes an ABSOLUTE link
+# (/usr/lib/systemd/system/...), which dangles when the image is mounted
+# under $ROOTFS on the runner, so -e reported an enabled unit as missing.
+[[ -L "$ROOTFS/etc/systemd/system/multi-user.target.wants/mok-enroll.service" || -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/mok-enroll.service" ]] \
   || { echo "::error::mok-enroll.service is not enabled (A.4.mok)"; fail=1; }
 
 # A.4.bis — desktop launchers have high-res icons and docs fallback

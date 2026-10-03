@@ -41,15 +41,13 @@ rmdir /var/lib/authselect 2>/dev/null || true
 #  - libdnf5's transaction history: timestamps of the build's own dnf
 #    runs. Installed systems are managed by bootc, and dnf recreates the
 #    file when it needs one.
-#  - rpmdb.sqlite-shm: SQLite's shared-memory index, only meaningful
-#    while a connection is open; dropped only when there is no -wal to
-#    replay, so no rpmdb content can be lost.
+#  - rpmdb.sqlite-shm: removed at the very end, after the last rpm call
+#    of this script (see below).
 rm -rf /run/margine-gnupg /run/akmods /run/dnf /run/copr-*.gpg
 rm -rf /var/roothome/.android
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-wal
-[[ -s /usr/share/rpm/rpmdb.sqlite-wal ]] || rm -f /usr/share/rpm/rpmdb.sqlite-shm
 
 # Make what's left visible in the build log, so a future regression
 # (a new step parking state in /var) is easy to spot next to the lint.
@@ -100,14 +98,19 @@ fi
 # (unit files, margine scripts, desktop files) changed mtime on every
 # build, moving the 184 MiB layer of unpackaged files each time. Every
 # path no rpm owns now gets mtime 0 too; rpm-owned files keep theirs.
+# The rpm query runs FIRST: opening the rpmdb touches /usr/share/rpm, and
+# when it ran after the directory pass that one directory mtime moved the
+# 184 MiB layer between two builds of the same tree (2026-10-03, second
+# measurement). Every step below that writes into a directory is followed
+# by one last directory pass at the end of the script.
+rpm -qa --qf '[%{FILENAMES}\n]' 2>/dev/null | LC_ALL=C sort -u > /tmp/margine-owned
 echo "Normalising mtimes of directories and build-created files"
 find / -xdev \( -type d -o -newer /ctx/99-cleanup.sh \) -exec touch -h -d @0 {} + 2>/dev/null || true
-echo "Normalising mtimes of files no package owns"
-rpm -qa --qf '[%{FILENAMES}\n]' 2>/dev/null | LC_ALL=C sort -u > /tmp/margine-owned
 find / -xdev ! -type d -print 2>/dev/null | LC_ALL=C sort > /tmp/margine-all
-LC_ALL=C comm -23 /tmp/margine-all /tmp/margine-owned | tr '\n' '\0' \
-  | xargs -0 -r touch -h -d @0 2>/dev/null || true
-rm -f /tmp/margine-owned /tmp/margine-all
+LC_ALL=C comm -23 /tmp/margine-all /tmp/margine-owned > /tmp/margine-unowned
+echo "Normalising mtimes of $(wc -l < /tmp/margine-unowned) files no package owns"
+tr '\n' '\0' < /tmp/margine-unowned | xargs -0 -r touch -h -d @0 2>/dev/null || true
+rm -f /tmp/margine-owned /tmp/margine-all /tmp/margine-unowned
 
 # Fontconfig caches record the mtime of each font directory they index,
 # so the ones written earlier in the build (14-fonts) held build-time
@@ -120,3 +123,10 @@ rm -f /tmp/margine-owned /tmp/margine-all
 echo "Rebuilding the system fontconfig cache against the normalised mtimes"
 fc-cache -s -r >/dev/null 2>&1 || true
 find /usr/lib/fontconfig/cache -xdev -exec touch -h -d @0 {} + 2>/dev/null || true
+
+# Last: SQLite's shared-memory index of the rpmdb, only meaningful while a
+# connection is open (dropped only when there is no -wal to replay, so no
+# rpmdb content can be lost), then one more directory pass for whatever
+# the steps above wrote into. No rpm call may follow this point.
+[[ -s /usr/share/rpm/rpmdb.sqlite-wal ]] || rm -f /usr/share/rpm/rpmdb.sqlite-shm
+find / -xdev -type d -exec touch -h -d @0 {} + 2>/dev/null || true

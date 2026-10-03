@@ -547,8 +547,11 @@ jobs:
         env:
           SRC: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
           CHUNKER: ${{ github.event.inputs.chunker || 'chunkah' }}
-          # coreos/chunkah, pinned the way projectbluefin/actions pins it (v0.6.0).
-          CHUNKAH_REF: quay.io/coreos/chunkah:v0.6.0@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
+          # coreos/chunkah, pinned by tag and digest. Renovate proposes new
+          # releases but never merges them alone: a chunkah bump can change
+          # the layer plan, and with it the size of the next update for every
+          # user (see .github/renovate.json5). v0.7.0 since 2026-10-03.
+          CHUNKAH_REF: quay.io/coreos/chunkah:v0.7.0@sha256:8b56578258d1d10d3e1c7b0f71a4d05317c5fde331c4f483576a1b60e65f0cea
           KVER: ${{ steps.sbom.outputs.kver }}
           VERSION: ${{ steps.base.outputs.publish_tag }}.${{ steps.date.outputs.ymd }}
           REVISION: ${{ github.sha }}

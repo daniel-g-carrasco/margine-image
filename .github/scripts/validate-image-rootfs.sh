@@ -150,6 +150,17 @@ grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 check_exec "usr/bin/margine-keyring" "A.4.keyring"
 check_exec "usr/bin/seahorse" "A.4.keyring"
 
+# A.4.repro: leftovers that made identical builds differ (2026-10-03).
+# Cloudflare-obfuscated text in the offline docs is unreadable offline
+# and re-randomised on every fetch; adb keys in root's home would be one
+# private key shared by every install of the same build.
+if grep -rqsE 'data-cfemail|email&#160;protected' "$ROOTFS/usr/share/margine/offline-docs"; then
+  echo "::error::offline docs still contain Cloudflare-obfuscated text (A.4.repro)"; fail=1
+fi
+if [[ -e "$ROOTFS/var/roothome/.android" ]]; then
+  echo "::error::var/roothome/.android (adb keys) shipped in the image (A.4.repro)"; fail=1
+fi
+
 # A.4.selinux-home — /home must map to /var/home, never the reverse
 # (ublue-os/bluefin#4976): with "/var/home /home" every path in a home
 # resolves to default_t and a restorecon breaks SSH key login.

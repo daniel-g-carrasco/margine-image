@@ -213,6 +213,16 @@ disable_akmodsbuild() {
   [[ -f "$_ak" ]] || return 1
   cp -p "$_ak" "$_ak.backup"
   sed '/if \[\[ -w \/var \]\] ; then/,/fi/d' "$_ak" > "$_ak.tmp"
+  # Fixed build directory instead of mktemp's random one (2026-10-03).
+  # The module's debug info records the directory it was compiled in, the
+  # GNU build-id is a hash over it, and the build-id lands in the shipped
+  # .ko: two builds of the same source differed ONLY in .note.gnu.build-id
+  # (text, data and modinfo identical), and that one note moved a 50 MiB
+  # layer on every update. Best-effort like the module itself: if the
+  # line ever changes upstream, the build goes on with a random dir.
+  sed -i 's|mktemp -d -p /tmp "${myprog}.XXXXXXXX"|mkdir -m 0700 /tmp/"${myprog}".margine \&\& echo /tmp/"${myprog}".margine|' "$_ak.tmp"
+  grep -q '/tmp/"${myprog}".margine' "$_ak.tmp" \
+    || log "akmodsbuild: tmpdir line not found, v4l2loopback builds in a random dir (not reproducible)"
   mv "$_ak.tmp" "$_ak"
   chmod +x "$_ak"
 }
@@ -225,7 +235,22 @@ sign_kernel() {
   _vmlinuz="/usr/lib/modules/${KERNEL_VERSION}/vmlinuz"
   [[ -f "$_vmlinuz" ]] || { err "vmlinuz not found at $_vmlinuz"; return 1; }
   _tmp=$(mktemp)
-  sbsign --key "$SIGNING_KEY" --cert "$SIGNING_CERT" --output "$_tmp" "$_vmlinuz"
+  # systemd-sbsign, not sbsign (2026-10-03). sbsign stamps the signature
+  # with the wall clock (PKCS#7 signingTime) and has no way to fix it, so
+  # vmlinuz changed on every build and every update re-downloaded the
+  # whole kernel layer (219 MiB, with kernel-devel) for one attribute:
+  # measured on candidate.20261003 vs pr-439, the only differing file in
+  # that layer, with all 34665 others identical. systemd-sbsign (shipped
+  # in the base's systemd) takes SOURCE_DATE_EPOCH for that attribute;
+  # pinned to the kernel package's build time, the same kernel and key
+  # give the same bytes. Checked against sbsign on this vmlinuz: same
+  # signed attributes, same Authenticode digest, identical image bytes
+  # outside the certificate table, and sbverify accepts both.
+  _sign_epoch=$(rpm -qf --qf '%{BUILDTIME}\n' "$_vmlinuz" | head -n1)
+  [[ "$_sign_epoch" =~ ^[0-9]+$ ]] || { err "no build time for the package owning $_vmlinuz"; return 1; }
+  SOURCE_DATE_EPOCH="$_sign_epoch" /usr/lib/systemd/systemd-sbsign sign \
+    --private-key "$SIGNING_KEY" --certificate "$SIGNING_CERT" \
+    --output "$_tmp" "$_vmlinuz"
   sbverify --cert "$SIGNING_CERT" "$_tmp" \
     || { rm -f "$_tmp"; err "sbverify failed on signed kernel"; return 1; }
   cp "$_tmp" "$_vmlinuz"
@@ -387,6 +412,16 @@ if disable_akmodsbuild; then
      && verify_rpmfusion_keys free \
      && dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=noscripts \
         akmod-v4l2loopback; then
+    # The kmod RPM akmods builds is installed, so its header lands in the
+    # rpmdb: build host and build time must not depend on when and where
+    # the image was built, or the rpmdb layer changes on every rebuild.
+    # Build-time only, removed right after akmods.
+    cat > /etc/rpm/macros.zz-margine-reproducible <<'MACROS'
+%_buildhost margine-build
+%source_date_epoch_from_changelog 1
+%use_source_date_epoch_as_buildtime 1
+%clamp_mtime_to_source_date_epoch 1
+MACROS
     if akmods --force --verbose --kernels "$KERNEL_VERSION" --kmod v4l2loopback; then
       # akmods always returns 0; check for *.failed.log explicitly
       V4L2_FAILED=0
@@ -405,6 +440,7 @@ if disable_akmodsbuild; then
         V4L2_OK=1
       fi
     fi
+    rm -f /etc/rpm/macros.zz-margine-reproducible
     dnf -y remove rpmfusion-free-release
     rm -f /etc/yum.repos.d/rpmfusion-free*.repo
   fi

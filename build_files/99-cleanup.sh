@@ -31,6 +31,24 @@ rm -rf /var/lib/dnf /var/lib/rpm-state
 rm -f /var/lib/authselect/checksum
 rmdir /var/lib/authselect 2>/dev/null || true
 
+# Build state that changed on every rebuild and moved whole layers with
+# it (2026-10-03, measured file by file between two builds of the same
+# tree; the chunking step also prunes /run as a whole):
+#  - /run: the build's GPG home, COPR key copies, akmods and dnf locks.
+#    /run is a tmpfs on every booted system, so none of it is ever seen.
+#  - /var/roothome/.android: adb's key pair, generated when 70-phone-cam
+#    smoke-tests scrcpy. 70-phone-cam now removes it; this is the net.
+#  - libdnf5's transaction history: timestamps of the build's own dnf
+#    runs. Installed systems are managed by bootc, and dnf recreates the
+#    file when it needs one.
+#  - rpmdb.sqlite-shm: replaced by a fresh one at the very end, after the
+#    last rpm call of this script (see below).
+rm -rf /run/margine-gnupg /run/akmods /run/dnf /run/copr-*.gpg
+rm -rf /var/roothome/.android
+rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
+      /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \
+      /usr/lib/sysimage/libdnf5/transaction_history.sqlite-wal
+
 # Make what's left visible in the build log, so a future regression
 # (a new step parking state in /var) is easy to spot next to the lint.
 echo "Remaining /var content after build-residue cleanup:"
@@ -73,5 +91,54 @@ fi
 # --source-date-epoch would also do it, but it changes the image
 # Created (stale-image-alarm reads it) and chunkah's stability model
 # (coreos/chunkah#160).
+#
+# 2026-10-03: "newer than this script" missed every file COPYed from the
+# repo (system_files, assets): they carry the checkout time, which is
+# also this script's mtime, so -newer never matched them and 88 of them
+# (unit files, margine scripts, desktop files) changed mtime on every
+# build, moving the 184 MiB layer of unpackaged files each time. Every
+# path no rpm owns now gets mtime 0 too; rpm-owned files keep theirs.
+# The rpm query runs FIRST: opening the rpmdb touches /usr/share/rpm, and
+# when it ran after the directory pass that one directory mtime moved the
+# 184 MiB layer between two builds of the same tree (2026-10-03, second
+# measurement). Every step below that writes into a directory is followed
+# by one last directory pass at the end of the script.
+rpm -qa --qf '[%{FILENAMES}\n]' 2>/dev/null | LC_ALL=C sort -u > /tmp/margine-owned
 echo "Normalising mtimes of directories and build-created files"
 find / -xdev \( -type d -o -newer /ctx/99-cleanup.sh \) -exec touch -h -d @0 {} + 2>/dev/null || true
+find / -xdev ! -type d -print 2>/dev/null | LC_ALL=C sort > /tmp/margine-all
+LC_ALL=C comm -23 /tmp/margine-all /tmp/margine-owned > /tmp/margine-unowned
+echo "Normalising mtimes of $(wc -l < /tmp/margine-unowned) files no package owns"
+tr '\n' '\0' < /tmp/margine-unowned | xargs -0 -r touch -h -d @0 2>/dev/null || true
+rm -f /tmp/margine-owned /tmp/margine-all /tmp/margine-unowned
+
+# Fontconfig caches record the mtime of each font directory they index,
+# so the ones written earlier in the build (14-fonts) held build-time
+# directory mtimes: 68 cache files differed between two builds. Rebuilt
+# here, after every directory is at mtime 0, they are identical from one
+# build to the next (checked twice on Fedora 44) and also match the
+# mtimes ostree gives directories on installed systems. -s: system
+# caches only, nothing under root's home; -r: drop caches of directories
+# that no longer exist instead of keeping them from the base.
+echo "Rebuilding the system fontconfig cache against the normalised mtimes"
+fc-cache -s -r >/dev/null 2>&1 || true
+find /usr/lib/fontconfig/cache -xdev -exec touch -h -d @0 {} + 2>/dev/null || true
+
+# Last: the rpmdb's SQLite shared-memory index (rpmdb.sqlite-shm). The
+# one left by the build's dnf transactions differs on every build, but the
+# file itself is REQUIRED: the rpmdb is in WAL mode and cannot be opened
+# read-only without it (removing it made chunkah fail with "unable to open
+# database file" on the read-only image mount, and `rpm -qa` would fail
+# the same way on installed systems, where /usr is read-only). So it is
+# replaced, not removed: drop the stale one (only when there is no -wal to
+# replay, so no rpmdb content can be lost), let a read-only query create a
+# fresh one, which is identical from build to build (measured), and pin
+# its mtime. Then one more directory pass for everything written above.
+# No rpm call may follow this point.
+SHM=/usr/share/rpm/rpmdb.sqlite-shm
+if [[ ! -s /usr/share/rpm/rpmdb.sqlite-wal ]]; then
+  rm -f "$SHM"
+  rpm -q rpm >/dev/null
+fi
+[[ -e "$SHM" ]] && touch -h -d @0 "$SHM"
+find / -xdev -type d -exec touch -h -d @0 {} + 2>/dev/null || true

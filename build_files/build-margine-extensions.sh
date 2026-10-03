@@ -55,6 +55,14 @@
 # no autostart, no race.
 set -euo pipefail
 
+# Same SOURCE_DATE_EPOCH as 00-common.sh (this script does not source it):
+# the dnf transaction below must record the same install time as the
+# other steps, or the rpmdb differs between identical builds.
+if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+  SOURCE_DATE_EPOCH="$(rpm -qa --qf '%{INSTALLTIME}\n' 2>/dev/null | sort -n | tail -n1)"
+  [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]] && export SOURCE_DATE_EPOCH || unset SOURCE_DATE_EPOCH
+fi
+
 log() { printf '[margine-extensions] %s\n' "$*"; }
 
 EXT_DIR=/usr/share/gnome-shell/extensions

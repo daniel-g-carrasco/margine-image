@@ -274,21 +274,31 @@ create_mok_enroll_unit() {
   openssl x509 -in "$SIGNING_CERT" -outform DER -out "$_mok_cert"
   chmod 0644 "$_mok_cert"
   mkdir -p "$(dirname "$_unit_file")"
+  # The logic lives in /usr/libexec/margine/mok-enroll (system_files,
+  # copied into the rootfs later by 10-os-identity, so read here from
+  # /ctx), with the password as a constant there too: fail the build if
+  # the two ever disagree, or users would be told a password MokManager
+  # rejects.
+  _helper=/usr/libexec/margine/mok-enroll
+  _helper_src="/ctx/system_files${_helper}"
+  [[ -x "$_helper_src" ]] || { err "missing $_helper_src"; return 1; }
+  grep -qx "PASSWORD=\"${MOK_PASSWORD}\"" "$_helper_src" \
+    || { err "MOK_PASSWORD and the password in $_helper_src differ"; return 1; }
   cat > "$_unit_file" <<EOF
 [Unit]
-Description=Enroll Margine MOK on first boot
+Description=Make sure the Margine MOK is enrolled (Secure Boot needs it)
 ConditionPathExists=${_mok_cert}
-ConditionPathExists=!/var/.mok-enrolled
+ConditionPathExists=/sys/firmware/efi
+# Every boot, with Secure Boot on or off: the key must already be in shim
+# BEFORE Secure Boot is turned on, or the Margine kernel stops booting.
+# The old one-shot marker (/var/.mok-enrolled) is deliberately ignored:
+# it was stamped even when nothing had been enrolled (2026-10-04).
+# Before the display manager, so the login-time notice sees the request.
+Before=display-manager.service
 
 [Service]
 Type=oneshot
-# Skip the import (and thus the redundant MokManager prompt at next reboot) when
-# it's pointless: Secure Boot off → nothing to enroll; or the Margine MOK is
-# already enrolled (e.g. the user enrolled it from the ISO with 'Enroll key from
-# disk' before installing). Only when SB is on AND the key is absent do we stage
-# the import. ExecStartPost still stamps /var/.mok-enrolled so this never re-runs.
-ExecStart=/bin/sh -c 'if mokutil --sb-state 2>/dev/null | grep -qi disabled; then echo "Secure Boot off — no MOK enrollment needed"; elif mokutil --list-enrolled 2>/dev/null | grep -q "Margine MOK Signing Key"; then echo "Margine MOK already enrolled — skipping"; else (echo "${MOK_PASSWORD}"; echo "${MOK_PASSWORD}") | mokutil --import "${_mok_cert}"; fi'
-ExecStartPost=/usr/bin/touch /var/.mok-enrolled
+ExecStart=${_helper}
 RemainAfterExit=yes
 
 [Install]

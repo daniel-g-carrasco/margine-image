@@ -306,7 +306,7 @@ The cert fingerprint at the time of this writing is
 2. Remove Bluefin's stock kernel packages, then `dnf -y install kernel-cachyos kernel-cachyos-core kernel-cachyos-modules kernel-cachyos-devel-matched` from the `bieszczaders/kernel-cachyos` COPR.
 3. **Sign vmlinuz**: `sbsign --key MOK.key --cert MOK.pem --output … /usr/lib/modules/${KERNEL_VERSION}/vmlinuz`, then `sbverify --cert MOK.pem` to confirm.
 4. **Sign every kernel module**: for each `*.ko`/`*.ko.xz`/`*.ko.zst`/`*.ko.gz` under `/usr/lib/modules/${KERNEL_VERSION}`, decompress, run `scripts/sign-file sha256 MOK.key MOK.pem <module>`, recompress.
-5. **Write the cert + fallback enrollment unit**: convert `MOK.pem` to DER at `/usr/share/cert/MOK.der`, write `/usr/lib/systemd/system/mok-enroll.service` (oneshot, gated by `ConditionPathExists=!/var/.mok-enrolled`), `systemctl enable mok-enroll.service`.
+5. **Write the cert + enrollment unit**: convert `MOK.pem` to DER at `/usr/share/cert/MOK.der`, write `/usr/lib/systemd/system/mok-enroll.service` (runs `/usr/libexec/margine/mok-enroll` on every boot, Secure Boot on or off, until shim has the key; see *Enrolling before Secure Boot is on* below), `systemctl enable mok-enroll.service`. The build fails if the password in the helper and `MOK_PASSWORD` differ.
 6. Regenerate the initramfs against the new kernel (`dracut --force --kver "$KERNEL_VERSION" --regenerate-all`).
 
 ### ISO install user experience
@@ -322,9 +322,10 @@ The cert fingerprint at the time of this writing is
 bootc-image-builder to Titanoboa. The MOK staging logic is unchanged — it
 ports verbatim into `live-env/src/anaconda/post-scripts/secureboot-enroll-key.ks`
 (same `mokutil --timeout -1` + `mokutil --import` with the `margine`
-passphrase, same `/usr/share/cert/MOK.der`, same "do not write
-`/var/.mok-enrolled`" so the service fallback still recovers). The
-post-install MOK Manager experience above is identical.
+passphrase, same `/usr/share/cert/MOK.der`; if the user misses the
+prompt, the booted system's `mok-enroll.service` stages the request again
+on every boot until the key is enrolled). The post-install MOK Manager
+experience above is identical.
 
 One NEW consideration is specific to the Titanoboa live medium. The
 current BIB installer ISO boots a Fedora-signed Anaconda kernel, so the
@@ -345,26 +346,41 @@ kernel in both environments rather than a separate signed live kernel.
 
 ### Rebase user experience
 
-1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` runs once. It pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der` and writes `/var/.mok-enrolled` as its skip marker.
+1. After `rpm-ostree rebase` to the Margine image and reboot, `mok-enroll.service` finds the Margine key missing and pipes the MOK password twice into `mokutil --import /usr/share/cert/MOK.der`. At login a notification explains the blue screen that comes next.
 2. The user reboots again. The firmware presents the **MOK Manager** screen.
 3. The user selects "Enroll MOK", confirms, types the MOK passphrase (`margine`), and reboots one final time. User-facing walkthrough with screenshots: <https://margine.dev/docs/first-boot>.
 4. The CachyOS kernel now boots under Secure Boot. `mokutil --sb-state` should report `SecureBoot enabled`, and `mokutil --list-enrolled` should show the Margine cert.
 
 ### Recovery if MOK enrollment is missed
 
-If the user reboots past the MOK Manager screen without confirming on the
-ISO path, the booted-system service can recreate the request because Anaconda
-does not write `/var/.mok-enrolled`. If the service fallback has already run
-and created the marker, retry by logging in (using the original LUKS passphrase
-if TPM2 sealed against PCR 7), then:
+Nothing to do by hand: until the key is in shim, `mok-enroll.service`
+stages the request again on every boot (with Secure Boot on or off), and a
+login notification explains the MOK Manager screen that follows the next
+restart. To check or to ask for it explicitly:
 
 ```sh
-sudo rm /var/.mok-enrolled
-sudo systemctl start mok-enroll.service
-sudo systemctl reboot
+ujust margine-secureboot          # Secure Boot state, key state, next step
+ujust margine-secureboot enroll   # stage it now; the prompt waits for you
 ```
 
-The MOK Manager will appear again on next boot.
+Users who will never run Secure Boot can stop the prompt with
+`ujust margine-secureboot never` (Secure Boot must then stay off).
+
+### Enrolling before Secure Boot is on (fixed 2026-10-04)
+
+The key has to be in shim BEFORE Secure Boot is turned on: with Secure
+Boot on, shim refuses a kernel signed by a key it does not know, and the
+Margine kernel no longer boots, so nothing on the installed system can
+repair it. The first version of `mok-enroll.service` got this backwards:
+with Secure Boot off it skipped the import as pointless and still wrote
+its one-shot marker `/var/.mok-enrolled`, so it never ran again. Every
+system installed with Secure Boot off (the Titanoboa live ISO requires
+it) could not turn Secure Boot on later. Found on the reference laptop:
+Secure Boot off since install, the Margine key absent from MokListRT, the
+marker dated install day. The service now ignores that marker and checks
+the real state on every boot: enrolled (nothing to do), pending (wait for
+MOK Manager), absent (stage the import), or switched off by the user.
+Tests: `tests/mok-enroll.test.sh`, against a fake `mokutil`.
 
 ### PCR policy after MOK enrollment
 

@@ -1,0 +1,90 @@
+#!/usr/bin/bash
+# Make sure shim knows the Margine MOK, on every boot, with Secure Boot on
+# OR off (2026-10-04).
+#
+# Margine signs its kernel and every module with this key and nothing
+# else. Once Secure Boot is on, shim refuses a kernel signed by a key it
+# does not know: the machine no longer boots, and nothing on it can fix
+# that from inside. So the key has to be enrolled while Secure Boot is
+# still OFF. The first version of this unit did the opposite: with
+# Secure Boot off it skipped the import and still stamped
+# /var/.mok-enrolled, so it never ran again, and every system installed
+# with Secure Boot off could not turn it on later without losing its
+# boot. Found on the reference laptop: Secure Boot off since install, the
+# key absent from MokListRT, the marker dated install day.
+#
+# States, looked up on every boot (cheap; prompts only when needed):
+#   enrolled   the key is in MokListRT: nothing to do
+#   pending    an import request waits for MokManager at the next reboot
+#   absent     stage the import: at the next reboot shim shows MokManager
+#              (Enroll MOK -> Continue -> Yes -> password "margine")
+#   off        /etc/margine/secureboot-enroll says "off"
+#              (ujust margine-secureboot never): leave the user alone
+#
+# Usage: mok-enroll            the boot-time check (mok-enroll.service)
+#        mok-enroll status     print the state, change nothing
+#        mok-enroll enroll     stage the import now, even if opted out
+set -uo pipefail
+
+CERT="${MARGINE_MOK_CERT:-/usr/share/cert/MOK.der}"
+SWITCH="${MARGINE_MOK_SWITCH:-/etc/margine/secureboot-enroll}"
+EFI_DIR="${MARGINE_MOK_EFI_DIR:-/sys/firmware/efi}"
+# Public by design, letters only: MokManager runs before any keyboard
+# layout exists (custom-kernel/install.sh, MOK_PASSWORD, checks they match).
+PASSWORD="margine"
+KEY_CN="Margine MOK Signing Key"
+MODE="${1:-boot}"
+
+say() {
+  echo "$*"
+  logger -t margine-mok-enroll -- "$*" 2>/dev/null || true
+}
+
+# mokutil exits 0 whatever the answer, so the text is what counts; and
+# output is captured before matching (a grep -q in a pipeline under
+# pipefail can report a match as a failure).
+key_state() {
+  local out
+  out="$(mokutil --test-key "$CERT" 2>/dev/null)"
+  if [[ "$out" == *"is already enrolled"* ]]; then echo enrolled; return; fi
+  out="$(mokutil --list-new 2>/dev/null)"
+  if [[ "$out" == *"$KEY_CN"* ]]; then echo pending; return; fi
+  echo absent
+}
+
+[[ -r "$CERT" ]] || { say "no $CERT in this image, nothing to enroll"; exit 0; }
+[[ -d "$EFI_DIR" ]] || { say "legacy BIOS boot: no shim, nothing to enroll"; exit 0; }
+command -v mokutil >/dev/null 2>&1 || { say "mokutil missing: cannot check the Margine key"; exit 0; }
+
+state="$(key_state)"
+case "$MODE" in
+  status)
+    echo "$state"
+    exit 0 ;;
+  boot|enroll) ;;
+  *)
+    echo "usage: mok-enroll [status|enroll]" >&2
+    exit 2 ;;
+esac
+
+case "$state" in
+  enrolled)
+    say "Margine key enrolled: Secure Boot can be turned on"
+    exit 0 ;;
+  pending)
+    say "Margine key enrollment pending: confirm it in the blue MokManager screen at the next reboot (password: $PASSWORD)"
+    exit 0 ;;
+esac
+
+if [[ "$MODE" = boot ]] && [[ "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" = off ]]; then
+  say "Margine key NOT enrolled, and enrollment is switched off in $SWITCH: Secure Boot cannot be turned on until 'ujust margine-secureboot enroll'"
+  exit 0
+fi
+
+if printf '%s\n%s\n' "$PASSWORD" "$PASSWORD" | mokutil --import "$CERT" >/dev/null 2>&1 \
+   && [[ "$(key_state)" = pending ]]; then
+  say "Margine key enrollment staged: at the next reboot a blue MokManager screen appears; choose Enroll MOK, Continue, Yes, password $PASSWORD"
+  exit 0
+fi
+say "could not stage the Margine key enrollment (mokutil --import failed)"
+exit 1

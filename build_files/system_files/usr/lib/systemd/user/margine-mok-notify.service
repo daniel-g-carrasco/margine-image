@@ -1,0 +1,13 @@
+[Unit]
+Description=Margine: explain the Secure Boot key prompt before the next restart
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine/mok-notify
+
+# graphical-session.target, not default.target: the notification daemon
+# must be up (same reason as margine-upgrade-notify.service).
+[Install]
+WantedBy=graphical-session.target

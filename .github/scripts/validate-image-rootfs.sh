@@ -150,7 +150,7 @@ grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 check_exec "usr/bin/margine-keyring" "A.4.keyring"
 check_exec "usr/bin/seahorse" "A.4.keyring"
 
-# A.4.selinux-home — /home must map to /var/home, never the reverse
+# A.4.selinux-home: /home must map to /var/home, never the reverse
 # (ublue-os/bluefin#4976): with "/var/home /home" every path in a home
 # resolves to default_t and a restorecon breaks SSH key login.
 SUBS="etc/selinux/targeted/contexts/files/file_contexts.subs_dist"
@@ -163,6 +163,28 @@ if [[ -f "$ROOTFS/$SUBS" ]]; then
     echo "::error::$SUBS has no '/home /var/home' line (A.4.selinux-home)"; fail=1
   fi
 fi
+
+# A.4.mok: the Margine key must be enrolled even while Secure Boot is
+# off, every boot until shim has it (2026-10-04): the old unit skipped
+# the import with Secure Boot off and stamped /var/.mok-enrolled, so
+# turning Secure Boot on later left the Margine kernel unbootable.
+check_exec "usr/libexec/margine/mok-enroll" "A.4.mok"
+check_exec "usr/libexec/margine/mok-notify" "A.4.mok"
+check_file "usr/lib/systemd/system/mok-enroll.service" "A.4.mok"
+check_file "usr/lib/systemd/user/graphical-session.target.wants/margine-mok-notify.service" "A.4.mok"
+if [[ -f "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" ]]; then
+  grep -q '^ExecStart=/usr/libexec/margine/mok-enroll$' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" \
+    || { echo "::error::mok-enroll.service does not run /usr/libexec/margine/mok-enroll (A.4.mok)"; fail=1; }
+  if grep -q 'mok-enrolled' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service"; then
+    grep -n 'mok-enrolled' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" | grep -qv '^[0-9]*:#' \
+      && { echo "::error::mok-enroll.service still gates on a one-shot marker (A.4.mok)"; fail=1; }
+  fi
+fi
+# -L, not -e: `systemctl enable` in the build writes an ABSOLUTE link
+# (/usr/lib/systemd/system/...), which dangles when the image is mounted
+# under $ROOTFS on the runner, so -e reported an enabled unit as missing.
+[[ -L "$ROOTFS/etc/systemd/system/multi-user.target.wants/mok-enroll.service" || -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/mok-enroll.service" ]] \
+  || { echo "::error::mok-enroll.service is not enabled (A.4.mok)"; fail=1; }
 
 # A.4.bis — desktop launchers have high-res icons and docs fallback
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"

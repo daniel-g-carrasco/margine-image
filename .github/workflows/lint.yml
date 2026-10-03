@@ -77,6 +77,12 @@ jobs:
         # assumed. See tests/dock-dp-rescue.test.sh.
         run: bash tests/dock-dp-rescue.test.sh
 
+      - name: MOK enrollment helper
+        # Enrolls the Margine key with Secure Boot on OR off, every boot
+        # until shim has it: the one-shot version left systems installed
+        # with Secure Boot off unable to ever turn it on (2026-10-04).
+        run: bash tests/mok-enroll.test.sh
+
       - name: ruff (python build helpers)
         # Pinned: an unpinned `pipx run ruff` broke every PR when 0.16.0
         # widened the default rules (2026-07-23). Rules are locked in

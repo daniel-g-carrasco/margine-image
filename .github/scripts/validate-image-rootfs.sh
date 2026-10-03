@@ -150,7 +150,7 @@ grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 check_exec "usr/bin/margine-keyring" "A.4.keyring"
 check_exec "usr/bin/seahorse" "A.4.keyring"
 
-# A.4.selinux-home — /home must map to /var/home, never the reverse
+# A.4.selinux-home: /home must map to /var/home, never the reverse
 # (ublue-os/bluefin#4976): with "/var/home /home" every path in a home
 # resolves to default_t and a restorecon breaks SSH key login.
 SUBS="etc/selinux/targeted/contexts/files/file_contexts.subs_dist"

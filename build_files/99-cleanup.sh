@@ -41,8 +41,8 @@ rmdir /var/lib/authselect 2>/dev/null || true
 #  - libdnf5's transaction history: timestamps of the build's own dnf
 #    runs. Installed systems are managed by bootc, and dnf recreates the
 #    file when it needs one.
-#  - rpmdb.sqlite-shm: removed at the very end, after the last rpm call
-#    of this script (see below).
+#  - rpmdb.sqlite-shm: replaced by a fresh one at the very end, after the
+#    last rpm call of this script (see below).
 rm -rf /run/margine-gnupg /run/akmods /run/dnf /run/copr-*.gpg
 rm -rf /var/roothome/.android
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
@@ -124,9 +124,21 @@ echo "Rebuilding the system fontconfig cache against the normalised mtimes"
 fc-cache -s -r >/dev/null 2>&1 || true
 find /usr/lib/fontconfig/cache -xdev -exec touch -h -d @0 {} + 2>/dev/null || true
 
-# Last: SQLite's shared-memory index of the rpmdb, only meaningful while a
-# connection is open (dropped only when there is no -wal to replay, so no
-# rpmdb content can be lost), then one more directory pass for whatever
-# the steps above wrote into. No rpm call may follow this point.
-[[ -s /usr/share/rpm/rpmdb.sqlite-wal ]] || rm -f /usr/share/rpm/rpmdb.sqlite-shm
+# Last: the rpmdb's SQLite shared-memory index (rpmdb.sqlite-shm). The
+# one left by the build's dnf transactions differs on every build, but the
+# file itself is REQUIRED: the rpmdb is in WAL mode and cannot be opened
+# read-only without it (removing it made chunkah fail with "unable to open
+# database file" on the read-only image mount, and `rpm -qa` would fail
+# the same way on installed systems, where /usr is read-only). So it is
+# replaced, not removed: drop the stale one (only when there is no -wal to
+# replay, so no rpmdb content can be lost), let a read-only query create a
+# fresh one, which is identical from build to build (measured), and pin
+# its mtime. Then one more directory pass for everything written above.
+# No rpm call may follow this point.
+SHM=/usr/share/rpm/rpmdb.sqlite-shm
+if [[ ! -s /usr/share/rpm/rpmdb.sqlite-wal ]]; then
+  rm -f "$SHM"
+  rpm -q rpm >/dev/null
+fi
+[[ -e "$SHM" ]] && touch -h -d @0 "$SHM"
 find / -xdev -type d -exec touch -h -d @0 {} + 2>/dev/null || true

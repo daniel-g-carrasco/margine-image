@@ -1434,29 +1434,26 @@ pass ships an unsigned `.ko` that the kernel will reject under lockdown (§4.7),
 invisible in CI (the QEMU smoke gate boots without Secure Boot) and visible only on enrolled
 hardware. Keep signing last among module producers.
 
-## 4.4 Shipping the cert + the first-boot fallback service
+## 4.4 Shipping the cert + the boot-time enrollment service
 
 The same build layer converts the cert to DER (the format `mokutil` wants), drops it at a fixed
-in-image path, and writes the fallback enrollment unit:
+in-image path, and writes the enrollment unit. The logic lives in a small helper shipped from
+`system_files`, `/usr/libexec/margine/mok-enroll`:
 
 ```bash
-# margine-image/build_files/custom-kernel/install.sh:139-162 (trimmed)
+# margine-image/build_files/custom-kernel/install.sh (trimmed)
 create_mok_enroll_unit() {
-  _mok_cert="/usr/share/cert/MOK.der"
-  _unit_file="/usr/lib/systemd/system/mok-enroll.service"
-  mkdir -p "$(dirname "$_mok_cert")"
-  openssl x509 -in "$SIGNING_CERT" -outform DER -out "$_mok_cert"
   ...
   cat > "$_unit_file" <<EOF
 [Unit]
-Description=Enroll Margine MOK on first boot
+Description=Make sure the Margine MOK is enrolled (Secure Boot needs it)
 ConditionPathExists=${_mok_cert}
-ConditionPathExists=!/var/.mok-enrolled
+ConditionPathExists=/sys/firmware/efi
+Before=display-manager.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c '(echo "${MOK_PASSWORD}"; echo "${MOK_PASSWORD}") | mokutil --import "${_mok_cert}"'
-ExecStartPost=/usr/bin/touch /var/.mok-enrolled
+ExecStart=/usr/libexec/margine/mok-enroll
 RemainAfterExit=yes
 
 [Install]
@@ -1473,17 +1470,29 @@ Mechanics worth knowing:
   chains into **MokManager**, the blue/grey pre-boot screen, where a human selects
   `Enroll MOK` → `Continue` → `Yes`, types the passphrase, and reboots. Only then does the cert
   enter MokList. No amount of root access enrolls a key without that console step.
-- The two `echo`s feed mokutil's password + confirmation prompts non-interactively.
-- The marker file lives in `/var`, which on ostree systems is machine-local state shared across
-  deployments: the unit runs once per *machine*, not once per image update. `ConditionPathExists=!`
-  makes the unit a no-op forever after, while leaving a trivially scriptable reset (§4.8).
+- The helper reads the real state on every boot instead of trusting a marker file:
+  `mokutil --test-key` (already enrolled: nothing to do), `mokutil --list-new` (request pending:
+  wait for MokManager), otherwise it stages the import, piping the public passphrase twice.
+  `mokutil` exits 0 whatever the answer, so the helper matches the text it prints.
+- **It runs with Secure Boot on or off.** The key has to be in shim *before* Secure Boot is
+  turned on: with Secure Boot on, shim refuses a kernel signed by a key it does not know, and
+  the installed system cannot boot to repair itself. The first version got this backwards: with
+  Secure Boot off it skipped the import as pointless and still wrote a one-shot
+  `/var/.mok-enrolled` marker, so it never ran again, and systems installed with Secure Boot off
+  (the Titanoboa live ISO requires it) could not turn it on later. Found on the reference laptop
+  on 2026-10-03, fixed the next day; the old marker is now ignored. Tests:
+  `tests/mok-enroll.test.sh`, against a fake `mokutil`.
+- While a request is pending, a login notification (`margine-mok-notify`, a user unit on
+  `graphical-session.target`) explains the MokManager screen that follows the next restart.
+  `ujust margine-secureboot` prints the state and the next step; `ujust margine-secureboot
+  never` stops the prompt on machines that will never run Secure Boot.
 - The unit is enabled at build time (`systemctl -f enable` works in a container build, it just
-  creates the `multi-user.target.wants/` symlink in `/usr`), so every fresh deployment has it
-  armed with zero installer cooperation.
+  creates the `multi-user.target.wants/` symlink), so every fresh deployment has it armed with
+  zero installer cooperation.
 
-The user-visible rebase flow is therefore: rebase → reboot (service stages the request) →
-reboot again → MokManager → type `margine` → done. Two reboots; the kernel chain is verified
-on every boot thereafter.
+The user-visible rebase flow is therefore: rebase → reboot (the service stages the request, a
+notification explains it) → reboot again → MokManager → type `margine` → done. Two reboots; the
+kernel chain is verified on every boot thereafter.
 
 ## 4.5 The ISO path: stage the request *before* the first installed boot
 
@@ -1536,9 +1545,9 @@ Details that earn their bytes:
 - `mokutil --test-key` makes reinstalls idempotent: already-enrolled machines get no prompt.
 - `mokutil --timeout -1` disables MokManager's 10-second auto-continue, so an unattended first
   reboot parks on the prompt instead of silently skipping enrollment.
-- **It deliberately does not create `/var/.mok-enrolled`.** If the user mashes Enter past
-  MokManager, the in-OS `mok-enroll.service` re-stages the request on the next successful boot.
-  Belt and suspenders, each path covering the other's miss.
+- If the user mashes Enter past MokManager, the in-OS `mok-enroll.service` stages the request
+  again on every following boot until the key is enrolled. Belt and suspenders, each path
+  covering the other's miss.
 - Every exit path is a soft `exit 0`: a BIOS-mode install or a missing `mokutil` degrades to
   the service fallback instead of failing the whole install.
 
@@ -1602,13 +1611,13 @@ When Secure Boot is enabled, Fedora kernels (CachyOS COPR builds included) activ
 
 ## 4.8 Recovery and verification
 
-If both enrollment paths were missed (or the user hit "Continue boot" at MokManager), the
-marker-file design makes retry a three-liner:
+If both enrollment paths were missed (or the user hit "Continue boot" at MokManager), there is
+nothing to reset: the service stages the request again on the next boot. To check, or to ask for
+it with a prompt that waits instead of auto-continuing after 10 seconds:
 
 ```sh
-sudo rm /var/.mok-enrolled
-sudo systemctl start mok-enroll.service
-sudo systemctl reboot
+ujust margine-secureboot          # Secure Boot state, key state, next step
+ujust margine-secureboot enroll   # stage it now (mokutil --timeout -1)
 ```
 
 Verification on an enrolled system:

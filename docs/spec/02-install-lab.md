@@ -34,7 +34,7 @@ curl -L -o ~/Downloads/bluefin-stable-x86_64.iso \
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 
-# 4. First boot after reboot: mok-enroll.service runs once.
+# 4. First boot after reboot: mok-enroll.service stages the MOK import (every boot until enrolled).
 # 5. Reboot a second time: confirm enrollment in the MOK Manager screen
 #    (firmware UI) — passphrase is `margine`. The CachyOS kernel
 #    then boots under Secure Boot. Full walkthrough:

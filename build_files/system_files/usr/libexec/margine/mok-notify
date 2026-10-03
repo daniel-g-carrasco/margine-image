@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Margine: tell the user, at login, what the blue screen at the next
+# reboot will be (2026-10-04).
+#
+# mok-enroll.service stages the Margine key for enrollment on every boot
+# until shim has it, with Secure Boot on or off (see that helper's
+# header). shim then shows MokManager at the next reboot: a blue firmware
+# screen with no Margine branding, in English, with a 10-second
+# countdown. Without a word beforehand that reads as something broken,
+# and a missed countdown means one more round. One notice per boot while
+# the request is pending, and one if the key could not even be staged.
+set -euo pipefail
+
+MN=/usr/libexec/margine/margine-notify
+HELPER=/usr/libexec/margine/mok-enroll
+[[ -x "$MN" && -x "$HELPER" ]] || exit 0
+
+STAMP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/margine"
+mkdir -p "$STAMP_DIR"
+STAMP="$STAMP_DIR/mok-notify.boot"
+BOOT_ID="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)"
+[[ "$(cat "$STAMP" 2>/dev/null)" = "$BOOT_ID" ]] && exit 0
+
+state="$("$HELPER" status 2>/dev/null || true)"
+case "$state" in
+  pending)
+    "$MN" -u critical \
+      "Secure Boot key: one step at the next restart" \
+      "At the next restart a blue screen (MOK Manager) appears before Margine starts. Press a key within 10 seconds, then choose Enroll MOK, Continue, Yes, and type the password: margine. This lets Margine boot with Secure Boot on. Details: ujust margine-secureboot" \
+      && printf '%s\n' "$BOOT_ID" > "$STAMP" ;;
+  absent)
+    switch="$(tr -d '[:space:]' < /etc/margine/secureboot-enroll 2>/dev/null || true)"
+    [[ "$switch" = off ]] && exit 0
+    "$MN" -u normal \
+      "Secure Boot key not enrolled" \
+      "Margine could not register its Secure Boot key, so Secure Boot must stay off for now. Run: ujust margine-secureboot enroll" \
+      && printf '%s\n' "$BOOT_ID" > "$STAMP" ;;
+esac
+exit 0

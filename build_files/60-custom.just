@@ -904,6 +904,72 @@ margine-update FORCE="":
 margine-autologin ACTION="status" USER="":
     @/usr/bin/margine-autologin "{{ ACTION }}" "{{ USER }}"
 
+# Secure Boot readiness: is the Margine key enrolled, and how to turn Secure Boot on.
+[group('Margine')]
+margine-secureboot ACTION="status":
+    #!/usr/bin/bash
+    set -uo pipefail
+    HELPER=/usr/libexec/margine/mok-enroll
+    SWITCH=/etc/margine/secureboot-enroll
+    sb="$(mokutil --sb-state 2>/dev/null | head -n1)"
+    key="$("$HELPER" status 2>/dev/null || echo unknown)"
+    case "{{ ACTION }}" in
+      enroll)
+        sudo rm -f "$SWITCH"
+        sudo "$HELPER" enroll || exit 1
+        # Asked for by hand, so the prompt may wait for the user instead of
+        # auto-continuing after 10 s (same as the ISO installer does).
+        sudo mokutil --timeout -1 >/dev/null 2>&1 || true
+        echo
+        echo "Now restart. Before Margine starts, a blue screen (MOK Manager) appears"
+        echo "and waits for you: Enroll MOK -> Continue -> Yes"
+        echo "  -> password: margine (US keyboard layout, letters only) -> Reboot"
+        echo "Then: ujust margine-secureboot   (to check, and for the firmware step)"
+        ;;
+      never)
+        sudo mkdir -p /etc/margine
+        echo off | sudo tee "$SWITCH" >/dev/null
+        sudo mokutil --revoke-import >/dev/null 2>&1 || true
+        echo "Margine will no longer ask to enroll its Secure Boot key."
+        echo "Secure Boot must then stay OFF: with it on, the Margine kernel would not boot."
+        echo "Undo any time with: ujust margine-secureboot enroll"
+        ;;
+      status)
+        echo "Secure Boot:        ${sb:-unknown}"
+        case "$key" in
+          enrolled) echo "Margine key:        enrolled in shim" ;;
+          pending)  echo "Margine key:        enrollment PENDING (confirm it at the next restart)" ;;
+          absent)   echo "Margine key:        NOT enrolled" ;;
+          *)        echo "Margine key:        $key" ;;
+        esac
+        [ "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" = off ] && echo "Enrollment:         switched off ($SWITCH)"
+        echo
+        case "$key:$sb" in
+          enrolled:*enabled*)
+            echo "All set: Secure Boot is on and Margine's kernel is trusted." ;;
+          enrolled:*)
+            echo "Ready to turn Secure Boot on:"
+            echo "  1. If the disk unlocks with the TPM, keep the disk passphrase at hand:"
+            echo "     Secure Boot changes the TPM measurements (PCR 7), so the next boot"
+            echo "     asks for the passphrase once; afterwards run: ujust margine-tpm-unlock enable"
+            echo "  2. systemctl reboot --firmware-setup"
+            echo "  3. In the firmware, enable Secure Boot. On Framework laptops:"
+            echo "     Security -> Secure Boot -> Enforce Secure Boot -> Enabled, then save."
+            echo "     Leave the factory keys alone (no custom keys, no 'Force Secure Boot')."
+            echo "  4. Back in Margine: ujust margine-secureboot   -> Secure Boot enabled" ;;
+          pending:*)
+            echo "At the next restart a blue screen (MOK Manager) appears before Margine:"
+            echo "  press a key within 10 seconds -> Enroll MOK -> Continue -> Yes"
+            echo "  -> password: margine -> Reboot. Missed it? It is asked again next boot." ;;
+          absent:*)
+            echo "Do NOT turn Secure Boot on yet: the Margine kernel would not boot."
+            echo "Enroll the key first: ujust margine-secureboot enroll" ;;
+        esac
+        ;;
+      *)
+        echo "usage: ujust margine-secureboot [status|enroll|never]"; exit 1 ;;
+    esac
+
 # TPM2 LUKS auto-unlock for the encrypted root (status/enable/disable).
 [group('Margine')]
 margine-tpm-unlock ACTION="status" PCRS="7":

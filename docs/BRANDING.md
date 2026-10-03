@@ -369,9 +369,10 @@ passphrase `margine`), and links the docs. Idempotent via a marker in
 - Kernel + all modules (incl. NVIDIA) signed with the Margine MOK at build; a
   sha256 check fails the build if the kernel changes after signing. One key → one
   enrollment.
-- Installed cert: `/usr/share/cert/MOK.der`. A one-shot `mok-enroll.service` imports
-  it **only if** SB is on and the key isn't already enrolled; idempotency marker
-  `/var/.mok-enrolled`.
+- Installed cert: `/usr/share/cert/MOK.der`. `mok-enroll.service` imports it on
+  every boot until shim has it, **with Secure Boot on or off** (the key must be
+  in shim before SB is turned on); a login notification explains the MOK Manager
+  screen; `ujust margine-secureboot` shows the state (2026-10-04).
 - ISO offers `Enroll Secure Boot key (MokManager)` (chainloads `mmx64.efi`) so the
   key can be enrolled from the boot menu before install.
 

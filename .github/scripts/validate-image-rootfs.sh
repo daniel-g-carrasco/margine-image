@@ -164,6 +164,25 @@ if [[ -f "$ROOTFS/$SUBS" ]]; then
   fi
 fi
 
+# A.4.mok: the Margine key must be enrolled even while Secure Boot is
+# off, every boot until shim has it (2026-10-04): the old unit skipped
+# the import with Secure Boot off and stamped /var/.mok-enrolled, so
+# turning Secure Boot on later left the Margine kernel unbootable.
+check_exec "usr/libexec/margine/mok-enroll" "A.4.mok"
+check_exec "usr/libexec/margine/mok-notify" "A.4.mok"
+check_file "usr/lib/systemd/system/mok-enroll.service" "A.4.mok"
+check_file "usr/lib/systemd/user/graphical-session.target.wants/margine-mok-notify.service" "A.4.mok"
+if [[ -f "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" ]]; then
+  grep -q '^ExecStart=/usr/libexec/margine/mok-enroll$' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" \
+    || { echo "::error::mok-enroll.service does not run /usr/libexec/margine/mok-enroll (A.4.mok)"; fail=1; }
+  if grep -q 'mok-enrolled' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service"; then
+    grep -n 'mok-enrolled' "$ROOTFS/usr/lib/systemd/system/mok-enroll.service" | grep -qv '^[0-9]*:#' \
+      && { echo "::error::mok-enroll.service still gates on a one-shot marker (A.4.mok)"; fail=1; }
+  fi
+fi
+[[ -e "$ROOTFS/etc/systemd/system/multi-user.target.wants/mok-enroll.service" || -e "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/mok-enroll.service" ]] \
+  || { echo "::error::mok-enroll.service is not enabled (A.4.mok)"; fail=1; }
+
 # A.4.bis — desktop launchers have high-res icons and docs fallback
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-scheduler.svg" "A.4.bis"
 check_nonempty "usr/share/icons/hicolor/scalable/apps/margine-documentation.svg" "A.4.bis"

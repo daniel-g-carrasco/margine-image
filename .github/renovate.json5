@@ -20,8 +20,8 @@
       enabled: false,
     },
     {
-      // Auto-merge everything non-major once checks are green (2026-08-09,
-      // Daniel's request). Mechanics: platformAutomerge (Renovate default)
+      // Auto-merge everything non-major once checks are green (2026-08-09).
+      // Mechanics: platformAutomerge (Renovate default)
       // arms GitHub's native auto-merge on the PR; branch protection
       // requires the `lint` check, so a red PR can never slip through,
       // and the pin-sync workflows (wsf/otiling fix-sha) pushing to the
@@ -79,6 +79,20 @@
       ],
     },
     {
+      // chunkah decides how the image is split into layers, and a new
+      // release can change that plan (v0.7.0 reweighted package stability):
+      // the first update after a bump then re-downloads more than usual for
+      // every installed system. Proposed like everything else, merged only
+      // by hand, after measuring the delta on the PR's :pr-N image.
+      matchDepNames: [
+        'quay.io/coreos/chunkah',
+      ],
+      automerge: false,
+      addLabels: [
+        'vm-test',
+      ],
+    },
+    {
       enabled: false,
       matchUpdateTypes: [
         'digest',
@@ -112,6 +126,19 @@
     },
   ],
   customManagers: [
+    {
+      // chunkah is pinned as an env value (CHUNKAH_REF) in build.yml and
+      // build-lts.yml, which no built-in manager reads: without this, a new
+      // release never surfaced (upstream review 2026-10, issue #437).
+      customType: 'regex',
+      managerFilePatterns: [
+        '/\\.github/workflows/build(-lts)?\\.yml$/',
+      ],
+      matchStrings: [
+        'CHUNKAH_REF: (?<depName>quay\\.io/coreos/chunkah):(?<currentValue>v\\d+\\.\\d+\\.\\d+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
     {
       customType: 'regex',
       managerFilePatterns: [

@@ -392,6 +392,44 @@ after the first successful Secure-Boot boot, **before** wiping the
 passphrase slot (which Margine never does in any case — passphrase
 recovery is permanent).
 
+### What PCR 7 does not cover, and the GRUB menu lock (2026-10-04)
+
+`ujust margine-tpm-unlock enable` binds the disk key to PCR 7, the Secure
+Boot state: which keys are trusted and which authorities verified the
+boot chain. That protects against the disk being moved to another
+machine and against booting a chain signed by someone else. It does not
+measure two things an attacker with the machine in hand can change:
+
+1. **The kernel command line.** At an open GRUB menu, `e` and
+   `init=/bin/bash` boot the signed Margine kernel to a root shell. PCR 7
+   is unchanged, so the TPM releases the key: a root shell on a decrypted
+   disk. `ujust margine-grub-lock on` closes this: bootupd's static GRUB
+   config already sources `$prefix/user.cfg` and makes `root` the only
+   superuser when `GRUB2_PASSWORD` is set (`configs.d/01_users.cfg`);
+   ostree's boot entries carry no `grub_users` key, and Fedora's `blscfg`
+   restricts an entry only when that key is present, so every deployment
+   still boots unattended (rollbacks included) while editing an entry,
+   the GRUB command line and "UEFI Firmware Settings" ask for the
+   password. Letters and digits only: GRUB reads the keyboard as US
+   layout. `margine-tpm-unlock status` and `enable` warn while the menu is
+   open. The Arch-based Margine had the equivalent (`limine
+   enroll-config`); the Fedora one shipped TPM unlock without it until
+   this date.
+2. **The initramfs.** It lives on the unencrypted `/boot`, is not signed
+   (shim and GRUB verify the kernel, not the initrd) and is not measured
+   into PCR 7. Someone who can boot the machine from other media can
+   replace it, and the next boot releases the key to their code. The GRUB
+   lock does not help here. What does: a TPM PIN
+   (`systemd-cryptenroll --tpm2-with-pin=yes`, not offered by
+   `margine-tpm-unlock` yet), the passphrase alone, and, as hardening, a
+   firmware password with boot from external media disabled. The
+   structural fix is a signed UKI with a PCR 11 policy (ADR-0007, sealed
+   images).
+
+So TPM auto-unlock without a PIN is a convenience that resists theft of
+the disk and casual tampering, not a prepared attacker with physical
+access. Tests: `tests/grub-lock.test.sh`.
+
 ## References
 
 - Fedora Secure Boot: https://fedoraproject.org/wiki/Secureboot

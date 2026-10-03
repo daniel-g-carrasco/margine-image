@@ -451,6 +451,13 @@ boot_path_wired() {
 }
 
 # ── status (default) ──────────────────────────────────────────────────────
+# Is the GRUB menu locked (ujust margine-grub-lock)? PCR 7 does not cover
+# the kernel command line: with an open menu, `e` + init=/bin/bash boots to
+# a root shell and the TPM still releases the disk key (2026-10-04).
+grub_locked() {
+  grep -q '^GRUB2_PASSWORD=grub\.pbkdf2\.' /boot/grub2/user.cfg 2>/dev/null
+}
+
 cmd_status() {
   printf '\n  %sMargine TPM2 LUKS auto-unlock — status%s\n\n' "$c_bold" "$c_reset"
 
@@ -496,9 +503,23 @@ cmd_status() {
       "Boot path (crypttab)" "$c_dim" "$c_reset" "$c_dim" "$c_reset"
   fi
 
+  if grub_locked; then
+    printf '  %-26s %s✓ locked%s  %s(editing the boot menu needs a password)%s\n' \
+      "GRUB menu" "$c_grn" "$c_reset" "$c_dim" "$c_reset"
+  else
+    printf '  %-26s %s✗ open%s  %s(anyone can edit the kernel command line at boot)%s\n' \
+      "GRUB menu" "$c_ylw" "$c_reset" "$c_dim" "$c_reset"
+  fi
+
   printf '\n  Keyslots / tokens (by type):\n'
   slot_report | sed 's/^/    /'
   printf '\n'
+
+  if has_tpm2_token && ! grub_locked; then
+    printf '  %sThe boot menu is open:%s with auto-unlock on, editing the kernel command\n' "$c_ylw" "$c_reset"
+    printf '  line at boot gives a root shell on the unlocked disk. Close it with\n'
+    printf '  %sujust margine-grub-lock on%s (normal boots stay password-free).\n\n' "$c_ember" "$c_reset"
+  fi
 
   if has_tpm2_token && boot_path_wired; then
     printf '  %sAuto-unlock is enrolled AND wired.%s Run %sujust margine-tpm-unlock disable%s to remove it.\n\n' \
@@ -571,6 +592,12 @@ to wire crypttab blind. Nothing changed."
   if has_tpm2_token; then
     info "  Note    : a TPM2 token already exists — only the tpm2 slot is"
     info "            re-enrolled atomically; password slots are NOT touched."
+  fi
+  if ! grub_locked; then
+    warn "  Warning : the GRUB menu is OPEN. With auto-unlock, anyone at the keyboard"
+    warn "            can edit the kernel command line at boot and get a root shell on"
+    warn "            the unlocked disk. Run 'ujust margine-grub-lock on' (before or"
+    warn "            right after this); normal boots stay password-free."
   fi
   printf '\n'
   confirm "This re-enrolls ONLY the tpm2 slot on ${LUKS_DEV} and edits ${CRYPTTAB}."

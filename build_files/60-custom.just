@@ -975,6 +975,11 @@ margine-secureboot ACTION="status":
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock "{{ ACTION }}" "{{ PCRS }}"
 
+# Lock the GRUB menu: booting stays free, editing it needs a password (status/on/off).
+[group('Margine')]
+margine-grub-lock ACTION="status":
+    @sudo /usr/libexec/margine/grub-lock "{{ ACTION }}"
+
 # Re-apply the HiDPI GRUB font + grub.cfg now (safe, idempotent).
 [group('Margine')]
 margine-grub-hidpi:

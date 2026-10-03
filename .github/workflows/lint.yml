@@ -83,6 +83,11 @@ jobs:
         # with Secure Boot off unable to ever turn it on (2026-10-04).
         run: bash tests/mok-enroll.test.sh
 
+      - name: GRUB menu lock helper
+        # Writes the bootloader's password file: what it accepts, refuses
+        # and removes is tested, not assumed. See tests/grub-lock.test.sh.
+        run: bash tests/grub-lock.test.sh
+
       - name: ruff (python build helpers)
         # Pinned: an unpinned `pipx run ruff` broke every PR when 0.16.0
         # widened the default rules (2026-07-23). Rules are locked in

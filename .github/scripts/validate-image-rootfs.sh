@@ -143,6 +143,17 @@ grep -q '^[[:space:]]*set gfxterm_font=' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
 grep -q 'terminal_output gfxterm' "$ROOTFS/$GRUB_GFX" 2>/dev/null \
   || { echo "::error::A.4.gfx GRUB drop-in does not switch to gfxterm"; fail=1; }
 
+# A.4.grub-lock: `ujust margine-grub-lock` only works while bootupd's
+# static GRUB config keeps reading user.cfg (GRUB2_PASSWORD). If a base
+# change drops that snippet, the password would silently protect nothing,
+# and TPM2 disk unlock would again be one `e` away from a root shell.
+check_exec "usr/libexec/margine/grub-lock" "A.4.grub-lock"
+if ! grep -qs 'GRUB2_PASSWORD' "$ROOTFS/usr/lib/bootupd/grub2-static/configs.d/01_users.cfg"; then
+  echo "::error::bootupd's static GRUB config no longer reads GRUB2_PASSWORD (A.4.grub-lock)"; fail=1
+fi
+[[ -x "$ROOTFS/usr/bin/grub2-mkpasswd-pbkdf2" ]] \
+  || { echo "::error::grub2-mkpasswd-pbkdf2 missing: margine-grub-lock cannot hash a password (A.4.grub-lock)"; fail=1; }
+
 # A.4.keyring — login-keyring helper + its GUI backend (2026-06-16). Lets
 # `ujust margine-keyring blank` set the login keyring password empty so it
 # auto-unlocks under fingerprint/autologin (Seahorse provides the dialog;

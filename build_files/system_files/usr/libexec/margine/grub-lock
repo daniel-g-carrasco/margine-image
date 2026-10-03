@@ -1,0 +1,92 @@
+#!/usr/bin/bash
+# Lock the GRUB menu: booting stays free, EDITING needs a password
+# (2026-10-04).
+#
+# Why this exists: TPM2 disk unlock (margine-tpm-unlock) binds the key to
+# PCR 7, the Secure Boot state. PCR 7 does not see the kernel command
+# line. With an open GRUB, anyone at the keyboard presses `e`, appends
+# init=/bin/bash, and boots: Secure Boot is satisfied, PCR 7 is unchanged,
+# the TPM hands over the disk key, and they have a root shell on a
+# decrypted disk. A GRUB password closes that door.
+#
+# What it does NOT close: the initramfs lives on the unencrypted /boot and
+# is neither signed nor measured into PCR 7, so someone who can boot the
+# machine from other media can replace it. Against that, use a TPM PIN or
+# the passphrase alone (see docs/spec/07-secure-boot-tpm2.md).
+#
+# How: nothing new. bootupd's static GRUB config already sources
+# $prefix/user.cfg and, when GRUB2_PASSWORD is set there, makes "root" the
+# only superuser (configs.d/01_users.cfg). ostree's boot entries carry no
+# grub_users key, and Fedora's blscfg marks an entry restricted only when
+# that key is present (blscfg.c: users = bls_get_val("grub_users"),
+# menuentry.c: restricted = users != NULL). So every deployment still
+# boots unattended, rollback included, while `e`, the `c` command line and
+# "UEFI Firmware Settings" ask for root + this password.
+#
+# Usage: grub-lock [status|on|off]
+set -uo pipefail
+
+GRUB_DIR="${MARGINE_GRUB_DIR:-/boot/grub2}"
+USER_CFG="$GRUB_DIR/user.cfg"
+ACTION="${1:-status}"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# /boot/grub2 is 0700 root. A custom dir (tests) skips the check: writing
+# there fails on its own if it must.
+if [[ -z "${MARGINE_GRUB_DIR:-}" && "$(id -u)" -ne 0 ]]; then
+  die "must run as root: ujust margine-grub-lock $ACTION"
+fi
+[[ -d "$GRUB_DIR" ]] || die "$GRUB_DIR not found: this system does not boot through GRUB"
+
+# The lock only works if the GRUB config actually reads user.cfg.
+supported() { grep -q 'GRUB2_PASSWORD' "$GRUB_DIR/grub.cfg" 2>/dev/null; }
+locked()    { grep -q '^GRUB2_PASSWORD=grub\.pbkdf2\.' "$USER_CFG" 2>/dev/null; }
+
+case "$ACTION" in
+  status)
+    if ! supported; then
+      echo "GRUB menu lock: not available ($GRUB_DIR/grub.cfg does not read user.cfg)"
+    elif locked; then
+      echo "GRUB menu lock: ON"
+      echo "  Booting any deployment: no password. Editing an entry (e), the GRUB"
+      echo "  command line (c), UEFI Firmware Settings: user 'root' + your GRUB password."
+    else
+      echo "GRUB menu lock: off"
+      echo "  Anyone at the keyboard can edit the kernel command line at boot. With TPM2"
+      echo "  disk unlock enabled that means a root shell on the unlocked disk."
+      echo "  Turn it on with: ujust margine-grub-lock on"
+    fi
+    ;;
+  on)
+    supported || die "$GRUB_DIR/grub.cfg does not read user.cfg: a password would have no effect"
+    command -v grub2-mkpasswd-pbkdf2 >/dev/null 2>&1 || die "grub2-mkpasswd-pbkdf2 not found"
+    if [[ -t 0 ]]; then
+      echo "Choose a GRUB password. LETTERS AND DIGITS ONLY, at least 8: GRUB reads the"
+      echo "keyboard as US layout, so symbols (and y/z on some layouts) come out wrong."
+      echo "You will type it only to EDIT the boot menu, never for a normal boot."
+      read -rs -p "GRUB password: " p1; echo
+      read -rs -p "Again: " p2; echo
+    else
+      read -r p1; read -r p2
+    fi
+    [[ "$p1" == "$p2" ]] || die "the two passwords differ"
+    [[ "$p1" =~ ^[A-Za-z0-9]{8,}$ ]] || die "letters and digits only, at least 8 characters"
+    hash="$(printf '%s\n%s\n' "$p1" "$p1" | LC_ALL=C grub2-mkpasswd-pbkdf2 2>/dev/null \
+            | sed -n 's/.*PBKDF2 hash of your password is //p')"
+    [[ "$hash" == grub.pbkdf2.* ]] || die "could not hash the password"
+    ( umask 077; printf 'GRUB2_PASSWORD=%s\n' "$hash" > "$USER_CFG.new" ) \
+      && mv -f "$USER_CFG.new" "$USER_CFG" || die "could not write $USER_CFG"
+    locked || die "wrote $USER_CFG but it does not read back as a GRUB password"
+    echo "GRUB menu lock: ON (user: root)."
+    echo "Normal boots and rollbacks stay unattended. To edit an entry or open the"
+    echo "GRUB command line, GRUB asks for user 'root' and this password."
+    echo "Forgot it? From the running system: ujust margine-grub-lock off"
+    ;;
+  off)
+    rm -f "$USER_CFG" "$USER_CFG.new" || die "could not remove $USER_CFG"
+    echo "GRUB menu lock: off. The boot menu can be edited by anyone at the keyboard."
+    ;;
+  *)
+    echo "usage: grub-lock [status|on|off]" >&2; exit 2 ;;
+esac

@@ -14,21 +14,23 @@ go stale silently.
 
 | Upstream | Role for Margine | Derivation level | Files / patterns of ours | Last reviewed |
 | --- | --- | --- | --- | --- |
-| [Bluefin DX](https://github.com/ublue-os/bluefin) | The `FROM` base of every Margine image; we ship as their image + small delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-08-21 |
-| [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-08-21 |
-| [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-08-21 |
-| [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-08-21 |
-| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the GH Action we used until the chunker switch (rpm-ostree, then chunkah on 2026-08-31) | **Former GH Action consumer** (kept in the watch list for the ecosystem signal) | none since 2026-08; history in the "Chunker" note below | 2026-09-01 |
-| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-09-01 |
-| [coreos/chunkah](https://github.com/coreos/chunkah) | The chunker behind every `:stable` and `:lts` image since 2026-08-31: content-based layers planned from the rpmdb, no `--previous-build` needed | **Tool consumer** (pinned by digest, v0.6.0) | step `Chunk the image` in `build.yml` / `build-lts.yml`; `99-cleanup.sh` mtime normalisation (works around chunkah#160) | 2026-09-01 |
-| [RakuOS](https://gitlab.com/rakuos) (canonical on GitLab; the GitHub org is a stale mirror) | Closest cousin: Fedora `base-atomic` + CachyOS kernel + MOK-signed modules + chunkah at build time + persistent dnf overlay ("hybrid atomic"); GNOME/KDE/COSMIC/Niri editions, x86-64-v3/v4 builds | **Reference only** (no code copied) | none; watched for how they handle Secure Boot, the v3/v4 split (our #382) and the overlay model | 2026-09-01 |
+| [Bluefin DX](https://github.com/ublue-os/bluefin) | The `FROM` base of every Margine image; we ship as their image + small delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-10-03 |
+| [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-10-03 |
+| [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-10-03 |
+| [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-10-03 |
+| [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the GH Action we used until the chunker switch (rpm-ostree, then chunkah on 2026-08-31) | **Former GH Action consumer** (kept in the watch list for the ecosystem signal) | none since 2026-08; history in the "Chunker" note below | 2026-10-03 |
+| [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-10-03 |
+| [coreos/chunkah](https://github.com/coreos/chunkah) | The chunker behind every `:stable` and `:lts` image since 2026-08-31: content-based layers planned from the rpmdb, no `--previous-build` needed | **Tool consumer** (pinned by tag and digest: v0.6.0, v0.7.0 from #441) | step `Chunk the image` in `build.yml` / `build-lts.yml`; `99-cleanup.sh` mtime normalisation (works around chunkah#160) | 2026-10-03 |
+| [RakuOS](https://gitlab.com/rakuos) (canonical on GitLab; the GitHub org is a stale mirror) | Closest cousin: Fedora bootc minimal (was `base-atomic` until 2026-09-13) + CachyOS kernel + MOK-signed modules + chunkah at build time + persistent dnf overlay ("hybrid atomic"); GNOME/KDE/COSMIC/Niri editions, x86-64-v3/v4 builds | **Reference only** (no code copied) | none; watched for how they handle Secure Boot, the v3/v4 split (our #382) and the overlay model | 2026-10-03 |
 
 ---
 
 ## RakuOS — reference only
 
 [RakuOS](https://rakuos.org/) is a "hybrid atomic" Fedora distribution
-built on `quay.io/fedora-ostree-desktops/base-atomic`, with the CachyOS
+built on `quay.io/bootc-devel/fedora-bootc-<version>-minimal` (until
+2026-09-13 on `quay.io/fedora-ostree-desktops/base-atomic`; rpm-ostree is
+no longer in their images since that switch), with the CachyOS
 kernel, DKMS modules signed at build time with a MOK key passed as a
 build secret (`build_files/drivers.sh`), chunkah run inside the
 Containerfile (`FROM quay.io/coreos/chunkah AS chunkah`, then
@@ -40,7 +42,7 @@ separate x86-64-v3 / v4 Containerfiles. Sources live on GitLab under
 `rakuos/images/*` and `rakuos/packages/*` (Apache-2.0); the GitHub org
 `RakuOS/*` is a mirror that stopped in 2026-07.
 
-Why we watch it (added 2026-09-01, Daniel's request): it makes the same
+Why we watch it (added 2026-09-01): it makes the same
 three choices Margine made (CachyOS kernel, MOK signing, chunkah) in a
 different order and with a different philosophy on mutability. Things to
 learn from their commit log: how they ship the v3/v4 split (our #382
@@ -274,6 +276,64 @@ implement the cron job.
 ---
 
 ## Review log
+
+### 2026-10-03 (issue #437)
+
+Nine upstreams had new commits since 2026-09-01; Origami, rechunk and the
+sealed-images repo had none. In order of how much it matters to us:
+
+- **Inherited SELinux bug in bluefin-dx, fixed on our side (#439).** The
+  dx package layer pulls a newer `selinux-policy-targeted`, whose RPM
+  restores the stock `/var/home /home` line in `file_contexts.subs_dist`
+  and undoes rpm-ostree's compose fix (ublue-os/bluefin#4976, upstream
+  fix pending in #4979). Confirmed on our image: `matchpathcon ~/.ssh`
+  returned `default_t`, so the first `restorecon` on a home breaks SSH
+  key login. `99-cleanup.sh` now reapplies the rpm-ostree edit and the
+  rootfs validator fails the build if the reversed line comes back.
+- **chunkah v0.7.0 is out (2026-09-28); adopted after measuring (#441).** It
+  contains coreos/chunkah#161, which clamps the ancestor directories of
+  `bigfiles` and `xattr` layers: the problem the mtime normalisation in
+  `99-cleanup.sh` works around. Our workaround stays correct with it. The
+  release also changes the package stability scores (#143), which moves
+  the layer plan, so the first build after the bump will share fewer
+  layers with the previous one, so it was bumped on purpose and measured:
+  an update from the v0.6.0 `:stable` to the v0.7.0 build of the same
+  tree downloads 624 MiB, against 558 MiB for an ordinary v0.6.0 rebuild
+  of the same tree (that baseline is its own problem, #442). A fix landed
+  after the tag (d861f167,
+  chunkah#176) matters only with `SOURCE_DATE_EPOCH`, which we do not
+  pass. chunkah#160 is still open. Renovate did not see `CHUNKAH_REF`
+  (a pinned env value in `build.yml` / `build-lts.yml`); #441 adds a
+  regex manager for it, with automerge off.
+- **Fedora 45 moves the distro `.repo` files** to `/usr/share/dnf5/repos.d`
+  (ublue-os/bluefin#4962). Our scripts only create and delete our own
+  repo files in `/etc/yum.repos.d`, which dnf5 still reads, so nothing
+  changes for us; but Bluefin's dx build fails on F45 until that PR
+  lands, which gates our own move to F45.
+- **Bluefin** otherwise: digest bumps, the README now says "Bluefin
+  Classic", and `bluefin-dx:stable` is still built (44.20260929).
+  ublue-os/bluefin#4973 (`min-free-space-percent` on a 2 TB disk) is a
+  98 % full disk, not the ostree accounting bug we fixed in #401.
+- **RakuOS** moved from `base-atomic` to Fedora bootc minimal and dropped
+  rpm-ostree from its images (their dnf shim replaces it), fixed
+  `bootc container lint` findings (relative `/opt` and `/usr/local`
+  symlinks, emptying `/run` and `/tmp` before the lint), and added an
+  `org.rakuos.fedora.version` label so their software center can react
+  to a Fedora major change. The base switch is the one to watch: it is
+  the path a Margine without Bluefin would take.
+- **OpenGamingCollective** builds USB storage, NVMe and VFAT into the
+  kernel and enables the AMD XDNA driver. Our CachyOS kernel has all of
+  them as modules, which is fine because the initramfs is built
+  `--no-hostonly`; XDNA is loaded on the reference host (`/dev/accel0`).
+- **Bazzite**: a `d3cold` rule for Intel AX200/AX210 (the reference
+  hardware uses MediaTek MT7922), a hibernation helper for handhelds,
+  `msedit` as default editor. Nothing for us.
+- **image-template** moved `remove-unwanted-software` to the same commit
+  we already pin (v10). **CachyOS** shipped 7.2.8 (what we run) and is at
+  7.3-rc5. **MorrOS** added developer tools; the pattern we cite is
+  unchanged.
+
+No change was required in any of the derivations this document records.
 
 ### 2026-08-21 (issue #333)
 

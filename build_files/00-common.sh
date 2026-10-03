@@ -85,6 +85,19 @@ retry() {
 export FEDORA_VER="${FEDORA_VER:-$(rpm -E %fedora 2>/dev/null || echo 44)}"
 export BUILD_DATE="${BUILD_DATE:-$(date -u +%Y%m%d)}"
 
+# SOURCE_DATE_EPOCH for every build step (2026-10-03). rpm >= 4.18 writes
+# it, instead of the wall clock, as the install time of each package it
+# installs, so the rpmdb stops differing between two builds of the same
+# content (it was a layer of its own, 40 MiB, on every update). The value
+# is the newest install time already in the rpmdb: on the first step
+# that is the base image's, and every later step finds the same number
+# (our own installs carry it), so it moves only when the base does.
+# build-margine-extensions.sh computes it the same way.
+if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+  SOURCE_DATE_EPOCH="$(rpm -qa --qf '%{INSTALLTIME}\n' 2>/dev/null | sort -n | tail -n1)"
+  [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]] && export SOURCE_DATE_EPOCH || unset SOURCE_DATE_EPOCH
+fi
+
 # --- Third-party signing keys: verify fingerprints before trusting a repo --
 # Moved here from custom-kernel/install.sh (2026-08-25) so 15-devstack can
 # pin the Docker and Microsoft repo keys the same way. The RPMFusion and

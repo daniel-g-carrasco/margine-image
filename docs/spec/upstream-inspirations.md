@@ -20,7 +20,7 @@ go stale silently.
 | [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-10-03 |
 | [hhd-dev/rechunk](https://github.com/hhd-dev/rechunk) | Post-build re-commit of the OCI image into ostree-canonical form; the GH Action we used until the chunker switch (rpm-ostree, then chunkah on 2026-08-31) | **Former GH Action consumer** (kept in the watch list for the ecosystem signal) | none since 2026-08; history in the "Chunker" note below | 2026-10-03 |
 | [Bazzite](https://github.com/ublue-os/bazzite) | Reference for the *opt-in* gaming layer (their package set + tool choices) — not a base | **Reference only** (no code copied) | `60-custom.just` recipe `margine-gaming` (curated subset of Bazzite's bake) | 2026-10-03 |
-| [coreos/chunkah](https://github.com/coreos/chunkah) | The chunker behind every `:stable` and `:lts` image since 2026-08-31: content-based layers planned from the rpmdb, no `--previous-build` needed | **Tool consumer** (pinned by digest, v0.6.0) | step `Chunk the image` in `build.yml` / `build-lts.yml`; `99-cleanup.sh` mtime normalisation (works around chunkah#160) | 2026-10-03 |
+| [coreos/chunkah](https://github.com/coreos/chunkah) | The chunker behind every `:stable` and `:lts` image since 2026-08-31: content-based layers planned from the rpmdb, no `--previous-build` needed | **Tool consumer** (pinned by tag and digest: v0.6.0, v0.7.0 from #441) | step `Chunk the image` in `build.yml` / `build-lts.yml`; `99-cleanup.sh` mtime normalisation (works around chunkah#160) | 2026-10-03 |
 | [RakuOS](https://gitlab.com/rakuos) (canonical on GitLab; the GitHub org is a stale mirror) | Closest cousin: Fedora bootc minimal (was `base-atomic` until 2026-09-13) + CachyOS kernel + MOK-signed modules + chunkah at build time + persistent dnf overlay ("hybrid atomic"); GNOME/KDE/COSMIC/Niri editions, x86-64-v3/v4 builds | **Reference only** (no code copied) | none; watched for how they handle Secure Boot, the v3/v4 split (our #382) and the overlay model | 2026-10-03 |
 
 ---
@@ -290,18 +290,21 @@ sealed-images repo had none. In order of how much it matters to us:
   returned `default_t`, so the first `restorecon` on a home breaks SSH
   key login. `99-cleanup.sh` now reapplies the rpm-ostree edit and the
   rootfs validator fails the build if the reversed line comes back.
-- **chunkah v0.7.0 is out (2026-09-28); we stay on v0.6.0 for now.** It
+- **chunkah v0.7.0 is out (2026-09-28); adopted after measuring (#441).** It
   contains coreos/chunkah#161, which clamps the ancestor directories of
   `bigfiles` and `xattr` layers: the problem the mtime normalisation in
   `99-cleanup.sh` works around. Our workaround stays correct with it. The
   release also changes the package stability scores (#143), which moves
   the layer plan, so the first build after the bump will share fewer
-  layers with the previous one: bump it on purpose and measure the delta,
-  as for the August switch. A fix landed after the tag (d861f167,
+  layers with the previous one, so it was bumped on purpose and measured:
+  an update from the v0.6.0 `:stable` to the v0.7.0 build of the same
+  tree downloads 624 MiB, against 558 MiB for an ordinary v0.6.0 rebuild
+  of the same tree (that baseline is its own problem, #442). A fix landed
+  after the tag (d861f167,
   chunkah#176) matters only with `SOURCE_DATE_EPOCH`, which we do not
-  pass. chunkah#160 is still open. Renovate does not see `CHUNKAH_REF`
-  (a pinned env value in `build.yml` / `build-lts.yml`), so a new chunkah
-  never surfaces as a PR on its own.
+  pass. chunkah#160 is still open. Renovate did not see `CHUNKAH_REF`
+  (a pinned env value in `build.yml` / `build-lts.yml`); #441 adds a
+  regex manager for it, with automerge off.
 - **Fedora 45 moves the distro `.repo` files** to `/usr/share/dnf5/repos.d`
   (ublue-os/bluefin#4962). Our scripts only create and delete our own
   repo files in `/etc/yum.repos.d`, which dnf5 still reads, so nothing

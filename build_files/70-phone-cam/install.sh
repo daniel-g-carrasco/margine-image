@@ -65,4 +65,11 @@ if /usr/bin/scrcpy --list-camera-sizes 2>&1 | grep -q "Command not found.*adb"; 
   echo "scrcpy cannot find adb — check the ADB env var in the wrapper" >&2
   exit 1
 fi
+# The smoke test above starts an adb server, which generates a key pair
+# in root's home (/var/roothome/.android) and keeps running. Stop it and
+# drop the keys: otherwise every system installed from the same build
+# shares one adb private key, and the fresh pair made each build moved a
+# whole image layer on every update (found 2026-10-03).
+/usr/bin/adb kill-server >/dev/null 2>&1 || true
+rm -rf /root/.android /var/roothome/.android
 log "scrcpy $( /usr/bin/scrcpy --version | head -1 ) installed"

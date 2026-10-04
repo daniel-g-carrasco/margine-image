@@ -946,7 +946,9 @@ margine-secureboot ACTION="status":
         echo
         case "$key:$sb" in
           enrolled:*enabled*)
-            echo "All set: Secure Boot is on and Margine's kernel is trusted." ;;
+            echo "All set: Secure Boot is on and Margine's kernel is trusted."
+            echo "If the disk unlocks with the TPM, also lock the boot menu:"
+            echo "  ujust margine-grub-lock        (shows whether it is already on)" ;;
           enrolled:*)
             echo "Ready to turn Secure Boot on:"
             echo "  1. If the disk unlocks with the TPM, keep the disk passphrase at hand:"
@@ -974,6 +976,11 @@ margine-secureboot ACTION="status":
 [group('Margine')]
 margine-tpm-unlock ACTION="status" PCRS="7":
     sudo /usr/bin/margine-tpm-unlock "{{ ACTION }}" "{{ PCRS }}"
+
+# Lock the GRUB menu: booting stays free, editing it needs a password (status/on/off).
+[group('Margine')]
+margine-grub-lock ACTION="status":
+    @sudo /usr/libexec/margine/grub-lock "{{ ACTION }}"
 
 # Re-apply the HiDPI GRUB font + grub.cfg now (safe, idempotent).
 [group('Margine')]

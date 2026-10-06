@@ -36,13 +36,30 @@ import shutil
 import stat
 import sys
 
-SECRET_RE = re.compile(
-    rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----"
-    rb"|\bgh[pousr]_[A-Za-z0-9]{36,}\b"
+# A PEM/armored private key only counts when key material follows the
+# header: ImageMagick's mime.xml carries "-----BEGIN PGP PRIVATE KEY
+# BLOCK-----" as a file-type magic string, and it is not a key.
+PEM_RE = re.compile(rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |PGP )?PRIVATE KEY(?: BLOCK)?-----")
+PEM_BODY_RE = re.compile(rb"[A-Za-z0-9+/=]{40,}")
+TOKEN_RE = re.compile(
+    rb"\bgh[pousr]_[A-Za-z0-9]{36,}\b"
     rb"|\bgithub_pat_[A-Za-z0-9_]{60,}\b"
     rb"|\bAKIA[0-9A-Z]{16}\b"
     rb"|\bxox[abposr]-[A-Za-z0-9-]{10,}\b"
 )
+
+
+def find_secret(data):
+    """First real-looking secret in data, or None."""
+    for m in PEM_RE.finditer(data):
+        if PEM_BODY_RE.search(data, m.end(), m.end() + 800):
+            return m.group(0)
+    for m in TOKEN_RE.finditer(data):
+        # AWS's documented example key (AKIAIOSFODNN7EXAMPLE) is everywhere
+        # in SDK docs; real access key IDs never end in EXAMPLE.
+        if not m.group(0).endswith(b"EXAMPLE"):
+            return m.group(0)
+    return None
 SECRET_SCAN_ALWAYS = ("etc/", "var/", "root/", "usr/local/")
 SECRET_MAX_BYTES = 1 << 20
 
@@ -75,7 +92,11 @@ def walk(root, top=""):
         rel = os.path.relpath(dirpath, root)
         rel = "" if rel == "." else rel + "/"
         # never cross into other mounts; skip pseudo filesystems if present
-        dirnames[:] = [d for d in dirnames if not (rel == "" and d in ("proc", "sys", "dev"))]
+        # sysroot/ostree is a content-addressed copy of the base's files
+        # (each object is the same file as a real path under usr), and the
+        # chunker prunes /sysroot/ before publishing: scanning it would only
+        # report every package file a second time under a hash name.
+        dirnames[:] = [d for d in dirnames if not (rel == "" and d in ("proc", "sys", "dev", "sysroot"))]
         for name in dirnames + filenames:
             yield rel + name
 
@@ -97,11 +118,11 @@ def scan_secrets(root, owned):
             continue
         try:
             with open(os.path.join(root, rel), "rb") as f:
-                m = SECRET_RE.search(f.read())
+                found = find_secret(f.read())
         except OSError:
             continue
-        if m:
-            hits.append(f"{rel}: {m.group(0)[:40].decode(errors='replace')}")
+        if found:
+            hits.append(f"{rel}: {found[:40].decode(errors='replace')}")
     for rel in sorted(walk(root, "etc/ssh")) if os.path.isdir(os.path.join(root, "etc/ssh")) else []:
         if re.search(r"ssh_host_[a-z0-9]+_key$", rel):
             hits.append(f"{rel}: ssh host key baked into the image")

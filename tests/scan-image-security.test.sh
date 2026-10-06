@@ -15,7 +15,7 @@ fresh() {
   ln -s var/roothome "$R/root"
   : > "$T/owned"
 }
-key() { printf -- '-----BEGIN PRIVATE KEY-----\nMIIabc\n-----END PRIVATE KEY-----\n' > "$1"; }
+key() { printf -- '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\n-----END PRIVATE KEY-----\n' > "$1"; }
 run() { rc=0; python3 "$SCAN" --rootfs "$R" --owned "$T/owned" --baseline "$B" --report "$T/report" ${1:-} || rc=$?; }
 expect() {  # name expected-rc
   if [ "$rc" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1: rc=$rc (want $2)"; sed 's/^/     /' "$T/report"; fails=$((fails+1)); fi
@@ -45,6 +45,16 @@ fresh; run "--write-baseline $B"; mkdir -p "$R/run/build"; touch "$R/run/build/l
                                                                         expect "build residue in /run: drift" 1
 fresh; run "--write-baseline $B"; mkdir -p "$R/etc/w"; chmod 0777 "$R/etc/w"; run
                                                                         expect "world-writable dir without sticky bit in etc: drift" 1
+
+fresh; mkdir -p "$R/etc/ImageMagick-7"; printf '<mime type="application/pgp-keys" magic="-----BEGIN PGP PRIVATE KEY BLOCK-----" priority="50"/>\n' > "$R/etc/ImageMagick-7/mime.xml"
+       run "--write-baseline $B"; run;                                  expect "key header as a magic string (ImageMagick mime.xml): not a secret" 0
+fresh; mkdir -p "$R/etc/aws"; printf 'aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n' > "$R/etc/aws/docs.conf"; run "--write-baseline $B"; run
+                                                                        expect "AWS documented example key: not a secret" 0
+fresh; mkdir -p "$R/etc/aws"; printf 'aws_access_key_id = AKIA2E0A8F3B244C9986\n' > "$R/etc/aws/creds"; run "--write-baseline $B"; run
+                                                                        expect "real-looking AWS key in etc: secret" 2
+fresh; mkdir -p "$R/sysroot/ostree/repo/objects/05"; key "$R/sysroot/ostree/repo/objects/05/abc.file"; chmod 4755 "$R/sysroot/ostree/repo/objects/05/abc.file"
+       run "--write-baseline $B"; run;                                  expect "sysroot/ostree object store (pruned before publishing): ignored" 0
+grep -q sysroot "$B/privileged.txt" && { echo "FAIL sysroot object listed as privileged"; fails=$((fails+1)); } || echo "ok   sysroot not in the privileged list"
 
 if (( fails )); then echo "$fails scan case(s) failed"; exit 1; fi
 echo "all image security scan cases passed"

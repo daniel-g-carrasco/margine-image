@@ -1,0 +1,24 @@
+/*
+ * Margine CPU scheduler — ask once, not on every change.
+ *
+ * The picker (and `ujust margine-scheduler`) apply a scheduler through one
+ * privileged helper, /usr/libexec/margine/scheduler-apply, run via pkexec.
+ * Without a rule, pkexec's org.freedesktop.policykit.exec action is plain
+ * auth_admin (re-prompts every single time). Scope an auth_admin_keep just to
+ * that one helper for an active local session, so the first change in a session
+ * prompts once and subsequent changes reuse the cached authorization — the same
+ * posture scx_loader itself uses for org.scx.loader.manage-schedulers.
+ *
+ * This is narrow on purpose: it only relaxes the prompt for our fixed,
+ * non-parameterised-path helper, not for pkexec in general.
+ */
+polkit.addRule(function (action, subject) {
+  if (
+    action.id == "org.freedesktop.policykit.exec" &&
+    action.lookup("program") == "/usr/libexec/margine/scheduler-apply" &&
+    subject.local &&
+    subject.active
+  ) {
+    return polkit.Result.AUTH_ADMIN_KEEP;
+  }
+});

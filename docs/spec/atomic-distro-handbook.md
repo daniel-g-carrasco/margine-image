@@ -2983,14 +2983,17 @@ Because Margine derives from Bluefin DX, the base image already ships a populate
 > Verify `/etc/containers/policy.json` allows your registry path with `cosign` verification, not just `insecureAcceptAnything`. This is what makes `bootc switch --enforce-container-sigpolicy ghcr.io/daniel-g-carrasco/margine:stable` *actually* verify, not just succeed.
 > `docs/spec/audits/2026-06-05-margine-stack-audit.md`
 
-The same audit section cites the cautionary upstream incident: ublue-os/bluefin#4197 (2026-02-12), where `bluefin-dx:stable` shipped *without* `/etc/pki/containers/ublue-os.pub`, breaking `bootc upgrade` for every downstream consumer enforcing signature policy. Policy enforcement cuts both ways: if the key file is missing from the image, verified updates brick themselves. Margine's end-to-end check of this path on a booted install is tracked as deferred in the audit status delta (`2026-06-05-margine-stack-audit-status-delta.md`: "Verify `/etc/pki/containers/<key>.pub` + policy.json (§6.5) … ⏸ Deferred: needs a running install"), and `docs/spec/roadmap.md` keeps the honest TODO:
+The same audit section cites the cautionary upstream incident: ublue-os/bluefin#4197 (2026-02-12), where `bluefin-dx:stable` shipped *without* `/etc/pki/containers/ublue-os.pub`, breaking `bootc upgrade` for every downstream consumer enforcing signature policy. Policy enforcement cuts both ways: if the key file is missing from the image, verified updates brick themselves.
 
-```text
-- ⏳ Move the `:stable` redirect to a *signed cosign verification* on
-  the user side (today `bootc` trusts the registry; we could
-  configure rpm-ostree's `verify-by-key` to enforce cosign at the
-  client). Defense in depth.
-```
+### Shipped on 2026-10-06, and the trap on the way
+
+Until that date no Margine device verified anything. `policy.json` had no scope for `ghcr.io/daniel-g-carrasco/margine`, so pulls fell through to the docker catch-all `insecureAcceptAnything`; ISO installs followed `ostree-unverified-registry:` (the installer's `bootc switch` lacked `--enforce-container-sigpolicy`), and even hosts rebased by hand to `ostree-image-signed:` updated happily with nothing checked.
+
+The trap: CI signed with cosign 3, which writes only the new sigstore bundle, attached as an OCI referrer. containers/image (skopeo, podman, rpm-ostree, bootc) only reads the classic `sha256-<digest>.sig` attachment. With a correct policy and key, `skopeo copy` of a properly signed Margine image answered *"A signature was required, but no signature exists"*: turning the policy on as-is would have stopped every update on every device. The fix, in this order:
+
+1. CI signs twice: the default bundle, and a classic signature with `cosign sign --new-bundle-format=false --use-signing-config=false` (same key, same digest).
+2. smoke-boot refuses to promote a digest without a valid classic signature (`cosign verify --key secrets/cosign.pub --new-bundle-format=false`). That gate also catches a skipped sign job, which is how two unsigned images reached `:stable` on 2026-10-06.
+3. Only then the device side: `build_files/16-image-trust` adds the Margine scope to `policy.json` (next to the base's `ghcr.io/ublue-os` one, never replacing the file), `system_files` ships `/usr/lib/pki/containers/margine.pub` and `registries.d/margine.yaml`, the installer switches with `--enforce-container-sigpolicy`, and `margine-signed-origin.service` moves existing unverified installs with an `rpm-ostree rebase` to `ostree-image-signed:`, which verifies before staging anything. Lint fails if the shipped key ever differs from `secrets/cosign.pub`; the rootfs validator fails without the scope, the key, the registries.d entry or the service.
 
 ### The `ostree-image-signed:` transport
 
@@ -3006,7 +3009,7 @@ rpm-ostree's container transports encode the trust decision in the ref itself:
 | Transport | Behavior |
 |---|---|
 | `ostree-unverified-registry:` / `ostree-unverified-image:` | Pull, no signature check (TLS only) |
-| `ostree-image-signed:docker://...` | Pull **fails** if the policy for that scope resolves to `insecureAcceptAnything` — i.e. it requires that a real verification policy exists and passes |
+| `ostree-image-signed:docker://...` | Pull checks the signature against `/etc/containers/policy.json` for that scope. With no scope the catch-all applies: on Bluefin-derived images that is `insecureAcceptAnything`, and the pull **succeeds without checking anything** |
 | `ostree-remote-image:<remote>:...` | Verify GPG against an ostree remote config (legacy commit-signing path) |
 
 Putting `ostree-image-signed:` in the user-facing docs means the deployment origin file records the signed transport, and every subsequent `rpm-ostree upgrade`/`bootc upgrade` on that origin re-verifies. `bootc switch --enforce-container-sigpolicy` is the bootc-native equivalent. Per the SBOM revisit plan: "Consumer verification flow (`bootc switch --enforce-container-sigpolicy`) works on cosign-by-digest alone". The SBOM is hygiene, the image signature is the actual trust gate.

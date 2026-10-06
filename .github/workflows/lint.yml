@@ -88,6 +88,17 @@ jobs:
         # and removes is tested, not assumed. See tests/grub-lock.test.sh.
         run: bash tests/grub-lock.test.sh
 
+      - name: Signed transport migration helper
+        # Moves unverified installs to ostree-image-signed:. What it leaves
+        # alone (other images, no policy, failed verification) is tested.
+        run: bash tests/signed-origin.test.sh
+
+      - name: Shipped public key is the signing key
+        # Devices verify against the copy in system_files; CI signs with the
+        # private half of secrets/cosign.pub. If they ever differ, every
+        # update on every device fails verification.
+        run: cmp secrets/cosign.pub build_files/system_files/usr/lib/pki/containers/margine.pub
+
       - name: ruff (python build helpers)
         # Pinned: an unpinned `pipx run ruff` broke every PR when 0.16.0
         # widened the default rules (2026-07-23). Rules are locked in

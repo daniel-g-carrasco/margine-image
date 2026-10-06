@@ -1,0 +1,13 @@
+[Unit]
+Description=Margine security smoke probe (gating)
+# multi-user is enough: no check needs the graphical session. The GUI
+# probe orders itself After= this unit, because it powers the VM off.
+After=multi-user.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Let late services open their sockets before the listener check.
+ExecStartPre=/bin/sleep 30
+ExecStart=/etc/margine-smoke/security-probe.sh
+TimeoutStartSec=15min

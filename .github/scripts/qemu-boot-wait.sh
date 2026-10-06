@@ -17,6 +17,7 @@
 set -euo pipefail
 
 MODE="" IMAGE="" LOG="serial.log" TIMEOUT=1800 GUI_WATCH=0 MEM=4096
+SB_VARS="" TPM=0 SEC_WATCH=0
 KERNEL="" INITRD="" APPEND=""
 OK_REGEX='Started.*gdm\.service|Reached target graphical\.target|margine login:'
 FAIL_REGEX=""
@@ -33,6 +34,12 @@ while [[ $# -gt 0 ]]; do
     --initrd) INITRD="$2"; shift 2 ;;
     --append) APPEND="$2"; shift 2 ;;
     --gui-watch) GUI_WATCH=1; shift ;;
+    # Secure Boot enforcing with the given variable store (Microsoft keys
+    # plus the Margine key in MokList, prepared by the caller).
+    --secure-boot) SB_VARS="$2"; shift 2 ;;
+    --tpm) TPM=1; shift ;;
+    # Gate on the security probe's MARGINE-SEC-SMOKE verdict.
+    --sec-watch) SEC_WATCH=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -55,8 +62,33 @@ if [[ -z "$OVMF_CODE" || -z "$OVMF_VARS_SRC" ]]; then
   echo "✗ OVMF firmware not found. Files present:"; ls -la /usr/share/OVMF/; exit 1
 fi
 cp "$OVMF_VARS_SRC" ovmf_vars.fd
+MACHINE=q35
+SB_ARGS=()
+if [[ -n "$SB_VARS" ]]; then
+  # Secure Boot (2026-10-07): until now SB was "exercised on the hardware
+  # lab VM", i.e. never in CI, and a kernel signature no device could boot
+  # would have been promoted. SB firmware needs SMM and a secure flash.
+  # kernel-irqchip=split: with the default in-kernel irqchip the guest
+  # stalled at the GRUB countdown under SB firmware on an AMD host
+  # (local harness, 2026-10-04).
+  OVMF_CODE=""
+  for c in /usr/share/OVMF/OVMF_CODE_4M.secboot.fd /usr/share/OVMF/OVMF_CODE.secboot.fd; do
+    [[ -f "$c" ]] && OVMF_CODE="$c" && break
+  done
+  [[ -n "$OVMF_CODE" && -f "$SB_VARS" ]] || { echo "✗ Secure Boot firmware or vars missing"; ls -la /usr/share/OVMF/; exit 1; }
+  cp "$SB_VARS" ovmf_vars.fd
+  MACHINE="q35,smm=on,kernel-irqchip=split"
+  SB_ARGS=(-global "driver=cfi.pflash01,property=secure,value=on")
+fi
 chmod 0644 ovmf_vars.fd
-echo "Using OVMF_CODE=$OVMF_CODE OVMF_VARS=$OVMF_VARS_SRC"
+echo "Using OVMF_CODE=$OVMF_CODE vars=${SB_VARS:-$OVMF_VARS_SRC}"
+TPM_ARGS=()
+if (( TPM )); then
+  TPMDIR="$(mktemp -d)"
+  swtpm socket --tpm2 --terminate --tpmstate dir="$TPMDIR" --ctrl type=unixio,path="$TPMDIR/sock" --daemon \
+    || { echo "✗ swtpm failed to start"; exit 1; }
+  TPM_ARGS=(-chardev "socket,id=chrtpm,path=$TPMDIR/sock" -tpmdev "emulator,id=tpm0,chardev=chrtpm" -device "tpm-tis,tpmdev=tpm0")
+fi
 
 MEDIA_ARGS=()
 if [[ "$MODE" == "disk" ]]; then
@@ -80,7 +112,9 @@ rm -f qemu.pid "$LOG"
 qemu-system-x86_64 \
   -enable-kvm \
   -m "$MEM" -smp 4 \
-  -machine q35 \
+  -machine "$MACHINE" \
+  "${SB_ARGS[@]}" \
+  "${TPM_ARGS[@]}" \
   -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" \
   -drive if=pflash,format=raw,file=ovmf_vars.fd \
   "${MEDIA_ARGS[@]}" \
@@ -105,6 +139,7 @@ cleanup() {
 trap cleanup EXIT
 
 BOOT_OK=""
+SEC_RESULT=""
 GUI_RESULT=""
 GAMING_RESULT=""
 GUI_DEADLINE=0
@@ -141,10 +176,17 @@ for (( i = 1; i <= TIMEOUT; i++ )); do
     [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: PASS" "$LOG" && GAMING_RESULT=pass
     [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: FAIL" "$LOG" && GAMING_RESULT=fail
     [[ -z "$GAMING_RESULT" ]] && grep -q "MARGINE-GAMING-NATIVE: SKIP" "$LOG" && GAMING_RESULT=skip
-    if [[ -n "$GUI_RESULT" && -n "$GAMING_RESULT" ]]; then break; fi
+    if (( SEC_WATCH )); then
+      [[ -z "$SEC_RESULT" ]] && grep -q "MARGINE-SEC-SMOKE: PASS" "$LOG" && SEC_RESULT=pass
+      [[ -z "$SEC_RESULT" ]] && grep -q "MARGINE-SEC-SMOKE: FAIL" "$LOG" && SEC_RESULT=fail
+    else
+      SEC_RESULT=off
+    fi
+    if [[ -n "$GUI_RESULT" && -n "$GAMING_RESULT" && -n "$SEC_RESULT" ]]; then break; fi
     if (( i > GUI_DEADLINE )); then
       [[ -z "$GUI_RESULT" ]] && GUI_RESULT=timeout
       [[ -z "$GAMING_RESULT" ]] && GAMING_RESULT=timeout
+      [[ -z "$SEC_RESULT" ]] && SEC_RESULT=timeout
       break
     fi
   fi
@@ -162,6 +204,20 @@ if [[ -n "$BOOT_OK" ]]; then
       fail) echo "::warning::Layer C GUI probe FAILED — graphical session unhealthy (extensions/coredump). See serial log artifact. This will become gating." ;;
       *)    echo "::warning::Layer C GUI probe gave no verdict (injection skipped or probe stuck) — see inject step + serial log." ;;
     esac
+
+    # ---- Security probe verdict: GATING, including "no verdict" ----
+    # (2026-10-07) A security gate that passes when its probe never ran
+    # protects nothing, so timeout and missing verdicts fail too.
+    if (( SEC_WATCH )); then
+      grep -E "MARGINE-SEC" "$LOG" | sed 's/^.*MARGINE-SEC/MARGINE-SEC/' | sort -u || true
+      emit "sec=${SEC_RESULT:-none}"
+      if [[ "$SEC_RESULT" != pass ]]; then
+        echo "::error::Security smoke probe: ${SEC_RESULT:-no verdict}. GATING: not promoting. Each MARGINE-SEC FAIL line above names the broken promise."
+        emit "passed=false"
+        exit 1
+      fi
+      echo "✓ Security smoke probe: PASS"
+    fi
 
     # ---- Gaming-native dry-run verdict — GATING on FAIL ----
     # (2026-09-02, after the RetroArch/retroarch depsolve broke

@@ -154,6 +154,26 @@ install -m 0755 "$SMOKE_DIR/gui-probe.sh" "$ETC/margine-smoke/gui-probe.sh"
 install -m 0644 "$SMOKE_DIR/margine-gui-smoke.service" "$ETC/systemd/system/margine-gui-smoke.service"
 ln -sf ../margine-gui-smoke.service "$ETC/systemd/system/graphical.target.wants/margine-gui-smoke.service"
 
+# 3a. Security probe (GATING, 2026-10-07). Lives in multi-user.target.wants:
+#     it is After=multi-user.target only, so there is no ordering cycle.
+#     The image reference under test comes from the caller (IMAGE_REF), so
+#     the probe verifies the signature of exactly the digest being booted.
+#     The GUI probe powers the VM off when it is done, so it must wait for
+#     this one: a drop-in orders it after the security probe.
+if [[ -f "$SMOKE_DIR/security-probe.sh" && -f "$SMOKE_DIR/margine-security-smoke.service" ]]; then
+  install -m 0755 "$SMOKE_DIR/security-probe.sh" "$ETC/margine-smoke/security-probe.sh"
+  install -m 0644 "$SMOKE_DIR/listeners-allow.txt" "$ETC/margine-smoke/listeners-allow.txt"
+  printf '%s\n' "${IMAGE_REF:-}" > "$ETC/margine-smoke/image-ref"
+  install -m 0644 "$SMOKE_DIR/margine-security-smoke.service" "$ETC/systemd/system/margine-security-smoke.service"
+  mkdir -p "$ETC/systemd/system/multi-user.target.wants" "$ETC/systemd/system/margine-gui-smoke.service.d"
+  ln -sf ../margine-security-smoke.service "$ETC/systemd/system/multi-user.target.wants/margine-security-smoke.service"
+  printf '[Unit]\nAfter=margine-security-smoke.service\n' > "$ETC/systemd/system/margine-gui-smoke.service.d/10-after-security.conf"
+  echo "security probe injected (image ref: ${IMAGE_REF:-none})"
+else
+  echo "::error::security probe payloads missing under $SMOKE_DIR"
+  exit 1
+fi
+
 # 3b. User-smoke SOFT identity probe (warn-only, promotion never blocked).
 #     Guarded: if its payloads are absent, warn and skip — the Layer C GUI
 #     injection above is unaffected. The wants-symlink goes in

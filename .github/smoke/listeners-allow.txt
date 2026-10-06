@@ -1,0 +1,9 @@
+# Non-loopback listeners a fresh Margine install is expected to have,
+# "proto port", one per line. Anything else listening on a non-loopback
+# address fails the security smoke probe. Each line needs a reason.
+#
+# systemd-resolved LLMNR (Fedora default; see docs/SECURITY.md register)
+tcp 5355
+udp 5355
+# avahi-daemon mDNS (printer and device discovery)
+udp 5353

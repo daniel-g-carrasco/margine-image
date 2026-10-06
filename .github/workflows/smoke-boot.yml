@@ -38,6 +38,11 @@ on:
         description: 'OCI ref to smoke-boot (default: :candidate)'
         required: false
         default: 'ghcr.io/daniel-g-carrasco/margine:candidate'
+      promote:
+        description: 'Promote to :stable if every gate passes (false = test only, e.g. an old image)'
+        type: boolean
+        required: false
+        default: true
   # Auto-trigger after every successful Build Margine image on main.
   # The guard `if: github.event.workflow_run.conclusion == 'success'`
   # on the job ensures we don't waste a runner on cancelled / failed
@@ -141,7 +146,9 @@ jobs:
           # qemu-utils = qemu-nbd (NOT pulled by qemu-system-x86), parted =
           # partprobe, util-linux = partx — all needed by the Layer C
           # inject-gui-probe nbd partition exposure (2026-06-13 hardening).
-          apt_retry install -y -qq qemu-system-x86 qemu-utils ovmf swtpm parted util-linux
+          # swtpm-tools + python3-virt-firmware: software TPM and the
+          # firmware variable store for the Secure Boot boot (2026-10-07).
+          apt_retry install -y -qq qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools python3-virt-firmware parted util-linux
           # Verify KVM
           ls -la /dev/kvm || true
           kvm-ok 2>&1 || true
@@ -218,6 +225,22 @@ jobs:
       # WARN-ONLY for now — flip to gating after two green runs.
       # Injection failures must never block the Layer B gate: every
       # step is guarded and ends with a ::warning:: at worst.
+      # Secure Boot for the boot test (2026-10-07). Firmware variables with
+      # Microsoft's keys (what a PC ships with) plus the Margine key in
+      # MokList (what an enrolled install has). The key is read from the
+      # image under test itself, so a key/signature mismatch fails here.
+      - name: Prepare Secure Boot variables (Microsoft keys + Margine MOK)
+        env:
+          IMG: ${{ steps.ref.outputs.pinned }}
+        run: |
+          set -euo pipefail
+          sudo podman run --rm --entrypoint /usr/bin/cat "$IMG" /usr/share/cert/MOK.der | cat > MOK.der
+          openssl x509 -inform DER -in MOK.der -noout -subject
+          openssl x509 -inform DER -in MOK.der -out MOK.pem
+          virt-fw-vars --input /usr/share/OVMF/OVMF_VARS_4M.ms.fd --output sb-vars.fd \
+            --add-mok 605dab50-e046-4300-abb6-3dd810dd8b23 MOK.pem
+          virt-fw-vars --input sb-vars.fd --print | grep -E "SecureBootEnable|MokList" || true
+
       - name: Inject GUI smoke probe (Layer C)
         id: inject
         continue-on-error: true
@@ -227,7 +250,9 @@ jobs:
         run: |
           set -euo pipefail
           QCOW=$(ls output/qcow2/*.qcow2 | head -1)
-          sudo .github/scripts/inject-gui-probe.sh "$QCOW"
+          # IMAGE_REF: the security probe verifies the signature of exactly
+          # this digest through the device's own policy.
+          sudo IMAGE_REF="${{ steps.ref.outputs.pinned }}" .github/scripts/inject-gui-probe.sh "$QCOW"
 
 
       - name: Boot qcow2 in QEMU and wait for a usable state
@@ -248,7 +273,10 @@ jobs:
             --disk "$QCOW" \
             --log serial.log \
             --timeout 1800 \
-            --gui-watch
+            --gui-watch \
+            --secure-boot sb-vars.fd \
+            --tpm \
+            --sec-watch
 
       # User-smoke SOFT gate (2026-06-14): summarize the warn-only
       # MARGINE-USER-SMOKE identity markers the injected probe wrote to
@@ -373,7 +401,9 @@ jobs:
           echo "Signature OK (classic format, Margine key): ${PINNED}"
 
       - name: Promote candidate → stable (only if boot passed)
-        if: success() && steps.boot.outputs.passed == 'true'
+        # promote=false (manual runs only) tests an image without touching
+        # :stable, e.g. to prove a gate rejects an old, broken image.
+        if: success() && steps.boot.outputs.passed == 'true' && github.event.inputs.promote != 'false'
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,6 +44,7 @@ monthly review lists it until then.
 | D1 | TPM unlock against an attacker with the laptop in hand | TPM + PIN (`--tpm2-with-pin`), passphrase only, or a signed UKI with a PCR 11 policy (ADR-0007) | 2026-10-31 |
 | D2 | Default firewall zone | keep `FedoraWorkstation` (high ports open, Fedora default) or ship a stricter Margine zone | 2026-10-31 |
 | D3 | LLMNR (systemd-resolved, port 5355 on all interfaces) | keep the Fedora default or turn it off | 2026-11-30 |
+| D4 | `tailscaled` is enabled by default (inherited from Bluefin) and opens a UDP port on all interfaces | keep it (zero-setup VPN) or ship it disabled, enabled by the user when they log in to Tailscale | 2026-10-31 |
 
 ## Engineering items
 
@@ -54,6 +55,7 @@ monthly review lists it until then.
 | E3 | Boot the smoke VM enforcing: label the injected test files instead of `enforcing=0` | 2026-11-30 | open |
 | E4 | Periodic double build to keep C13 verified | 2026-11-30 | open |
 | E5 | CI install from the ISO with LUKS and TPM unlock, to verify C10 and C11 end to end | 2026-12-31 | open |
+| E6 | Attack-surface review of the setuid/capability set the base ships (`.github/security-baseline/privileged.txt`): e.g. `ksu`, `fusermount-glusterfs`, `vmware-user-suid-wrapper`, `suexec` serve few desktops; drop what Margine does not need | 2026-11-30 | open |
 
 ## Why this file exists
 

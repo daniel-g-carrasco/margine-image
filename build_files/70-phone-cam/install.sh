@@ -22,7 +22,7 @@ log "Installing phone-cam dependencies (android-tools, gtk4 gst sink)"
 dnf -y install --no-docs --setopt=install_weak_deps=False \
   android-tools gstreamer1-plugin-gtk4
 
-SCRCPY_VERSION=4.1
+SCRCPY_VERSION=5.0
 SCRCPY_SHA256=ad56ae8bfeedf41e824945c11dbf55fcb092b3e615b9b486f48a50e30d389635
 SCRCPY_TAR="scrcpy-linux-x86_64-v${SCRCPY_VERSION}.tar.gz"
 

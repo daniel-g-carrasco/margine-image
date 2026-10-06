@@ -836,7 +836,17 @@ check_gaming_flatpak() {
 if rpm -q steam >/dev/null 2>&1; then
   # steam as an RPM only arrives via the native recipe.
   info "Gaming layer detected (NATIVE variant) — validating native set"
-  for r in steam lutris retroarch "${GAMING_CORE_RPMS[@]}"; do
+  # The package set comes from the list the recipe installs from, not a
+  # copy here: the copy said "retroarch" after #407 renamed the package to
+  # RetroArch (rpm names are case-sensitive), so every complete native
+  # layer failed this check (2026-10-07).
+  native_list=/usr/share/margine/gaming-native-packages.txt
+  if [[ -r "$native_list" ]]; then
+    mapfile -t native_rpms < <(grep -vE '^[[:space:]]*(#|$)' "$native_list")
+  else
+    native_rpms=(steam lutris RetroArch "${GAMING_CORE_RPMS[@]}")
+  fi
+  for r in "${native_rpms[@]}"; do
     check_gaming_rpm "$r" "ujust margine-gaming-native"
   done
   for fp in "${GAMING_FLATPAKS_COMMON[@]}"; do

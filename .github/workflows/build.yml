@@ -843,6 +843,13 @@ jobs:
   sign:
     name: Cosign sign (by digest) + SBOM attach + sign
     needs: build_push
+    # Explicit condition, NOT the implicit success(): build_push needs
+    # the `pins` job, which is skipped on every push to main, and GitHub
+    # skips any job with the implicit condition when an ancestor was
+    # skipped. That is how two images went out UNSIGNED on 2026-10-06
+    # (17:31 and 18:31 builds) and were promoted to :stable. smoke-boot
+    # now refuses to promote an image without a valid signature.
+    if: ${{ !cancelled() && needs.build_push.result == 'success' }}
     runs-on: ubuntu-26.04
     # 30 min: cosign sign is ~10s, but syft on the 14 GB Margine image
     # is 5-8 min (RPM database scan + Flatpak inventory + OCI layer
@@ -899,6 +906,16 @@ jobs:
           fi
           echo "Signing: ${IMAGE_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REF}"
+          # Second signature in the classic format (a `sha256-<digest>.sig`
+          # tag). cosign 3 writes only the new sigstore bundle (an OCI
+          # referrer), which containers/image cannot see: skopeo, podman,
+          # rpm-ostree and bootc on the device answered "A signature was
+          # required, but no signature exists" for a correctly signed
+          # Margine image (2026-10-06). The classic signature is the one
+          # devices verify, and the one smoke-boot checks before :stable.
+          # Same key, same digest; tested with cosign 3.0.6 and skopeo 1.22.
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY \
+            --new-bundle-format=false --use-signing-config=false "${IMAGE_REF}"
 
       # ----- SBOM attach + sign (artifact handoff from build_push) -----
       # SBOM was generated inside build_push from local container storage

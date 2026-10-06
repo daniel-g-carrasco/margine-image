@@ -1043,6 +1043,15 @@ jobs:
             PRIO="high"
             TAGS="x,closed_lock_with_key"
             MSG="The image is on GHCR but unsigned. Retry just the sign job: gh run rerun --failed ${{ github.run_id }}"
+          elif [[ "$BUILD_RESULT" == "success" && "$SIGN_RESULT" != "cancelled" ]]; then
+            # Image pushed, signature not written (sign skipped or in an
+            # unexpected state). On 2026-10-06 this reached the old neutral
+            # "Build status" branch at default priority while two unsigned
+            # images were promoted. It is an alarm.
+            TITLE="Build UNSIGNED → image pushed, sign ${SIGN_RESULT}"
+            PRIO="high"
+            TAGS="x,closed_lock_with_key"
+            MSG="The image is on GHCR without a signature (sign job: ${SIGN_RESULT}). smoke-boot will refuse to promote it. Check the job conditions in build.yml."
           elif [[ "$BUILD_RESULT" == "cancelled" || "$SIGN_RESULT" == "cancelled" ]]; then
             TITLE="Build cancelled"
             PRIO="low"

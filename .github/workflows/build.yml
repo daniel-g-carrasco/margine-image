@@ -147,11 +147,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pins:
+    name: Pinned checksums in sync
+    # Renovate bumps o-tiling, scrcpy and wayland-scroll-factor by version
+    # only: hosted Renovate cannot hash a release asset, so its commit keeps
+    # the OLD *_SHA256 and the build was bound to fail `sha256sum -c` a
+    # minute before the matching *-pin-sha.yml workflow committed the right
+    # hash. Seven red builds (and red ntfy alerts) in two months for an
+    # expected, self-healing state (2026-10-06). On a Renovate PR this job
+    # compares each pin with the PR base: VERSION changed but SHA256 not =
+    # the sync has not landed yet, so the build and its notification wait
+    # for the next commit instead of failing.
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      synced: ${{ steps.check.outputs.synced }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare version and checksum pins with the PR base
+        id: check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          synced=true
+          while read -r file name; do
+            pin() { grep -E "^${name}_$2=" <(git show "$1:$file" 2>/dev/null) | head -n1 || true; }
+            if [ "$(pin "$BASE" VERSION)" != "$(pin HEAD VERSION)" ] \
+               && [ "$(pin "$BASE" SHA256)" = "$(pin HEAD SHA256)" ]; then
+              echo "::notice::${name}: version bumped, checksum not synced yet; the *-pin-sha workflow commits it next, the build runs on that commit"
+              synced=false
+            fi
+          done <<'PINS'
+          build_files/build-margine-extensions.sh OTILING
+          build_files/70-phone-cam/install.sh SCRCPY
+          build_files/45-wsf/install.sh WSF
+          PINS
+          echo "synced=$synced" >> "$GITHUB_OUTPUT"
+          echo "pins synced: $synced"
+
   build_push:
     name: Build + rechunk + push
     # On pull_request, only build for PRs explicitly labeled `vm-test`.
     # All other PRs (docs, CI tweaks, etc.) skip the 30-min image build.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test')
+    # needs.pins is skipped outside Renovate PRs (output empty, so this
+    # holds); !cancelled() keeps a skipped `pins` from skipping the build.
+    needs: pins
+    if: >-
+      !cancelled()
+      && needs.pins.outputs.synced != 'false'
+      && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'vm-test'))
     runs-on: ubuntu-26.04
     # 120 (2026-08-24), and this number now comes from a distribution
     # rather than from one lucky run.
@@ -934,11 +986,13 @@ jobs:
 
   notify:
     name: ntfy notification
-    needs: [build_push, sign]
+    needs: [pins, build_push, sign]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
-    # Run after both upstream jobs settle, regardless of their outcome.
-    if: always()
+    # Run after both upstream jobs settle, regardless of their outcome;
+    # silent while a Renovate pin is still waiting for its checksum sync
+    # (see the pins job): that build was not run, there is nothing to say.
+    if: always() && needs.pins.outputs.synced != 'false'
     # Sends one curl; needs nothing from the token.
     permissions: {}
     steps:

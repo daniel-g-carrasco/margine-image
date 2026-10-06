@@ -77,6 +77,11 @@ jobs:
         # assumed. See tests/dock-dp-rescue.test.sh.
         run: bash tests/dock-dp-rescue.test.sh
 
+      - name: Image security scanner
+        # What the scanner calls a secret, a drift or clean is tested on a
+        # throwaway rootfs, including the root adb key of 2026-10.
+        run: bash tests/scan-image-security.test.sh
+
       - name: MOK enrollment helper
         # Enrolls the Margine key with Secure Boot on OR off, every boot
         # until shim has it: the one-shot version left systems installed

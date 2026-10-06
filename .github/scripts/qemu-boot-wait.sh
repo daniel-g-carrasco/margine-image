@@ -17,7 +17,7 @@
 set -euo pipefail
 
 MODE="" IMAGE="" LOG="serial.log" TIMEOUT=1800 GUI_WATCH=0 MEM=4096
-SB_VARS="" TPM=0 SEC_WATCH=0
+SB_VARS="" TPM=0 SEC_WATCH=0 ALLOW_REBOOT=0
 KERNEL="" INITRD="" APPEND=""
 OK_REGEX='Started.*gdm\.service|Reached target graphical\.target|margine login:'
 FAIL_REGEX=""
@@ -40,6 +40,15 @@ while [[ $# -gt 0 ]]; do
     --tpm) TPM=1; shift ;;
     # Gate on the security probe's MARGINE-SEC-SMOKE verdict.
     --sec-watch) SEC_WATCH=1; shift ;;
+    # Let the guest reboot instead of exiting QEMU on reset. Needed with a
+    # TPM: on a disk with no boot entry yet, shim runs fallback, which
+    # creates the entry and then RESETS when a TPM is present (so the PCRs
+    # are measured on a normal boot path); without a TPM it starts the OS
+    # directly, which is why plain smoke boots never showed it. The entry
+    # lands in this VM's variable store, so the second boot goes shim ->
+    # GRUB -> kernel like a real first boot. A panic loop still ends in
+    # the overall timeout.
+    --allow-reboot) ALLOW_REBOOT=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -108,6 +117,8 @@ if [[ -n "$KERNEL" ]]; then
   DIRECT_ARGS=(-kernel "$KERNEL" -initrd "$INITRD" -append "$APPEND")
 fi
 
+REBOOT_ARGS=(-no-reboot)
+if (( ALLOW_REBOOT )); then REBOOT_ARGS=(); fi
 rm -f qemu.pid "$LOG"
 qemu-system-x86_64 \
   -enable-kvm \
@@ -122,7 +133,7 @@ qemu-system-x86_64 \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -serial "file:$LOG" \
   -display none \
-  -no-reboot \
+  "${REBOOT_ARGS[@]}" \
   -daemonize -pidfile qemu.pid
 QPID="$(cat qemu.pid)"
 echo "QEMU PID: $QPID"

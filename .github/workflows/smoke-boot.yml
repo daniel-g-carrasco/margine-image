@@ -276,6 +276,7 @@ jobs:
             --gui-watch \
             --secure-boot sb-vars.fd \
             --tpm \
+            --allow-reboot \
             --sec-watch
 
       # User-smoke SOFT gate (2026-06-14): summarize the warn-only

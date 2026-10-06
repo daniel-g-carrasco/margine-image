@@ -350,6 +350,28 @@ jobs:
           echo "::error::qemu-boot-wait.sh exited 0 but wrote no passed= output; the promote step would be skipped silently. Check how GITHUB_OUTPUT reaches the script under sudo."
           exit 1
 
+      - name: Install cosign (signature gate)
+        if: success() && steps.boot.outputs.passed == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      # The image must carry a valid signature in the classic format, the
+      # one devices verify (containers/image reads `sha256-<digest>.sig`,
+      # not the cosign 3 bundle). Added 2026-10-06 after two unsigned
+      # builds were promoted: the sign job had been skipped and nothing
+      # downstream noticed.
+      - name: Image must be signed with the Margine key
+        if: success() && steps.boot.outputs.passed == 'true'
+        env:
+          PINNED: ${{ steps.ref.outputs.pinned }}
+        run: |
+          set -euo pipefail
+          if ! cosign verify --key secrets/cosign.pub --new-bundle-format=false \
+               "$PINNED" > /dev/null; then
+            echo "::error::${PINNED} has no valid classic-format signature from secrets/cosign.pub: not promoting to :stable"
+            exit 1
+          fi
+          echo "Signature OK (classic format, Margine key): ${PINNED}"
+
       - name: Promote candidate → stable (only if boot passed)
         if: success() && steps.boot.outputs.passed == 'true'
         env:

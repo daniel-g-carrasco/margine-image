@@ -8,6 +8,12 @@ Boot with the Margine MOK, and the build supply chain is locked down
 signed SBOMs, Renovate dependency updates). Please calibrate expectations
 accordingly, though: triage and fixes are best-effort, by one person.
 
+## What is promised, and what proves it
+
+[`docs/SECURITY-CLAIMS.md`](docs/SECURITY-CLAIMS.md) lists every security
+promise Margine makes, the attack it defends against, the automated check
+that proves it, and the known limitations. It is reviewed monthly.
+
 ## Reporting a vulnerability
 
 **Please do not open a public issue for security problems.**

@@ -782,7 +782,7 @@ margine-dock-rescue $STATE="status":
         [ "$STATE" = off ] && echo "The manual command still works: ujust margine-dock-wake"
         ;;
       status)
-        cur="$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null || true)"
+        cur="$(tr -d '[:space:]' 2>/dev/null < "$SWITCH" || true)"
         case "$cur" in
           on|off) echo "Automatic dock display rescue: $cur (set in $SWITCH)" ;;
           *)      echo "Automatic dock display rescue: on (default; no $SWITCH)" ;;
@@ -942,7 +942,7 @@ margine-secureboot ACTION="status":
           absent)   echo "Margine key:        NOT enrolled" ;;
           *)        echo "Margine key:        $key" ;;
         esac
-        [ "$(tr -d '[:space:]' < "$SWITCH" 2>/dev/null)" = off ] && echo "Enrollment:         switched off ($SWITCH)"
+        [ "$(tr -d '[:space:]' 2>/dev/null < "$SWITCH")" = off ] && echo "Enrollment:         switched off ($SWITCH)"
         echo
         case "$key:$sb" in
           enrolled:*enabled*)

@@ -38,7 +38,9 @@ CFG=/boot/grub2/grub.cfg
 # Render exactly as bootupd does for /boot/grub2/grub.cfg: pre + configs.d/*
 # (the shell glob sorts the same way bootupd does). The ESP's
 # grub-static-efi.cfg has no font logic, so we never touch it.
-tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+# shellcheck source=boot-writable.sh
+. /usr/libexec/margine/boot-writable.sh
+tmp="$(mktemp)"; trap 'rm -f "$tmp"; boot_restore' EXIT
 cat "$SRC/grub-static-pre.cfg" "$SRC"/configs.d/*.cfg > "$tmp"
 
 # Idempotent fast path (the common case every boot): font already on /boot and
@@ -53,6 +55,9 @@ fi
 grub2-script-check "$tmp" || { echo "ERROR: rendered grub.cfg failed grub2-script-check — refusing to install"; exit 1; }
 grep -q 'blscfg'      "$tmp" || { echo "ERROR: rendered grub.cfg lacks blscfg (no menu entries) — refusing"; exit 1; }
 grep -q 'margine.pf2' "$tmp" || { echo "ERROR: rendered grub.cfg lacks the margine font — refusing"; exit 1; }
+
+# /boot is read-only on recent bootc installs: writable only for these writes.
+boot_writable || exit 1
 
 # 1) Font onto /boot (GRUB $prefix=/boot/grub2 at boot).
 install -D -m0644 "$FONT_SRC" "$FONT_DST"

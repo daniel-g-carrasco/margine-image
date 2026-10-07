@@ -236,6 +236,7 @@ jobs:
       digest: ${{ steps.push.outputs.digest }}
       image_ref: ${{ steps.push.outputs.image_ref }}
       tags: ${{ steps.metadata.outputs.tags }}
+      security_drift: ${{ steps.secscan.outputs.drift }}
 
     steps:
       - name: Maximize build space
@@ -510,6 +511,57 @@ jobs:
           set -euo pipefail
           sudo .github/scripts/validate-image-rootfs.sh \
             "localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}"
+
+      # Security scan (2026-10-07). The image is compared with the reviewed
+      # baseline in .github/security-baseline/: setuid/caps, world-writable
+      # files, build residue, enabled units and security-relevant configs.
+      # Secrets (private keys, tokens, ssh host keys, a set machine-id) fail
+      # on every event: they must never ship (a root adb key did, until
+      # 2026-10-04). Baseline drift fails a PR, so a change to any of the
+      # above is reviewed as a diff; on main it is a base-image change we
+      # must not hold security updates for, so it opens an issue instead
+      # (security_drift job). See .github/scripts/scan-image-security.py.
+      - name: Security scan of the image (secrets, privileges, units, configs)
+        id: secscan
+        env:
+          IMG: localhost/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          sudo podman run --rm --entrypoint /usr/bin/rpm "$IMG" -qa --qf '[%{FILENAMES}\n]' | cat > owned.txt
+          sudo podman container create --replace --name secscan --entrypoint /bin/true "$IMG" >/dev/null
+          ROOTFS="$(sudo podman mount secscan)"
+          rc=0
+          sudo python3 .github/scripts/scan-image-security.py --rootfs "$ROOTFS" --owned owned.txt \
+            --baseline .github/security-baseline --write-baseline proposed-baseline \
+            --report security-report.md || rc=$?
+          sudo podman unmount secscan >/dev/null; sudo podman rm secscan >/dev/null
+          sudo chown -R "$(id -u):$(id -g)" proposed-baseline security-report.md
+          cp .github/security-baseline/secrets-allow.txt proposed-baseline/
+          { echo "### Image security scan (exit $rc)"; cat security-report.md; } >> "$GITHUB_STEP_SUMMARY"
+          echo "drift=$([ "$rc" = 1 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if [ "$rc" = 2 ]; then
+            echo "::error::secrets found in the image (see the step summary): never shipped, whatever the event"
+            exit 1
+          elif [ "$rc" = 1 ] && [ "$EVENT" = pull_request ]; then
+            echo "::error::security baseline drift: review the diff in the step summary; if intended, commit the 'security-baseline-proposed' artifact to .github/security-baseline/"
+            exit 1
+          elif [ "$rc" = 1 ]; then
+            echo "::warning::security baseline drift on $EVENT (base image change?): an issue will be opened"
+          elif [ "$rc" != 0 ]; then
+            echo "::error::security scan failed to run (exit $rc)"; exit 1
+          fi
+
+      - name: Upload the proposed security baseline
+        if: always() && steps.secscan.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-baseline-proposed
+          path: |
+            proposed-baseline/
+            security-report.md
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
@@ -1000,6 +1052,49 @@ jobs:
           SBOM_REF="${IMG_BASE}@${ATTACH_DIGEST}"
           echo "Signing SBOM: ${SBOM_REF}"
           cosign sign -y --key env://COSIGN_PRIVATE_KEY "${SBOM_REF}"
+
+  security_drift:
+    name: Security baseline drift report
+    # Only off pull requests (on a PR the drift already fails the scan) and
+    # only when the scan saw drift: typically a base-image change. Opens or
+    # updates one issue with the diff, so nothing security-relevant changes
+    # under us unnoticed, without holding back the update itself.
+    needs: build_push
+    if: ${{ !cancelled() && needs.build_push.result == 'success' && needs.build_push.outputs.security_drift == 'true' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: security-baseline-proposed
+      - name: Open or update the drift issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          set -euo pipefail
+          title="Security baseline drift"
+          {
+            echo "The image built by ${RUN_URL} differs from \`.github/security-baseline/\`."
+            echo "Most likely a base-image update. Review each change below; when it is fine,"
+            echo "commit the \`security-baseline-proposed\` artifact of that run to the baseline."
+            echo
+            head -c 60000 security-report.md
+          } > body.md
+          num="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
+          if [ -n "${NTFY_URL:-}" ]; then
+            curl -fsS -H "Title: Security baseline drift" -H "Priority: high" -H "Tags: warning,lock" \
+              -d "The new image changes security-relevant files or units. Review: ${RUN_URL}" "$NTFY_URL" || true
+          fi
 
   notify:
     name: ntfy notification

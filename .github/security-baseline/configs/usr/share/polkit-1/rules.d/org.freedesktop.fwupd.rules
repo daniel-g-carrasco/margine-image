@@ -1,0 +1,16 @@
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.fwupd.update-internal" &&
+        subject.active == true && subject.local == true &&
+        subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+    }
+});
+
+// Always allow the fwupd-refresh service user to refresh metadata.
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.fwupd.get-remotes" ||
+            action.id == "org.freedesktop.fwupd.refresh-remote") &&
+        subject.user == "fwupd-refresh") {
+        return polkit.Result.YES;
+    }
+});

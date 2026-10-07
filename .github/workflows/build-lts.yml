@@ -231,15 +231,25 @@ jobs:
           IMG_FULL="ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}"
           IMG_FULL="${IMG_FULL,,}"
           TAG="${{ steps.meta.outputs.tag }}"
+          CREDS="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
+          # One upload; the dated tag then points at the SAME manifest.
+          # Uploading the local image once per tag gave each tag its own
+          # manifest (2026-10-07: lts-test and lts-test.20261007 had
+          # different digests), and the signature covered only one of them.
+          sudo skopeo copy --retry-times 5 --dest-creds="$CREDS" \
+            --digestfile=/tmp/digest.txt \
+            "${{ steps.rechunk.outputs.ref }}" "docker://${IMG_FULL}:${TAG}"
+          DIGEST="$(cat /tmp/digest.txt)"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::failed to capture the manifest digest"; exit 1; }
+          sudo skopeo copy --retry-times 5 --preserve-digests \
+            --src-creds="$CREDS" --dest-creds="$CREDS" \
+            "docker://${IMG_FULL}@${DIGEST}" "docker://${IMG_FULL}:${TAG}.${{ steps.meta.outputs.ymd }}"
           for tag in "$TAG" "${TAG}.${{ steps.meta.outputs.ymd }}"; do
-            sudo skopeo copy --retry-times 5 \
-              --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-              --digestfile=/tmp/digest.txt \
-              "${{ steps.rechunk.outputs.ref }}" \
-              "docker://${IMG_FULL}:${tag}"
+            got="$(sudo skopeo inspect --retry-times 3 --no-tags --creds "$CREDS" "docker://${IMG_FULL}:${tag}" --format '{{.Digest}}')"
+            [ "$got" = "$DIGEST" ] || { echo "::error::${IMG_FULL}:${tag} is ${got}, not the pushed ${DIGEST}: it would be unsigned"; exit 1; }
           done
-          echo "Pushed ${IMG_FULL}:${TAG} @ $(cat /tmp/digest.txt): EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
-          echo "ref=${IMG_FULL}@$(cat /tmp/digest.txt)" >> "$GITHUB_OUTPUT"
+          echo "Pushed ${IMG_FULL}:${TAG} and :${TAG}.${{ steps.meta.outputs.ymd }} @ ${DIGEST}: EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
+          echo "ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2

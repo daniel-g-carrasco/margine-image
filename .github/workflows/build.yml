@@ -810,28 +810,37 @@ jobs:
         run: |
           set -euo pipefail
           IMG_FULL="${IMAGE_REGISTRY,,}/${IMAGE_NAME,,}"
-          DIGEST=""
-          # Copy each metadata tag → GHCR. All tags point at the same
-          # manifest, so we capture the digest from the first copy
-          # (--digestfile) and reuse it for sign's by-digest reference.
+          CREDS="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
+          read -r -a TAGS <<< "${{ steps.metadata.outputs.tags }}"
+          # Upload once (first tag), then point every other tag at that
+          # SAME manifest from the registry, and check it: sign signs one
+          # digest. Uploading the local image once per tag gave each tag
+          # its own manifest (2026-10-07: candidate.20261006 was not the
+          # signed :candidate), so every tag but the first was unsigned.
           # retry-times 5, not 3: GHCR stalls and rate-limits on multi-GB
           # pushes, and a failed publish means a build that succeeded
           # ships nothing. Bluefin wraps its whole push in a 3-attempt
           # retry action for the same reason.
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            sudo skopeo copy --retry-times 5 \
-              --dest-creds="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-              --digestfile=/tmp/digest.txt \
-              "${{ steps.rechunk.outputs.ref }}" \
-              "docker://${IMG_FULL}:${tag}"
-            if [[ -z "$DIGEST" ]]; then
-              DIGEST="$(cat /tmp/digest.txt)"
-            fi
-          done
-          if [[ -z "$DIGEST" || ! "$DIGEST" =~ ^sha256: ]]; then
+          sudo skopeo copy --retry-times 5 --dest-creds="$CREDS" \
+            --digestfile=/tmp/digest.txt \
+            "${{ steps.rechunk.outputs.ref }}" "docker://${IMG_FULL}:${TAGS[0]}"
+          DIGEST="$(cat /tmp/digest.txt)"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::failed to capture manifest digest"
             exit 1
           fi
+          for tag in "${TAGS[@]:1}"; do
+            sudo skopeo copy --retry-times 5 --preserve-digests \
+              --src-creds="$CREDS" --dest-creds="$CREDS" \
+              "docker://${IMG_FULL}@${DIGEST}" "docker://${IMG_FULL}:${tag}"
+          done
+          for tag in "${TAGS[@]}"; do
+            got="$(sudo skopeo inspect --retry-times 3 --no-tags --creds "$CREDS" "docker://${IMG_FULL}:${tag}" --format '{{.Digest}}')"
+            if [[ "$got" != "$DIGEST" ]]; then
+              echo "::error::${IMG_FULL}:${tag} is ${got}, not the pushed ${DIGEST}: it would be unsigned"
+              exit 1
+            fi
+          done
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
           echo "image_ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Pushed manifest: ${IMG_FULL}@${DIGEST}"

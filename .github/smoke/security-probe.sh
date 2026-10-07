@@ -116,13 +116,31 @@ done < <(ss -H -tlnu 2>/dev/null | awk '{print $1, $5}' | sort -u)
 [ "$lfail" = 0 ] && res listeners PASS "only allowed ports on non-loopback addresses"
 
 # 8. Failed units: a failed Margine unit fails the gate, others are reported.
-mapfile -t failed < <(systemctl list-units --failed --plain --no-legend 2>/dev/null | awk '{print $1}')
-for u in "${failed[@]}"; do
-  case "$u" in
-    margine-*|mok-enroll*) res failed-unit FAIL "$u: $(journalctl -b -u "$u" --no-pager -o cat 2>/dev/null | tail -n 4 | tr '\n' ' ' | cut -c1-240)" ;;
-    *) res failed-unit WARN "$u" ;;
-  esac
-done
+#    An empty list says so explicitly: no line at all would look the same as
+#    a check that never ran.
+if failed_list="$(systemctl list-units --failed --plain --no-legend 2>/dev/null)"; then
+  mapfile -t failed < <(printf '%s\n' "$failed_list" | awk 'NF {print $1}')
+  for u in "${failed[@]}"; do
+    case "$u" in
+      margine-*|mok-enroll*) res failed-unit FAIL "$u: $(journalctl -b -u "$u" --no-pager -o cat 2>/dev/null | tail -n 4 | tr '\n' ' ' | cut -c1-240)" ;;
+      *) res failed-unit WARN "$u" ;;
+    esac
+  done
+  [ "${#failed[@]}" -eq 0 ] && res failed-units PASS "no failed units"
+else
+  res failed-units FAIL "could not list failed units"
+fi
+
+# 8b. /boot is read-only again once the boot-time writers are done. Fresh
+#     bootc installs (this VM) mount it read-only; Margine's helpers make it
+#     writable only for their own writes (#456). Read-write here means one
+#     of them left it open, or bootc changed its default: look either way.
+boot_opts="$(findmnt -no OPTIONS /boot 2>/dev/null || true)"
+case ",$boot_opts," in
+  ,,)     res boot-ro WARN "/boot is not a separate mount" ;;
+  *,ro,*) res boot-ro PASS "/boot is read-only" ;;
+  *)      res boot-ro FAIL "/boot is mounted read-write after boot: ${boot_opts}" ;;
+esac
 
 # 9. The in-image acceptance test (audit 2026-06-05 §8 rec #19, open
 #    until now): the same validator users run, in its smoke-boot context.

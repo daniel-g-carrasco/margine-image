@@ -37,6 +37,9 @@ esac
 # ostree-unverified-registry:REPO:TAG  or  ostree-unverified-image:docker://REPO:TAG
 image="${ref#*:}"; image="${image#docker://}"
 case "$image" in
+  # Pinned to a digest (smoke-boot's VM, or a deliberate pin): there is no
+  # tag to follow, and a pin is the owner's choice.
+  "$REPO"@*|"$REPO":*@*) say "pinned to a digest ($image): leaving it alone"; exit 0 ;;
   "$REPO":*) tag="${image##*:}" ;;
   *) say "following $image, not Margine: leaving the transport alone"; exit 0 ;;
 esac

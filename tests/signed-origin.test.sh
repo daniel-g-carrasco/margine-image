@@ -37,5 +37,8 @@ run_case "rebased to another image: nothing"                      "ostree-unveri
 run_case "no Margine scope in the policy: nothing"                "ostree-unverified-registry:$R:stable"       -  0 "$T/policy-none.json"
 run_case "rebase fails (bad signature/network): reported, rc 1"   "ostree-unverified-registry:$R:stable"       "ostree-image-signed:docker://$R:stable" 1 "$T/policy.json" yes
 run_case "no image reference (not a container deployment)"        ""                                           -  0
+D=sha256:$(printf '%064d' 0)
+run_case "pinned to a digest (smoke-boot VM): nothing"             "ostree-unverified-registry:$R@$D"           -  0
+run_case "tag plus digest: nothing, never a digest as a tag"       "ostree-unverified-registry:$R:stable@$D"    -  0
 if (( fails )); then echo "$fails signed-origin case(s) failed"; exit 1; fi
 echo "all signed-origin cases passed"

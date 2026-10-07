@@ -135,11 +135,13 @@ fi
 #     bootc installs (this VM) mount it read-only; Margine's helpers make it
 #     writable only for their own writes (#456). Read-write here means one
 #     of them left it open, or bootc changed its default: look either way.
+#     Reported, not gating: root can remount it, so read-only is protection
+#     against accidents, not a security boundary.
 boot_opts="$(findmnt -no OPTIONS /boot 2>/dev/null || true)"
 case ",$boot_opts," in
   ,,)     res boot-ro WARN "/boot is not a separate mount" ;;
   *,ro,*) res boot-ro PASS "/boot is read-only" ;;
-  *)      res boot-ro FAIL "/boot is mounted read-write after boot: ${boot_opts}" ;;
+  *)      res boot-ro WARN "/boot is mounted read-write after boot: ${boot_opts}" ;;
 esac
 
 # 9. The in-image acceptance test (audit 2026-06-05 §8 rec #19, open

@@ -153,6 +153,10 @@ if ! grep -qs 'GRUB2_PASSWORD' "$ROOTFS/usr/lib/bootupd/grub2-static/configs.d/0
 fi
 [[ -x "$ROOTFS/usr/bin/grub2-mkpasswd-pbkdf2" ]] \
   || { echo "::error::grub2-mkpasswd-pbkdf2 missing: margine-grub-lock cannot hash a password (A.4.grub-lock)"; fail=1; }
+# Both /boot writers source this to get through a read-only /boot (recent
+# bootc installs); without it they die on every run.
+[[ -f "$ROOTFS/usr/libexec/margine/boot-writable.sh" ]] \
+  || { echo "::error::usr/libexec/margine/boot-writable.sh missing: grub-lock and grub-hidpi-apply cannot write to a read-only /boot (A.4.grub-lock)"; fail=1; }
 
 # A.4.keyring — login-keyring helper + its GUI backend (2026-06-16). Lets
 # `ujust margine-keyring blank` set the login keyring password empty so it

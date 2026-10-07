@@ -27,6 +27,10 @@
 set -uo pipefail
 
 GRUB_DIR="${MARGINE_GRUB_DIR:-/boot/grub2}"
+# /boot is read-only on recent bootc installs; see boot-writable.sh.
+# shellcheck source=boot-writable.sh
+. "${MARGINE_BOOT_LIB:-/usr/libexec/margine/boot-writable.sh}"
+trap boot_restore EXIT
 USER_CFG="$GRUB_DIR/user.cfg"
 ACTION="${1:-status}"
 
@@ -75,6 +79,7 @@ case "$ACTION" in
     hash="$(printf '%s\n%s\n' "$p1" "$p1" | LC_ALL=C grub2-mkpasswd-pbkdf2 2>/dev/null \
             | sed -n 's/.*PBKDF2 hash of your password is //p')"
     [[ "$hash" == grub.pbkdf2.* ]] || die "could not hash the password"
+    boot_writable || die "cannot make $GRUB_DIR writable"
     ( umask 077; printf 'GRUB2_PASSWORD=%s\n' "$hash" > "$USER_CFG.new" ) \
       && mv -f "$USER_CFG.new" "$USER_CFG" || die "could not write $USER_CFG"
     locked || die "wrote $USER_CFG but it does not read back as a GRUB password"
@@ -84,6 +89,7 @@ case "$ACTION" in
     echo "Forgot it? From the running system: ujust margine-grub-lock off"
     ;;
   off)
+    boot_writable || die "cannot make $GRUB_DIR writable"
     rm -f "$USER_CFG" "$USER_CFG.new" || die "could not remove $USER_CFG"
     echo "GRUB menu lock: off. The boot menu can be edited by anyone at the keyboard."
     ;;

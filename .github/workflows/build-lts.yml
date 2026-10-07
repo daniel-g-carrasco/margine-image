@@ -225,6 +225,7 @@ jobs:
           sudo podman rmi -f "$SRC" >/dev/null 2>&1 || true
           df -h / | tail -1
       - name: Push the chunked image
+        id: push
         run: |
           set -euo pipefail
           IMG_FULL="ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}"
@@ -238,3 +239,33 @@ jobs:
               "docker://${IMG_FULL}:${tag}"
           done
           echo "Pushed ${IMG_FULL}:${TAG} @ $(cat /tmp/digest.txt): EXPERIMENTAL, not yet booted on real x86-64-v2 hardware."
+          echo "ref=${IMG_FULL}@$(cat /tmp/digest.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      # Signing (2026-10-07). This variant was pushed UNSIGNED since it
+      # existed: only build.yml had a sign job. Harmless while no device
+      # verified anything; fatal once devices enforce the Margine signature
+      # (policy scope, #449): every system following this tag on the signed
+      # transport would stop updating. Same two signatures as build.yml
+      # (#448): the cosign 3 bundle, and the classic sha256-<digest>.sig that
+      # containers/image on the device reads, then a verify of the classic
+      # one so a missing signature fails here instead of on users' machines.
+      - name: Sign the pushed image (bundle + classic format) and verify
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          set -euo pipefail
+          [ -n "$COSIGN_PRIVATE_KEY" ] || { echo "::error::COSIGN_PRIVATE_KEY is not available to this workflow"; exit 1; }
+          echo "$GHCR_TOKEN" | cosign login ghcr.io -u "$GHCR_USER" --password-stdin
+          echo "Signing: $REF"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "$REF"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY \
+            --new-bundle-format=false --use-signing-config=false "$REF"
+          cosign verify --key secrets/cosign.pub --new-bundle-format=false "$REF" > /dev/null
+          echo "Signed and verified (classic format, Margine key): $REF"

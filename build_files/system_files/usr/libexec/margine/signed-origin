@@ -1,0 +1,60 @@
+#!/usr/bin/bash
+# Move a Margine install from the unverified to the signed image transport
+# (2026-10-06).
+#
+# ISO installs used `bootc switch --transport registry` without
+# --enforce-container-sigpolicy, so they follow
+# ostree-unverified-registry:ghcr.io/daniel-g-carrasco/margine:<tag> and
+# never check the image signature on update. This stages the same image on
+# ostree-image-signed:docker://..., which makes rpm-ostree/bootc verify the
+# signature against /etc/containers/policy.json (scope added at build by
+# 16-image-trust) before deploying anything.
+#
+# Safe by construction: `rpm-ostree rebase` verifies before it stages. If
+# the signature does not verify, nothing changes, the system keeps updating
+# exactly as before, and the next boot tries again. Layered packages are
+# carried over by rpm-ostree as on any rebase. The new deployment applies at
+# the next restart, like an update.
+#
+# No-ops: already on a signed transport, following another image (the user
+# rebased elsewhere), or no Margine scope in the policy.
+set -uo pipefail
+
+REPO="ghcr.io/daniel-g-carrasco/margine"
+POLICY="${MARGINE_POLICY:-/etc/containers/policy.json}"
+
+say() { echo "$*"; logger -t margine-signed-origin -- "$*" 2>/dev/null || true; }
+
+ref="$(rpm-ostree status --booted --json 2>/dev/null \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference") or "")' 2>/dev/null)"
+[[ -n "$ref" ]] || { say "booted deployment has no container image reference, nothing to do"; exit 0; }
+
+case "$ref" in
+  ostree-image-signed:*|ostree-remote-image:*)
+    exit 0 ;;
+esac
+
+# ostree-unverified-registry:REPO:TAG  or  ostree-unverified-image:docker://REPO:TAG
+image="${ref#*:}"; image="${image#docker://}"
+case "$image" in
+  # Pinned to a digest (smoke-boot's VM, or a deliberate pin): there is no
+  # tag to follow, and a pin is the owner's choice.
+  "$REPO"@*|"$REPO":*@*) say "pinned to a digest ($image): leaving it alone"; exit 0 ;;
+  "$REPO":*) tag="${image##*:}" ;;
+  *) say "following $image, not Margine: leaving the transport alone"; exit 0 ;;
+esac
+[[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || { say "unexpected tag in $ref, leaving it alone"; exit 0; }
+
+if ! python3 -c "import json,sys; p=json.load(open(sys.argv[1])); r=p['transports']['docker'][sys.argv[2]][0]; sys.exit(0 if r.get('type')=='sigstoreSigned' else 1)" "$POLICY" "$REPO" 2>/dev/null; then
+  say "no signature policy for $REPO in $POLICY: staying on $ref"
+  exit 0
+fi
+
+target="ostree-image-signed:docker://${REPO}:${tag}"
+say "moving from $ref to $target (signature verified before anything is staged)"
+if rpm-ostree rebase "$target"; then
+  say "signed transport staged: it applies at the next restart, and every update after that is signature-checked"
+  exit 0
+fi
+say "could not move to the signed transport (signature or network): nothing changed, retrying next boot"
+exit 1

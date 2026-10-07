@@ -1,0 +1,15 @@
+[Unit]
+Description=Margine: follow the image on the signature-checked transport
+Documentation=file:///usr/libexec/margine/signed-origin
+ConditionPathExists=/run/ostree-booted
+Wants=network-online.target
+After=network-online.target rpm-ostreed.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/margine/signed-origin
+# A rebase downloads what an update would; give it time on slow links.
+TimeoutStartSec=45min
+
+[Install]
+WantedBy=multi-user.target

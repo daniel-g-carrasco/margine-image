@@ -187,6 +187,7 @@ usr/lib/systemd/system/machines.target.wants/var-lib-machines.mount
 usr/lib/systemd/system/multi-user.target.wants/getty.target
 usr/lib/systemd/system/multi-user.target.wants/margine-docs-refresh.service
 usr/lib/systemd/system/multi-user.target.wants/margine-grub-hidpi.service
+usr/lib/systemd/system/multi-user.target.wants/margine-signed-origin.service
 usr/lib/systemd/system/multi-user.target.wants/plymouth-quit-wait.service
 usr/lib/systemd/system/multi-user.target.wants/plymouth-quit.service
 usr/lib/systemd/system/multi-user.target.wants/rpm-ostree-fix-shadow-mode.service

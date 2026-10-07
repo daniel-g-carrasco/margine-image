@@ -1,0 +1,3 @@
+docker:
+  ghcr.io/daniel-g-carrasco/margine:
+    use-sigstore-attachments: true

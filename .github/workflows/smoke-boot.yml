@@ -324,47 +324,6 @@ jobs:
           path: serial.log
           retention-days: 7
 
-      - name: Notify ntfy (boot test outcome)
-        if: always() && steps.boot.outcome != 'skipped'
-        env:
-          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
-        run: |
-          if [[ -z "${NTFY_URL:-}" ]]; then
-            echo "NTFY_TOPIC_URL secret not set, skipping notification."
-            exit 0
-          fi
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [[ "${{ steps.boot.outputs.passed }}" == "true" ]]; then
-            TITLE="QEMU boot OK → promoting :stable"
-            PRIO="default"
-            TAGS="rocket,white_check_mark"
-            GUI="${{ steps.boot.outputs.gui }}"
-            case "$GUI" in
-              pass) MSG="Candidate healthy. GUI probe: PASS. New :stable available." ;;
-              fail) MSG="Boot OK but GUI probe FAILED (warn-only) — check the serial log before trusting this stable." ; PRIO="high"; TAGS="warning" ;;
-              *)    MSG="Candidate healthy. GUI probe: no verdict (${GUI:-n/a})." ;;
-            esac
-            GAMING="${{ steps.boot.outputs.gaming }}"
-            case "$GAMING" in
-              pass) MSG="${MSG} Gaming-native: resolves." ;;
-              fail) MSG="${MSG} Gaming-native: WON'T resolve (warn-only) — ujust margine-gaming-native would break." ; PRIO="high"; TAGS="warning" ;;
-              skip) : ;;
-              *)    MSG="${MSG} Gaming-native: no verdict." ;;
-            esac
-          else
-            TITLE="QEMU boot FAILED — :stable NOT advanced"
-            PRIO="high"
-            TAGS="x,boom"
-            MSG="Boot never reached multi-user.target. Investigate before any bootc upgrade."
-          fi
-          curl --silent --show-error --fail \
-            -H "Title: ${TITLE}" \
-            -H "Priority: ${PRIO}" \
-            -H "Tags: ${TAGS}" \
-            -H "Click: ${RUN_URL}" \
-            -d "$MSG" \
-            "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"
-
       # Promotion step: only runs when the boot actually reached
       # multi-user.target (steps.boot.outputs.passed == 'true').
       # Copies the EXACT digest resolved in the `ref` step — the same
@@ -389,6 +348,7 @@ jobs:
       # builds were promoted: the sign job had been skipped and nothing
       # downstream noticed.
       - name: Image must be signed with the Margine key
+        id: sigcheck
         if: success() && steps.boot.outputs.passed == 'true'
         env:
           PINNED: ${{ steps.ref.outputs.pinned }}
@@ -402,6 +362,7 @@ jobs:
           echo "Signature OK (classic format, Margine key): ${PINNED}"
 
       - name: Promote candidate → stable (only if boot passed)
+        id: promote
         # promote=false (manual runs only) tests an image without touching
         # :stable, e.g. to prove a gate rejects an old, broken image.
         if: success() && steps.boot.outputs.passed == 'true' && github.event.inputs.promote != 'false'
@@ -428,3 +389,91 @@ jobs:
             echo "- Layer C GUI probe: \`${{ steps.boot.outputs.gui || 'n/a' }}\`"
             echo "- Gaming-native dry-run: \`${{ steps.boot.outputs.gaming || 'n/a' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Last step, so the message reports what actually happened: the
+      # signature gate and the promotion run after the boot verdict.
+      - name: Notify ntfy (boot test outcome)
+        if: always() && steps.boot.outcome != 'skipped'
+        env:
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+          SEC: ${{ steps.boot.outputs.sec }}
+          GAMING_OUT: ${{ steps.boot.outputs.gaming }}
+          PROMOTE: ${{ github.event.inputs.promote }}
+          SIGCHECK: ${{ steps.sigcheck.outcome }}
+          PROMOTED: ${{ steps.promote.outcome }}
+        run: |
+          if [[ -z "${NTFY_URL:-}" ]]; then
+            echo "NTFY_TOPIC_URL secret not set, skipping notification."
+            exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Gates first: the watcher writes passed=true when the VM boots and
+          # passed=false when a gate then fails, so the message must not
+          # depend on which of the two values the runner keeps.
+          if [[ -n "$SEC" && "$SEC" != pass ]]; then
+            # Booted, then the security gate said no (sec= is only emitted
+            # after a successful boot). Name the broken checks.
+            FAILED="$(grep -oE 'MARGINE-SEC: [a-z0-9-]+ FAIL' serial.log 2>/dev/null | awk '{print $2}' | sort -u | paste -sd, - || true)"
+            TITLE="Security gate FAILED: :stable NOT advanced"
+            SHORT="security gate failed (${FAILED:-no verdict})"
+            PRIO="high"
+            TAGS="x,lock"
+            MSG="Booted, but the security probe said ${SEC}: ${FAILED:-no verdict}. The run log names each broken promise."
+          elif [[ "$GAMING_OUT" == fail ]]; then
+            TITLE="Gaming-native check FAILED: :stable NOT advanced"
+            SHORT="gaming-native check failed"
+            PRIO="high"
+            TAGS="x,video_game"
+            MSG="Booted, but the gaming-native layer does not resolve: gaming-native updates would fail."
+          elif [[ "${{ steps.boot.outputs.passed }}" == "true" ]]; then
+            TITLE="QEMU boot OK → promoting :stable"
+            SHORT="all gates passed"
+            PRIO="default"
+            TAGS="rocket,white_check_mark"
+            GUI="${{ steps.boot.outputs.gui }}"
+            case "$GUI" in
+              pass) MSG="Candidate healthy. GUI probe: PASS. New :stable available." ;;
+              fail) MSG="Boot OK but GUI probe FAILED (warn-only) — check the serial log before trusting this stable." ; PRIO="high"; TAGS="warning" ;;
+              *)    MSG="Candidate healthy. GUI probe: no verdict (${GUI:-n/a})." ;;
+            esac
+            GAMING="${{ steps.boot.outputs.gaming }}"
+            case "$GAMING" in
+              pass) MSG="${MSG} Gaming-native: resolves." ;;
+              fail) MSG="${MSG} Gaming-native: WON'T resolve (warn-only) — ujust margine-gaming-native would break." ; PRIO="high"; TAGS="warning" ;;
+              skip) : ;;
+              *)    MSG="${MSG} Gaming-native: no verdict." ;;
+            esac
+            if [[ "$SIGCHECK" == failure ]]; then
+              TITLE="Image NOT signed in the format devices read: :stable NOT advanced"
+              SHORT="signature gate failed"
+              PRIO="high"
+              TAGS="x,lock"
+              MSG="Booted fine, but the digest has no valid classic-format signature from the Margine key. ${MSG/ New :stable available./}"
+            elif [[ "$PROMOTED" == failure ]]; then
+              TITLE="Promotion FAILED: :stable NOT advanced"
+              SHORT="promotion failed"
+              PRIO="high"
+              TAGS="x,boom"
+              MSG="Every gate passed, but copying the digest to :stable failed. ${MSG/ New :stable available./}"
+            fi
+          else
+            TITLE="QEMU boot FAILED: :stable NOT advanced"
+            SHORT="boot failed"
+            PRIO="high"
+            TAGS="x,boom"
+            MSG="Boot never reached multi-user.target. Investigate before any bootc upgrade."
+          fi
+          # Manual test runs (promote=false) never promote anything: say so,
+          # and do not page anyone for a test.
+          if [[ "$PROMOTE" == "false" ]]; then
+            TITLE="Smoke test only (promote=false): ${SHORT}"
+            MSG="Test run, nothing promoted. ${MSG/ New :stable available./}"
+            PRIO="low"
+          fi
+          curl --silent --show-error --fail \
+            -H "Title: ${TITLE}" \
+            -H "Priority: ${PRIO}" \
+            -H "Tags: ${TAGS}" \
+            -H "Click: ${RUN_URL}" \
+            -d "$MSG" \
+            "$NTFY_URL" || echo "ntfy notify failed (non-fatal)"

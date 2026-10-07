@@ -37,6 +37,14 @@ jobs:
         with:
           args: -color
 
+      - name: Workflow jobs cannot be skipped by accident
+        # A job with the implicit success() condition is skipped when ANY
+        # job upstream was skipped. That silently stopped image signing on
+        # main on 2026-10-06; actionlint does not see it.
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          python3 .github/scripts/check-job-conditions.py .github/workflows/*.yml
+
       - name: hadolint (Containerfile)
         # Lints the active bootc ./Containerfile (Containerfile.plan-b-from-
         # bluefin is a dormant fallback, intentionally not linted). Rules and
@@ -76,14 +84,6 @@ jobs:
         # act on (charger, expansion card, healthy dock) is tested, not
         # assumed. See tests/dock-dp-rescue.test.sh.
         run: bash tests/dock-dp-rescue.test.sh
-
-      - name: Workflow jobs cannot be skipped by accident
-        # A job with the implicit success() condition is skipped when ANY
-        # job upstream was skipped. That silently stopped image signing on
-        # main on 2026-10-06; actionlint does not see it.
-        run: |
-          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
-          python3 .github/scripts/check-job-conditions.py .github/workflows/*.yml
 
       - name: MOK enrollment helper
         # Enrolls the Margine key with Secure Boot on OR off, every boot

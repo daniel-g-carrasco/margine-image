@@ -119,7 +119,7 @@ done < <(ss -H -tlnu 2>/dev/null | awk '{print $1, $5}' | sort -u)
 mapfile -t failed < <(systemctl list-units --failed --plain --no-legend 2>/dev/null | awk '{print $1}')
 for u in "${failed[@]}"; do
   case "$u" in
-    margine-*|mok-enroll*) res failed-unit FAIL "$u" ;;
+    margine-*|mok-enroll*) res failed-unit FAIL "$u: $(journalctl -b -u "$u" --no-pager -o cat 2>/dev/null | tail -n 4 | tr '\n' ' ' | cut -c1-240)" ;;
     *) res failed-unit WARN "$u" ;;
   esac
 done

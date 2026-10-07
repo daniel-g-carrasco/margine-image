@@ -7,3 +7,10 @@ tcp 5355
 udp 5355
 # avahi-daemon mDNS (printer and device discovery)
 udp 5353
+# GSConnect (KDE Connect protocol), enabled by default by the base, listens
+# for phones on every interface even when nothing is paired.
+# Pending decision D5 in docs/SECURITY-CLAIMS.md.
+tcp 1716
+udp 1716
+# tailscaled, enabled by default by the base. Pending decision D4.
+udp 41641

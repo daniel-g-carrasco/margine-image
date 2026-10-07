@@ -687,7 +687,7 @@ jobs:
     # schedule included deliberately: an unattended weekly publish is the
     # LAST place to relax the gate that blocks a broken ISO from reaching
     # Internet Archive and the site date.
-    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
+    if: ${{ success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'iso-test'))) && (inputs.image_tag == '' || inputs.image_tag == 'stable') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:

@@ -1,0 +1,67 @@
+# Monthly security review (2026-10-07). Opens a "Security review due" issue
+# built from docs/SECURITY-CLAIMS.md: claims not yet verified, pending
+# decisions, engineering items, and anything past its due date.
+#
+# Why: the 2026-06-05 audit named device-side signature verification as the
+# load-bearing check and deferred it; nothing tracked the deferral, and it
+# stayed open for four months while devices verified nothing. Deferred
+# security work now has a due date, and this workflow raises it every
+# month until it is done or re-dated with a reason.
+
+name: Security review
+
+on:
+  schedule:
+    # 2nd of the month, 09:30 UTC (the upstream review runs on the 1st).
+    - cron: '30 9 2 * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: Open the monthly security review issue
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Build the report and open or update the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NTFY_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        run: |
+          set -euo pipefail
+          overdue=0
+          python3 .github/scripts/security-review-report.py docs/SECURITY-CLAIMS.md > body.md || overdue=$?
+          drift="$(gh issue list --state open --search '"Security baseline drift" in:title' --json number,url --jq '.[] | "- #\(.number) \(.url)"')"
+          if [ -n "$drift" ]; then
+            { echo; echo "## Open baseline drift issues"; echo; echo "$drift"; } >> body.md
+          fi
+          gh label create security-review --color B60205 \
+            --description "Monthly security review (docs/SECURITY-CLAIMS.md)" --force >/dev/null
+          title="Security review due ($(date -u +%Y-%m))"
+          prev="$(gh issue list --state open --label security-review --json number,title --jq '.[] | select(.title != "'"$title"'") | .number')"
+          for n in $prev; do
+            gh issue comment "$n" --body "Superseded by this month's review, still open: carry anything left over."
+          done
+          if gh issue list --state open --label security-review --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q .; then
+            echo "this month's review issue already exists"
+          else
+            gh issue create --title "$title" --label security-review --body-file body.md
+          fi
+          if [ "$overdue" -gt 0 ] && [ -n "${NTFY_URL:-}" ]; then
+            curl -fsS -H "Title: Security review: $overdue overdue item(s)" -H "Priority: high" -H "Tags: warning,lock" \
+              -d "Decide, do, or re-date with a reason: see the Security review issue." "$NTFY_URL" || true
+          fi

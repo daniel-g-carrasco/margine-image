@@ -59,7 +59,9 @@ style = "minimal"
 show_labels = true
 label_source = "name"
 labels_only_when_occupied = false
-hide_when_empty = false
+# Shows workspaces with windows plus the active one: niri's spare empty
+# workspace at the bottom never appears, nor does an unused second one.
+hide_when_empty = true
 focused_color = "primary"
 occupied_color = "on_surface_variant"
 empty_color = "outline"

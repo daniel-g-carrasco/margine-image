@@ -61,12 +61,10 @@ layout {
     }
 }
 
-// Five workspaces that always exist, as in Margine (Mod+1 ... Mod+5).
+// Two workspaces that always exist (Mod+1, Mod+2). With niri's scrolling
+// columns each workspace holds far more than a GNOME one, so two are enough.
 workspace "1"
 workspace "2"
-workspace "3"
-workspace "4"
-workspace "5"
 
 // Noctalia is the shell: bar, notifications, lock screen, launcher, OSD,
 // polkit agent, clipboard, night light, wallpaper. The wrapper seeds the
@@ -191,16 +189,10 @@ binds {
     // Workspaces
     Mod+1 { focus-workspace "1"; }
     Mod+2 { focus-workspace "2"; }
-    Mod+3 { focus-workspace "3"; }
-    Mod+4 { focus-workspace "4"; }
-    Mod+5 { focus-workspace "5"; }
     Mod+Shift+1 { move-column-to-workspace "1"; }
     Mod+Shift+2 { move-column-to-workspace "2"; }
-    Mod+Shift+3 { move-column-to-workspace "3"; }
-    Mod+Shift+4 { move-column-to-workspace "4"; }
-    Mod+Shift+5 { move-column-to-workspace "5"; }
 
-    // Fixed workspaces, as in Margine: Super+1..5 only. niri always keeps one
+    // Fixed workspaces: Super+1 and Super+2 only. niri always keeps one
     // empty workspace at the bottom of every screen; the up/down keys and the
     // Super+wheel binds would lead there, so they are left out. (The
     // three-finger vertical touchpad swipe still does; niri cannot turn it off.)

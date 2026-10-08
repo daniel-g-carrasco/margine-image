@@ -236,3 +236,8 @@ binds {
     Mod+Shift+E hotkey-overlay-title="Esci da Lucciola" { quit; }
     Ctrl+Alt+Delete { quit; }
 }
+
+// Border colours from the Noctalia palette, written by Lucciola's Noctalia
+// template (/usr/share/lucciola/noctalia/25-niri-colors.toml). Missing until
+// Noctalia first applies its theme; niri picks it up when it appears.
+include optional=true "~/.config/niri/lucciola-colors.kdl"

@@ -1,0 +1,8 @@
+# niri borders follow the Noctalia palette, the Lucciola way: the system niri
+# config includes ~/.config/niri/lucciola-colors.kdl (optional, watched), so
+# no user niri file is touched. Leave Noctalia's built-in "Niri" template off:
+# it would colour unfocused borders like the bar background, and before
+# Lucciola seeded ~/.config/niri/config.kdl it hid the whole system config.
+[theme.templates.user.lucciola_niri]
+input_path = "/usr/share/lucciola/noctalia/templates/niri.kdl"
+output_path = "$XDG_CONFIG_HOME/niri/lucciola-colors.kdl"

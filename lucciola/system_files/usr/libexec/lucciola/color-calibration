@@ -29,14 +29,19 @@ comes first wins). The curves stay loaded while the helper runs; it follows
 screens being plugged and unplugged.
 
   color-calibration          load the curves and keep them loaded
+  color-calibration --toggle switch the running copy between calibrated and
+                             uncalibrated (Super+Shift+C), to compare
   color-calibration --list   show which profile each screen gets, then exit
 """
 import array
 import fcntl
 import glob
 import os
+import selectors
+import signal
 import socket
 import struct
+import subprocess
 import sys
 
 ICC_DIR = os.path.join(
@@ -48,6 +53,15 @@ OVERRIDES = os.path.join(
 
 def log(msg):
     print(f"color-calibration: {msg}", file=sys.stderr, flush=True)
+
+
+def notify(summary, body):
+    try:
+        subprocess.run(["notify-send", "-a", "Lucciola", "-t", "2500", "-h",
+                        "string:x-canonical-private-synchronous:lucciola-color-calibration",
+                        summary, body], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 # ---------------------------------------------------------------- profiles
@@ -255,6 +269,7 @@ class Calibrator:
         self.manager = None
         self.outputs = {}   # registry name -> output state
         self.ready = False
+        self.enabled = True  # --toggle flips it: calibrated or neutral ramps
         self.client.registry = self.client.new_id(self.on_registry)
         self.client.send(1, 1, struct.pack("=I", self.client.registry))  # get_registry
 
@@ -272,7 +287,7 @@ class Calibrator:
 
     def add_output(self, name, version):
         out = {"name": "", "make": "", "model": "", "description": "", "version": version,
-               "done": False, "gamma": None, "profile": None}
+               "done": False, "gamma": None, "profile": None, "size": 0}
         out["id"] = self.client.bind(name, "wl_output", version,
                                      lambda opcode, body: self.on_output(out, opcode, body))
         self.outputs[name] = out
@@ -320,19 +335,40 @@ class Calibrator:
     def on_gamma(self, out, opcode, body):
         label = out["name"] or out["model"]
         if opcode == 0:  # gamma_size
-            (size,) = struct.unpack_from("=I", body)
-            fd = os.memfd_create("lucciola-gamma", os.MFD_CLOEXEC)
-            try:
-                os.write(fd, ramps(out["profile"]["curves"], size).tobytes())
-                os.lseek(fd, 0, os.SEEK_SET)
-                self.client.send(out["gamma"], 0, fd=fd)  # set_gamma
-            finally:
-                os.close(fd)
-            log(f"{label}: calibration curves loaded ({size} entries)")
+            (out["size"],) = struct.unpack_from("=I", body)
+            self.load(out)
+            log(f"{label}: calibration curves loaded ({out['size']} entries)"
+                + ("" if self.enabled else ", switched off for now"))
         elif opcode == 1:  # failed
             log(f"{label}: the compositor refused the curves (night light active, "
                 "or the screen went away)")
             self.drop_gamma(out)
+
+    def load(self, out):
+        """Send the calibrated ramps, or neutral ones while switched off."""
+        curves = out["profile"]["curves"] if self.enabled else [[0.0, 1.0]] * 3
+        fd = os.memfd_create("lucciola-gamma", os.MFD_CLOEXEC)
+        try:
+            os.write(fd, ramps(curves, out["size"]).tobytes())
+            os.lseek(fd, 0, os.SEEK_SET)
+            self.client.send(out["gamma"], 0, fd=fd)  # set_gamma
+        finally:
+            os.close(fd)
+
+    def toggle(self):
+        self.enabled = not self.enabled
+        calibrated = [out for out in self.outputs.values() if out["gamma"] and out["size"]]
+        for out in calibrated:
+            self.load(out)
+        state = "on" if self.enabled else "off"
+        log(f"calibration switched {state} on {len(calibrated)} screen(s)")
+        if not calibrated:
+            notify("Calibrazione colore", "Nessuno schermo calibrato in questo momento.")
+        elif self.enabled:
+            notify("Calibrazione colore accesa", "\n".join(
+                f"{out['name']}: {out['profile']['desc']}" for out in calibrated))
+        else:
+            notify("Calibrazione colore spenta", "Colori del pannello senza correzione.")
 
     def drop_gamma(self, out):
         """Destroy the gamma control once; later events for it are ignored."""
@@ -350,25 +386,72 @@ class Calibrator:
                 self.apply(out)
         if self.listing:
             return
+        # --toggle arrives as SIGUSR1; the wakeup socket turns it into an event
+        # next to the Wayland socket, so ramps are never sent mid-message.
+        wake_r, wake_w = socket.socketpair()
+        wake_r.setblocking(False)
+        wake_w.setblocking(False)
+        signal.set_wakeup_fd(wake_w.fileno())
+        signal.signal(signal.SIGUSR1, lambda *_: None)
+        events = selectors.DefaultSelector()
+        events.register(self.client.sock, selectors.EVENT_READ)
+        events.register(wake_r, selectors.EVENT_READ)
         while True:
-            self.client.dispatch()
+            for key, _ in events.select():
+                if key.fileobj is wake_r:
+                    if signal.SIGUSR1 in wake_r.recv(64):
+                        self.toggle()
+                else:
+                    self.client.dispatch()
+
+
+LOCK = None  # the running copy holds it until exit; it contains its PID
+
+
+def lock_path():
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+                        f"lucciola-color-calibration-{os.environ.get('WAYLAND_DISPLAY', '')}.lock")
 
 
 def single_instance():
     """True if no other copy holds the curves in this session."""
-    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
-                        f"lucciola-color-calibration-{os.environ.get('WAYLAND_DISPLAY', '')}.lock")
-    global LOCK  # held until exit
-    LOCK = open(path, "w")
+    global LOCK
+    LOCK = open(lock_path(), "a+")
     try:
         fcntl.flock(LOCK, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return True
     except OSError:
         return False
+    LOCK.seek(0)
+    LOCK.truncate()
+    LOCK.write(str(os.getpid()))
+    LOCK.flush()
+    return True
+
+
+def toggle_running():
+    """Ask the running copy to switch the calibration on or off."""
+    try:
+        with open(lock_path()) as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                running = False  # nobody holds it
+            except OSError:
+                running = True
+            pid = int(f.read().strip() or 0) if running else 0
+    except (OSError, ValueError):
+        pid = 0
+    if not pid:
+        log("not running in this session, nothing to switch")
+        notify("Calibrazione colore", "Il programma di calibrazione non è in esecuzione.")
+        return 1
+    os.kill(pid, signal.SIGUSR1)
+    return 0
 
 
 def main():
     listing = "--list" in sys.argv[1:]
+    if "--toggle" in sys.argv[1:]:
+        return toggle_running()
     try:
         if not listing and not single_instance():
             log("already running in this session")

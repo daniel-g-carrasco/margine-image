@@ -24,7 +24,8 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   yet, so this loads the calibration curves (vcgt) of the screens' ICC
   profiles in `~/.local/share/icc`, as GNOME does. Per-screen choices go in
   `~/.config/lucciola/color-profiles`; `color-calibration --list` shows what
-  each screen gets. The curves and Noctalia's night light use the same
+  each screen gets, and Super+Shift+C (`color-calibration --toggle`) switches
+  the calibration off and on to compare. The curves and Noctalia's night light use the same
   mechanism, so the night light cannot change a calibrated screen;
 - the "Lucciola" session on the login screen (GNOME stays as the fallback)
   and the public name in os-release.

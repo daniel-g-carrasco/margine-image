@@ -128,6 +128,7 @@ binds {
     // Super+Shift+H: on Italian keyboards "/" is Shift+7, so the upstream
     // Super+Shift+/ is awkward; both work.
     Mod+Shift+H hotkey-overlay-title="Elenco delle scorciatoie" { show-hotkey-overlay; }
+    Mod+Shift+C hotkey-overlay-title="Calibrazione colore: accendi/spegni" { spawn "/usr/libexec/lucciola/color-calibration" "--toggle"; }
     Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }
 
     // Applications (same keys as Margine)

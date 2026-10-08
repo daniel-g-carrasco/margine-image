@@ -28,4 +28,6 @@ if [ ! -e "$pal" ] && [ ! -L "$pal" ]; then
   mkdir -p "$cfg/palettes"
   ln -s /usr/share/lucciola/noctalia/palettes/Margine.json "$pal"
 fi
+# Bar widths for large monitors, before Noctalia reads its config.
+/usr/libexec/lucciola/bar-widths --once || true
 exec noctalia

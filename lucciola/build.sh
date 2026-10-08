@@ -75,7 +75,7 @@ for part in ("normal", "bright"):
 if missing:
     sys.exit("ERROR: Margine palette incomplete, Noctalia would ignore it: " + ", ".join(missing))
 PY
-for f in /usr/libexec/lucciola/session-start /usr/libexec/lucciola/lock; do
+for f in /usr/libexec/lucciola/session-start /usr/libexec/lucciola/lock /usr/libexec/lucciola/bar-widths; do
   [[ -x "$f" ]] || { echo "ERROR: $f missing or not executable" >&2; exit 1; }
 done
 rpm -q niri noctalia xwayland-satellite

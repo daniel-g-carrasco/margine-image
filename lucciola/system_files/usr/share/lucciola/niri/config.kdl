@@ -72,6 +72,8 @@ workspace "5"
 // polkit agent, clipboard, night light, wallpaper. The wrapper seeds the
 // Lucciola defaults for Noctalia once per user, then starts it.
 spawn-at-startup "/usr/libexec/lucciola/session-start"
+// Keeps the bar at a fixed width on large monitors, following hot-plugs.
+spawn-at-startup "/usr/libexec/lucciola/bar-widths"
 
 hotkey-overlay {
     skip-at-startup
@@ -79,10 +81,10 @@ hotkey-overlay {
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
-// Rounded corners: GTK/libadwaita windows draw their own rounded corners,
-// so a square border leaves a gap at each corner.
+// Rounded corners matching libadwaita's own window radius (--window-radius:
+// 15px in GTK4/libadwaita), so GTK windows and their border line up.
 window-rule {
-    geometry-corner-radius 12
+    geometry-corner-radius 15
     clip-to-geometry true
 }
 

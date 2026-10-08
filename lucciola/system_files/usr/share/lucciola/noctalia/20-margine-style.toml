@@ -14,9 +14,20 @@ corner_radius_scale = 1.0
 font_family = "JetBrains Mono"
 popup_shadows = false
 
+# Rounded screen corners: the Framework 13 panel already has rounded top
+# corners, so the whole screen looks symmetric.
+[shell.screen_corners]
+enabled = true
+size = 26
+
 [shell.panel]
 transparency_mode = "solid"
 shadow = false
+# Floating panels have a complete outline of their own; attached to the bar
+# they meet it with concave corners that look broken with a 2px bar outline.
+control_center_placement = "floating"
+session_placement = "floating"
+wallpaper_placement = "floating"
 
 [bar.default]
 position = "top"
@@ -56,3 +67,7 @@ empty_color = "outline"
 [widget.clock]
 format = "{:%a %d %b  %H:%M}"
 tooltip_format = "{:%A %d %B %Y}"
+
+# The window title may use the room up to the clock (default stops at 260).
+[widget.active_window]
+max_length = 520

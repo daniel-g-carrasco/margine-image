@@ -102,6 +102,16 @@ window-rule {
     open-floating true
 }
 
+// Noctalia's surfaces are opaque here, so no blur behind them. With blur on,
+// niri samples the wallpaper (xray) and its colours leak through the
+// anti-aliased rounded edges of panels and launcher as a coloured hairline.
+layer-rule {
+    match namespace="^noctalia"
+    background-effect {
+        blur false
+    }
+}
+
 // Noctalia's blurred wallpaper copy behind the overview.
 layer-rule {
     match namespace="^noctalia-backdrop"

@@ -1,5 +1,7 @@
 # Lucciola: the look of the first Margine (Arch + Hyprland + Waybar).
-# Flat dark bar, no rounding, no shadows, monospace text, muted amber accent.
+# Near-black bar, light grey text, beige active workspace, lavender accents,
+# generous spacing; the bar floats a little off the screen ends, as Noctalia
+# does by default (checked against screenshots of the Hyprland desktop).
 # Palette: palettes/Margine.json (colors from margine-os theme.env).
 
 [theme]
@@ -8,7 +10,7 @@ source = "custom"
 custom_palette = "Margine"
 
 [shell]
-corner_radius_scale = 0.0
+corner_radius_scale = 1.0
 font_family = "JetBrains Mono"
 popup_shadows = false
 
@@ -22,18 +24,18 @@ thickness = 36
 background_opacity = 1.0
 compositor_blur = false
 border = "outline"
-border_width = 1.0
+border_width = 2.0
 shadow = false
-radius = 0
-radius_top_left = 0
-radius_top_right = 0
-radius_bottom_left = 0
-radius_bottom_right = 0
-concave_edge_corners = false
-margin_ends = 0
+radius = 12
+radius_top_left = 12
+radius_top_right = 12
+radius_bottom_left = 12
+radius_bottom_right = 12
+concave_edge_corners = true
+margin_ends = 100
 margin_edge = 0
-padding = 8
-widget_spacing = 5
+padding = 16
+widget_spacing = 14
 capsule = false
 font_family = "JetBrains Mono"
 font_weight = 500
@@ -48,7 +50,7 @@ label_source = "name"
 labels_only_when_occupied = false
 hide_when_empty = false
 focused_color = "primary"
-occupied_color = "on_surface"
+occupied_color = "on_surface_variant"
 empty_color = "outline"
 
 [widget.clock]

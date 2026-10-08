@@ -57,7 +57,24 @@ niri validate -c /etc/niri/config.kdl
 # Noctalia's own validator; it only warns on bad values, so any warning fails.
 out="$(noctalia config validate /usr/share/lucciola/noctalia/ 2>&1)" || { echo "$out" >&2; exit 1; }
 if grep -q WARN <<<"$out"; then echo "$out" >&2; echo "ERROR: Noctalia defaults have warnings" >&2; exit 1; fi
-python3 -m json.tool /usr/share/lucciola/noctalia/palettes/Margine.json >/dev/null
+# Noctalia silently falls back to its builtin palette when a custom palette
+# lacks the "terminal" block (src/theme/theme_service.cpp,
+# parseCommunityPaletteJson), so check what it actually requires.
+python3 - /usr/share/lucciola/noctalia/palettes/Margine.json <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+keys = ["mPrimary", "mOnPrimary", "mSecondary", "mOnSecondary", "mTertiary", "mOnTertiary",
+        "mError", "mOnError", "mSurface", "mOnSurface", "mSurfaceVariant", "mOnSurfaceVariant",
+        "mOutline", "mShadow", "mHover", "mOnHover"]
+dark = d["dark"]
+missing = [k for k in keys if k not in dark]
+term = dark.get("terminal", {})
+for part in ("normal", "bright"):
+    if set(term.get(part, {})) != {"black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"}:
+        missing.append("terminal." + part)
+if missing:
+    sys.exit("ERROR: Margine palette incomplete, Noctalia would ignore it: " + ", ".join(missing))
+PY
 for f in /usr/libexec/lucciola/session-start /usr/libexec/lucciola/lock; do
   [[ -x "$f" ]] || { echo "ERROR: $f missing or not executable" >&2; exit 1; }
 done

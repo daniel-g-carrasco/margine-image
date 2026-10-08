@@ -29,8 +29,8 @@ input {
 }
 
 layout {
-    // The look of the first Margine (Hyprland): small gaps, square corners,
-    // a cream border on the focused window, a dark one on the others.
+    // The look of the first Margine (Hyprland): small gaps, a cream border on
+    // the focused window, a dark one on the others.
     gaps 6
     center-focused-column "never"
 
@@ -78,6 +78,13 @@ hotkey-overlay {
 }
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+// Rounded corners: GTK/libadwaita windows draw their own rounded corners,
+// so a square border leaves a gap at each corner.
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
 
 // Noctalia's settings window floats.
 window-rule {

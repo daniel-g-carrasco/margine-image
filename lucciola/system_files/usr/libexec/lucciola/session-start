@@ -20,6 +20,24 @@ TOML
   fi
   : > "$marker"
 fi
+# niri reads ~/.config/niri/config.kdl INSTEAD of /etc/niri/config.kdl as soon
+# as it exists. Noctalia's niri template (Templates > Built-in > Niri) creates
+# it holding only `include "noctalia.kdl"`, and its undo leaves it empty:
+# either way every Lucciola default is gone, keybindings included. So the
+# user file starts from the system config, and what is added later (Noctalia's
+# include, the user's own lines) lands after it. A file with nothing but
+# comments and Noctalia's include is repaired the same way; any other user
+# file is left alone.
+niri_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/niri/config.kdl"
+if [ ! -e "$niri_cfg" ] || ! grep -Eqv '^[[:space:]]*(//.*)?$|^[[:space:]]*include[[:space:]]+"noctalia\.kdl"[[:space:]]*$' "$niri_cfg"; then
+  mkdir -p "${niri_cfg%/*}"
+  {
+    echo '// niri reads this file instead of /etc/niri/config.kdl, so it starts from'
+    echo '// the Lucciola defaults (which include ~/.config/niri/lucciola.kdl).'
+    echo 'include "/etc/niri/config.kdl"'
+    if [ -e "$niri_cfg" ]; then echo; cat "$niri_cfg"; fi
+  } > "$niri_cfg.new" && mv "$niri_cfg.new" "$niri_cfg"
+fi
 # The Margine palette must sit in the user's palettes/ folder (Noctalia looks
 # nowhere else): a link to the image's copy, so it follows image updates.
 # Only created when missing; a user's own file of that name is left alone.

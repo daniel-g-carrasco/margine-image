@@ -27,6 +27,11 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   each screen gets, and Super+Shift+C (`color-calibration --toggle`) switches
   the calibration off and on to compare. The curves and Noctalia's night light use the same
   mechanism, so the night light cannot change a calibrated screen;
+- `~/.config/niri/config.kdl`, created at login when missing, starting with
+  `include "/etc/niri/config.kdl"`: niri reads the user file *instead of* the
+  system one, and Noctalia's niri template (Templates > Built-in > Niri)
+  would otherwise create it with nothing but its colours, dropping every
+  Lucciola default. A file holding only Noctalia's include is repaired;
 - the "Lucciola" session on the login screen (GNOME stays as the fallback)
   and the public name in os-release.
 

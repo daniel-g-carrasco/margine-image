@@ -54,6 +54,10 @@ grep -q '^NAME="Lucciola"$' /usr/lib/os-release || { echo "ERROR: os-release not
 # 4. Checks: the shipped niri config must parse (includes resolved), and the
 #    helpers must be there and executable.
 niri validate -c /etc/niri/config.kdl
+# Noctalia's own validator; it only warns on bad values, so any warning fails.
+out="$(noctalia config validate /usr/share/lucciola/noctalia/ 2>&1)" || { echo "$out" >&2; exit 1; }
+if grep -q WARN <<<"$out"; then echo "$out" >&2; echo "ERROR: Noctalia defaults have warnings" >&2; exit 1; fi
+python3 -m json.tool /usr/share/lucciola/noctalia/palettes/Margine.json >/dev/null
 for f in /usr/libexec/lucciola/session-start /usr/libexec/lucciola/lock; do
   [[ -x "$f" ]] || { echo "ERROR: $f missing or not executable" >&2; exit 1; }
 done

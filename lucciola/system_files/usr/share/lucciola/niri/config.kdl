@@ -29,7 +29,9 @@ input {
 }
 
 layout {
-    gaps 8
+    // The look of the first Margine (Hyprland): small gaps, square corners,
+    // a cream border on the focused window, a dark one on the others.
+    gaps 6
     center-focused-column "never"
 
     preset-column-widths {
@@ -39,23 +41,23 @@ layout {
     }
     default-column-width { proportion 0.5; }
 
-    // Firefly glow for the focused window.
     focus-ring {
-        width 3
-        active-color "#f2c94c"
-        inactive-color "#3b3a48"
+        off
     }
 
     border {
-        off
+        width 3
+        active-color "#eae7dbe0"
+        inactive-color "#423a3ecc"
+        urgent-color "#ff938c"
     }
 
     shadow {
         on
-        softness 30
-        spread 5
-        offset x=0 y=5
-        color "#0007"
+        softness 24
+        spread 4
+        offset x=0 y=4
+        color "#1a1a1ab8"
     }
 }
 
@@ -76,12 +78,6 @@ hotkey-overlay {
 }
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-
-// Rounded corners for every window.
-window-rule {
-    geometry-corner-radius 12
-    clip-to-geometry true
-}
 
 // Noctalia's settings window floats.
 window-rule {
@@ -112,33 +108,33 @@ binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
 
     // Applications (same keys as Margine)
-    Mod+Return hotkey-overlay-title="Terminal" { spawn "ptyxis"; }
+    Mod+Return hotkey-overlay-title="Terminale" { spawn "ptyxis"; }
     Mod+Shift+Return hotkey-overlay-title="Browser" { spawn "flatpak" "run" "app.zen_browser.zen"; }
-    Mod+E hotkey-overlay-title="Files" { spawn "nautilus" "--new-window"; }
-    Mod+Ctrl+T hotkey-overlay-title="System monitor" { spawn "ptyxis" "--" "btop"; }
+    Mod+E hotkey-overlay-title="File" { spawn "nautilus" "--new-window"; }
+    Mod+Ctrl+T hotkey-overlay-title="Monitor di sistema" { spawn "ptyxis" "--" "btop"; }
     Mod+Period hotkey-overlay-title="Emoji" { spawn "flatpak" "run" "it.mijorus.smile"; }
 
     // Shell (Noctalia)
-    Mod+Space hotkey-overlay-title="Applications" { spawn-sh "noctalia msg panel-toggle launcher"; }
+    Mod+Space hotkey-overlay-title="Applicazioni" { spawn-sh "noctalia msg panel-toggle launcher"; }
     Mod+R hotkey-overlay-title=null { spawn-sh "noctalia msg panel-toggle launcher"; }
-    Mod+N hotkey-overlay-title="Control center and notifications" { spawn-sh "noctalia msg panel-toggle control-center"; }
-    Mod+V hotkey-overlay-title="Clipboard history" { spawn-sh "noctalia msg panel-toggle clipboard"; }
-    Mod+Comma hotkey-overlay-title="Shell settings" { spawn-sh "noctalia msg settings-toggle"; }
-    Mod+Escape hotkey-overlay-title="Log out, restart, shut down" { spawn-sh "noctalia msg panel-toggle session"; }
-    Alt+Tab hotkey-overlay-title="Switch windows" { spawn-sh "noctalia msg window-switcher hold"; }
+    Mod+N hotkey-overlay-title="Centro di controllo e notifiche" { spawn-sh "noctalia msg panel-toggle control-center"; }
+    Mod+V hotkey-overlay-title="Cronologia appunti" { spawn-sh "noctalia msg panel-toggle clipboard"; }
+    Mod+Comma hotkey-overlay-title="Impostazioni della shell" { spawn-sh "noctalia msg settings-toggle"; }
+    Mod+Escape hotkey-overlay-title="Esci, riavvia, spegni" { spawn-sh "noctalia msg panel-toggle session"; }
+    Alt+Tab hotkey-overlay-title="Cambia finestra" { spawn-sh "noctalia msg window-switcher hold"; }
 
     // Lock. Allowed while locked on purpose: if the lock screen ever dies,
     // niri keeps the session locked on a red screen, and this key brings a
     // fresh lock screen back (see /usr/libexec/lucciola/lock).
-    Mod+Ctrl+L allow-when-locked=true hotkey-overlay-title="Lock the screen" { spawn "/usr/libexec/lucciola/lock"; }
+    Mod+Ctrl+L allow-when-locked=true hotkey-overlay-title="Blocca lo schermo" { spawn "/usr/libexec/lucciola/lock"; }
 
-    Mod+Shift+Space repeat=false hotkey-overlay-title="Overview" { toggle-overview; }
+    Mod+Shift+Space repeat=false hotkey-overlay-title="Panoramica" { toggle-overview; }
 
     // Windows
-    Mod+W repeat=false { close-window; }
-    Mod+F { fullscreen-window; }
-    Mod+M { maximize-column; }
-    Mod+Shift+F { toggle-window-floating; }
+    Mod+W repeat=false hotkey-overlay-title="Chiudi la finestra" { close-window; }
+    Mod+F hotkey-overlay-title="Schermo intero" { fullscreen-window; }
+    Mod+M hotkey-overlay-title="Massimizza la colonna" { maximize-column; }
+    Mod+Shift+F hotkey-overlay-title="Finestra fluttuante" { toggle-window-floating; }
     Mod+Shift+S { toggle-column-tabbed-display; }
     Mod+C { center-column; }
 
@@ -197,7 +193,7 @@ binds {
     Mod+Shift+WheelScrollUp   { focus-column-left; }
 
     // Screenshots (same keys as Margine)
-    Print { screenshot; }
+    Print hotkey-overlay-title="Screenshot" { screenshot; }
     Mod+Shift+P { screenshot; }
     Ctrl+Print { screenshot-window; }
     Mod+Shift+W { screenshot-window; }
@@ -217,6 +213,6 @@ binds {
 
     // Session
     Mod+Shift+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
-    Mod+Shift+E { quit; }
+    Mod+Shift+E hotkey-overlay-title="Esci da Lucciola" { quit; }
     Ctrl+Alt+Delete { quit; }
 }

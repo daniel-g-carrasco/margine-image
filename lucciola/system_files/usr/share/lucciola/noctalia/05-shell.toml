@@ -1,0 +1,9 @@
+# Lucciola: shell behaviour.
+[shell]
+# Noctalia's own password prompt for administrator actions (polkit). It is
+# off by default upstream, and the niri session has no other agent: without
+# it, anything that asks for the administrator password just fails.
+polkit_agent = true
+# Lucciola already ships its defaults; the first-run wizard would replace them.
+setup_wizard_enabled = false
+telemetry_enabled = false

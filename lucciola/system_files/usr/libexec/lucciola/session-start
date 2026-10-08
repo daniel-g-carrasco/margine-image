@@ -20,4 +20,12 @@ TOML
   fi
   : > "$marker"
 fi
+# The Margine palette must sit in the user's palettes/ folder (Noctalia looks
+# nowhere else): a link to the image's copy, so it follows image updates.
+# Only created when missing; a user's own file of that name is left alone.
+pal="$cfg/palettes/Margine.json"
+if [ ! -e "$pal" ] && [ ! -L "$pal" ]; then
+  mkdir -p "$cfg/palettes"
+  ln -s /usr/share/lucciola/noctalia/palettes/Margine.json "$pal"
+fi
 exec noctalia

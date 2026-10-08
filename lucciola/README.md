@@ -13,8 +13,11 @@ verified by the device, rollback, and every Margine fix. This layer adds:
 - the niri defaults in `/usr/share/lucciola/niri/config.kdl`, loaded through
   `/etc/niri/config.kdl`, with Margine's keybindings; personal settings go in
   `~/.config/niri/lucciola.kdl`;
-- Noctalia defaults in `/usr/share/lucciola/noctalia/` (idle lock on), seeded
-  once per user by `/usr/libexec/lucciola/session-start`;
+- Noctalia defaults in `/usr/share/lucciola/noctalia/`, seeded once per user
+  by `/usr/libexec/lucciola/session-start`: idle lock on, polkit agent on, and
+  the look of the first Margine (flat dark bar, square corners, monospace,
+  muted amber; palette `palettes/Margine.json`, linked into the user's
+  `palettes/` folder at login);
 - the "Lucciola" session on the login screen (GNOME stays as the fallback)
   and the public name in os-release.
 

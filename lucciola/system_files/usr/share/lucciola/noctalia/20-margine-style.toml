@@ -1,0 +1,56 @@
+# Lucciola: the look of the first Margine (Arch + Hyprland + Waybar).
+# Flat dark bar, no rounding, no shadows, monospace text, muted amber accent.
+# Palette: palettes/Margine.json (colors from margine-os theme.env).
+
+[theme]
+mode = "dark"
+source = "custom"
+custom_palette = "Margine"
+
+[shell]
+corner_radius_scale = 0.0
+font_family = "JetBrains Mono"
+popup_shadows = false
+
+[shell.panel]
+transparency_mode = "solid"
+shadow = false
+
+[bar.default]
+position = "top"
+thickness = 36
+background_opacity = 1.0
+compositor_blur = false
+border = "outline"
+border_width = 1.0
+shadow = false
+radius = 0
+radius_top_left = 0
+radius_top_right = 0
+radius_bottom_left = 0
+radius_bottom_right = 0
+concave_edge_corners = false
+margin_ends = 0
+margin_edge = 0
+padding = 8
+widget_spacing = 5
+capsule = false
+font_family = "JetBrains Mono"
+font_weight = 500
+start = ["workspaces", "active_window"]
+center = ["clock"]
+end = ["tray", "privacy", "network", "bluetooth", "caffeine", "volume", "battery", "notifications", "control-center"]
+
+[widget.workspaces]
+style = "minimal"
+show_labels = true
+label_source = "name"
+labels_only_when_occupied = false
+hide_when_empty = false
+focused_color = "primary"
+occupied_color = "on_surface"
+empty_color = "outline"
+
+[widget.clock]
+format = "{:%a %d %b  %H:%M}"
+tooltip_format = "{:%A %d %B %Y}"

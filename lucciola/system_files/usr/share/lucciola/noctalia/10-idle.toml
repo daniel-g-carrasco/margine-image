@@ -1,0 +1,16 @@
+# Lucciola defaults for Noctalia: lock after 10 minutes of inactivity and
+# turn the screens off a minute later. Noctalia ships both disabled.
+# Override in ~/.config/noctalia/ (any file sorting after 00-lucciola.toml)
+# or from Noctalia's settings window.
+[idle]
+behavior_order = ["lock", "screen-off"]
+
+[idle.behavior.lock]
+timeout = 600
+action = "lock"
+enabled = true
+
+[idle.behavior.screen-off]
+timeout = 660
+action = "screen_off"
+enabled = true

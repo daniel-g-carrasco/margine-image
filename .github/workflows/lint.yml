@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t SH < <(git ls-files '*.sh' | grep -v '^live-env/references/')
-          mapfile -t BIN < <(git grep -lE '^#!.*\b(ba)?sh\b' -- build_files/system_files | grep -v '\.sh$' || true)
+          mapfile -t BIN < <(git grep -lE '^#!.*\b(ba)?sh\b' -- build_files/system_files lucciola/system_files | grep -v '\.sh$' || true)
           printf 'shellcheck over %d scripts\n' "$(( ${#SH[@]} + ${#BIN[@]} ))"
           shellcheck -S warning "${SH[@]}" "${BIN[@]}"
 

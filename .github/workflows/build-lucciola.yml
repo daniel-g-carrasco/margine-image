@@ -1,0 +1,209 @@
+---
+# Lucciola: niri with the Noctalia shell, built as a thin layer on top of the
+# Margine image (lucciola/Containerfile). EXPERIMENTAL.
+#
+# - Rebuilt after every successful smoke-boot on main (that is, every time a
+#   new :stable may have been promoted), so Lucciola always sits on the
+#   latest tested Margine; also runnable by hand, e.g. against a PR image.
+# - Pushes :lucciola and :lucciola.YYYYMMDD in the Margine repository, signed
+#   like every other tag (bundle + classic format, verified), so devices with
+#   the Margine signature policy (#449) accept it. Never promoted anywhere:
+#   :stable is untouched.
+# - No smoke-boot of its own yet: the base it adds to has passed one. A test
+#   boot is a manual smoke-boot run with image_ref pointing here and
+#   promote=false.
+
+name: Build Lucciola (niri + Noctalia, experimental)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "Margine image to build on (a tag or tag@digest; e.g. a pr-N image to test a Margine change)"
+        required: false
+        default: "ghcr.io/daniel-g-carrasco/margine:stable"
+      tag:
+        description: "Tag to push (lucciola is the one users follow; use lucciola-test for throwaway runs)"
+        required: false
+        default: "lucciola"
+  workflow_run:
+    workflows: ["Smoke-boot published image"]
+    types: [completed]
+    branches: [main]
+  # A pull request that touches Lucciola builds a throwaway :lucciola-test on
+  # the current :stable (a new workflow cannot be dispatched before it is on
+  # main, and this is also how later Lucciola changes get tested).
+  pull_request:
+    paths:
+      - 'lucciola/**'
+      - '.github/workflows/build-lucciola.yml'
+
+permissions: {}
+
+concurrency:
+  group: build-lucciola-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: margine
+
+jobs:
+  build-lucciola:
+    # workflow_run fires on every completed smoke-boot: build only after a
+    # green one. Pull requests from forks have no signing key: skip them.
+    if: >-
+      ${{ (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write   # push the :lucciola tags to GHCR
+    steps:
+      - name: Free disk space (the Margine base is a large image)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h / | tail -1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Resolve the base digest, the tag and the date
+        id: meta
+        env:
+          BASE_INPUT: ${{ github.event.inputs.base_image }}
+          TAG_INPUT: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          BASE="${BASE_INPUT:-ghcr.io/daniel-g-carrasco/margine:stable}"
+          TAG="${TAG_INPUT:-lucciola}"
+          [ "${{ github.event_name }}" = pull_request ] && TAG=lucciola-test
+          [[ "$TAG" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "::error::invalid tag '$TAG'"; exit 1; }
+          command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          # Build on an exact digest, so the base cannot move during the build
+          # and the label records what was used.
+          DIGEST="$(skopeo inspect --retry-times 3 --no-tags "docker://${BASE}" --format '{{.Digest}}')"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::could not resolve ${BASE}"; exit 1; }
+          REPO="${BASE%@*}"; REPO="${REPO%:*}"
+          {
+            echo "tag=$TAG"
+            echo "ymd=$(date -u +%Y%m%d)"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "base=${BASE}"
+            echo "pinned=${REPO}@${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building :$TAG on ${REPO}@${DIGEST} (${BASE})"
+
+      - name: Build the Lucciola layer
+        run: |
+          set -euo pipefail
+          sudo buildah build \
+            --file lucciola/Containerfile \
+            --build-arg "BASE_IMAGE=${{ steps.meta.outputs.pinned }}" \
+            --label "org.opencontainers.image.title=Lucciola" \
+            --label "org.opencontainers.image.description=Lucciola: niri with the Noctalia shell, on top of Margine OS (experimental)" \
+            --label "org.opencontainers.image.version=${{ steps.meta.outputs.tag }}.${{ steps.meta.outputs.ymd }}" \
+            --label "org.opencontainers.image.created=${{ steps.meta.outputs.created }}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.base.name=${{ steps.meta.outputs.base }}" \
+            --label "org.opencontainers.image.base.digest=${{ steps.meta.outputs.pinned }}" \
+            --tag localhost/lucciola:build \
+            lucciola/
+
+      - name: Run the shipped validator in the image
+        # The same acceptance test Margine runs; NAME is read from
+        # /usr/share/margine/product-name, which Lucciola sets. A base image
+        # older than that support (before it reaches :stable) would fail the
+        # NAME check, so the full validator runs only where the base has it.
+        run: |
+          set -euo pipefail
+          if sudo podman run --rm --entrypoint /usr/bin/grep localhost/lucciola:build \
+               -q product-name /usr/bin/margine-validate-margine-system; then
+            sudo podman run --rm \
+              -e MARGINE_VALIDATE_CONTEXT=image \
+              --entrypoint /usr/bin/margine-validate-margine-system \
+              localhost/lucciola:build
+          else
+            echo "::warning::the base's validator predates /usr/share/margine/product-name: full validator skipped for this build"
+          fi
+          sudo podman run --rm --entrypoint /usr/bin/bash localhost/lucciola:build -c '
+            set -e
+            grep -E "^(NAME|PRETTY_NAME|VARIANT_ID)=" /usr/lib/os-release
+            niri validate -c /etc/niri/config.kdl
+            rpm -q niri noctalia xwayland-satellite
+            test -f /usr/share/wayland-sessions/lucciola.desktop
+            test ! -e /usr/share/wayland-sessions/niri.desktop'
+
+      - name: Push (one upload, the dated tag on the same manifest)
+        id: push
+        run: |
+          set -euo pipefail
+          IMG_FULL="ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}"
+          IMG_FULL="${IMG_FULL,,}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          DATED="${TAG}.${{ steps.meta.outputs.ymd }}"
+          CREDS="${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
+          sudo skopeo copy --retry-times 5 --dest-creds="$CREDS" \
+            --digestfile=/tmp/digest.txt \
+            containers-storage:localhost/lucciola:build "docker://${IMG_FULL}:${TAG}"
+          DIGEST="$(cat /tmp/digest.txt)"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::failed to capture the manifest digest"; exit 1; }
+          sudo skopeo copy --retry-times 5 --preserve-digests \
+            --src-creds="$CREDS" --dest-creds="$CREDS" \
+            "docker://${IMG_FULL}@${DIGEST}" "docker://${IMG_FULL}:${DATED}"
+          for tag in "$TAG" "$DATED"; do
+            got="$(sudo skopeo inspect --retry-times 3 --no-tags --creds "$CREDS" "docker://${IMG_FULL}:${tag}" --format '{{.Digest}}')"
+            [ "$got" = "$DIGEST" ] || { echo "::error::${IMG_FULL}:${tag} is ${got}, not the pushed ${DIGEST}: it would be unsigned"; exit 1; }
+          done
+          echo "Pushed ${IMG_FULL}:${TAG} and :${DATED} @ ${DIGEST} (EXPERIMENTAL)"
+          echo "ref=${IMG_FULL}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      # Same two signatures as build.yml (#448): the cosign 3 bundle, and the
+      # classic sha256-<digest>.sig that containers/image on the device reads,
+      # then a verify of the classic one, so a missing signature fails here
+      # instead of on users' machines.
+      - name: Sign the pushed image (bundle + classic format) and verify
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ""
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          set -euo pipefail
+          [ -n "$COSIGN_PRIVATE_KEY" ] || { echo "::error::COSIGN_PRIVATE_KEY is not available to this workflow"; exit 1; }
+          echo "$GHCR_TOKEN" | cosign login ghcr.io -u "$GHCR_USER" --password-stdin
+          echo "Signing: $REF"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY "$REF"
+          cosign sign -y --key env://COSIGN_PRIVATE_KEY \
+            --new-bundle-format=false --use-signing-config=false "$REF"
+          cosign verify --key secrets/cosign.pub --new-bundle-format=false "$REF" > /dev/null
+          echo "Signed and verified (classic format, Margine key): $REF"
+
+      - name: How to switch a Margine install to this image
+        run: |
+          {
+            echo "### Lucciola pushed"
+            echo ""
+            echo "- image: \`${{ steps.push.outputs.ref }}\`"
+            echo "- base: \`${{ steps.meta.outputs.pinned }}\`"
+            echo ""
+            echo "On a Margine install (signature verified, rollback with the previous boot entry):"
+            echo '```'
+            echo "sudo rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:${{ steps.meta.outputs.tag }}"
+            echo "systemctl reboot"
+            echo '```'
+            echo "At the login screen choose the session **Lucciola** (GNOME stays available)."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,23 @@
+#!/usr/bin/sh
+# Lucciola: start Noctalia with the image's defaults.
+#
+# Noctalia has no system-wide configuration layer: it merges every *.toml in
+# ~/.config/noctalia/ in alphabetical order. So each user gets, once, a small
+# 00-lucciola.toml that includes the defaults kept in /usr/share (updated with
+# every image); the user's own files sort after it and win. It is created only
+# the first time: delete it and it stays deleted.
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia"
+marker="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/noctalia-seeded"
+if [ ! -e "$marker" ]; then
+  mkdir -p "$cfg" "$(dirname "$marker")"
+  if [ ! -e "$cfg/00-lucciola.toml" ]; then
+    cat > "$cfg/00-lucciola.toml" <<'TOML'
+# Lucciola defaults (from the system image). Your own files in this folder
+# sort after this one and win. Delete this file to use Noctalia's defaults.
+[include]
+files = ["/usr/share/lucciola/noctalia/"]
+TOML
+  fi
+  : > "$marker"
+fi
+exec noctalia

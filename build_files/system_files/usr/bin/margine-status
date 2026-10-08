@@ -1,12 +1,14 @@
 #!/usr/bin/bash
 # margine-status — is this machine following the Margine flow?
 #
-# Shows your booted deployment vs the latest published :stable, plus the
+# Shows your booted deployment vs the latest published image of the tag it
+# follows (:stable for most installs), plus the
 # Fedora → Bluefin → Margine lineage and the running kernel. Read-only; makes
 # no changes. Mirrors the website's /status page from the machine's POV.
 set -uo pipefail
 
 IMAGE="ghcr.io/daniel-g-carrasco/margine:stable"
+REPO="${IMAGE%:*}"
 BLUEFIN="ghcr.io/ublue-os/bluefin-dx:stable"
 SITE="https://margine.dev/status"
 
@@ -35,6 +37,16 @@ fi
 # for a version the machine was NOT running (2026-07-10, daniel's laptop:
 # booted 20260706, staged 20260707, status showed 20260707 as booted).
 ros="$(rpm-ostree status --json 2>/dev/null || echo '{}')"
+# Compare against the tag this machine actually follows (:stable, :lts,
+# :nvidia, :lucciola...). Hardcoding :stable told every :lts install that an
+# update was available, forever. Only tags of the Margine repository count;
+# a digest pin or another image keeps the :stable comparison.
+origin="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.booted==true)][0]."container-image-reference" // ""' 2>/dev/null)"
+followed="${origin#*:}"; followed="${followed#docker://}"
+case "$followed" in
+  "$REPO":*) [[ "$followed" == *@* ]] || IMAGE="$followed" ;;
+esac
+TAG="${IMAGE##*:}"
 if [ -z "$booted_digest" ]; then
   booted_digest="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.booted==true)][0]."base-commit-meta"."ostree.manifest-digest" // ""' 2>/dev/null)"
 fi
@@ -47,7 +59,7 @@ staged_ver="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.staged==tru
 staged_digest="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.staged==true)][0]."base-commit-meta"."ostree.manifest-digest" // ""' 2>/dev/null)"
 kernel="$(uname -r)"
 
-# --- latest published :stable + lineage ---
+# --- latest published image of the followed tag + lineage ---
 latest_ver="$(label "$IMAGE" org.opencontainers.image.version)"; latest_ver="${latest_ver:-unknown}"
 latest_digest="$(digest "$IMAGE")"
 blu_ver="$(label "$BLUEFIN" org.opencontainers.image.version)"; blu_ver="${blu_ver:-unknown}"
@@ -82,7 +94,7 @@ printf '\n'
 printf '  %-15s %s%s%s   %s← your deployment%s\n' "Margine OS"     "$c_ember" "$booted_ver" "$c_reset" "$c_dim" "$c_reset"
 [ -n "$staged_ver" ] && \
 printf '  %-15s %s   %s(applies at next boot)%s\n' "Staged"        "$staged_ver" "$c_dim" "$c_reset"
-printf '  %-15s %s   %s\n'                          "Latest :stable" "$latest_ver" "$verdict"
+printf '  %-15s %s   %s\n'                          "Latest :${TAG}" "$latest_ver" "$verdict"
 printf '  %-15s Fedora %s → Bluefin %s → Margine\n' "Chain"          "$fedora_ver" "$blu_ver"
 kdef=EEVDF; grep -q '^CONFIG_SCHED_BORE=y' "/usr/lib/modules/$(uname -r)/config" 2>/dev/null && kdef=BORE
 printf '  %-15s %s  %s(CachyOS / %s)%s\n'         "Kernel"         "$kernel" "$c_dim" "$kdef" "$c_reset"

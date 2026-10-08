@@ -1,0 +1,32 @@
+# Lucciola: niri with the Noctalia shell, on top of the Margine image.
+#
+# A thin layer, not a second distribution: kernel, Secure Boot chain, TPM
+# unlock, signatures, updates and every Margine fix come from the base image.
+# This layer adds niri and Noctalia from the official Fedora repositories,
+# the Lucciola niri/Noctalia defaults and the public name. GNOME stays in the
+# image and on the login screen as the fallback session.
+#
+# Build (CI does this in .github/workflows/build-lucciola.yml):
+#   buildah build -f lucciola/Containerfile \
+#     --build-arg BASE_IMAGE=ghcr.io/daniel-g-carrasco/margine@sha256:... lucciola/
+
+ARG BASE_IMAGE=ghcr.io/daniel-g-carrasco/margine:stable
+
+FROM scratch AS ctx
+COPY build.sh /build.sh
+
+FROM ${BASE_IMAGE}
+
+# Bump only together with a test boot: see the comment in build.sh.
+ARG NOCTALIA_EVR=5.2.1-1.fc44
+
+COPY system_files/ /
+
+# dnf metadata and logs go to throwaway mounts, so nothing of the package
+# transaction stays in the layer.
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=tmpfs,dst=/var/cache \
+    --mount=type=tmpfs,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    NOCTALIA_EVR="${NOCTALIA_EVR}" bash /ctx/build.sh \
+ && bootc container lint

@@ -69,6 +69,11 @@ fi
 # Expected values — canonical Margine state.
 # Keep in sync with declarations/margine-atomic.yaml and build.sh.
 EXPECTED_OS_NAME="Margine OS"
+# Products built on top of the Margine image (Lucciola) ship their public
+# name here; everything else (ID, VARIANT_ID, kernel) stays Margine's.
+if [[ -s /usr/share/margine/product-name ]]; then
+  EXPECTED_OS_NAME="$(head -n1 /usr/share/margine/product-name)"
+fi
 # os-release(5): ID is the family (we use "fedora", same as Bluefin's own
 # upstream now does, so bootc-image-builder can find its distro definition);
 # VARIANT_ID is the specific spin within the family. Margine identifies as

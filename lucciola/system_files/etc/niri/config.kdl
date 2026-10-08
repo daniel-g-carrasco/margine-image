@@ -1,0 +1,7 @@
+// Lucciola: niri system configuration.
+//
+// niri reads this file only while ~/.config/niri/config.kdl does not exist.
+// The defaults live in the image and are updated with it; personal settings
+// go in ~/.config/niri/lucciola.kdl, which is read last and wins.
+include "/usr/share/lucciola/niri/config.kdl"
+include optional=true "~/.config/niri/lucciola.kdl"

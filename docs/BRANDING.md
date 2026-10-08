@@ -67,6 +67,7 @@ These five cut across almost every touchpoint below:
 | Margine System app (name/icon/id) | `…/applications/dev.margine.System.desktop` + `…/icons/hicolor/scalable/apps/dev.margine.System.svg` + `…/libexec/margine/system-gui` | `dev.margine.System`, `Margine System` |
 | Phone Camera app (name/icon/id) | `…/applications/dev.margine.PhoneCam.desktop` + `…/icons/hicolor/scalable/apps/dev.margine.PhoneCam.svg` + `…/libexec/margine/phone-cam-gui` | `dev.margine.PhoneCam`, `Margine Phone Cam` |
 | fastfetch / MOTD / `/etc/issue` | `build_files/50-branding/install.sh`, `…/fastfetch/margine.jsonc`, `build_files/60-ujust-services/install.sh` | `ascii-logo.txt`, `no-show-user-motd`, `/etc/issue` |
+| **Lucciola** (niri + Noctalia product on top of Margine): public name, login session, validator name | `lucciola/build.sh`, `lucciola/system_files/usr/share/margine/product-name` | `NAME="Lucciola"`, `lucciola.desktop`, `product-name` |
 
 ---
 

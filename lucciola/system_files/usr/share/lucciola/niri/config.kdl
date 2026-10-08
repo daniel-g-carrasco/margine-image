@@ -156,7 +156,14 @@ binds {
 
     // Windows
     Mod+W repeat=false hotkey-overlay-title="Chiudi la finestra" { close-window; }
-    Mod+F hotkey-overlay-title="Schermo intero" { fullscreen-window; }
+    // Super+F maximizes as GNOME does: edge to edge, bar and dock stay. A
+    // real fullscreen window covers the top layer (bar, dock) only while the
+    // view is still: during scrolls, gestures and workspace switches niri
+    // draws them on top, then they vanish at once (hardcoded in niri 26.04,
+    // render_above_top_layer). Fine for videos and games, ugly as everyday
+    // maximize; so it moves to Super+Ctrl+F.
+    Mod+F hotkey-overlay-title="Massimizza" { maximize-window-to-edges; }
+    Mod+Ctrl+F hotkey-overlay-title="Schermo intero" { fullscreen-window; }
     Mod+M hotkey-overlay-title="Massimizza la colonna" { maximize-column; }
     Mod+Shift+F hotkey-overlay-title="Finestra fluttuante" { toggle-window-floating; }
     Mod+Shift+S { toggle-column-tabbed-display; }

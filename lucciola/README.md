@@ -30,3 +30,11 @@ rebasing to `:stable`):
 sudo rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:lucciola
 systemctl reboot
 ```
+
+## Logo
+
+`assets/lucciola-logo.svg` (the firefly) and `assets/lucciola-wordmark.svg`
+("Lucciola" set in Aladin by Sudtipos, converted to outlines; the font is
+under the SIL Open Font License 1.1, copy in `assets/Aladin-OFL.txt`). Colors:
+lavender `#6b64a0` / `#b3addf`, firefly yellow `#f2c94c`. Not wired into the
+image yet: boot splash, login screen and the About page still show Margine's.

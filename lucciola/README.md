@@ -15,9 +15,17 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   `~/.config/niri/lucciola.kdl`;
 - Noctalia defaults in `/usr/share/lucciola/noctalia/`, seeded once per user
   by `/usr/libexec/lucciola/session-start`: idle lock on, polkit agent on, and
-  the look of the first Margine (flat dark bar, square corners, monospace,
-  muted amber; palette `palettes/Margine.json`, linked into the user's
+  the look of the first Margine (dark floating bar, monospace, windows rounded
+  like libadwaita; palette `palettes/Margine.json`, linked into the user's
   `palettes/` folder at login);
+- `/usr/libexec/lucciola/bar-widths`: the bar keeps a fixed width on large
+  monitors, and secondary screens get a single workspace, as in GNOME;
+- `/usr/libexec/lucciola/color-calibration`: niri has no colour management
+  yet, so this loads the calibration curves (vcgt) of the screens' ICC
+  profiles in `~/.local/share/icc`, as GNOME does. Per-screen choices go in
+  `~/.config/lucciola/color-profiles`; `color-calibration --list` shows what
+  each screen gets. The curves and Noctalia's night light use the same
+  mechanism, so the night light cannot change a calibrated screen;
 - the "Lucciola" session on the login screen (GNOME stays as the fallback)
   and the public name in os-release.
 

@@ -72,6 +72,9 @@ workspace "2"
 spawn-at-startup "/usr/libexec/lucciola/session-start"
 // Keeps the bar at a fixed width on large monitors, following hot-plugs.
 spawn-at-startup "/usr/libexec/lucciola/bar-widths"
+// niri has no colour management: this loads the calibration curves of the
+// screens' ICC profiles (~/.local/share/icc), as GNOME does.
+spawn-at-startup "/usr/libexec/lucciola/color-calibration"
 
 hotkey-overlay {
     skip-at-startup

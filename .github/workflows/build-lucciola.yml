@@ -72,11 +72,11 @@ jobs:
           fetch-depth: 1
 
       - name: Login to GHCR
-        # Both stores: skopeo runs as the runner user to resolve the base,
-        # buildah and the push run as root.
+        # Everything below runs as root. A second, non-root login would not
+        # help: sudo keeps XDG_RUNTIME_DIR, so the root login rewrites the
+        # runner user's auth.json as root-only (permission denied for the
+        # user's skopeo, seen on the first runs).
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io \
             -u "${{ github.actor }}" --password-stdin
 
@@ -94,7 +94,7 @@ jobs:
           command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
           # Build on an exact digest, so the base cannot move during the build
           # and the label records what was used.
-          DIGEST="$(skopeo inspect --retry-times 3 --no-tags "docker://${BASE}" --format '{{.Digest}}')"
+          DIGEST="$(sudo skopeo inspect --retry-times 3 --no-tags "docker://${BASE}" --format '{{.Digest}}')"
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::could not resolve ${BASE}"; exit 1; }
           REPO="${BASE%@*}"; REPO="${REPO%:*}"
           {

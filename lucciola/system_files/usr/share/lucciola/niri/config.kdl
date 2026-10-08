@@ -7,7 +7,7 @@
 //
 // Keybindings follow Margine's GNOME ones (declarations/margine-atomic.yaml,
 // gnome.keybindings), so the hands do not have to relearn: Mod is Super.
-// Mod+Shift+Slash shows the full list.
+// Mod+Shift+H shows the full list.
 
 input {
     keyboard {
@@ -105,7 +105,10 @@ debug {
 }
 
 binds {
-    Mod+Shift+Slash { show-hotkey-overlay; }
+    // Super+Shift+H: on Italian keyboards "/" is Shift+7, so the upstream
+    // Super+Shift+/ is awkward; both work.
+    Mod+Shift+H hotkey-overlay-title="Elenco delle scorciatoie" { show-hotkey-overlay; }
+    Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }
 
     // Applications (same keys as Margine)
     Mod+Return hotkey-overlay-title="Terminale" { spawn "ptyxis"; }

@@ -2,8 +2,10 @@
 //
 // /etc/niri/config.kdl includes this file and then, if it exists,
 // ~/.config/niri/lucciola.kdl: put personal settings there, they win.
-// niri reads /etc/niri/config.kdl only while ~/.config/niri/config.kdl does
-// not exist; a full personal config.kdl replaces all of this.
+// niri reads ~/.config/niri/config.kdl instead of /etc/niri/config.kdl:
+// Lucciola creates it at login starting with an include of the system one
+// (/usr/libexec/lucciola/session-start); a config.kdl without that include
+// replaces all of this.
 //
 // Keybindings follow Margine's GNOME ones (declarations/margine-atomic.yaml,
 // gnome.keybindings), so the hands do not have to relearn: Mod is Super.
@@ -92,12 +94,12 @@ window-rule {
     clip-to-geometry true
 }
 
-// Noctalia's settings window floats.
+// Noctalia's settings window opens as a normal column in the scrolling
+// strip. Floating, it stayed in front while scrolling between columns and,
+// taller than the room bar and dock leave on a laptop, slid under the dock.
 window-rule {
     match app-id="dev.noctalia.Noctalia"
-    open-floating true
     default-column-width { fixed 1080; }
-    default-window-height { fixed 920; }
 }
 
 window-rule {

@@ -24,6 +24,11 @@ input {
         tap
         natural-scroll
         dwt
+        // As GNOME (click-method 'fingers'): pressing the pad with two
+        // fingers is a right click, three a middle click. libinput's default
+        // here would be button areas: a two-finger press counts as a left
+        // click unless it lands in the bottom-right corner.
+        click-method "clickfinger"
     }
 
     // Margine's o-tiling moved the pointer to the focused window.

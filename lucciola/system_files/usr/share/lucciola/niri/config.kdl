@@ -1,0 +1,265 @@
+// Lucciola: the niri configuration shipped with the image.
+//
+// /etc/niri/config.kdl includes this file and then, if it exists,
+// ~/.config/niri/lucciola.kdl: put personal settings there, they win.
+// niri reads ~/.config/niri/config.kdl instead of /etc/niri/config.kdl:
+// Lucciola creates it at login starting with an include of the system one
+// (/usr/libexec/lucciola/session-start); a config.kdl without that include
+// replaces all of this.
+//
+// Keybindings follow Margine's GNOME ones (declarations/margine-atomic.yaml,
+// gnome.keybindings), so the hands do not have to relearn: Mod is Super.
+// Mod+Shift+H shows the full list.
+
+input {
+    keyboard {
+        xkb {
+            // Empty on purpose: niri then takes the layout configured on the
+            // system (systemd-localed), the same one GNOME uses.
+        }
+        numlock
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        dwt
+        // As GNOME (click-method 'fingers'): pressing the pad with two
+        // fingers is a right click, three a middle click. libinput's default
+        // here would be button areas: a two-finger press counts as a left
+        // click unless it lands in the bottom-right corner.
+        click-method "clickfinger"
+    }
+
+    // Margine's o-tiling moved the pointer to the focused window.
+    warp-mouse-to-focus
+}
+
+layout {
+    // The look of the first Margine (Hyprland): small gaps, a beige border on
+    // the focused window; the others' border is the bar background, so only
+    // the focused one stands out. These are the fallbacks: once Noctalia has
+    // applied its theme, lucciola-colors.kdl (included at the end) takes the
+    // same roles from the active palette.
+    gaps 6
+    center-focused-column "never"
+
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        off
+    }
+
+    border {
+        width 3
+        active-color "#e6d5bf"
+        inactive-color "#121212"
+        urgent-color "#ff938c"
+    }
+
+    shadow {
+        on
+        softness 24
+        spread 4
+        offset x=0 y=4
+        color "#1a1a1ab8"
+    }
+}
+
+// Two named workspaces always exist (Mod+1, Mod+2): with niri's scrolling
+// columns each holds far more than a GNOME one, so two are enough. They are
+// NOT declared here: niri does not merge `workspace` sections across
+// includes, so declaring them again in lucciola.kdl to pin them to a monitor
+// (open-on-output) made duplicates. session-start adds them to lucciola.kdl
+// once, where they can be given a monitor.
+
+// Noctalia is the shell: bar, notifications, lock screen, launcher, OSD,
+// polkit agent, clipboard, night light, wallpaper. The wrapper seeds the
+// Lucciola defaults for Noctalia once per user, then starts it.
+spawn-at-startup "/usr/libexec/lucciola/session-start"
+// Keeps the bar at a fixed width on large monitors, following hot-plugs.
+spawn-at-startup "/usr/libexec/lucciola/bar-widths"
+// niri has no colour management: this loads the calibration curves of the
+// screens' ICC profiles (~/.local/share/icc), as GNOME does.
+spawn-at-startup "/usr/libexec/lucciola/color-calibration"
+
+// Like Margine's GNOME hide-cursor extension, a bit quicker: the pointer
+// hides after 2 seconds without moving and comes back on the next movement.
+cursor {
+    hide-after-inactive-ms 2000
+}
+
+hotkey-overlay {
+    skip-at-startup
+}
+
+// Fallback only: at login session-start writes the GNOME/Margine path
+// (Pictures folder of user-dirs.dirs, ~/data/media/photos on Margine, plus
+// GNOME's translated "Screenshots/Screenshot From ...") to the file below.
+screenshot-path "~/Pictures/Screenshots/Screenshot From %Y-%m-%d %H-%M-%S.png"
+include optional=true "~/.local/state/lucciola/niri-screenshots.kdl"
+
+// Rounded corners matching libadwaita's own window radius (--window-radius:
+// 15px in GTK4/libadwaita), so GTK windows and their border line up.
+window-rule {
+    geometry-corner-radius 15
+    clip-to-geometry true
+}
+
+// Noctalia's settings window opens as a normal column in the scrolling
+// strip. Floating, it stayed in front while scrolling between columns and,
+// taller than the room bar and dock leave on a laptop, slid under the dock.
+window-rule {
+    match app-id="dev.noctalia.Noctalia"
+    default-column-width { fixed 1080; }
+}
+
+window-rule {
+    match app-id=r#"firefox$"# title="^Picture-in-Picture$"
+    match app-id=r#"zen$"# title="^Picture-in-Picture$"
+    open-floating true
+}
+
+// Noctalia's surfaces are opaque here, so no blur behind them. With blur on,
+// niri samples the wallpaper (xray) and its colours leak through the
+// anti-aliased rounded edges of panels and launcher as a coloured hairline.
+layer-rule {
+    match namespace="^noctalia"
+    background-effect {
+        blur false
+    }
+}
+
+// Noctalia's blurred wallpaper copy behind the overview.
+layer-rule {
+    match namespace="^noctalia-backdrop"
+    place-within-backdrop true
+}
+
+debug {
+    // Lets Noctalia's notification actions raise the window they belong to.
+    honor-xdg-activation-with-invalid-serial
+}
+
+binds {
+    // Super+Shift+H: on Italian keyboards "/" is Shift+7, so the upstream
+    // Super+Shift+/ is awkward; both work.
+    Mod+Shift+H hotkey-overlay-title="Elenco delle scorciatoie" { show-hotkey-overlay; }
+    Mod+Shift+C hotkey-overlay-title="Calibrazione colore: accendi/spegni" { spawn "/usr/libexec/lucciola/color-calibration" "--toggle"; }
+    Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }
+
+    // Applications (same keys as Margine)
+    Mod+Return hotkey-overlay-title="Terminale" { spawn "ptyxis"; }
+    Mod+Shift+Return hotkey-overlay-title="Browser" { spawn "flatpak" "run" "app.zen_browser.zen"; }
+    Mod+E hotkey-overlay-title="File" { spawn "nautilus" "--new-window"; }
+    Mod+Ctrl+T hotkey-overlay-title="Monitor di sistema" { spawn "ptyxis" "--" "btop"; }
+    Mod+Period hotkey-overlay-title="Emoji" { spawn "flatpak" "run" "it.mijorus.smile"; }
+
+    // Shell (Noctalia)
+    Mod+Space hotkey-overlay-title="Applicazioni" { spawn-sh "noctalia msg panel-toggle launcher"; }
+    Mod+R hotkey-overlay-title=null { spawn-sh "noctalia msg panel-toggle launcher"; }
+    Mod+N hotkey-overlay-title="Centro di controllo e notifiche" { spawn-sh "noctalia msg panel-toggle control-center"; }
+    Mod+V hotkey-overlay-title="Cronologia appunti" { spawn-sh "noctalia msg panel-toggle clipboard"; }
+    Mod+Comma hotkey-overlay-title="Impostazioni della shell" { spawn-sh "noctalia msg settings-toggle"; }
+    Mod+Escape hotkey-overlay-title="Esci, riavvia, spegni" { spawn-sh "noctalia msg panel-toggle session"; }
+    Alt+Tab hotkey-overlay-title="Cambia finestra" { spawn-sh "noctalia msg window-switcher hold"; }
+
+    // Lock. Allowed while locked on purpose: if the lock screen ever dies,
+    // niri keeps the session locked on a red screen, and this key brings a
+    // fresh lock screen back (see /usr/libexec/lucciola/lock).
+    Mod+Ctrl+L allow-when-locked=true hotkey-overlay-title="Blocca lo schermo" { spawn "/usr/libexec/lucciola/lock"; }
+
+    Mod+Shift+Space repeat=false hotkey-overlay-title="Panoramica" { toggle-overview; }
+
+    // Windows
+    Mod+W repeat=false hotkey-overlay-title="Chiudi la finestra" { close-window; }
+    // Super+F maximizes as GNOME does: edge to edge, bar and dock stay. A
+    // real fullscreen window covers the top layer (bar, dock) only while the
+    // view is still: during scrolls, gestures and workspace switches niri
+    // draws them on top, then they vanish at once (hardcoded in niri 26.04,
+    // render_above_top_layer). Fine for videos and games, ugly as everyday
+    // maximize; so it moves to Super+Ctrl+F.
+    Mod+F hotkey-overlay-title="Massimizza" { maximize-window-to-edges; }
+    Mod+Ctrl+F hotkey-overlay-title="Schermo intero" { fullscreen-window; }
+    Mod+M hotkey-overlay-title="Massimizza la colonna" { maximize-column; }
+    Mod+Shift+F hotkey-overlay-title="Finestra fluttuante" { toggle-window-floating; }
+    Mod+Shift+S { toggle-column-tabbed-display; }
+    Mod+C { center-column; }
+
+    Mod+H { focus-column-left; }
+    Mod+J { focus-window-down; }
+    Mod+K { focus-window-up; }
+    Mod+L { focus-column-right; }
+
+    Mod+Left  { move-column-left; }
+    Mod+Right { move-column-right; }
+    Mod+Up    { move-window-up; }
+    Mod+Down  { move-window-down; }
+
+    Mod+Home { focus-column-first; }
+    Mod+End  { focus-column-last; }
+
+    Mod+BracketLeft  { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+
+    Mod+Ctrl+R { switch-preset-column-width; }
+    Mod+Minus { set-column-width "-10%"; }
+    Mod+Equal { set-column-width "+10%"; }
+    Mod+Shift+Minus { set-window-height "-10%"; }
+    Mod+Shift+Equal { set-window-height "+10%"; }
+
+    // Monitors
+    Mod+Shift+Left  { focus-monitor-left; }
+    Mod+Shift+Right { focus-monitor-right; }
+    Mod+Shift+Ctrl+Left  { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+
+    // Workspaces
+    Mod+1 { focus-workspace "1"; }
+    Mod+2 { focus-workspace "2"; }
+    Mod+Shift+1 { move-column-to-workspace "1"; }
+    Mod+Shift+2 { move-column-to-workspace "2"; }
+
+    // Fixed workspaces: Super+1 and Super+2 only. niri always keeps one
+    // empty workspace at the bottom of every screen; the up/down keys and the
+    // Super+wheel binds would lead there, so they are left out. (The
+    // three-finger vertical touchpad swipe still does; niri cannot turn it off.)
+    Mod+WheelScrollRight { focus-column-right; }
+    Mod+WheelScrollLeft  { focus-column-left; }
+    Mod+Shift+WheelScrollDown { focus-column-right; }
+    Mod+Shift+WheelScrollUp   { focus-column-left; }
+
+    // Screenshots (same keys as Margine)
+    Print hotkey-overlay-title="Screenshot" { screenshot; }
+    Mod+Shift+P { screenshot; }
+    Ctrl+Print { screenshot-window; }
+    Mod+Shift+W { screenshot-window; }
+    Shift+Print { spawn "flatpak" "run" "be.alexandervanhee.gradia" "--screenshot=INTERACTIVE"; }
+    Mod+Shift+A { spawn "flatpak" "run" "be.alexandervanhee.gradia" "--screenshot=INTERACTIVE"; }
+
+    // Media and brightness keys, also on the lock screen
+    XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "noctalia msg volume-up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn-sh "noctalia msg volume-down"; }
+    XF86AudioMute        allow-when-locked=true { spawn-sh "noctalia msg volume-mute"; }
+    XF86AudioMicMute     allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"; }
+    XF86AudioPlay        allow-when-locked=true { spawn-sh "noctalia msg media toggle"; }
+    XF86AudioNext        allow-when-locked=true { spawn-sh "noctalia msg media next"; }
+    XF86AudioPrev        allow-when-locked=true { spawn-sh "noctalia msg media previous"; }
+    XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "noctalia msg brightness-up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn-sh "noctalia msg brightness-down"; }
+
+    // Session
+    Mod+Shift+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
+    Mod+Shift+E hotkey-overlay-title="Esci da Lucciola" { quit; }
+    Ctrl+Alt+Delete { quit; }
+}
+
+// Border colours from the Noctalia palette, written by Lucciola's Noctalia
+// template (/usr/share/lucciola/noctalia/25-niri-colors.toml). Missing until
+// Noctalia first applies its theme; niri picks it up when it appears.
+include optional=true "~/.config/niri/lucciola-colors.kdl"

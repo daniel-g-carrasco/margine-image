@@ -1,0 +1,97 @@
+#!/usr/bin/sh
+# Lucciola: start Noctalia with the image's defaults.
+#
+# Noctalia has no system-wide configuration layer: it merges every *.toml in
+# ~/.config/noctalia/ in alphabetical order. So each user gets, once, a small
+# 00-lucciola.toml that includes the defaults kept in /usr/share (updated with
+# every image); the user's own files sort after it and win. It is created only
+# the first time: delete it and it stays deleted.
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia"
+marker="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/noctalia-seeded"
+if [ ! -e "$marker" ]; then
+  mkdir -p "$cfg" "$(dirname "$marker")"
+  if [ ! -e "$cfg/00-lucciola.toml" ]; then
+    cat > "$cfg/00-lucciola.toml" <<'TOML'
+# Lucciola defaults (from the system image). Your own files in this folder
+# sort after this one and win. Delete this file to use Noctalia's defaults.
+[include]
+files = ["/usr/share/lucciola/noctalia/"]
+TOML
+  fi
+  : > "$marker"
+fi
+# niri reads ~/.config/niri/config.kdl INSTEAD of /etc/niri/config.kdl as soon
+# as it exists. Noctalia's niri template (Templates > Built-in > Niri) creates
+# it holding only `include "noctalia.kdl"`, and its undo leaves it empty:
+# either way every Lucciola default is gone, keybindings included. So the
+# user file starts from the system config, and what is added later (Noctalia's
+# include, the user's own lines) lands after it. A file with nothing but
+# comments and Noctalia's include is repaired the same way; any other user
+# file is left alone.
+niri_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/niri/config.kdl"
+if [ ! -e "$niri_cfg" ] || ! grep -Eqv '^[[:space:]]*(//.*)?$|^[[:space:]]*include[[:space:]]+"noctalia\.kdl"[[:space:]]*$' "$niri_cfg"; then
+  mkdir -p "${niri_cfg%/*}"
+  {
+    echo '// niri reads this file instead of /etc/niri/config.kdl, so it starts from'
+    echo '// the Lucciola defaults (which include ~/.config/niri/lucciola.kdl).'
+    echo 'include "/etc/niri/config.kdl"'
+    if [ -e "$niri_cfg" ]; then echo; cat "$niri_cfg"; fi
+  } > "$niri_cfg.new" && mv "$niri_cfg.new" "$niri_cfg"
+fi
+# Named workspaces live in ONE place, the personal file. niri inserts every
+# `workspace` section as is, without merging across includes, so the same
+# name declared in the system config and again in lucciola.kdl (to pin it to
+# a monitor with open-on-output) made two workspaces called "1". Lucciola's
+# two workspaces (Mod+1, Mod+2) are added to lucciola.kdl once, unless the
+# user's niri files already declare named workspaces; deleted, they stay so.
+niri_dir="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
+ws_marker="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/niri-workspaces-seeded"
+if [ ! -e "$ws_marker" ]; then
+  if ! cat "$niri_dir/config.kdl" "$niri_dir/lucciola.kdl" 2>/dev/null \
+      | grep -Eq '^[[:space:]]*workspace[[:space:]]+"'; then
+    mkdir -p "$niri_dir"
+    cat >> "$niri_dir/lucciola.kdl" <<'KDL'
+
+// Lucciola's two workspaces (Mod+1, Mod+2), always present. To keep them on
+// one monitor, add its name as `niri msg outputs` shows it, for example:
+// workspace "1" { open-on-output "Dell Inc. DELL P2415Q 0123456789"; }
+workspace "1"
+workspace "2"
+KDL
+  fi
+  mkdir -p "${ws_marker%/*}"
+  : > "$ws_marker"
+fi
+# Screenshots go where GNOME saves them in Margine: the Pictures folder of
+# user-dirs.dirs (~/data/media/photos with the Margine layout), then GNOME
+# Shell's own translated folder and file names ("Screenshots/Screenshot From
+# ..."). niri expands only "~" in screenshot-path, so the path is computed
+# here and written to a file the system niri config includes; rewritten
+# only when it changes. A screenshot-path in lucciola.kdl still wins.
+pictures="$(xdg-user-dir PICTURES 2>/dev/null)"
+[ -n "$pictures" ] || pictures="$HOME"
+shots_dir="$(gettext -d gnome-shell Screenshots 2>/dev/null)"
+[ -n "$shots_dir" ] || shots_dir=Screenshots
+shots_name="$(gettext -d gnome-shell 'Screenshot From %s' 2>/dev/null)"
+case "$shots_name" in *%s*) ;; *) shots_name='Screenshot From %s' ;; esac
+shots_path="$(printf '%s/%s/%s.png' "$pictures" "$shots_dir" "$shots_name" \
+  | sed -e 's/%s/%Y-%m-%d %H-%M-%S/' -e 's/[\\"]/\\&/g')"
+shots_kdl="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/niri-screenshots.kdl"
+shots_new="$(printf '%s\n%s\n' \
+  '// Written at login by /usr/libexec/lucciola/session-start; do not edit.' \
+  "screenshot-path \"$shots_path\"")"
+if [ "$(cat "$shots_kdl" 2>/dev/null)" != "$shots_new" ]; then
+  mkdir -p "${shots_kdl%/*}"
+  printf '%s\n' "$shots_new" > "$shots_kdl.new" && mv "$shots_kdl.new" "$shots_kdl"
+fi
+# The Margine palette must sit in the user's palettes/ folder (Noctalia looks
+# nowhere else): a link to the image's copy, so it follows image updates.
+# Only created when missing; a user's own file of that name is left alone.
+pal="$cfg/palettes/Margine.json"
+if [ ! -e "$pal" ] && [ ! -L "$pal" ]; then
+  mkdir -p "$cfg/palettes"
+  ln -s /usr/share/lucciola/noctalia/palettes/Margine.json "$pal"
+fi
+# Bar widths for large monitors, before Noctalia reads its config.
+/usr/libexec/lucciola/bar-widths --once || true
+exec noctalia

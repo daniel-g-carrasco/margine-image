@@ -1,0 +1,8 @@
+# niri borders follow the Noctalia palette: the system niri config includes
+# ~/.config/niri/lucciola-colors.kdl (optional, watched), so no user niri file
+# is touched. Same colours as Noctalia's built-in "Niri" template, which is
+# best left off: it adds an include to ~/.config/niri/config.kdl, and before
+# Lucciola seeded that file it hid the whole system config.
+[theme.templates.user.lucciola_niri]
+input_path = "/usr/share/lucciola/noctalia/templates/niri.kdl"
+output_path = "$XDG_CONFIG_HOME/niri/lucciola-colors.kdl"

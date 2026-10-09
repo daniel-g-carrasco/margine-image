@@ -1,0 +1,467 @@
+#!/usr/bin/python3
+"""Lucciola: load display calibration curves (ICC vcgt) into niri.
+
+GNOME loads the calibration of a profiled screen (the vcgt curves that
+GNOME's calibration, DisplayCAL or ArgyllCMS write into the ICC profile)
+into the display hardware. niri has no colour management yet, so under
+Lucciola the curves were simply dropped. This helper puts them back through
+wlr-gamma-control, the protocol niri offers for gamma ramps.
+
+What comes back is the calibration: white point and grey balance. Full
+profile conversions stay the job of colour-managed applications (darktable,
+GIMP), which can be pointed at the same profile.
+
+Profiles come from ~/.local/share/icc, where GNOME Settings keeps them. Each
+screen gets the newest profile with calibration curves whose device or
+profile description, or file name, mentions the screen's model. To choose
+another profile for a screen, or none, add a line to
+~/.config/lucciola/color-profiles:
+
+    DELL P2415Q = ~/.local/share/icc/Dell old.icc
+    NE135A1M-NY1 = none
+
+The left side is looked up (ignoring case) in the screen's connector, make,
+model and description.
+
+Gamma ramps belong to one client per screen: while this runs, Noctalia's
+night light cannot change the screen, and the other way round (whoever
+comes first wins). The curves stay loaded while the helper runs; it follows
+screens being plugged and unplugged.
+
+  color-calibration          load the curves and keep them loaded
+  color-calibration --toggle switch the running copy between calibrated and
+                             uncalibrated (Super+Shift+C), to compare
+  color-calibration --list   show which profile each screen gets, then exit
+"""
+import array
+import fcntl
+import glob
+import os
+import selectors
+import signal
+import socket
+import struct
+import subprocess
+import sys
+
+ICC_DIR = os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "icc")
+OVERRIDES = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+    "lucciola", "color-profiles")
+
+
+def log(msg):
+    print(f"color-calibration: {msg}", file=sys.stderr, flush=True)
+
+
+def notify(summary, body):
+    try:
+        subprocess.run(["notify-send", "-a", "Lucciola", "-t", "2500", "-h",
+                        "string:x-canonical-private-synchronous:lucciola-color-calibration",
+                        summary, body], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+# ---------------------------------------------------------------- profiles
+
+def icc_text(data, off, size):
+    """Text of a desc (ICC v2) or mluc (ICC v4) tag."""
+    tag = data[off:off + size]
+    if tag[:4] == b"desc":
+        (length,) = struct.unpack_from(">I", tag, 8)
+        return tag[12:12 + length].split(b"\0")[0].decode("latin-1")
+    if tag[:4] == b"mluc" and len(tag) >= 28:
+        length, start = struct.unpack_from(">II", tag, 20)
+        return tag[start:start + length].decode("utf-16-be", "replace")
+    return ""
+
+
+def vcgt_curves(data, off, size):
+    """The vcgt tag as three lists of floats in 0..1 (red, green, blue)."""
+    tag = data[off:off + size]
+    (kind,) = struct.unpack_from(">I", tag, 8)
+    if kind == 0:  # table
+        channels, count, width = struct.unpack_from(">HHH", tag, 12)
+        if channels not in (1, 3) or width not in (1, 2) or count < 2:
+            return None
+        fmt = ">" + ("B" if width == 1 else "H") * (channels * count)
+        values = struct.unpack_from(fmt, tag, 18)
+        top = (1 << (8 * width)) - 1
+        curves = [[v / top for v in values[c * count:(c + 1) * count]]
+                  for c in range(channels)]
+        return curves * 3 if channels == 1 else curves
+    if kind == 1:  # formula: min + (max - min) * x^gamma per channel
+        curves = []
+        for c in range(3):
+            gamma, lo, hi = (v / 65536 for v in struct.unpack_from(">iii", tag, 12 + 12 * c))
+            curves.append([lo + (hi - lo) * (i / 255) ** gamma for i in range(256)])
+        return curves
+    return None
+
+
+def read_profile(path):
+    try:
+        with open(path, "rb") as f:
+            data = f.read(16 << 20)
+        (count,) = struct.unpack_from(">I", data, 128)
+        tags = {}
+        for i in range(count):
+            sig, off, size = struct.unpack_from(">4sII", data, 132 + 12 * i)
+            tags[sig.decode("latin-1")] = (off, size)
+        if "vcgt" not in tags:
+            return None
+        curves = vcgt_curves(data, *tags["vcgt"])
+        if not curves:
+            return None
+        text = [os.path.basename(path)]
+        for sig in ("desc", "dmnd", "dmdd"):
+            if sig in tags:
+                text.append(icc_text(data, *tags[sig]))
+        created = struct.unpack_from(">6H", data, 24)
+        return {"path": path, "curves": curves, "created": created,
+                "match": squash(" ".join(text)), "desc": text[1] if len(text) > 1 else text[0]}
+    except (OSError, struct.error, ValueError):
+        return None
+
+
+def squash(text):
+    return "".join(c for c in text.lower() if c.isalnum())
+
+
+def load_overrides():
+    rules = []
+    try:
+        with open(OVERRIDES) as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if "=" in line:
+                    key, value = (part.strip() for part in line.split("=", 1))
+                    if key and value:
+                        rules.append((key.lower(), value))
+    except OSError:
+        pass
+    return rules
+
+
+def profile_for(output, profiles, overrides):
+    """The profile for an output, with the reason, or (None, reason)."""
+    identity = " ".join([output["name"], output["make"], output["model"],
+                         output["description"]]).lower()
+    for key, value in overrides:
+        if key in identity:
+            if value.lower() == "none":
+                return None, f"none, as set in {OVERRIDES}"
+            profile = read_profile(os.path.expanduser(value))
+            if profile:
+                return profile, f"set in {OVERRIDES}"
+            return None, f"{value} (from {OVERRIDES}) has no calibration curves"
+    model = squash(output["model"])
+    if len(model) < 4:
+        return None, "the screen reports no model to match"
+    found = [p for p in profiles if model in p["match"]]
+    if not found:
+        return None, f"no calibrated profile for {output['model']} in {ICC_DIR}"
+    return max(found, key=lambda p: (p["created"], p["path"])), "newest calibrated profile"
+
+
+def ramps(curves, size):
+    """Three ramps of `size` 16-bit entries, resampled from the curves."""
+    table = array.array("H")
+    for curve in curves:
+        last = len(curve) - 1
+        for i in range(size):
+            x = i * last / (size - 1) if size > 1 else 0
+            j = min(int(x), last - 1)
+            v = curve[j] + (curve[j + 1] - curve[j]) * (x - j)
+            table.append(round(min(1.0, max(0.0, v)) * 65535))
+    return table
+
+
+# ---------------------------------------------------------------- wayland
+
+def pack_string(text):
+    raw = text.encode() + b"\0"
+    return struct.pack("=I", len(raw)) + raw + b"\0" * (-len(raw) % 4)
+
+
+def unpack_string(body, pos):
+    (length,) = struct.unpack_from("=I", body, pos)
+    raw = body[pos + 4:pos + 4 + length]
+    return raw.rstrip(b"\0").decode("utf-8", "replace"), pos + 4 + length + (-length % 4)
+
+
+class Client:
+    """Just enough of the Wayland wire protocol for wl_output and gamma control."""
+
+    def __init__(self):
+        display = os.environ.get("WAYLAND_DISPLAY", "wayland-0")
+        if not display.startswith("/"):
+            display = os.path.join(os.environ["XDG_RUNTIME_DIR"], display)
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(display)
+        self.buf = b""
+        self.last_id = 1
+        self.handlers = {1: self.on_display}
+
+    def new_id(self, handler):
+        self.last_id += 1
+        self.handlers[self.last_id] = handler
+        return self.last_id
+
+    def send(self, obj, opcode, payload=b"", fd=None):
+        msg = struct.pack("=II", obj, ((8 + len(payload)) << 16) | opcode) + payload
+        if fd is None:
+            self.sock.sendall(msg)
+        else:
+            self.sock.sendmsg([msg], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                       array.array("i", [fd]))])
+
+    def dispatch(self):
+        data, ancillary, _, _ = self.sock.recvmsg(1 << 16, socket.CMSG_SPACE(16 * 4))
+        for level, kind, fds in ancillary:  # nothing bound here sends fds
+            if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                for fd in array.array("i", fds[:len(fds) - len(fds) % 4]):
+                    os.close(fd)
+        if not data:
+            raise EOFError("the compositor closed the connection")
+        self.buf += data
+        while len(self.buf) >= 8:
+            obj, word = struct.unpack_from("=II", self.buf)
+            size = word >> 16
+            if len(self.buf) < size:
+                break
+            body, self.buf = self.buf[8:size], self.buf[size:]
+            handler = self.handlers.get(obj)
+            if handler:
+                handler(word & 0xFFFF, body)
+
+    def roundtrip(self):
+        done = []
+        callback = self.new_id(lambda opcode, body: done.append(True))
+        self.send(1, 0, struct.pack("=I", callback))  # wl_display.sync
+        while not done:
+            self.dispatch()
+        self.handlers.pop(callback, None)  # delete_id may have come already
+
+    def on_display(self, opcode, body):
+        if opcode == 0:  # error
+            obj, code = struct.unpack_from("=II", body)
+            message, _ = unpack_string(body, 8)
+            raise RuntimeError(f"protocol error on object {obj} ({code}): {message}")
+        if opcode == 1:  # delete_id
+            self.handlers.pop(struct.unpack_from("=I", body)[0], None)
+
+    def bind(self, name, interface, version, handler):
+        new = self.new_id(handler)
+        self.send(self.registry, 0, struct.pack("=I", name) + pack_string(interface)
+                  + struct.pack("=II", version, new))
+        return new
+
+
+class Calibrator:
+    def __init__(self, listing):
+        self.listing = listing
+        self.profiles = [p for p in map(read_profile, sorted(glob.glob(os.path.join(ICC_DIR, "*.ic[cm]")))) if p]
+        self.overrides = load_overrides()
+        self.client = Client()
+        self.manager = None
+        self.outputs = {}   # registry name -> output state
+        self.ready = False
+        self.enabled = True  # --toggle flips it: calibrated or neutral ramps
+        self.client.registry = self.client.new_id(self.on_registry)
+        self.client.send(1, 1, struct.pack("=I", self.client.registry))  # get_registry
+
+    def on_registry(self, opcode, body):
+        if opcode == 0:  # global
+            (name,) = struct.unpack_from("=I", body)
+            interface, pos = unpack_string(body, 4)
+            (version,) = struct.unpack_from("=I", body, pos)
+            if interface == "zwlr_gamma_control_manager_v1" and self.manager is None:
+                self.manager = self.client.bind(name, interface, 1, lambda *_: None)
+            elif interface == "wl_output":
+                self.add_output(name, min(version, 4))
+        elif opcode == 1:  # global_remove
+            self.remove_output(struct.unpack_from("=I", body)[0])
+
+    def add_output(self, name, version):
+        out = {"name": "", "make": "", "model": "", "description": "", "version": version,
+               "done": False, "gamma": None, "profile": None, "size": 0}
+        out["id"] = self.client.bind(name, "wl_output", version,
+                                     lambda opcode, body: self.on_output(out, opcode, body))
+        self.outputs[name] = out
+
+    def remove_output(self, name):
+        out = self.outputs.pop(name, None)
+        if out is None:
+            return
+        self.drop_gamma(out)
+        if out["version"] >= 3:
+            self.client.send(out["id"], 0)  # wl_output.release
+        log(f"{out['name'] or 'screen'} unplugged")
+
+    def on_output(self, out, opcode, body):
+        if opcode == 0:  # geometry: x y w h subpixel make model transform
+            out["make"], pos = unpack_string(body, 20)
+            out["model"], _ = unpack_string(body, pos)
+        elif opcode == 4:
+            out["name"], _ = unpack_string(body, 0)
+        elif opcode == 5:
+            out["description"], _ = unpack_string(body, 0)
+        elif opcode == 2 and not out["done"]:
+            out["done"] = True
+            if self.ready:
+                self.apply(out)
+
+    def apply(self, out):
+        profile, why = profile_for(out, self.profiles, self.overrides)
+        label = out["name"] or out["model"]
+        if self.listing:
+            print(f"{label} ({out['make']} {out['model']}): "
+                  + (f"{profile['path']}  [{why}]" if profile else why))
+            return
+        if not profile:
+            log(f"{label}: {why}")
+            return
+        if self.manager is None:
+            log("this compositor offers no wlr-gamma-control; nothing to do")
+            return
+        out["profile"] = profile
+        out["gamma"] = self.client.new_id(lambda opcode, body: self.on_gamma(out, opcode, body))
+        self.client.send(self.manager, 0, struct.pack("=II", out["gamma"], out["id"]))
+        log(f"{label}: {profile['desc']} ({os.path.basename(profile['path'])}, {why})")
+
+    def on_gamma(self, out, opcode, body):
+        label = out["name"] or out["model"]
+        if opcode == 0:  # gamma_size
+            (out["size"],) = struct.unpack_from("=I", body)
+            self.load(out)
+            log(f"{label}: calibration curves loaded ({out['size']} entries)"
+                + ("" if self.enabled else ", switched off for now"))
+        elif opcode == 1:  # failed
+            log(f"{label}: the compositor refused the curves (night light active, "
+                "or the screen went away)")
+            self.drop_gamma(out)
+
+    def load(self, out):
+        """Send the calibrated ramps, or neutral ones while switched off."""
+        curves = out["profile"]["curves"] if self.enabled else [[0.0, 1.0]] * 3
+        fd = os.memfd_create("lucciola-gamma", os.MFD_CLOEXEC)
+        try:
+            os.write(fd, ramps(curves, out["size"]).tobytes())
+            os.lseek(fd, 0, os.SEEK_SET)
+            self.client.send(out["gamma"], 0, fd=fd)  # set_gamma
+        finally:
+            os.close(fd)
+
+    def toggle(self):
+        self.enabled = not self.enabled
+        calibrated = [out for out in self.outputs.values() if out["gamma"] and out["size"]]
+        for out in calibrated:
+            self.load(out)
+        state = "on" if self.enabled else "off"
+        log(f"calibration switched {state} on {len(calibrated)} screen(s)")
+        if not calibrated:
+            notify("Calibrazione colore", "Nessuno schermo calibrato in questo momento.")
+        elif self.enabled:
+            notify("Calibrazione colore accesa", "\n".join(
+                f"{out['name']}: {out['profile']['desc']}" for out in calibrated))
+        else:
+            notify("Calibrazione colore spenta", "Colori del pannello senza correzione.")
+
+    def drop_gamma(self, out):
+        """Destroy the gamma control once; later events for it are ignored."""
+        gamma, out["gamma"] = out["gamma"], None
+        if gamma:
+            self.client.handlers.pop(gamma, None)
+            self.client.send(gamma, 1)  # zwlr_gamma_control_v1.destroy
+
+    def run(self):
+        self.client.roundtrip()   # globals, outputs bound
+        self.client.roundtrip()   # output details
+        self.ready = True
+        for out in list(self.outputs.values()):
+            if out["done"]:
+                self.apply(out)
+        if self.listing:
+            return
+        # --toggle arrives as SIGUSR1; the wakeup socket turns it into an event
+        # next to the Wayland socket, so ramps are never sent mid-message.
+        wake_r, wake_w = socket.socketpair()
+        wake_r.setblocking(False)
+        wake_w.setblocking(False)
+        signal.set_wakeup_fd(wake_w.fileno())
+        signal.signal(signal.SIGUSR1, lambda *_: None)
+        events = selectors.DefaultSelector()
+        events.register(self.client.sock, selectors.EVENT_READ)
+        events.register(wake_r, selectors.EVENT_READ)
+        while True:
+            for key, _ in events.select():
+                if key.fileobj is wake_r:
+                    if signal.SIGUSR1 in wake_r.recv(64):
+                        self.toggle()
+                else:
+                    self.client.dispatch()
+
+
+LOCK = None  # the running copy holds it until exit; it contains its PID
+
+
+def lock_path():
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+                        f"lucciola-color-calibration-{os.environ.get('WAYLAND_DISPLAY', '')}.lock")
+
+
+def single_instance():
+    """True if no other copy holds the curves in this session."""
+    global LOCK
+    LOCK = open(lock_path(), "a+")
+    try:
+        fcntl.flock(LOCK, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    LOCK.seek(0)
+    LOCK.truncate()
+    LOCK.write(str(os.getpid()))
+    LOCK.flush()
+    return True
+
+
+def toggle_running():
+    """Ask the running copy to switch the calibration on or off."""
+    try:
+        with open(lock_path()) as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                running = False  # nobody holds it
+            except OSError:
+                running = True
+            pid = int(f.read().strip() or 0) if running else 0
+    except (OSError, ValueError):
+        pid = 0
+    if not pid:
+        log("not running in this session, nothing to switch")
+        notify("Calibrazione colore", "Il programma di calibrazione non è in esecuzione.")
+        return 1
+    os.kill(pid, signal.SIGUSR1)
+    return 0
+
+
+def main():
+    listing = "--list" in sys.argv[1:]
+    if "--toggle" in sys.argv[1:]:
+        return toggle_running()
+    try:
+        if not listing and not single_instance():
+            log("already running in this session")
+            return 0
+        Calibrator(listing).run()
+    except (OSError, KeyError, EOFError, RuntimeError) as err:
+        log(str(err))
+        return 0 if isinstance(err, EOFError) else 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -23,7 +23,7 @@ dnf -y install --no-docs --setopt=install_weak_deps=False \
   android-tools gstreamer1-plugin-gtk4
 
 SCRCPY_VERSION=5.0.1
-SCRCPY_SHA256=f052ad9eb981879e8c5f066c5ef122b39b6c9853b383d6497219030e6549baed
+SCRCPY_SHA256=9f969d30cc574816077edecda65719c1c70b0aee1df1ba5fa00779ac07b8fd6e
 SCRCPY_TAR="scrcpy-linux-x86_64-v${SCRCPY_VERSION}.tar.gz"
 
 log "Installing scrcpy v${SCRCPY_VERSION} from the official release tarball"

@@ -7,6 +7,12 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-10-09)
+- **Foliate preinstalled, to read e-books** (EPUB, MOBI, FB2, CBZ):
+  `com.github.johnfactotum.Foliate` from Flathub, in the installer's BAKE
+  list (and its live-ISO twin), in the first-boot preinstall fallback and in
+  the declared productivity apps. GNOME offered nothing to open an EPUB.
+
 ### Fixed (2026-10-09)
 - **Koofr Desktop no longer re-announces its tray icon every second.**
   Koofr's GUI (closed source) writes the same icon to a new temp file once

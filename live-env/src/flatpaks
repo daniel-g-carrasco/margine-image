@@ -42,6 +42,7 @@ com.github.huluti.Curtail
 io.github.wartybix.Constrict
 # PDF Arranger — merge, split, rotate and reorder PDF pages.
 com.github.jeromerobert.pdfarranger
+com.github.johnfactotum.Foliate
 org.audacityteam.Audacity
 com.github.wwmm.easyeffects
 # fm.reaper.Reaper — INTENTIONALLY EXCLUDED from BAKE 2026-06-05:

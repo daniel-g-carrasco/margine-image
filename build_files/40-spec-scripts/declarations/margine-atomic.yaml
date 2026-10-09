@@ -469,6 +469,7 @@ flatpaks:
       - org.libreoffice.LibreOffice
       - com.mattjakeman.ExtensionManager
       - com.github.jeromerobert.pdfarranger  # merge, split, reorder PDF pages (2026-09-19)
+      - com.github.johnfactotum.Foliate  # e-book reader: EPUB, MOBI, FB2, CBZ (2026-10-09)
     gnome_core:
       # Silverblue ships these as RPMs; Bluefin DX strips them; Margine
       # restores them as Flatpaks for a complete GNOME desktop without

@@ -29,8 +29,11 @@ input {
 }
 
 layout {
-    // The look of the first Margine (Hyprland): small gaps, a cream border on
-    // the focused window, a dark one on the others.
+    // The look of the first Margine (Hyprland): small gaps, a beige border on
+    // the focused window; the others' border is the bar background, so only
+    // the focused one stands out. These are the fallbacks: once Noctalia has
+    // applied its theme, lucciola-colors.kdl (included at the end) takes the
+    // same roles from the active palette.
     gaps 6
     center-focused-column "never"
 
@@ -47,8 +50,8 @@ layout {
 
     border {
         width 3
-        active-color "#eae7dbe0"
-        inactive-color "#423a3ecc"
+        active-color "#e6d5bf"
+        inactive-color "#121212"
         urgent-color "#ff938c"
     }
 

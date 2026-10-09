@@ -21,8 +21,9 @@ verified by the device, rollback, and every Margine fix. This layer adds:
 - niri's border colours follow the Noctalia palette through Lucciola's own
   Noctalia template (`noctalia/25-niri-colors.toml`, rendered to
   `~/.config/niri/lucciola-colors.kdl`, which the system niri config
-  includes): unlike Noctalia's built-in "Niri" template it keeps unfocused
-  borders visible and touches no user niri file;
+  includes): the same colours as Noctalia's built-in "Niri" template (beige
+  focused border, unfocused ones in the bar background), without touching
+  any user niri file;
 - `/usr/libexec/lucciola/bar-widths`: the bar keeps a fixed width on large
   monitors, and secondary screens get a single workspace, as in GNOME;
 - `/usr/libexec/lucciola/color-calibration`: niri has no colour management

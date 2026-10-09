@@ -85,7 +85,11 @@ hotkey-overlay {
     skip-at-startup
 }
 
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+// Fallback only: at login session-start writes the GNOME/Margine path
+// (Pictures folder of user-dirs.dirs, ~/data/media/photos on Margine, plus
+// GNOME's translated "Screenshots/Screenshot From ...") to the file below.
+screenshot-path "~/Pictures/Screenshots/Screenshot From %Y-%m-%d %H-%M-%S.png"
+include optional=true "~/.local/state/lucciola/niri-screenshots.kdl"
 
 // Rounded corners matching libadwaita's own window radius (--window-radius:
 // 15px in GTK4/libadwaita), so GTK windows and their border line up.

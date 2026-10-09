@@ -38,6 +38,28 @@ if [ ! -e "$niri_cfg" ] || ! grep -Eqv '^[[:space:]]*(//.*)?$|^[[:space:]]*inclu
     if [ -e "$niri_cfg" ]; then echo; cat "$niri_cfg"; fi
   } > "$niri_cfg.new" && mv "$niri_cfg.new" "$niri_cfg"
 fi
+# Screenshots go where GNOME saves them in Margine: the Pictures folder of
+# user-dirs.dirs (~/data/media/photos with the Margine layout), then GNOME
+# Shell's own translated folder and file names ("Screenshots/Screenshot From
+# ..."). niri expands only "~" in screenshot-path, so the path is computed
+# here and written to a file the system niri config includes; rewritten
+# only when it changes. A screenshot-path in lucciola.kdl still wins.
+pictures="$(xdg-user-dir PICTURES 2>/dev/null)"
+[ -n "$pictures" ] || pictures="$HOME"
+shots_dir="$(gettext -d gnome-shell Screenshots 2>/dev/null)"
+[ -n "$shots_dir" ] || shots_dir=Screenshots
+shots_name="$(gettext -d gnome-shell 'Screenshot From %s' 2>/dev/null)"
+case "$shots_name" in *%s*) ;; *) shots_name='Screenshot From %s' ;; esac
+shots_path="$(printf '%s/%s/%s.png' "$pictures" "$shots_dir" "$shots_name" \
+  | sed -e 's/%s/%Y-%m-%d %H-%M-%S/' -e 's/[\\"]/\\&/g')"
+shots_kdl="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/niri-screenshots.kdl"
+shots_new="$(printf '%s\n%s\n' \
+  '// Written at login by /usr/libexec/lucciola/session-start; do not edit.' \
+  "screenshot-path \"$shots_path\"")"
+if [ "$(cat "$shots_kdl" 2>/dev/null)" != "$shots_new" ]; then
+  mkdir -p "${shots_kdl%/*}"
+  printf '%s\n' "$shots_new" > "$shots_kdl.new" && mv "$shots_kdl.new" "$shots_kdl"
+fi
 # The Margine palette must sit in the user's palettes/ folder (Noctalia looks
 # nowhere else): a link to the image's copy, so it follows image updates.
 # Only created when missing; a user's own file of that name is left alone.

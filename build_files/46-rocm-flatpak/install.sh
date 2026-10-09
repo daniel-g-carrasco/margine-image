@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Margine image build — section: 46-rocm-flatpak
+# Margine image build, section 46-rocm-flatpak:
 # A library shim that lets Flatpak apps use the host's ROCm (OpenCL, HIP) on
 # AMD GPUs, built here so it always matches this image's ROCm.
 #

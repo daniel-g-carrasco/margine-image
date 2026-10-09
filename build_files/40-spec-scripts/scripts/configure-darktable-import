@@ -1,49 +1,53 @@
 #!/usr/bin/env python3
 """
-Point darktable's import at the RAW folder, import RAWs only, and keep
-the integrated GPU inside the driver's compute watchdog.
+darktable defaults for Margine: import from the RAW folder, scroll the module
+panel, and the GPU settings that suit integrated AMD graphics.
 
-Rationale (2026-08-17): the home layout already gives photos a proper
-place (XDG_PICTURES_DIR/raw for camera originals, exports/ for output),
-but darktable ships pointing at $HOME and importing every image format
-it recognises. So the first import of a fresh install pulls in
-screenshots, downloaded PNGs and phone JPEGs alongside the actual
-negatives, and the library starts dirty.
-
-Three keys, all darktable's own:
+Import (2026-08-17). The home layout gives photos a proper place
+(XDG_PICTURES_DIR/raw for camera originals, exports/ for output), but
+darktable ships pointing at $HOME and importing every image format it
+recognises, so the first import pulls in screenshots, downloaded PNGs and
+phone JPEGs. Three keys, all darktable's own:
     ui_last/import_last_directory  -> <pictures>/raw
     ui_last/import_ignore_nonraws  -> true
     ui_last/import_recursive       -> true
+"Only new photos" needs no key: darktable skips images already in the library.
 
-"Only new photos" needs no key: darktable already skips images that are
-in the library, so importing the folder again picks up only what the
-camera added since.
+Module panel scrolling (2026-10-09). By default the mouse wheel and the
+two-finger touchpad scroll change the control under the pointer, so
+scrolling down the darkroom's right panel silently edits sliders and combo
+boxes on the way. darkroom/ui/sidebar_scroll_default=TRUE makes scrolling move
+the panel instead; Ctrl+Alt+scroll still adjusts a control. Margine sets it
+in a profile darktable has not created yet (the welcome screen still asks,
+with this choice preselected) and on request with --scroll; an existing
+profile keeps whatever its owner chose.
 
-It also caps how much memory darktable assumes it has on a UNIFIED-memory
-GPU (an integrated one, sharing system RAM):
+GPU (2026-08-17, 2026-10-09). Per-device OpenCL line, fields:
+    micro_nap pinned_memory events async disabled advantage unified_fraction
+  - rusticl devices (Mesa): unified_fraction 0.250 -> 0.100. darktable sizes
+    its OpenCL tiles from that fraction; on an integrated GPU one call over
+    ~8 GB could outlast amdgpu's compute watchdog and the driver reset the
+    ring (Fujifilm RAF, Markesteijn demosaic, 2026-08-17).
+  - ROCm devices on unified memory (--gpu-tune, used by
+    `ujust margine-darktable-opencl`): unified_fraction 0.050 and advantage
+    4. Measured on a Radeon 760M (docs/notes/2026-10-09-darktable-gpu-rocm.md):
+    the X-Trans demosaic is several times slower on the iGPU than on the CPU;
+    with 5% of RAM it no longer fits on the device and runs on the CPU, while
+    the other modules stay on the GPU; advantage 4 sends to the CPU the
+    modules that would otherwise be split into slow GPU tiles at full size.
+    Never slower than the CPU alone in any case measured, much faster on
+    heavy modules (diffuse or sharpen, color equalizer).
+A device line is changed only while it still holds darktable's defaults.
 
-    cldevice_v6_<device>  field 7 (unified_fraction)  0.250 -> 0.100
-
-Why: darktable sizes its OpenCL tiles from that fraction, so on a 32 GB
-laptop it will happily build a single kernel invocation over ~8 GB of
-image data. On an iGPU that one call can outlast amdgpu's compute
-watchdog, and the driver then resets the ring and kills the app:
-
-    amdgpu: ring comp_1.2.1 timeout, signaled seq=385, emitted seq=386
-    amdgpu: Starting comp_1.2.1 ring reset ... device wedged
-
-(Reference host, 2026-08-17, opening a Fujifilm RAF: the X-Trans
-Markesteijn demosaic is the heaviest kernel darktable has, and it took
-the GPU down twice.) A smaller fraction means more, shorter kernels:
-the same total work, none of it long enough to look hung.
-
-RESPECTS EXISTING CHOICES. A key is written only when it still holds
-darktable's shipped default; anything the user changed is left alone,
-so this is safe to re-run after upgrades (margine-bootstrap does).
+RESPECTS EXISTING CHOICES. Every key is written only while it still holds
+darktable's shipped default, except --scroll, which is an explicit request.
+Nothing is written while darktable runs: it rewrites darktablerc on exit.
 
 Usage:
-    configure-darktable-import            # dry-run: print the plan
-    configure-darktable-import --apply    # write darktablerc
+    configure-darktable-import                     # dry-run: print the plan
+    configure-darktable-import --apply             # write darktablerc
+    configure-darktable-import --apply --gpu-tune  # also tune ROCm iGPU lines
+    configure-darktable-import --apply --scroll panel|values
 """
 
 from __future__ import annotations
@@ -54,9 +58,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+FLATPAK_ID = "org.darktable.Darktable"
 # Flatpak first (how Margine ships darktable), then a native install.
 CONFIG_CANDIDATES = (
-    Path.home() / ".var/app/org.darktable.Darktable/config/darktable/darktablerc",
+    Path.home() / ".var/app" / FLATPAK_ID / "config/darktable/darktablerc",
     Path.home() / ".config/darktable/darktablerc",
 )
 
@@ -67,12 +72,16 @@ KEYS = {
     "ui_last/import_recursive": ("true", "false"),
 }
 DIR_KEY = "ui_last/import_last_directory"
+SCROLL_KEY = "darkroom/ui/sidebar_scroll_default"
 
-# Per-device OpenCL line: micro_nap pinned_memory eventhandles async
-# disabled advantage unified_fraction. Only the last field is ours.
 CLDEVICE_PREFIX = "cldevice_v6_"
 UNIFIED_DEFAULT = "0.250"
-UNIFIED_SAFE = "0.100"
+ADVANTAGE_DEFAULT = "0.000"
+RUSTICL_UNIFIED = "0.100"
+ROCM_DEVICE_PREFIX = CLDEVICE_PREFIX + "amdacceleratedparallelprocessing"
+ROCM_PLATFORM_KEY = "clplatform_amdacceleratedparallelprocessing"
+ROCM_UNIFIED = "0.050"
+ROCM_ADVANTAGE = "4.000"
 
 
 def pictures_dir() -> Path:
@@ -88,6 +97,30 @@ def pictures_dir() -> Path:
     return Path(os.environ.get("XDG_PICTURES_DIR", Path.home() / "Pictures"))
 
 
+def darktable_installed() -> bool:
+    try:
+        flatpak = subprocess.run(["flatpak", "info", FLATPAK_ID], capture_output=True, timeout=20)
+        if flatpak.returncode == 0:
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return any(Path(d, "darktable").exists() for d in os.environ.get("PATH", "").split(":"))
+
+
+def darktable_running() -> bool:
+    try:
+        ps = subprocess.run(["flatpak", "ps", "--columns=application"],
+                            text=True, capture_output=True, timeout=20).stdout.split()
+        if FLATPAK_ID in ps:
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        return subprocess.run(["pgrep", "-x", "darktable"], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
 def find_config() -> Path | None:
     for path in CONFIG_CANDIDATES:
         if path.is_file():
@@ -95,20 +128,25 @@ def find_config() -> Path | None:
     return None
 
 
-def plan(config: Path, raw_dir: Path) -> list[tuple[str, str, str]]:
-    """Return [(key, current, new)] for keys that should change."""
-    lines = config.read_text().splitlines()
-    current = {}
-    for line in lines:
+def read_rc(config: Path | None) -> dict[str, str]:
+    current: dict[str, str] = {}
+    if config is None:
+        return current
+    for line in config.read_text().splitlines():
         if "=" in line and not line.startswith("#"):
             key, _, value = line.partition("=")
             current[key.strip()] = value.strip()
+    return current
 
+
+def plan(current: dict[str, str], raw_dir: Path, new_profile: bool,
+         scroll: str | None, gpu_tune: bool) -> list[tuple[str, str, str]]:
+    """Return [(key, current, new)] for keys that should change."""
     changes: list[tuple[str, str, str]] = []
 
-    # The directory key: only touch it while darktable still points at the
-    # home directory (its shipped default). Once someone has imported from
-    # somewhere else, that is their working folder — leave it.
+    # The directory key: only while darktable still points at the home
+    # directory (its shipped default). Once someone has imported from
+    # somewhere else, that is their working folder.
     cur_dir = current.get(DIR_KEY, "")
     if cur_dir in ("", str(Path.home())) and cur_dir != str(raw_dir):
         changes.append((DIR_KEY, cur_dir or "(unset)", str(raw_dir)))
@@ -118,57 +156,85 @@ def plan(config: Path, raw_dir: Path) -> list[tuple[str, str, str]]:
         if cur.lower() == shipped and cur.lower() != desired:
             changes.append((key, cur, desired))
 
-    # Unified-memory GPUs only: a discrete card has its own VRAM and the
-    # fraction does not apply, so those lines are left alone.
+    want_scroll = {"panel": "TRUE", "values": "FALSE"}.get(scroll or "")
+    if want_scroll is None and new_profile:
+        want_scroll = "TRUE"
+    if want_scroll is not None and current.get(SCROLL_KEY, "").upper() != want_scroll:
+        changes.append((SCROLL_KEY, current.get(SCROLL_KEY, "(unset)"), want_scroll))
+
+    # --gpu-tune is an explicit "use the GPU": darktable switches OpenCL off by
+    # itself after a driver fails to build its kernels, and nothing turns it
+    # back on.
+    if gpu_tune and current.get("opencl", "TRUE").upper() == "FALSE":
+        changes.append(("opencl", current["opencl"], "TRUE"))
+    # darktable ships the vendor AMD platform (ROCm) switched off.
+    if gpu_tune and current.get(ROCM_PLATFORM_KEY, "FALSE").upper() != "TRUE":
+        changes.append((ROCM_PLATFORM_KEY, current.get(ROCM_PLATFORM_KEY, "(unset)"), "TRUE"))
+
     for key, value in current.items():
-        if not key.startswith(CLDEVICE_PREFIX) or key.endswith("_id0"):
+        if not key.startswith(CLDEVICE_PREFIX) or "_id" in key[len(CLDEVICE_PREFIX):]:
             continue
         fields = value.split()
-        if len(fields) == 7 and fields[6] == UNIFIED_DEFAULT:
-            fields[6] = UNIFIED_SAFE
-            changes.append((key, value, " ".join(fields)))
+        if len(fields) != 7:
+            continue
+        if "rusticl" in key and fields[6] == UNIFIED_DEFAULT:
+            fields[6] = RUSTICL_UNIFIED
+        elif (gpu_tune and key.startswith(ROCM_DEVICE_PREFIX)
+              and fields[5] == ADVANTAGE_DEFAULT and fields[6] == UNIFIED_DEFAULT):
+            # unified_fraction only matters on unified-memory devices: a
+            # discrete card ignores it, so the line is safe to set either way.
+            fields[5], fields[6] = ROCM_ADVANTAGE, ROCM_UNIFIED
+        else:
+            continue
+        changes.append((key, value, " ".join(fields)))
 
     return changes
 
 
 def apply(config: Path, changes: list[tuple[str, str, str]]) -> None:
-    text = config.read_text()
-    lines = text.splitlines()
+    lines = config.read_text().splitlines() if config.exists() else []
     wanted = {key: new for key, _, new in changes}
     seen: set[str] = set()
-
     for i, line in enumerate(lines):
         key = line.partition("=")[0].strip()
         if key in wanted:
             lines[i] = f"{key}={wanted[key]}"
             seen.add(key)
-
     for key, new in wanted.items():
         if key not in seen:
             lines.append(f"{key}={new}")
-
+    config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("\n".join(lines) + "\n")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--apply", action="store_true", help="write the changes")
+    parser.add_argument("--scroll", choices=("panel", "values"),
+                        help="mouse wheel scrolls the module panel (panel) or adjusts controls (values)")
+    parser.add_argument("--gpu-tune", action="store_true",
+                        help="turn OpenCL on and tune ROCm devices for integrated GPUs"
+                             " (5%% of RAM, advantage 4)")
     args = parser.parse_args()
 
     config = find_config()
-    if config is None:
-        print("darktable has no config yet (never launched) — nothing to do.")
-        print("Re-run this after the first darktable start, or let")
-        print("margine-bootstrap do it on the next run.")
-        return 0
+    new_profile = config is None
+    if new_profile:
+        if not darktable_installed():
+            print("darktable is not installed: nothing to do.")
+            return 0
+        config = CONFIG_CANDIDATES[0]   # the Flatpak profile darktable will read
 
     raw_dir = pictures_dir() / "raw"
-    changes = plan(config, raw_dir)
-
+    changes = plan(read_rc(None if new_profile else config), raw_dir, new_profile,
+                   args.scroll, args.gpu_tune)
     if not changes:
-        print("darktable import settings [no change]")
+        print("darktable settings [no change]")
         return 0
 
+    if new_profile:
+        print(f"darktable has no profile yet: seeding {config}")
     for key, cur, new in changes:
         print(f"  {key}: {cur} -> {new}")
 
@@ -176,14 +242,18 @@ def main() -> int:
         print("\ndry-run: re-run with --apply to write these.")
         return 0
 
+    if darktable_running():
+        print("\ndarktable is running and rewrites its settings when it quits:")
+        print("nothing written. Close darktable and run this again.")
+        # A request the user typed fails; the unattended bootstrap moves on.
+        return 1 if (args.scroll or args.gpu_tune) else 0
+
     if not raw_dir.is_dir():
         raw_dir.mkdir(parents=True, exist_ok=True)
         print(f"  created {raw_dir}")
 
     apply(config, changes)
-    print("darktable import settings applied.")
-    print("NOTE: darktable rewrites darktablerc on exit — close it before")
-    print("      running this, or the change is lost with the old file.")
+    print("darktable settings applied.")
     return 0
 
 

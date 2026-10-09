@@ -1278,43 +1278,123 @@ margine-update-unblock APP="":
       exit 1
     fi
 
-# Enable GPU OpenCL in the darktable Flatpak (Mesa rusticl). Two switches are
-# needed and both ship off: the Flatpak needs RUSTICL_ENABLE for its rusticl
-# driver, and darktable keeps rusticl blocklisted until two prefs are flipped.
-# Verified on AMD (Radeon 760M): after this, darktable-cltest reports
-# "opencl ... is AVAILABLE and ENABLED". Works on Polaris (RX 560) too via
-# rusticl, which does not need ROCm. Restart darktable to pick it up.
+# The Flatpak's own OpenCL is Mesa's rusticl, and since Mesa 26.2 (built
+# with LLVM 22's upstream libclc) it cannot build 7 of darktable's 42
+# kernels ("nir_shader not fully linked"), so darktable silently runs on the
+# CPU. On AMD this points the Flatpak at the host's ROCm OpenCL instead,
+# through the shim the image builds (build_files/46-rocm-flatpak): only the
+# ROCm libraries on its library path, and an OpenCL ICD list holding ROCm
+# alone. Then darktable's settings are tuned for integrated GPUs (5% of RAM,
+# advantage 4: the X-Trans demosaic goes to the CPU, the rest stays on the
+# GPU). Measurements: docs/notes/2026-10-09-darktable-gpu-rocm.md;
+# `ujust margine-darktable-bench` repeats them on your own photos.
+# GPU (OpenCL) for darktable via ROCm on AMD: status / enable (default) / disable.
 [group('Apps')]
-margine-darktable-opencl:
+margine-darktable-opencl ACTION="enable":
     #!/usr/bin/bash
     set -uo pipefail
     DT=org.darktable.Darktable
+    SHIM=/usr/lib64/margine/rocm-flatpak
+    VENDORS=/usr/share/margine/rocm-flatpak/vendors
     if ! flatpak info "$DT" >/dev/null 2>&1; then
       echo "darktable is not installed. Install it first, then re-run:"
       echo "  flatpak install --system flathub $DT"
       exit 1
     fi
-    if pgrep -x darktable >/dev/null 2>&1; then
-      echo "NOTE: darktable is running. Close it first, or it will overwrite these"
-      echo "      settings on exit. Re-run this after closing it."
+    running() { flatpak ps --columns=application 2>/dev/null | grep -qx "$DT"; }
+    probe() {
+      # darktable's own OpenCL test, on a throwaway profile: the user's one
+      # is left alone even while darktable runs. About a minute (it builds
+      # every kernel once).
+      # darktable ships the vendor AMD platform (ROCm) switched off. The
+      # profile lives under the home: the Flatpak has its own private /tmp.
+      local cache="${XDG_CACHE_HOME:-$HOME/.cache}" tmp
+      mkdir -p "$cache"; tmp="$(mktemp -d "$cache/margine-darktable-probe.XXXXXX")"
+      mkdir -p "$tmp/config"
+      printf '%s\n' opencl=TRUE clplatform_amdacceleratedparallelprocessing=TRUE > "$tmp/config/darktablerc"
+      flatpak run --command=darktable-cltest "$DT" --configdir "$tmp/config" --cachedir "$tmp/cache" 2>&1 \
+        | grep -E "DEVICE:|PLATFORM, VENDOR|UNIFIED MEM SIZE|FINALLY|Internal compilation error" | sed 's/^ */  /'
+      rm -rf "$tmp"
+    }
+    AMD=0
+    lspci 2>/dev/null | grep -qiE "(VGA|3D|Display).*(AMD|ATI)" && AMD=1
+    case "{{ ACTION }}" in
+      status)
+        echo "Overrides: $(flatpak override --user --show "$DT" 2>/dev/null | grep -E '^(LD_LIBRARY_PATH|OCL_ICD_VENDORS|RUSTICL_ENABLE)=' | tr '\n' ' ')"
+        [ -e "$SHIM/libamdocl64.so" ] && echo "ROCm shim: $SHIM" || echo "ROCm shim: not in this image"
+        echo "OpenCL test (about a minute):"
+        probe
+        exit 0 ;;
+      disable)
+        flatpak override --user --unset-env=LD_LIBRARY_PATH --unset-env=OCL_ICD_VENDORS --unset-env=RUSTICL_ENABLE "$DT"
+        echo "darktable is back to the Flatpak's own OpenCL (rusticl); with Mesa 26.2 that means the CPU."
+        exit 0 ;;
+      enable) ;;
+      *) echo "usage: ujust margine-darktable-opencl [status|enable|disable]"; exit 2 ;;
+    esac
+    if [ "$AMD" = 1 ] && [ -e "$SHIM/libamdocl64.so" ] && [ -e "$VENDORS/amdocl64.icd" ]; then
+      flatpak override --user --env=LD_LIBRARY_PATH="/run/host$SHIM" \
+        --env=OCL_ICD_VENDORS="/run/host$VENDORS" --unset-env=RUSTICL_ENABLE "$DT"
+      echo "==> darktable now uses the host's ROCm OpenCL."
+    elif [ "$AMD" = 1 ]; then
+      echo "No ROCm shim in this image ($SHIM): nothing to point darktable at."
+      exit 1
+    else
+      echo "This recipe drives AMD GPUs through ROCm. Intel and other GPUs use the"
+      echo "Flatpak's rusticl, which Mesa 26.2 cannot use for darktable for now."
+      exit 1
     fi
-    # Pick the rusticl driver for the GPU vendor.
-    if lspci 2>/dev/null | grep -qiE "VGA.*(AMD|ATI)|3D.*(AMD|ATI)|Display.*(AMD|ATI)"; then DRV=radeonsi
-    elif lspci 2>/dev/null | grep -qiE "VGA.*Intel|Display.*Intel|3D.*Intel"; then DRV=iris
-    else DRV=radeonsi; fi
-    echo "==> rusticl driver for your GPU: $DRV"
-    # 1. enable rusticl for the darktable Flatpak (per-user, persistent)
-    flatpak override --user --env=RUSTICL_ENABLE="$DRV" "$DT"
-    # 2. flip darktable's prefs: enable OpenCL + un-blocklist the rusticl platform
-    RC="$HOME/.var/app/$DT/config/darktable/darktablerc"
-    mkdir -p "$(dirname "$RC")"; touch "$RC"
-    for kv in opencl=TRUE clplatform_rusticl=TRUE; do
-      k="${kv%%=*}"
-      if grep -qE "^${k}=" "$RC"; then sed -i "s|^${k}=.*|${kv}|" "$RC"; else echo "$kv" >> "$RC"; fi
-    done
-    echo "==> darktable GPU OpenCL enabled (rusticl / $DRV)."
-    echo "    Start (or restart) darktable. Preferences > Processing should show your GPU."
-    echo "    Verify from a terminal: flatpak run --command=darktable-cltest $DT"
+    echo "==> Checking (about a minute)..."
+    RESULT="$(probe)"
+    echo "$RESULT"
+    if ! grep -q "is AVAILABLE and ENABLED" <<<"$RESULT"; then
+      echo "OpenCL is still not available; darktable keeps running on the CPU."
+      echo "Undo with: ujust margine-darktable-opencl disable"
+      exit 1
+    fi
+    if running; then
+      echo
+      echo "darktable is open and rewrites its settings when it quits. Close it and"
+      echo "run this again to turn OpenCL on and tune it for this GPU."
+      exit 0
+    fi
+    # Turn OpenCL and the ROCm platform on in the real profile, let darktable
+    # record the device there, then tune the device line.
+    margine-configure-darktable-import --apply --gpu-tune
+    flatpak run --command=darktable-cltest "$DT" >/dev/null 2>&1
+    margine-configure-darktable-import --apply --gpu-tune
+    echo
+    echo "Done. Start darktable; Preferences > processing shows the GPU."
+    echo "Undo with: ujust margine-darktable-opencl disable"
+
+# The mouse wheel and two-finger scroll move darktable's module panel
+# (panel, Margine's default for new profiles) or adjust the control under
+# the pointer (values, darktable's own default). With "panel",
+# Ctrl+Alt+scroll still adjusts a control. Close darktable first.
+# darktable scrolling: module panel (panel) or control under the pointer (values).
+[group('Apps')]
+margine-darktable-scroll ACTION="panel":
+    #!/usr/bin/bash
+    set -uo pipefail
+    case "{{ ACTION }}" in
+      panel|values) margine-configure-darktable-import --apply --scroll "{{ ACTION }}" ;;
+      *) echo "usage: ujust margine-darktable-scroll [panel|values]"; exit 2 ;;
+    esac
+
+# Times darktable on your own RAWs (by default, for each RAW format in
+# Pictures/raw, the photo with the longest edit history; or the files you
+# pass): CPU only against the GPU through ROCm, with the settings
+# margine-darktable-opencl uses and the alternatives. It waits for a quiet,
+# cool machine before every run and discards and repeats runs that other
+# programs or a suspend disturbed; your darktable profile is only read.
+# quick takes about half an hour, full one to two hours: plug the charger in
+# and leave the machine alone. Report in ~/.local/share/margine/darktable-bench.
+# darktable benchmark, CPU against GPU, on your photos: [quick|full] [RAW...].
+[group('Apps')]
+[positional-arguments]
+margine-darktable-bench MODE="quick" *RAWS:
+    #!/usr/bin/bash
+    exec /usr/libexec/margine/darktable-bench/bench "$@"
 
 # Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
 # `ujust install-koofr launchers` only rewrites the menu and autostart

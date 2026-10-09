@@ -1,0 +1,303 @@
+#!/usr/bin/bash
+# darktable benchmark: CPU only against the GPU (ROCm OpenCL through the
+# image's shim) with several shares of memory for the GPU, on your own RAWs.
+# `ujust margine-darktable-bench [quick|full] [RAW...]` runs it.
+#
+# Built to resist disturbance:
+#   - before every run it waits for a quiet machine (GPU and CPU idle,
+#     processor below TEMP_MAX, enough free memory);
+#   - during every run probe.py measures the CPU and GPU time used by OTHER
+#     programs; a run above the thresholds is discarded and repeated, and so
+#     is a run the system slept through (lid closed, suspend);
+#   - configurations are interleaved in a rotating order, so slow drifts
+#     (heat, background jobs) hit all of them alike;
+#   - the kernel log is checked after every run for amdgpu faults;
+#   - the screen does not lock meanwhile.
+# Your darktable profile and library are only read: every run uses its own
+# copy of darktablerc and an in-memory library, on copies of the RAWs.
+#
+# Configurations: cpu, or gpuNNN[aX] = GPU with NNN/100 of the RAM as its
+# share (darktable's unified_fraction) and advantage X. Measurements and the
+# reasoning behind gpu005a4: docs/notes/2026-10-09-darktable-gpu-rocm.md.
+set -uo pipefail
+
+# Keep the machine awake (and, where logind allows, the lid closed) for the
+# whole run: re-run under systemd-inhibit first, before anything is parsed,
+# so the environment (CONFIGS, SIZES, ...) reaches the new process intact.
+if [[ -z "${MARGINE_DT_BENCH_INHIBITED:-}" ]] && command -v systemd-inhibit >/dev/null; then
+  export MARGINE_DT_BENCH_INHIBITED=1
+  for what in idle:sleep:handle-lid-switch idle:sleep; do
+    if systemd-inhibit --what="$what" --who="margine-darktable-bench" \
+        --why="darktable benchmark running" --mode=block true 2>/dev/null; then
+      exec systemd-inhibit --what="$what" --who="margine-darktable-bench" \
+        --why="darktable benchmark running" --mode=block "$0" "$@"
+    fi
+  done
+fi
+
+LIB="$(cd "$(dirname "$0")" && pwd)"
+DT=org.darktable.Darktable
+MODE="${1:-quick}"
+case "$MODE" in quick|full) shift || true ;; *) MODE=quick ;; esac
+case "$MODE" in
+  quick) RUNS="${RUNS:-2}"; read -r -a CONFIGS <<< "${CONFIGS:-cpu gpu040 gpu005a4}" ;;
+  full)  RUNS="${RUNS:-3}"; read -r -a CONFIGS <<< "${CONFIGS:-cpu gpu010 gpu025 gpu040 gpu005a4 gpu005a16}" ;;
+esac
+read -r -a SIZES <<< "${SIZES:-full screen}"
+MAX_RETRY="${MAX_RETRY:-3}"
+GPU_IDLE="${GPU_IDLE:-12}"            # % busy, average over 3 s, before a run
+CPU_IDLE="${CPU_IDLE:-15}"            # % busy of the whole CPU, before a run
+TEMP_MAX="${TEMP_MAX:-58}"            # CPU temperature in degrees C, before a run
+MEM_MIN_GB="${MEM_MIN_GB:-8}"         # free memory (MemAvailable) before a run
+OTHER_CPU_MAX="${OTHER_CPU_MAX:-8}"   # % of the machine used by others during a run
+OTHER_GPU_MAX="${OTHER_GPU_MAX:-25}"  # % GPU engine time of others (an editor
+                                      # redrawing stays below, a video does not)
+QUIET_TIMEOUT="${QUIET_TIMEOUT:-300}"
+
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/margine/darktable-bench"   # not indexed
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUT="$CACHE/results-$STAMP"
+KEEP="${XDG_DATA_HOME:-$HOME/.local/share}/margine/darktable-bench"
+SHIM=/usr/lib64/margine/rocm-flatpak
+VENDORS=/usr/share/margine/rocm-flatpak/vendors
+RC_SRC="$HOME/.var/app/$DT/config/darktable/darktablerc"
+mkdir -p "$OUT/logs" "$CACHE/images" "$KEEP"
+RESULTS="$OUT/runs.jsonl"
+
+log() { printf '%s %s\n' "$(date +%T)" "$*" | tee -a "$OUT/bench.log"; }
+die() { log "$*"; exit 1; }
+
+# ---- screen lock ---------------------------------------------------------------
+# Noctalia's caffeine, or a GNOME session inhibitor.
+INHIBIT_PID=""
+if noctalia msg status >/dev/null 2>&1; then
+  noctalia msg caffeine-enable >/dev/null 2>&1 && CAFFEINE=1
+elif command -v gnome-session-inhibit >/dev/null; then
+  gnome-session-inhibit --inhibit idle --inhibit-only --reason "darktable benchmark" >/dev/null 2>&1 &
+  INHIBIT_PID=$!
+fi
+cleanup() {
+  [[ -n "${CAFFEINE:-}" ]] && noctalia msg caffeine-disable >/dev/null 2>&1
+  [[ -n "$INHIBIT_PID" ]] && kill "$INHIBIT_PID" 2>/dev/null
+  [[ -n "${SAMPLER_PID:-}" ]] && kill "$SAMPLER_PID" 2>/dev/null
+}
+trap cleanup EXIT
+
+# ---- hardware probes ---------------------------------------------------------
+GPU_DEV=""
+for d in /sys/class/drm/card*/device; do
+  [[ -e "$d/gpu_busy_percent" ]] && { GPU_DEV="$d"; break; }
+done
+hw_by_name() {
+  local h
+  for h in /sys/class/hwmon/hwmon*; do
+    [[ " $* " == *" $(cat "$h/name" 2>/dev/null) "* ]] && { echo "$h"; return; }
+  done
+}
+CPU_HW="$(hw_by_name k10temp zenpower coretemp)"
+GPU_HW="$(hw_by_name amdgpu)"
+cpu_temp() { [[ -n "$CPU_HW" ]] && echo $(( $(cat "$CPU_HW/temp1_input") / 1000 )) || echo 0; }
+gpu_busy() { [[ -n "$GPU_DEV" ]] && cat "$GPU_DEV/gpu_busy_percent" || echo 0; }
+on_mains() {  # 1 on mains power or with no battery at all, else 0
+  local p seen=0
+  for p in /sys/class/power_supply/*; do
+    [[ "$(cat "$p/type" 2>/dev/null)" == Mains ]] || continue
+    seen=1
+    [[ "$(cat "$p/online" 2>/dev/null)" == 1 ]] && { echo 1; return; }
+  done
+  (( seen )) && echo 0 || echo 1
+}
+profile() { cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo "?"; }
+gpu_busy_avg() {
+  local s=0 _
+  for _ in 1 2 3 4 5 6; do s=$(( s + $(gpu_busy) )); sleep 0.5; done
+  echo $(( s / 6 ))
+}
+cpu_busy() {  # whole machine, over 1 s
+  local a b a1 a2 a3 a4 a5 a6 a7 b1 b2 b3 b4 b5 b6 b7
+  read -r _ a1 a2 a3 a4 a5 a6 a7 _ < /proc/stat; sleep 1
+  read -r _ b1 b2 b3 b4 b5 b6 b7 _ < /proc/stat
+  a=$(( (b1+b2+b3+b5+b6+b7) - (a1+a2+a3+a5+a6+a7) )); b=$(( b4 - a4 ))
+  echo $(( 100 * a / (a + b + 1) ))
+}
+wait_quiet() {
+  local start=$SECONDS g c t m
+  while :; do
+    g=$(gpu_busy_avg); c=$(cpu_busy); t=$(cpu_temp)
+    m=$(awk '/MemAvailable/ {print int($2/1048576)}' /proc/meminfo)
+    if (( g <= GPU_IDLE && c <= CPU_IDLE && t <= TEMP_MAX && m >= MEM_MIN_GB )); then
+      echo "quiet gpu=$g cpu=$c temp=$t mem=${m}G"; return 0
+    fi
+    (( SECONDS - start > QUIET_TIMEOUT )) && { echo "noisy gpu=$g cpu=$c temp=$t mem=${m}G"; return 1; }
+    sleep 5
+  done
+}
+sampler() {
+  while :; do
+    printf '%s %s %s\n' "$(cpu_temp)" "$( [[ -n "$GPU_HW" ]] && echo $(( $(cat "$GPU_HW/temp1_input") / 1000 )) || echo 0)" "$(gpu_busy)"
+    sleep 0.5
+  done
+}
+
+# ---- photos ------------------------------------------------------------------
+pick_raws() {
+  # For each RAW format in the Pictures/raw folder, the photo with the
+  # longest darktable history (a real edit, not a default rendering).
+  local raw_dir
+  raw_dir="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/raw"
+  [[ -d "$raw_dir" ]] || return 0
+  /usr/bin/python3 - "$raw_dir" <<'PY'
+import os, re, sys
+best = {}
+for root, _, files in os.walk(sys.argv[1]):
+    for f in files:
+        if not f.lower().endswith(".xmp"):
+            continue
+        raw = os.path.join(root, f[:-4])
+        ext = os.path.splitext(raw)[1].lower()
+        if not ext or not os.path.isfile(raw):
+            continue
+        try:
+            n = len(re.findall(r"<rdf:li", open(os.path.join(root, f), errors="replace").read()))
+        except OSError:
+            continue
+        if n > best.get(ext, (0, ""))[0]:
+            best[ext] = (n, raw)
+for n, raw in sorted(best.values(), reverse=True)[:3]:
+    print(raw)
+PY
+}
+mapfile -t SRC < <( (( $# )) && printf '%s\n' "$@" || pick_raws )
+(( ${#SRC[@]} )) || die "No RAW to test: pass some (ujust margine-darktable-bench quick photo.raf ...) or keep edited RAWs in Pictures/raw."
+IMAGES=()
+for f in "${SRC[@]}"; do
+  [[ -f "$f" ]] || die "Not a file: $f"
+  b="$(basename "$f")"
+  cp -f "$f" "$CACHE/images/$b"
+  if [[ -f "$f.xmp" ]]; then cp -f "$f.xmp" "$CACHE/images/$b.xmp"; else rm -f "$CACHE/images/$b.xmp"; fi
+  IMAGES+=("$b")
+done
+
+# ---- GPU path ----------------------------------------------------------------
+GPU_ENV=(--env=LD_LIBRARY_PATH="/run/host$SHIM" --env=OCL_ICD_VENDORS="/run/host$VENDORS")
+DEVKEY=""
+if [[ -e "$SHIM/libamdocl64.so" && -e "$VENDORS/amdocl64.icd" ]]; then
+  mkdir -p "$OUT/conf-probe"
+  printf '%s\n' opencl=TRUE clplatform_amdacceleratedparallelprocessing=TRUE > "$OUT/conf-probe/darktablerc"
+  flatpak run "${GPU_ENV[@]}" --command=darktable-cltest "$DT" --configdir "$OUT/conf-probe" \
+    --cachedir "$CACHE/kernels-rocm" > "$OUT/logs/cltest-rocm.log" 2>&1
+  if grep -q "is AVAILABLE and ENABLED" "$OUT/logs/cltest-rocm.log"; then
+    DEVKEY="$(grep -m1 -oE 'cldevice_v6_[a-z0-9]+' "$OUT/logs/cltest-rocm.log")"
+  fi
+fi
+if [[ -z "$DEVKEY" ]]; then
+  log "No GPU reachable through ROCm (AMD GPU and this image's ROCm shim needed): CPU only, nothing to compare."
+  mapfile -t CONFIGS < <(printf '%s\n' "${CONFIGS[@]}" | grep -x cpu)
+fi
+
+make_conf() {  # config name -> its own darktablerc, from a copy of yours
+  local c="$1" dir="$OUT/conf-$1" frac adv
+  mkdir -p "$dir"
+  if [[ -f "$RC_SRC" ]]; then cp "$RC_SRC" "$dir/darktablerc"; else : > "$dir/darktablerc"; fi
+  sed -i -E '/^cldevice_v6_/d; /^opencl=/d; /^opencl_scheduling_profile=/d; /^clplatform_amdacceleratedparallelprocessing=/d' "$dir/darktablerc"
+  if [[ "$c" == cpu ]]; then
+    echo "opencl=FALSE" >> "$dir/darktablerc"
+    return
+  fi
+  [[ "$c" =~ ^gpu([0-9]{3})(a([0-9.]+))?$ ]] || die "Unknown configuration: $c"
+  frac=$(printf '%.3f' "$(echo "scale=3; ${BASH_REMATCH[1]#0}/100" | bc)")
+  adv=$(printf '%.3f' "${BASH_REMATCH[3]:-0}")
+  printf '%s\n' opencl=TRUE opencl_scheduling_profile=default \
+    clplatform_amdacceleratedparallelprocessing=TRUE \
+    "$DEVKEY=250 0 1 0 0 $adv $frac" "${DEVKEY}_id0=600" >> "$dir/darktablerc"
+}
+
+run_one() {  # config image size tag -> appends one JSON line; 2 = GPU fault
+  local c="$1" img="$2" size="$3" tag="$4" attempt=0
+  local env=() cache="$CACHE/kernels-cpu" sizeargs=() xmp=()
+  [[ "$c" == gpu* ]] && { env=("${GPU_ENV[@]}"); cache="$CACHE/kernels-rocm"; }
+  [[ "$size" == screen ]] && sizeargs=(--width 2560 --height 1600 --hq false)
+  [[ -f "$CACHE/images/$img.xmp" ]] && xmp=("$CACHE/images/$img.xmp")
+  while (( attempt < MAX_RETRY )); do
+    attempt=$(( attempt + 1 ))
+    local quiet quiet_ok name logf samples t0 s0 s1 c0 c1 wall rc disturb kfault ac0 ac1 last
+    quiet=$(wait_quiet); quiet_ok=$?
+    name="$c-$img-$size-$tag-a$attempt"
+    logf="$OUT/logs/$name.log"; samples="$OUT/logs/$name.samples"
+    rm -f "$OUT/out.jpg"
+    ac0=$(on_mains); t0="$(date '+%Y-%m-%d %H:%M:%S')"
+    sampler > "$samples" & SAMPLER_PID=$!
+    /usr/bin/python3 "$LIB/probe.py" snapshot "$OUT/snap0.json"
+    c0=$(/usr/bin/python3 "$LIB/probe.py" clocks)
+    s0=$(date +%s.%N)
+    flatpak run "${env[@]}" --command=darktable-cli "$DT" "$CACHE/images/$img" "${xmp[@]}" "$OUT/out.jpg" \
+      "${sizeargs[@]}" --core --configdir "$OUT/conf-$c" --cachedir "$cache" --library :memory: \
+      -d perf -d opencl > "$logf" 2>&1
+    rc=$?
+    s1=$(date +%s.%N)
+    c1=$(/usr/bin/python3 "$LIB/probe.py" clocks)
+    /usr/bin/python3 "$LIB/probe.py" snapshot "$OUT/snap1.json"
+    kill "$SAMPLER_PID" 2>/dev/null; wait "$SAMPLER_PID" 2>/dev/null; SAMPLER_PID=""
+    ac1=$(on_mains)
+    wall=$(echo "$s1 - $s0" | bc)
+    disturb=$(/usr/bin/python3 "$LIB/probe.py" diff "$OUT/snap0.json" "$OUT/snap1.json" "$wall" "$$")
+    kfault=$(journalctl -k --since "$t0" -q --no-pager 2>/dev/null \
+      | grep -i -E 'amdgpu.*(timeout|reset|fault|hang|wedged)|ring .* timeout' | head -3 | tr '\n' ' ')
+    /usr/bin/python3 "$LIB/report.py" record "$logf" "$samples" "$c" "$img" "$size" "$tag" "$attempt" \
+      "$wall" "$rc" "$quiet_ok" "$quiet" "$disturb" "$kfault" "$ac0$ac1" "$(profile)" \
+      "$OTHER_CPU_MAX" "$OTHER_GPU_MAX" "$c0" "$c1" >> "$RESULTS"
+    last=$(tail -1 "$RESULTS")
+    log "$(/usr/bin/python3 "$LIB/report.py" line "$last")"
+    [[ -n "$kfault" ]] && { log "GPU fault in the kernel log: $kfault (stopping)"; return 2; }
+    /usr/bin/python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1])["valid"] else 1)' "$last" && return 0
+    [[ "$tag" == warmup ]] && return 0
+    log "  repeating ($attempt/$MAX_RETRY)"
+  done
+  return 1
+}
+
+# ---- run ---------------------------------------------------------------------
+{
+  echo "date: $(date -Is)"
+  echo "machine: $(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) $(cat /sys/class/dmi/id/product_name 2>/dev/null) | BIOS $(cat /sys/class/dmi/id/bios_version 2>/dev/null)"
+  echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs) | threads $(nproc)"
+  echo "ram: $(awk '/MemTotal/ {printf "%.1f GB", $2/1048576}' /proc/meminfo)$( [[ -n "$GPU_DEV" ]] && echo " | GPU carve-out $(( $(cat "$GPU_DEV/mem_info_vram_total") / 1048576 )) MB, GTT $(( $(cat "$GPU_DEV/mem_info_gtt_total") / 1048576 )) MB")"
+  echo "kernel: $(uname -r)"
+  echo "power: mains=$(on_mains) platform_profile=$(profile) EPP=$(cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference 2>/dev/null || echo '?')"
+  echo "darktable: $(flatpak info "$DT" | awk '/Version:/ {print $2}') ($(flatpak info "$DT" | awk '/Runtime:/ {print $2}'))"
+  echo "opencl device: ${DEVKEY:-none}"
+  echo "rocm: $(rpm -q rocm-opencl rocm-runtime 2>/dev/null | tr '\n' ' ')"
+  echo "photos: ${IMAGES[*]}"
+  echo "matrix: mode=$MODE configs=${CONFIGS[*]} sizes=${SIZES[*]} runs=$RUNS"
+  echo "thresholds: GPU_IDLE=$GPU_IDLE CPU_IDLE=$CPU_IDLE TEMP_MAX=$TEMP_MAX MEM_MIN_GB=$MEM_MIN_GB OTHER_CPU_MAX=$OTHER_CPU_MAX OTHER_GPU_MAX=$OTHER_GPU_MAX"
+} > "$OUT/environment.txt"
+tee -a "$OUT/bench.log" < "$OUT/environment.txt"
+
+if [[ "$(on_mains)" != 1 && "${ALLOW_BATTERY:-0}" != 1 ]]; then
+  die "On battery: plug the charger in (power limits differ on battery), or set ALLOW_BATTERY=1."
+fi
+(( ${#CONFIGS[@]} > 1 )) || die "Nothing to compare."
+for c in "${CONFIGS[@]}"; do make_conf "$c"; done
+
+# One photo at a time: a warm-up run per configuration (kernel compilation,
+# file cache), recorded but not counted, then the measured runs with the
+# configurations in rotating order.
+n=${#CONFIGS[@]}
+for img in "${IMAGES[@]}"; do
+  for c in "${CONFIGS[@]}"; do run_one "$c" "$img" full warmup; [[ $? -eq 2 ]] && exit 2; done
+  for size in "${SIZES[@]}"; do
+    for (( r = 0; r < RUNS; r++ )); do
+      for (( k = 0; k < n; k++ )); do
+        c="${CONFIGS[$(( (k + r) % n ))]}"
+        run_one "$c" "$img" "$size" "r$((r + 1))"
+        [[ $? -eq 2 ]] && exit 2
+      done
+    done
+  done
+done
+
+/usr/bin/python3 "$LIB/report.py" report "$OUT" > "$OUT/report.md"
+cp -r "$OUT" "$KEEP/" && rm -rf "$OUT"
+cat "$KEEP/results-$STAMP/report.md"
+echo
+echo "Report: $KEEP/results-$STAMP/report.md"

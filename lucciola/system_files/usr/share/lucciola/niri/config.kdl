@@ -66,10 +66,12 @@ layout {
     }
 }
 
-// Two workspaces that always exist (Mod+1, Mod+2). With niri's scrolling
-// columns each workspace holds far more than a GNOME one, so two are enough.
-workspace "1"
-workspace "2"
+// Two named workspaces always exist (Mod+1, Mod+2): with niri's scrolling
+// columns each holds far more than a GNOME one, so two are enough. They are
+// NOT declared here: niri does not merge `workspace` sections across
+// includes, so declaring them again in lucciola.kdl to pin them to a monitor
+// (open-on-output) made duplicates. session-start adds them to lucciola.kdl
+// once, where they can be given a monitor.
 
 // Noctalia is the shell: bar, notifications, lock screen, launcher, OSD,
 // polkit agent, clipboard, night light, wallpaper. The wrapper seeds the

@@ -7,6 +7,18 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-10-09)
+- **Koofr Desktop no longer re-announces its tray icon every second.**
+  Koofr's GUI (closed source) writes the same icon to a new temp file once
+  a second, so tray hosts re-read it every second: wasted wakeups in GNOME,
+  and in Noctalia (Lucciola) a full tray rebuild that broke hover and clicks
+  on every tray icon (noctalia-dev/noctalia#4537). The image now builds
+  `/usr/lib64/margine/koofr-tray-fix.so` (build_files/47-koofr-tray-fix), a
+  small LD_PRELOAD shim that passes the icon on only when the image really
+  changes, and `ujust install-koofr` starts Koofr with it. Existing installs:
+  `ujust install-koofr launchers` rewrites the menu and autostart entries.
+  Measured: from 60 icon announcements a minute to none while idle.
+
 ### Changed (2026-07-11)
 - **The public product name is "Margine OS"** (fixed together with the
   DistroWatch submission). os-release NAME/PRETTY_NAME/VERSION/VARIANT now

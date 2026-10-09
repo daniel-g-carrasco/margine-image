@@ -1317,6 +1317,8 @@ margine-darktable-opencl:
     echo "    Verify from a terminal: flatpak run --command=darktable-cltest $DT"
 
 # Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
+# `ujust install-koofr launchers` only rewrites the menu and autostart
+# entries of an existing install (e.g. to pick up the tray fix).
 [group('Apps')]
 install-koofr ACTION="install":
     #!/usr/bin/bash
@@ -1326,6 +1328,37 @@ install-koofr ACTION="install":
     AUTOSTART="${HOME}/.config/autostart/koofr.desktop"
     CFG="${HOME}/.koofr/config.json"
     URL="https://app.koofr.net/dl/apps/linux64"
+    # Koofr re-announces the same tray icon every second through a new temp
+    # file; the image's shim passes it on only when it really changes (see
+    # build_files/47-koofr-tray-fix). Without it tray hosts that rebuild on
+    # every change (Noctalia) lose hover and clicks on all tray icons.
+    FIX=/usr/lib64/margine/koofr-tray-fix.so
+    RUN="${DEST}/storagegui"
+    [ -f "${FIX}" ] && RUN="env LD_PRELOAD=${FIX} ${DEST}/storagegui"
+
+    write_launchers() {
+      # Menu launcher: NO flag -> a manual launch opens the window normally.
+      mkdir -p "$(dirname "${MENU}")"
+      printf '%s\n' \
+        '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
+        "Exec=${RUN}" 'Terminal=false' 'Type=Application' \
+        "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' > "${MENU}"
+      # Autostart: starts HIDDEN to the tray at login (binary's own -silent flag).
+      mkdir -p "$(dirname "${AUTOSTART}")"
+      printf '%s\n' \
+        '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
+        'Comment=Koofr cloud sync (starts minimized to tray)' \
+        "Exec=${RUN} -silent" 'Terminal=false' 'Type=Application' \
+        "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' \
+        'X-GNOME-Autostart-enabled=true' > "${AUTOSTART}"
+    }
+
+    if [ "{{ ACTION }}" = "launchers" ]; then
+      [ -x "${DEST}/storagegui" ] || { echo "Koofr is not installed (no ${DEST}/storagegui)."; exit 1; }
+      write_launchers
+      echo "Koofr launchers rewritten$([ -f "${FIX}" ] && echo ' with the tray fix'). It applies from the next start of Koofr (log out and back in)."
+      exit 0
+    fi
 
     if [ "{{ ACTION }}" = "remove" ] || [ "{{ ACTION }}" = "uninstall" ]; then
       echo "Removing Koofr Desktop…"
@@ -1343,21 +1376,7 @@ install-koofr ACTION="install":
     # files, which we overwrite below to make menu vs autostart behaviour deterministic).
     ( cd "${TMP}/koofr" && printf 'n' | ./installer.sh )
 
-    # Menu launcher: NO flag -> a manual launch opens the window normally.
-    mkdir -p "$(dirname "${MENU}")"
-    printf '%s\n' \
-      '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
-      "Exec=${DEST}/storagegui" 'Terminal=false' 'Type=Application' \
-      "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' > "${MENU}"
-
-    # Autostart: starts HIDDEN to the tray at login (binary's own -silent flag).
-    mkdir -p "$(dirname "${AUTOSTART}")"
-    printf '%s\n' \
-      '[Desktop Entry]' 'Name=Koofr' 'GenericName=Hybrid storage cloud' \
-      'Comment=Koofr cloud sync (starts minimized to tray)' \
-      "Exec=${DEST}/storagegui -silent" 'Terminal=false' 'Type=Application' \
-      "Icon=${DEST}/icon.png" 'Categories=Network;FileTransfer;Internet;' \
-      'X-GNOME-Autostart-enabled=true' > "${AUTOSTART}"
+    write_launchers
 
     # Belt-and-suspenders: if a config already exists, also persist Silent start so hidden-start
     # survives the app regenerating its autostart entry. Skip while running (clobber risk) and

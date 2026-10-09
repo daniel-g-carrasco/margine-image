@@ -124,6 +124,7 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.github.huluti.Curtail \
       io.github.wartybix.Constrict \
       com.github.jeromerobert.pdfarranger \
+      com.github.johnfactotum.Foliate \
       org.audacityteam.Audacity \
       com.github.wwmm.easyeffects \
       com.github.neithern.g4music \

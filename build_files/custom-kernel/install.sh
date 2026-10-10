@@ -711,7 +711,16 @@ log "Baking native-gaming 32-bit dependency closure: ${GAMING_BAKE[*]}"
 # base without it (projectbluefin/bluefin:testing, 2026-08-25 trial) the
 # transaction is unresolvable without the repo. Enabled for this one
 # transaction, left disabled after, like everywhere else in this file.
-retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --enablerepo=fedora-multimedia "$@"' _ "${GAMING_BAKE[@]}" \
+#
+# No weak dependencies (2026-10-10). Steam's i686 chain is all hard
+# Requires, so it is baked either way; what install_weak_deps added was
+# lutris's Recommends: wine-core (x86_64 and i686), the mingw64 libraries
+# behind it, fluid-soundfont-gs, p7zip... Stripping the apps left all of
+# that in every image: 1.9 GB of wine and mingw plus 330 MB of soundfonts,
+# required by nothing (measured on lucciola.20261009). Lutris brings its
+# own wine builds, and a user who layers lutris gets rpm's own dependency
+# handling anyway. 12-base-trim removes the same families again, as a guard.
+retry 5 30 bash -c 'dnf -y clean metadata >/dev/null 2>&1 || true; exec dnf -y install --refresh --setopt=install_weak_deps=False --enablerepo=fedora-multimedia "$@"' _ "${GAMING_BAKE[@]}" \
   || { err "native-gaming closure install failed after 5 attempts (repo down or unresolvable multilib at build?); aborting"; exit 1; }
 # Remove by RESOLVED name, not by request name. dnf resolves the
 # install request "retroarch" to negativo17's RetroArch (it Provides

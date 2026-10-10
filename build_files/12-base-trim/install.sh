@@ -28,6 +28,23 @@
 # the ~70 MiB of orphaned libraries are left alone on purpose.
 #
 # On today's base every package below is absent and this is a no-op.
+#
+# LEFTOVERS AND UNWANTED FAMILIES (2026-10-10)
+#
+# A package audit of lucciola.20261009 by originating layer found 3.6 GB
+# that nothing needs:
+#   - qemu for every architecture but x86 (Bluefin DX installs the `qemu`
+#     meta package): 57 packages, 1088 MB. Margine's VMs
+#     (margine-test-vm, virt-manager, podman-machine) are x86 only.
+#   - wine and mingw64, 1.9 GB: weak dependencies of lutris left behind by
+#     the gaming bake in custom-kernel. The bake no longer installs weak
+#     dependencies; this is the guard.
+#   - fluid soundfonts and wildmidi (330 MB), python3-boto3/botocore
+#     (130 MB), gnome-user-docs and yelp (65 MB; Margine ships its own
+#     offline docs and Bluefin itself excludes yelp): orphans.
+# The families are matched by name pattern, so they are removed whatever
+# the base's version of them; the prove-it block then checks that
+# everything the x86 VMs need is still there.
 set -euo pipefail
 . /ctx/00-common.sh
 log() { printf '[base-trim] %s\n' "$*"; }
@@ -39,12 +56,29 @@ TRIM_PKGS=(
   cockpit-ws                                                # Anaconda WebUI transport
   qt6-qtwebengine                                           # 277 MiB, required by nothing
   firefox mozilla-openh264                                  # spec: no system Firefox RPM
+  fluid-soundfont-gm fluid-soundfont-gs fluid-soundfont-lite-patches wildmidi-libs  # MIDI soundfonts, orphans
+  python3-boto3 python3-botocore python3-s3transfer         # AWS SDK, orphans
+  gnome-user-docs yelp yelp-libs yelp-xsl                   # GNOME help: Margine ships offline docs
 )
+
+# What the x86 VMs keep: the x86 system emulator with its UEFI firmware,
+# the image tools, the plugins every qemu-system build requires, and the
+# three user-mode emulators containers-common pulls for multi-arch podman.
+QEMU_KEEP='^(qemu-system-x86(-core)?|qemu-kvm(-core)?|qemu-img|qemu-common|qemu-tools|qemu-pr-helper|qemu-guest-agent|qemu-user-static-(aarch64|arm|x86)|edk2-ovmf|qemu-(ui|device|char|audio|block)-.*)$'
 
 PRESENT=()
 for p in "${TRIM_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 && PRESENT+=("$p")
 done
+# Everything qemu/edk2 that is not in the keep list (other architectures,
+# the `qemu` and `qemu-user-static` meta packages, qemu-user).
+while read -r p; do
+  [[ -n "$p" ]] && PRESENT+=("$p")
+done < <(rpm -qa --qf '%{NAME}\n' | grep -E '^(qemu|edk2)' | grep -v -E "$QEMU_KEEP" || true)
+# The wine family, whatever is left of it.
+while read -r p; do
+  [[ -n "$p" ]] && PRESENT+=("$p")
+done < <(rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw)' || true)
 
 if (( ${#PRESENT[@]} == 0 )); then
   log "base ships none of the ${#TRIM_PKGS[@]} trim candidates, nothing to do"
@@ -57,8 +91,15 @@ fi
 for p in "${TRIM_PKGS[@]}"; do
   if rpm -q "$p" >/dev/null 2>&1; then err "$p still present after base-trim"; exit 1; fi
 done
+if rpm -qa --qf '%{NAME}\n' | grep -E '^(qemu|edk2)' | grep -v -E "$QEMU_KEEP" | grep -q .; then
+  err "qemu packages outside the keep list survived base-trim"; exit 1
+fi
+if rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw)' | grep -q .; then
+  err "the wine family survived base-trim"; exit 1
+fi
 # What the trim must never take with it (present in today's image).
-for p in fuse python3-rpm python3-systemd NetworkManager-team; do
+for p in fuse python3-rpm python3-systemd NetworkManager-team \
+         qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p is gone: the trim removed more than it should"; exit 1; }
 done
 log "base trim complete"

@@ -4,7 +4,8 @@
 # unlock, signatures, updates and every Margine fix come from the base image.
 # This layer adds niri and Noctalia from the official Fedora repositories,
 # the Lucciola niri/Noctalia defaults and the public name. GNOME stays in the
-# image and on the login screen as the fallback session.
+# image and on the login screen as the fallback session, stock: build.sh
+# removes the extensions and the Shell defaults Margine adds to it.
 #
 # Build (CI does this in .github/workflows/build-lucciola.yml):
 #   buildah build -f lucciola/Containerfile \

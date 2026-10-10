@@ -38,8 +38,14 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   system one, and Noctalia's niri template (Templates > Built-in > Niri)
   would otherwise create it with nothing but its colours, dropping every
   Lucciola default. A file holding only Noctalia's include is repaired;
-- the "Lucciola" session on the login screen (GNOME stays as the fallback)
-  and the public name in os-release.
+- the "Lucciola" session on the login screen, the one a new user gets
+  (AccountsService user templates; whoever picks GNOME once keeps it), and
+  the public name in os-release;
+- GNOME as a stock fallback session: the image drops every GNOME Shell
+  extension (Margine's and the base's), the Shell, window-manager and
+  settings-daemon defaults that go with them and the GNOME first-login
+  bootstrap. The defaults that also serve GTK applications under niri
+  (fonts, accent colour, file chooser, Ptyxis, Nautilus) stay.
 
 Images: `ghcr.io/daniel-g-carrasco/margine:lucciola` (and `:lucciola.DATE`),
 rebuilt by `.github/workflows/build-lucciola.yml` after every green smoke-boot

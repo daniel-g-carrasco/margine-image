@@ -26,6 +26,12 @@ stable release is cut.
   `margine-dev-groups` adds wheel users to the groups that exist, every boot.
   Third-party repositories added by the recipes pin the signing key by
   fingerprint (`/usr/libexec/margine/layer-repo`).
+- **Lucciola: GNOME is a stock fallback, Lucciola the default session.**
+  The Lucciola image removes every GNOME Shell extension (Margine's and
+  the base's), the Shell, window-manager and settings-daemon defaults that
+  go with them and the GNOME first-login bootstrap; AccountsService user
+  templates give new users the Lucciola session. The validator skips
+  Margine's GNOME expectations when the product is Lucciola.
 
 ### Removed (2026-10-10)
 - **3.6 GB of packages nothing needed.** A package audit of the image by

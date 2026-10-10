@@ -464,6 +464,9 @@ fi  # IS_LIVE (section 6)
 
 # ---------------------------------------------------------------------------
 hdr "7. GNOME Shell defaults (user session)"
+if [[ "$EXPECTED_OS_NAME" == "Lucciola" ]]; then
+  info "skipped: Lucciola keeps GNOME stock as a fallback session, without Margine's Shell defaults"
+else
 # ---------------------------------------------------------------------------
 # This needs the user's dconf, not root's. Skip if we are root (curl|sudo bash)
 # or in a build container (no session dconf at all).
@@ -557,6 +560,8 @@ for label in "${!MARGINE_DESKTOP_REPLACEMENTS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+fi
+
 hdr "8. Default Flatpak applications (Bug 9 guardrail)"
 # ---------------------------------------------------------------------------
 [[ -f "$PREINSTALL_FILE" ]] \
@@ -645,6 +650,9 @@ fi
 
 # ---------------------------------------------------------------------------
 hdr "9a. GNOME extensions: filesystem presence (A.3 guardrail)"
+if [[ "$EXPECTED_OS_NAME" == "Lucciola" ]]; then
+  info "skipped: Lucciola ships no GNOME extensions"
+else
 # ---------------------------------------------------------------------------
 # Section 7 verified gsettings sees enabled-extensions matching the
 # expected set, and that 5 extensions' schemas are registered. That
@@ -669,7 +677,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+fi
+
 hdr "9b1. First-boot autostart wiring (A.4 guardrail)"
+if [[ "$EXPECTED_OS_NAME" == "Lucciola" ]]; then
+  info "skipped: Lucciola has no GNOME first-login bootstrap"
+else
 # ---------------------------------------------------------------------------
 # Two .desktop files in /etc/xdg/autostart/ drive the Margine first-boot
 # user experience:
@@ -700,7 +713,12 @@ fi
 # its twin check earlier with the same rationale.)
 
 # ---------------------------------------------------------------------------
+fi
+
 hdr "9b. Bootstrap effects on user state (the configure-* chain ran)"
+if [[ "$EXPECTED_OS_NAME" == "Lucciola" ]]; then
+  info "skipped: Lucciola runs no GNOME bootstrap"
+else
 # ---------------------------------------------------------------------------
 # Bootstrap orchestration (Bug 11): without these, the distro ships
 # with the right specs but the user session never applied them.
@@ -797,6 +815,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+fi
+
 hdr "9c. Gaming layer (opt-in — checks only run if the layer was installed)"
 # ---------------------------------------------------------------------------
 # Margine gaming layer = `ujust margine-gaming` (Margine Gaming OCI

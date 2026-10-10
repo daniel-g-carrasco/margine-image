@@ -123,22 +123,20 @@ jobs:
             --tag localhost/lucciola:build \
             lucciola/
 
-      - name: Run the shipped validator in the image
-        # The same acceptance test Margine runs; NAME is read from
-        # /usr/share/margine/product-name, which Lucciola sets. A base image
-        # older than that support (before it reaches :stable) would fail the
-        # NAME check, so the full validator runs only where the base has it.
+      - name: Run this tree's validator in the image
+        # The same acceptance test Margine runs, taken from this checkout
+        # rather than from the copy inside the base image: a change to the
+        # Lucciola layer and to what the validator expects of it lands in
+        # one pull request, while the base's copy catches up only once that
+        # reaches :stable. NAME is read from /usr/share/margine/product-name,
+        # which Lucciola sets.
         run: |
           set -euo pipefail
-          if sudo podman run --rm --entrypoint /usr/bin/grep localhost/lucciola:build \
-               -q product-name /usr/bin/margine-validate-margine-system; then
-            sudo podman run --rm \
-              -e MARGINE_VALIDATE_CONTEXT=image \
-              --entrypoint /usr/bin/margine-validate-margine-system \
-              localhost/lucciola:build
-          else
-            echo "::warning::the base's validator predates /usr/share/margine/product-name: full validator skipped for this build"
-          fi
+          sudo podman run --rm \
+            -e MARGINE_VALIDATE_CONTEXT=image \
+            -v "$PWD/build_files/40-spec-scripts/scripts/validate-margine-system:/usr/bin/margine-validate-margine-system:ro" \
+            --entrypoint /usr/bin/margine-validate-margine-system \
+            localhost/lucciola:build
           sudo podman run --rm --entrypoint /usr/bin/bash localhost/lucciola:build -c '
             set -e
             grep -E "^(NAME|PRETTY_NAME|VARIANT_ID)=" /usr/lib/os-release

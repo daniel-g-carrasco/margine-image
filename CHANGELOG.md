@@ -7,6 +7,15 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-10-11)
+- **Lucciola: a shorter right side of the bar.** The network widget shows
+  the glyph alone (name, band and interface in the tooltip), the privacy
+  widget appears only while the microphone, the camera or the screen is
+  in use, the tray sits behind one button that opens a panel (right-click
+  an icon, Pin, to keep it in the bar), and the control-centre button is
+  gone (Mod+N opens that panel). Four tray icons plus the network name
+  were reaching the centred clock of the 1240px bar.
+
 ### Changed (2026-10-10)
 - **VS Code is a Flatpak** (`com.visualstudio.code`, first-boot preinstall),
   979 MB less in the image. Extensions that run host tools need the native

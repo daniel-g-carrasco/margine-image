@@ -7,6 +7,18 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Removed (2026-10-10)
+- **3.6 GB of packages nothing needed.** A package audit of the image by
+  originating layer found: qemu for every architecture but x86 (57
+  packages, 1088 MB, from Bluefin DX's `qemu` meta package; Margine's VMs
+  are x86 only), wine and mingw64 (1.9 GB, weak dependencies of lutris
+  left behind by the gaming bake), MIDI soundfonts and wildmidi (330 MB),
+  the AWS SDK (python3-boto3, 130 MB) and GNOME's help (gnome-user-docs,
+  yelp, 65 MB; Margine ships its own offline docs), all orphans. The gaming
+  bake now installs without weak dependencies, and `12-base-trim` removes
+  these families by name and proves qemu-kvm, its firmware and libvirt's
+  qemu driver survive.
+
 ### Added (2026-10-09)
 - **Foliate preinstalled, to read e-books** (EPUB, MOBI, FB2, CBZ):
   `com.github.johnfactotum.Foliate` from Flathub, in the installer's BAKE

@@ -77,11 +77,12 @@ fi
 # Bluefin bakes it from upstream as an unpackaged extension (#379 fixed
 # the declaration that listed the Fedora package).
 # vkBasalt is declared (desktop_host_helpers) and present in today's image,
-# but not because DX ships it: it is a leftover of the GAMING_BAKE
-# transaction in custom-kernel (lutris drags in vkBasalt and wine, the
-# four gaming packages are removed afterwards, their dependencies stay).
-# validate-margine-system counts it as half a gaming layer and warns on
-# every image today. The gaming layer is the user's (ujust margine-gaming),
+# but not because DX ships it: it was a leftover of the GAMING_BAKE
+# transaction in custom-kernel (lutris dragged in vkBasalt and wine as
+# weak dependencies, the four gaming packages were removed afterwards,
+# their dependencies stayed). Since 2026-10-10 the bake installs without
+# weak dependencies and 12-base-trim removes the wine family, so it no
+# longer lingers. The gaming layer is the user's (ujust margine-gaming),
 # so it is not backfilled here.
 DECLARED_PKGS=(
   mesa-demos vulkan-tools                  # media_diagnostics

@@ -59,6 +59,7 @@ if (( ${#ext_rpms[@]} )); then
 fi
 for d in /usr/share/gnome-shell/extensions/*/; do
   d="${d%/}"
+  [[ -d "$d" ]] || continue   # the glob itself, when the directory is empty
   rpm -qf "$d" >/dev/null 2>&1 && continue
   rm -rf "$d"
   log "  removed $(basename "$d")"
@@ -109,6 +110,7 @@ done
 dconf update
 rm -f /etc/xdg/autostart/margine-first-boot.desktop /etc/xdg/autostart/margine-first-boot-status.desktop
 for d in /usr/share/gnome-shell/extensions/*/; do
+  [[ -d "$d" ]] || continue
   rpm -qf "${d%/}" >/dev/null 2>&1 || { echo "ERROR: unowned extension survived: $d" >&2; exit 1; }
 done
 if grep -l 'enabled-extensions' /usr/share/glib-2.0/schemas/zz*.gschema.override 2>/dev/null; then
@@ -117,7 +119,7 @@ fi
 for f in /etc/dconf/db/distro.d/*margine* /etc/dconf/db/distro.d/*shell*; do
   [[ -e "$f" ]] && { echo "ERROR: Margine's GNOME dconf defaults survived: $f" >&2; exit 1; }
 done
-log "GNOME extensions left: $(ls /usr/share/gnome-shell/extensions/ | tr '\n' ' ')"
+log "GNOME extensions left: $(ls /usr/share/gnome-shell/extensions/ 2>/dev/null | tr '\n' ' ')"
 
 # 2c. Lucciola is the session a new user gets. accounts-daemon fills a
 #     user's record from these templates the first time it sees the user

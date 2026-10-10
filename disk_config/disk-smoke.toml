@@ -1,0 +1,11 @@
+# The layout of disk.toml (what build-disk.yml ships) with a bigger root,
+# for the smoke-boot VM only. That VM downloads every Flatpak at first
+# boot, which the installer bakes instead, and bootc-image-builder sizes
+# the disk from the image: a lighter image (2026-10-10, after #471 and
+# #472) took the VM from 25 GiB to disk.toml's 20 GiB floor, and the
+# preinstall filled it (run 38083811707: LibreOffice and Thunderbird
+# missing, rpm-ostree unable to write repository metadata). The
+# published layout stays at 20 GiB so disk images still fit small disks.
+[[customizations.filesystem]]
+mountpoint = "/"
+minsize = "40 GiB"

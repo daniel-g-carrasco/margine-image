@@ -37,6 +37,14 @@ stable release is cut.
   qemu driver survive.
 
 ### Fixed (2026-10-10)
+- **The smoke VM has room for the first-boot preinstall.** bootc-image-builder
+  sizes the disk from the image: the lighter image took the smoke VM from 25
+  to the 20 GiB floor and the Flatpak preinstall filled it (LibreOffice and
+  Thunderbird missing, rpm-ostree unable to write repository metadata, the
+  gaming-native gate red for a reason that was not the gaming layer). The
+  smoke boots a 40 GiB root now (`disk_config/disk-smoke.toml`); the
+  published layout stays at 20 GiB. The probe also reports the free space
+  when that dry run fails.
 - **Layering works again after the ROCm trim.** With `hipcc` gone,
   `rocm-hip` required a name nothing provided, and rpm-ostree refuses to
   layer onto an inconsistent package set: the smoke test's gaming-native

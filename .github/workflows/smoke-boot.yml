@@ -192,8 +192,13 @@ jobs:
           sudo podman pull "$IMG"
           # bootc-image-builder needs --privileged + a few specific
           # mounts. Defaults produce qcow2 with no LUKS.
-          # disk.toml is the same config build-disk.yml mounts (root minsize
-          # 20 GiB). Note for the archaeologist: the 2026-08-31 red smoke-boots
+          # disk-smoke.toml is disk.toml's layout (what build-disk.yml ships,
+          # root minsize 20 GiB) with a 40 GiB root: this VM downloads every
+          # Flatpak at first boot, which the installer bakes instead, and BIB
+          # sizes the disk from the image, so the lighter image of 2026-10-10
+          # (20 GiB instead of 25) left the preinstall and rpm-ostree's
+          # repository metadata without space (run 38083811707).
+          # Note for the archaeologist: the 2026-08-31 red smoke-boots
           # on the first chunkah candidate were NOT a disk-size problem. bootc
           # relabels every layer of a plain (non-ostree) image at import and
           # ostree 2026.2 counted those duplicate writes as real space, so the
@@ -207,7 +212,7 @@ jobs:
             --security-opt label=type:unconfined_t \
             -v "$(pwd)/output:/output" \
             -v /var/lib/containers/storage:/var/lib/containers/storage \
-            -v "$(pwd)/disk_config/disk.toml:/config.toml:ro" \
+            -v "$(pwd)/disk_config/disk-smoke.toml:/config.toml:ro" \
             quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905 \
             --type qcow2 \
             --rootfs btrfs \

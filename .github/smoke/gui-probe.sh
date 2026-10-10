@@ -76,7 +76,7 @@ gaming_check() {
   done
   why="$(grep -iE 'cannot install|conflict|requires|nothing provides|depsolve|problem' /tmp/gaming.out | head -3 | tr '\n' ' ' | tr -s ' ')"
   [[ -n "$why" ]] || why="$(tail -n 3 /tmp/gaming.out | tr '\n' ' ' | tr -s ' ')"
-  out "MARGINE-GAMING-NATIVE: FAIL rc=$rc ${why}"
+  out "MARGINE-GAMING-NATIVE: FAIL rc=$rc free(/var)=$(df -h --output=avail /var 2>/dev/null | tail -1 | tr -d ' ') ${why}"
 }
 gaming_check & GAMING_PID=$!
 

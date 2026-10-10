@@ -38,13 +38,16 @@ rmdir /var/lib/authselect 2>/dev/null || true
 #    /run is a tmpfs on every booted system, so none of it is ever seen.
 #  - /var/roothome/.android: adb's key pair, generated when 70-phone-cam
 #    smoke-tests scrcpy. 70-phone-cam now removes it; this is the net.
+#  - /var/roothome/.cache and .mozc: a dconf client cache and mozc's
+#    engine registration, written by build steps that run as root
+#    (the security scan listed them as residue on 2026-10-10).
 #  - libdnf5's transaction history: timestamps of the build's own dnf
 #    runs. Installed systems are managed by bootc, and dnf recreates the
 #    file when it needs one.
 #  - rpmdb.sqlite-shm: replaced by a fresh one at the very end, after the
 #    last rpm call of this script (see below).
 rm -rf /run/margine-gnupg /run/akmods /run/dnf /run/copr-*.gpg
-rm -rf /var/roothome/.android
+rm -rf /var/roothome/.android /var/roothome/.cache /var/roothome/.mozc
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-wal

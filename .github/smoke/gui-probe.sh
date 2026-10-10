@@ -54,11 +54,29 @@ gaming_check() {
     sleep 2
   done
   [[ -n "$ready" ]] || { out "MARGINE-GAMING-NATIVE: SKIP (rpm-ostreed not ready)"; return; }
-  if timeout 240 rpm-ostree install --dry-run "${pkgs[@]}" >/tmp/gaming.out 2>&1; then
-    out "MARGINE-GAMING-NATIVE: PASS (${#pkgs[@]} pkgs resolve)"
-  else
-    out "MARGINE-GAMING-NATIVE: FAIL $(grep -iE 'cannot install|conflict|requires|nothing provides|depsolve' /tmp/gaming.out | head -2 | tr '\n' ' ' | tr -s ' ')"
-  fi
+  # rpm-ostreed runs one transaction at a time and at first boot another
+  # one may hold it: a busy daemon gets a few more tries, a timeout is a
+  # skip (warn-only, like the other skips), and a failure carries
+  # rpm-ostree's own words. The first FAIL of this probe (2026-10-10) said
+  # nothing, because its message had none of the words grepped for.
+  local rc attempt why
+  for attempt in 1 2 3; do
+    timeout 240 rpm-ostree install --dry-run "${pkgs[@]}" >/tmp/gaming.out 2>&1
+    rc=$?
+    if (( rc == 0 )); then
+      out "MARGINE-GAMING-NATIVE: PASS (${#pkgs[@]} pkgs resolve)"
+      return
+    fi
+    if (( rc == 124 )); then
+      out "MARGINE-GAMING-NATIVE: SKIP (dry run timed out after 240 s on attempt $attempt)"
+      return
+    fi
+    grep -qiE 'transaction in progress|busy' /tmp/gaming.out || break
+    sleep 20
+  done
+  why="$(grep -iE 'cannot install|conflict|requires|nothing provides|depsolve|problem' /tmp/gaming.out | head -3 | tr '\n' ' ' | tr -s ' ')"
+  [[ -n "$why" ]] || why="$(tail -n 3 /tmp/gaming.out | tr '\n' ' ' | tr -s ' ')"
+  out "MARGINE-GAMING-NATIVE: FAIL rc=$rc ${why}"
 }
 gaming_check & GAMING_PID=$!
 

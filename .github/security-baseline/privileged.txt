@@ -26,7 +26,6 @@ usr/bin/suexec caps 0o510 0:48
 usr/bin/umount setuid 0o4755 0:0
 usr/bin/unix_chkpwd setuid 0o4755 0:0
 usr/bin/userhelper setuid 0o4711 0:0
-usr/bin/vmware-user-suid-wrapper setuid 0o4755 0:0
 usr/lib/polkit-1/polkit-agent-helper-1 setuid 0o4755 0:0
 usr/libexec/dbus-1/dbus-daemon-launch-helper setuid 0o4750 0:81
 usr/libexec/gstreamer-1.0/gst-ptp-helper caps 0o755 0:0

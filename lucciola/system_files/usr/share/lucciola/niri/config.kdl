@@ -29,6 +29,12 @@ input {
         // here would be button areas: a two-finger press counts as a left
         // click unless it lands in the bottom-right corner.
         click-method "clickfinger"
+        // Scroll speed: libinput's raw value is fast on this hardware (it
+        // is what GNOME gives, with no setting to change it; Margine ships
+        // wayland-scroll-factor there for the same reason). The one knob
+        // to turn: the window rules below keep every toolkit at the same
+        // pace relative to this value.
+        scroll-factor 0.15
     }
 
     // Margine's o-tiling moved the pointer to the focused window.
@@ -119,6 +125,24 @@ window-rule {
 window-rule {
     match app-id="dev.noctalia.Noctalia"
     default-column-width { fixed 1080; }
+}
+
+// One finger movement, the same distance everywhere. Toolkits turn a unit
+// of touchpad scrolling into different numbers of logical pixels: GTK 4
+// 2.5 (MAGIC_SCROLL_FACTOR, gtkscrolledwindow.c), Firefox 4 (GTK 3 hands
+// it value/10, apz.gtk.pangesture.pixel_delta_mode_multiplier is 40),
+// Chromium and Electron 5.3 (value/10*53, wayland_pointer.cc). Window
+// rules scale what each family receives so all three land on GTK 4's
+// 2.5; the factors multiply with the touchpad's. The mouse wheel is
+// scaled with them (niri has no per-window, per-device factor).
+window-rule {
+    match app-id=r#"^(app\.zen_browser\.zen|org\.mozilla\.(firefox|Thunderbird)|firefox(-esr)?|thunderbird|zen(-browser)?)$"#
+    scroll-factor 0.625
+}
+
+window-rule {
+    match app-id=r#"^(com\.microsoft\.VSCode|[Cc]ode|code-url-handler|org\.chromium\.Chromium|[Cc]hromium(-browser)?|google-chrome|brave-browser|microsoft-edge(-stable|-beta|-dev)?|msedge|com\.microsoft\.Edge|[Bb]itwarden|com\.bitwarden\.desktop|discord|com\.discordapp\.Discord)$"#
+    scroll-factor 0.47
 }
 
 window-rule {

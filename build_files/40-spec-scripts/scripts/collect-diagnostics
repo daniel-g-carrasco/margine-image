@@ -69,7 +69,10 @@ capture_shell vulkaninfo-summary.txt "if command -v vulkaninfo >/dev/null 2>&1; 
 capture_shell vainfo.txt "if command -v vainfo >/dev/null 2>&1; then vainfo; fi"
 capture_shell clinfo.txt "if command -v clinfo >/dev/null 2>&1; then clinfo; fi"
 capture_shell rocminfo.txt "if command -v rocminfo >/dev/null 2>&1; then rocminfo; fi"
-capture_shell darktable-cltest.txt "if command -v darktable-cltest >/dev/null 2>&1; then darktable-cltest; fi"
+# darktable ships as a Flatpak: run its OpenCL test inside it, on a throwaway
+# profile under the home (the Flatpak has a private /tmp) with the GPU
+# platforms on, so the user's profile is untouched even if darktable is open.
+capture_shell darktable-cltest.txt 'if command -v darktable-cltest >/dev/null 2>&1; then darktable-cltest; elif flatpak info org.darktable.Darktable >/dev/null 2>&1; then d="${XDG_CACHE_HOME:-$HOME/.cache}"; mkdir -p "$d"; t=$(mktemp -d "$d/margine-darktable-cltest.XXXXXX"); mkdir -p "$t/config"; printf "%s\n" opencl=TRUE clplatform_amdacceleratedparallelprocessing=TRUE clplatform_rusticl=TRUE > "$t/config/darktablerc"; flatpak run --command=darktable-cltest org.darktable.Darktable --configdir "$t/config" --cachedir "$t/cache"; rm -rf "$t"; fi'
 capture_shell hardware-media-journal.txt "if command -v journalctl >/dev/null 2>&1; then journalctl -b --no-pager | grep -Ei 'drm|gpu|amdgpu|i915|xe|virtio_gpu|pipewire|wireplumber|snd_hda|snd_sof' || true; fi"
 capture_shell flatpak-gaming-apps.txt "if command -v flatpak >/dev/null 2>&1; then flatpak list | grep -Ei 'Steam|Lutris|Heroic|Bottles|Proton|RetroArch|RetroDECK|Cartridges' || true; fi"
 capture_shell steam-flatpak-info.txt "if command -v flatpak >/dev/null 2>&1 && flatpak info com.valvesoftware.Steam >/dev/null 2>&1; then flatpak info com.valvesoftware.Steam; flatpak info --show-permissions com.valvesoftware.Steam; fi"

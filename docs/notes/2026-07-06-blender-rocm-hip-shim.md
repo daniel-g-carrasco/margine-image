@@ -58,5 +58,6 @@ No writable path inside the read-only Flatpak; rebuilding the Flatpak with
 ROCm is heavy and would need re-doing on every upstream bump. The shim is
 per-user, reverts cleanly (`disable` removes the dir + the override), and
 rides whatever ROCm the host currently has. The `margine-darktable-opencl`
-recipe (Mesa rusticl) is the sibling pattern for the same "GPU compute in a
-Flatpak" problem.
+recipe is the sibling pattern for the same "GPU compute in a Flatpak" problem;
+since 2026-10-09 it uses a shim built into the image instead
+(build_files/46-rocm-flatpak, docs/notes/2026-10-09-darktable-gpu-rocm.md).

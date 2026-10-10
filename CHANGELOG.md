@@ -12,8 +12,32 @@ stable release is cut.
   `com.github.johnfactotum.Foliate` from Flathub, in the installer's BAKE
   list (and its live-ISO twin), in the first-boot preinstall fallback and in
   the declared productivity apps. GNOME offered nothing to open an EPUB.
+- **`ujust margine-darktable-scroll [panel|values]`, and panel scrolling by
+  default for new darktable profiles.** The mouse wheel and two-finger
+  scrolling move the darkroom's module panel instead of silently changing
+  the slider or combo box under the pointer (Ctrl+Alt+scroll still adjusts
+  one). darktable's welcome screen still asks, with this choice preselected;
+  existing profiles keep their setting.
+- **`ujust margine-darktable-bench [quick|full] [RAW...]`**: times darktable
+  on your own RAWs, CPU against the GPU settings, disturbance-proof (waits for
+  a quiet, cool machine; repeats runs disturbed by other programs, a suspend
+  or a GPU fault; blocks sleep and lid suspend while it runs).
 
 ### Fixed (2026-10-09)
+- **darktable uses the GPU again, through the host's ROCm.** Mesa 26.2's
+  rusticl in the Flatpak runtime (LLVM 22 upstream libclc) cannot build 7 of
+  darktable's 42 OpenCL kernels, so darktable silently ran on the CPU. The
+  image now builds a ROCm shim for Flatpak apps (build_files/46-rocm-flatpak)
+  and `ujust margine-darktable-opencl` (status / enable / disable) points
+  darktable at it, turns OpenCL and the AMD platform on and tunes integrated
+  GPUs: 5% of RAM and advantage 4, so the X-Trans demosaic runs on the CPU
+  and the rest on the GPU. Never slower than the CPU alone in the cases
+  measured, up to 1.6x faster opening a photo and 1.6x exporting a heavy edit
+  (docs/notes/2026-10-09-darktable-gpu-rocm.md).
+- **Hardware checks test darktable's OpenCL for real.** The hardware
+  validator and `ujust margine-report` looked for a host `darktable-cltest`,
+  which a Flatpak install never has; they now run it in the Flatpak, on a
+  throwaway profile.
 - **Koofr Desktop no longer re-announces its tray icon every second.**
   Koofr's GUI (closed source) writes the same icon to a new temp file once
   a second, so tray hosts re-read it every second: wasted wakeups in GNOME,

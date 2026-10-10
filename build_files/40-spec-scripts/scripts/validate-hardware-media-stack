@@ -176,10 +176,29 @@ run_if_present clinfo
 run_if_present rocminfo
 
 section "Application compute exposure"
+# darktable ships as a Flatpak, so its OpenCL test runs inside it (on a
+# throwaway profile, so the user's one is untouched even if darktable is
+# open). A native darktable-cltest is still used when present.
+DT_CLTEST=()
 if have_cmd darktable-cltest; then
-  print_cmd darktable-cltest
+  DT_CLTEST=(darktable-cltest)
+elif have_cmd flatpak && flatpak info org.darktable.Darktable >/dev/null 2>&1; then
+  # Under the home: the Flatpak has its own private /tmp.
+  dt_cache="${XDG_CACHE_HOME:-$HOME/.cache}"
+  mkdir -p "$dt_cache"
+  dt_tmp=$(mktemp -d "$dt_cache/margine-darktable-cltest.XXXXXX")
+  # darktable ships the vendor AMD platform (ROCm) off; test what the
+  # Flatpak can reach, not that default.
+  mkdir -p "$dt_tmp/config"
+  printf '%s\n' opencl=TRUE clplatform_amdacceleratedparallelprocessing=TRUE clplatform_rusticl=TRUE \
+    > "$dt_tmp/config/darktablerc"
+  DT_CLTEST=(flatpak run --command=darktable-cltest org.darktable.Darktable
+             --configdir "$dt_tmp/config" --cachedir "$dt_tmp/cache")
+fi
+if (( ${#DT_CLTEST[@]} )); then
+  print_cmd "${DT_CLTEST[@]}"
   tmp_dt=$(mktemp /tmp/margine-darktable-cltest.XXXXXX)
-  if darktable-cltest >"$tmp_dt" 2>&1; then
+  if "${DT_CLTEST[@]}" >"$tmp_dt" 2>&1; then
     sed -n '1,180p' "$tmp_dt"
     if grep -qi 'opencl.*AVAILABLE and ENABLED' "$tmp_dt"; then
       ok "darktable reports OpenCL available and enabled"
@@ -191,8 +210,9 @@ if have_cmd darktable-cltest; then
     warn "darktable-cltest returned non-zero"
   fi
   rm -f "$tmp_dt"
+  [[ -n "${dt_tmp:-}" ]] && rm -rf "$dt_tmp"
 else
-  warn "darktable-cltest not installed"
+  warn "darktable is not installed (neither native nor Flatpak)"
 fi
 
 section "Kernel and media logs"

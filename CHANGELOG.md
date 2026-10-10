@@ -8,9 +8,12 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-10-10)
+- **VS Code is a Flatpak** (`com.visualstudio.code`, first-boot preinstall),
+  979 MB less in the image. Extensions that run host tools need the native
+  build: `ujust margine-vscode` layers Microsoft's RPM, signing key pinned.
 - **The developer stack is on demand, 3.2 GB lighter.** The image keeps
   what Margine's recipes use: the x86 virt stack, Podman (with
-  `podman-docker` answering to `docker`), VS Code, ROCm OpenCL and the HIP
+  `podman-docker` answering to `docker`), ROCm OpenCL and the HIP
   runtime. Gone from every install, back with one command: Docker CE
   (`ujust margine-docker`, 409 MB), eBPF tracing, sysprof, igt-gpu-tools and
   the host toolchain (`ujust margine-devtools`, 675 MB), Tailscale

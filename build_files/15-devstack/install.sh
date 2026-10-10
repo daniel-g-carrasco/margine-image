@@ -39,7 +39,6 @@ err() { printf '[devstack] ERROR: %s\n' "$*" >&2; }
 # this build loudly, which is the point.
 # shellcheck disable=SC2034  # read indirectly by verify_key_fpr callers below
 # shellcheck disable=SC2034
-MICROSOFT_FPR="BC528686B50D79E339D3721CEB3E94ADBE1229CF"
 
 missing() {
   # Print the members of "$@" that are not installed.
@@ -109,28 +108,11 @@ fi
 # from Docker's repository (key pinned by fingerprint, same as the key
 # check here used to do) for the few tools wired to Docker's own daemon.
 
-# --- 3. VS Code, from Microsoft's repo, key pinned ------------------------
-# Kept for parity with what DX shipped and what the reference host uses.
-# Upstream's new answer is a brew cask in userspace; if Margine follows,
-# this block goes and nothing else changes.
-if rpm -q code >/dev/null 2>&1; then
-  log "code (VS Code) already in the base"
-else
-  log "base lacks VS Code, installing from packages.microsoft.com"
-  retry_curl_strict https://packages.microsoft.com/keys/microsoft.asc /run/microsoft.asc
-  verify_key_fpr /run/microsoft.asc "$MICROSOFT_FPR" "microsoft" || exit 1
-  rpm --import /run/microsoft.asc
-  cat > /etc/yum.repos.d/vscode.repo <<'REPO'
-[code]
-name=Visual Studio Code
-baseurl=https://packages.microsoft.com/yumrepos/vscode
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.microsoft.com/keys/microsoft.asc
-REPO
-  retry 3 30 dnf -y install --setopt=install_weak_deps=False code
-  rm -f /etc/yum.repos.d/vscode.repo /run/microsoft.asc
-fi
+# --- 3. VS Code: a Flatpak since 2026-10-10 ------------------------------
+# com.visualstudio.code is in the preinstall list (20-flatpaks); the RPM a
+# base ships is removed by 12-base-trim, and `ujust margine-vscode` layers
+# it from Microsoft's repository (key pinned) for whoever needs the native
+# build, e.g. extensions that run host tools.
 
 # --- 4. Boot-time services DX provided ------------------------------------
 # Group membership is Margine's job on every base (2026-10-10): the base's
@@ -159,7 +141,7 @@ fi
 # --- 5. Prove it ---------------------------------------------------------
 # What this script promises the rest of the image. A base that still lacks
 # any of these after the steps above is not something to ship.
-for p in libvirt virt-manager qemu-kvm podman-docker code "${DECLARED_PKGS[@]}"; do
+for p in libvirt virt-manager qemu-kvm podman-docker "${DECLARED_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p still missing after devstack"; exit 1; }
 done
 grep -q "^libvirt:" /usr/lib/group /etc/group 2>/dev/null || { err "group libvirt missing after devstack"; exit 1; }

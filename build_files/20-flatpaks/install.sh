@@ -102,6 +102,7 @@ mkdir -p /usr/share/flatpak/preinstall.d
       com.bitwarden.desktop \
       org.libreoffice.LibreOffice \
       com.mattjakeman.ExtensionManager \
+      com.visualstudio.code \
       org.gnome.Snapshot \
       org.gnome.Showtime \
       org.gnome.Papers \

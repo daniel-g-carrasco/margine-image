@@ -56,6 +56,8 @@ layout {
     }
 
     border {
+        // niri ships the border off: without this line there is none.
+        on
         width 3
         active-color "#e6d5bf"
         inactive-color "#121212"

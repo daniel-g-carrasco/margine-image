@@ -355,6 +355,7 @@ host_packages:
       - libappindicator-gtk3
       - gnome-shell-extension-appindicator
       - gnome-shell-extension-gsconnect
+      - nautilus-python
       - adw-gtk3-theme
       - showtime
     gnome_tools_shipped_note: >

@@ -38,4 +38,3 @@ usr/libexec/sssd/krb5_child caps 0o750 0:993
 usr/libexec/sssd/ldap_child caps 0o750 0:993
 usr/libexec/sssd/sssd_pam caps 0o750 0:993
 usr/libexec/utempter/utempter setgid 0o2711 0:22
-usr/share/code/chrome-sandbox setuid 0o4755 0:0

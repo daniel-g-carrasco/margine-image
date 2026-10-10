@@ -1466,6 +1466,34 @@ margine-tailscale ACTION="install":
       *) echo "usage: ujust margine-tailscale [install|remove|status]"; exit 2 ;;
     esac
 
+# VS Code as an RPM, on demand. The image preinstalls the Flatpak
+# (com.visualstudio.code); extensions that run host tools (a terminal on the
+# host, gh, podman, rpm-ostree) need the native build. Layers it from
+# Microsoft's repository, signing key pinned by fingerprint.
+# VS Code native RPM from Microsoft's repository: install (default) / remove / status.
+[group('Developer')]
+margine-vscode ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    case "{{ ACTION }}" in
+      status)
+        rpm -q code >/dev/null 2>&1 && echo "VS Code RPM: installed ($(rpm -q --qf '%{VERSION}' code))" || echo "VS Code RPM: not installed (the Flatpak com.visualstudio.code is the default)" ;;
+      remove)
+        sudo rpm-ostree uninstall code
+        sudo rm -f /etc/yum.repos.d/vscode.repo
+        echo "VS Code RPM removed; the Flatpak stays. Reboot to apply." ;;
+      install)
+        tmp="$(mktemp)"
+        printf '%s\n' '[code]' 'name=Visual Studio Code' 'baseurl=https://packages.microsoft.com/yumrepos/vscode' \
+          'enabled=1' 'gpgcheck=1' 'gpgkey=https://packages.microsoft.com/keys/microsoft.asc' > "$tmp"
+        sudo /usr/libexec/margine/layer-repo vscode "file://$tmp" \
+          https://packages.microsoft.com/keys/microsoft.asc BC528686B50D79E339D3721CEB3E94ADBE1229CF
+        rm -f "$tmp"
+        sudo rpm-ostree install --idempotent code
+        echo "VS Code RPM layered. Reboot; both the Flatpak and the RPM then appear in the Dev folder." ;;
+      *) echo "usage: ujust margine-vscode [install|remove|status]"; exit 2 ;;
+    esac
+
 # Developer tools on demand, what Bluefin DX used to ship and the image no
 # longer carries (2026-10-10): eBPF tracing (bcc, bpftrace, bpftop),
 # sysprof, the GPU test tools (igt-gpu-tools) and a host toolchain (gcc,

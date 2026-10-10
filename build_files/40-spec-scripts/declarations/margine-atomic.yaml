@@ -471,6 +471,7 @@ flatpaks:
       - com.mattjakeman.ExtensionManager
       - com.github.jeromerobert.pdfarranger  # merge, split, reorder PDF pages (2026-09-19)
       - com.github.johnfactotum.Foliate  # e-book reader: EPUB, MOBI, FB2, CBZ (2026-10-09)
+      - com.visualstudio.code  # VS Code (2026-10-10); `ujust margine-vscode` layers the RPM instead
     gnome_core:
       # Silverblue ships these as RPMs; Bluefin DX strips them; Margine
       # restores them as Flatpaks for a complete GNOME desktop without
@@ -1074,7 +1075,8 @@ gnome:
       - id: Dev
         name: Dev
         apps:
-          - code.desktop                       # VS Code (Bluefin DX, Microsoft repo)
+          - com.visualstudio.code.desktop      # VS Code (Flatpak)
+          - code.desktop                       # VS Code RPM, when layered with ujust margine-vscode
           - com.ranfdev.DistroShelf.desktop    # distrobox GUI
       - id: System
         name: System

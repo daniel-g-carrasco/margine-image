@@ -94,7 +94,24 @@ DECLARED_PKGS=(
   podman-tui                               # container_tooling
   python3-pip                              # build_essentials
   virt-install                             # not declared: the margine-vm just recipes call it
+  # Bluefin shipped these; Universal Blue's main images do not (silverblue-main
+  # trial, 2026-10-10). fastfetch is what 50-branding configures; the three
+  # extensions are in 30-gnome-defaults' enabled set (Bluefin built the first
+  # two from git, Fedora packages them).
+  fastfetch
+  gnome-shell-extension-dash-to-dock gnome-shell-extension-caffeine gnome-shell-extension-gsconnect
 )
+# Bluefin ships Dash to Dock and Caffeine as plain directories built from
+# git; Fedora's packages install into the same directories. A package laid
+# over a directory nothing owns would mix two versions, so a directory the
+# rpm database does not know goes before its package comes in.
+for uuid in dash-to-dock@micxgx.gmail.com caffeine@patapon.info gsconnect@andyholmes.github.io; do
+  d="/usr/share/gnome-shell/extensions/$uuid"
+  [[ -d "$d" ]] || continue
+  rpm -qf "$d" >/dev/null 2>&1 && continue
+  log "removing the base's unpackaged $uuid before the Fedora package"
+  rm -rf "$d"
+done
 mapfile -t NEED < <(missing "${DECLARED_PKGS[@]}")
 if (( ${#NEED[@]} == 0 )); then
   log "declared host packages already in the base (${#DECLARED_PKGS[@]} present)"
@@ -113,6 +130,35 @@ fi
 # base ships is removed by 12-base-trim, and `ujust margine-vscode` layers
 # it from Microsoft's repository (key pinned) for whoever needs the native
 # build, e.g. extensions that run host tools.
+
+# --- 3b. uupd, the updater margine-update drives ---------------------------
+# Bluefin ships it; Universal Blue's main images install ublue-os-just and
+# ublue-os-update-services from the ublue-os/packages COPR but not uupd.
+# Same COPR, key pinned by fingerprint, repo removed afterwards (the
+# package ships a preset that enables uupd.timer; enabled explicitly too).
+UBLUE_PACKAGES_FPR="AB4670779555943799BE7ED916BC8535A444A78A"
+if rpm -q uupd >/dev/null 2>&1; then
+  log "uupd already in the base"
+else
+  log "base lacks uupd, installing from the ublue-os/packages COPR"
+  retry_curl_strict https://download.copr.fedorainfracloud.org/results/ublue-os/packages/pubkey.gpg /run/copr-ublue-packages.gpg
+  verify_key_fpr /run/copr-ublue-packages.gpg "$UBLUE_PACKAGES_FPR" "copr ublue-os/packages" || exit 1
+  rpm --import /run/copr-ublue-packages.gpg
+  cat > /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:ublue-os:packages.repo <<'REPOEOF'
+[copr:copr.fedorainfracloud.org:ublue-os:packages]
+name=Copr repo for packages owned by ublue-os
+baseurl=https://download.copr.fedorainfracloud.org/results/ublue-os/packages/fedora-$releasever-$basearch/
+type=rpm-md
+skip_if_unavailable=False
+gpgcheck=1
+gpgkey=file:///run/copr-ublue-packages.gpg
+repo_gpgcheck=0
+enabled=1
+REPOEOF
+  retry 3 30 dnf -y install --setopt=install_weak_deps=False uupd
+  rm -f /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:ublue-os:packages.repo /run/copr-ublue-packages.gpg
+fi
+systemctl enable uupd.timer
 
 # --- 4. Boot-time services DX provided ------------------------------------
 # Group membership is Margine's job on every base (2026-10-10): the base's
@@ -141,10 +187,11 @@ fi
 # --- 5. Prove it ---------------------------------------------------------
 # What this script promises the rest of the image. A base that still lacks
 # any of these after the steps above is not something to ship.
-for p in libvirt virt-manager qemu-kvm podman-docker "${DECLARED_PKGS[@]}"; do
+for p in libvirt virt-manager qemu-kvm podman-docker uupd "${DECLARED_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p still missing after devstack"; exit 1; }
 done
 grep -q "^libvirt:" /usr/lib/group /etc/group 2>/dev/null || { err "group libvirt missing after devstack"; exit 1; }
+[[ -f /usr/lib/systemd/system/flatpak-preinstall.service ]] || { err "flatpak-preinstall.service missing: no Flatpak would be installed at first boot"; exit 1; }
 if rpm -q docker-ce >/dev/null 2>&1 || rpm -q incus >/dev/null 2>&1; then
   err "docker-ce or incus still in the image after base-trim"; exit 1
 fi

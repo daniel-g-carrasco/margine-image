@@ -139,7 +139,8 @@ mkdir -p /usr/share/flatpak/preinstall.d
       io.missioncenter.MissionCenter \
       org.gnome.DejaDup \
       org.gnome.Firmware \
-      it.mijorus.smile ; do
+      it.mijorus.smile \
+      io.github.kolunmi.Bazaar ; do
     # Only the "macigni" (~500-700 MB Flatpak each + heavy runtimes)
     # are deferred to flatpak-preinstall.service first-boot. They take
     # 5-10 min to download but the user gets a notification (PR E
@@ -180,5 +181,10 @@ cat /usr/share/flatpak/preinstall.d/margine-defaults.preinstall
 # Drop the legacy uBlue file if it exists (left behind by older builds
 # or by Bluefin DX itself if it still has one). Prevents confusion.
 rm -f /etc/ublue-os/system-flatpaks.list
+
+# The unit that runs `flatpak preinstall` at boot is Margine's own since
+# 2026-10-10 (system_files; Fedora ships none, Bluefin's was a system file
+# too). Enabled here so a base without Bluefin's preset still runs it.
+systemctl enable flatpak-preinstall.service
 
 # ---------------------------------------------------------------------------

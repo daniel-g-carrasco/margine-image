@@ -1,0 +1,24 @@
+# Margine: install the Flatpaks listed in /usr/share/flatpak/preinstall.d at
+# boot. Fedora's flatpak ships `flatpak preinstall` and the directories but
+# no unit (1.19 included); Bluefin carried one as a plain system file, which
+# a base without Bluefin does not have. This is that unit, under the same
+# name, so one copy exists on every base. After flatpak-add-flathub-repos
+# (Universal Blue's main images add the Flathub remote there).
+[Unit]
+Description=Preinstall Flatpaks
+After=network-online.target flatpak-add-flathub-repos.service
+Wants=network-online.target
+ConditionPathExists=/usr/bin/flatpak
+Documentation=man:flatpak-preinstall(1)
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flatpak preinstall -y
+RemainAfterExit=true
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

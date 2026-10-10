@@ -107,6 +107,16 @@ HIDECURSOR_SHA256="10f79e49c5d812d27033793ee7c89e58e9b0ea176a6ba3bb611f9f3e3f885
 SMILE_EXT_UUID="smile-extension@mijorus.it"
 SMILE_EXT_VERSION_TAG="70078"   # EGO v13, GNOME 50; resolved 2026-06-14
 SMILE_EXT_SHA256="e23cf17f1216c099215c6b458e96913f277a371bc770759ca56b858d98651b42"
+# Gradia Capture (annotate screenshots with Gradia) and Bazaar Companion
+# (Bazaar from an app's right-click menu): Bluefin built both from git
+# submodules, a base without Bluefin has neither. Built here from pinned
+# commits (neither project tags releases); the tarball hashes are the pins.
+GRADIA_EXT_UUID="gradia-integration@alexandervanhee.github.io"
+GRADIA_EXT_COMMIT="f70a2127d0a9acc3c9d4d8198361fc9f4e14818f"   # 2026-08-22, shell-version 49,50
+GRADIA_EXT_SHA256="aab96784a1afd5f28a4175e93bc509c7a185ce42a4c7afd7d4a8321803fb3132"
+BAZAAR_EXT_UUID="bazaar-integration@kolunmi.github.io"
+BAZAAR_EXT_COMMIT="3bb9134985343ffd1993520eb37c90e113bfb09b"   # 2026-04-03, shell-version 49,50
+BAZAAR_EXT_SHA256="b779610b06e1ac58af6193f515f637d3846eae67d3fb36f4af71b2e05fb05869"
 
 # NO transient dnf installs. Lesson learned the hard way 2026-06-04
 # (build #26918323253 + #26913265617):
@@ -276,6 +286,41 @@ declare -A ICON_SHIMS=(
   [border-all-symbolic]=checkbox-symbolic         # border width (bordered box)
   [view-column-symbolic]=view-dual-symbolic       # o-tiling "Columns" preset (absent from Adwaita 50)
 )
+install_gradia_ext() {
+  local target="${EXT_DIR}/${GRADIA_EXT_UUID}" src=/tmp/gradia-ext
+  log "gradia-integration ${GRADIA_EXT_COMMIT:0:7} → ${target}"
+  rm -rf "${target}" "${src}"
+  mkdir -p "${target}" "${src}"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 -o /tmp/gradia-ext.tar.gz \
+    "https://github.com/AlexanderVanhee/gradia-capture/archive/${GRADIA_EXT_COMMIT}.tar.gz"
+  verify_sha256 /tmp/gradia-ext.tar.gz "${GRADIA_EXT_SHA256}"
+  tar -xzf /tmp/gradia-ext.tar.gz -C "${src}" --strip-components=1
+  # Upstream's build.sh packs src/ with the icons and the schema through
+  # gnome-extensions pack (part of gnome-shell, present at build time).
+  (cd "${src}" && bash build.sh >/dev/null)
+  extract_zip "${src}/${GRADIA_EXT_UUID}.shell-extension.zip" "${target}"
+  rm -rf /tmp/gradia-ext.tar.gz "${src}"
+  [[ -f "${target}/metadata.json" ]] || { log "ERROR: ${target}/metadata.json missing after packing"; exit 1; }
+  assert_shell_compat "${target}"
+  glib-compile-schemas --strict "${target}/schemas"
+}
+
+install_bazaar_ext() {
+  local target="${EXT_DIR}/${BAZAAR_EXT_UUID}" src=/tmp/bazaar-ext
+  log "bazaar-integration ${BAZAAR_EXT_COMMIT:0:7} → ${target}"
+  rm -rf "${target}" "${src}"
+  mkdir -p "${target}" "${src}"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 -o /tmp/bazaar-ext.tar.gz \
+    "https://github.com/bazaar-org/bazaar-companion/archive/${BAZAAR_EXT_COMMIT}.tar.gz"
+  verify_sha256 /tmp/bazaar-ext.tar.gz "${BAZAAR_EXT_SHA256}"
+  tar -xzf /tmp/bazaar-ext.tar.gz -C "${src}" --strip-components=1
+  # The extension is src/ as is (no schemas), which is also what Bluefin ships.
+  cp -a "${src}/src/." "${target}/"
+  rm -rf /tmp/bazaar-ext.tar.gz "${src}"
+  [[ -f "${target}/metadata.json" ]] || { log "ERROR: ${target}/metadata.json missing"; exit 1; }
+  assert_shell_compat "${target}"
+}
+
 install_legacy_icon_shims() {
   local dst=/usr/share/icons/hicolor/scalable/actions
   mkdir -p "$dst"
@@ -337,6 +382,8 @@ done
 install_otiling
 install_hidecursor
 install_smile_ext
+install_gradia_ext
+install_bazaar_ext
 install_legacy_icon_shims
 
 log "Recompiling /usr/share/glib-2.0/schemas to pick up new extension schemas"
@@ -345,8 +392,8 @@ glib-compile-schemas /usr/share/glib-2.0/schemas
 log "Final extension inventory under ${EXT_DIR}:"
 for d in "${EXT_DIR}"/*/; do echo "  $(basename "$d")"; done | sort
 
-log "metadata.json for the three we just added:"
-for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it; do
+log "metadata.json for the ones we just added:"
+for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it "${GRADIA_EXT_UUID}" "${BAZAAR_EXT_UUID}"; do
   if [[ -f "${EXT_DIR}/${uuid}/metadata.json" ]]; then
     printf '  %s: ' "${uuid}"
     python3 -c "
@@ -623,7 +670,7 @@ log "o-tiling: runtime config ${OTILING_RUNTIME_CONF#"$EXT_DIR"/} verified to ca
 # (Found 2026-06-15: o-tiling schema unregistered on a live host.)
 log "Registering Margine extension gschemas into the global schema set"
 shopt -s nullglob
-for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it; do
+for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it "${GRADIA_EXT_UUID}"; do
   for xml in "/usr/share/gnome-shell/extensions/${uuid}/schemas/"*.gschema.xml; do
     base="$(basename "$xml")"
     if [[ ! -f "/usr/share/glib-2.0/schemas/${base}" ]]; then

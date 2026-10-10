@@ -848,8 +848,9 @@ GAMING_FLATPAKS_FPPATH=(
 )
 
 core_present=0
+core_found=()
 for r in "${GAMING_CORE_RPMS[@]}"; do
-  rpm -q "$r" >/dev/null 2>&1 && core_present=$((core_present + 1))
+  rpm -q "$r" >/dev/null 2>&1 && { core_present=$((core_present + 1)); core_found+=("$r"); }
 done
 
 check_gaming_rpm() {
@@ -891,7 +892,7 @@ elif flatpak info --system com.valvesoftware.Steam >/dev/null 2>&1 || (( core_pr
     check_gaming_flatpak "$fp" "ujust margine-gaming"
   done
 elif (( core_present == 1 )); then
-  warn "gaming remnants: only one of gamescope/vkBasalt is layered — neither layer is complete. Converge with 'ujust margine-gaming' or clean up with 'ujust margine-gaming-remove'"
+  warn "gaming remnants: ${core_found[*]} is present without the rest of the layer. Converge with 'ujust margine-gaming' or clean up with 'ujust margine-gaming-remove'"
 else
   info "Gaming layer not installed — skipping (run 'ujust margine-gaming' to install)"
 fi

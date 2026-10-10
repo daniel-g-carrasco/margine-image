@@ -41,6 +41,15 @@ stable release is cut.
   go with them and the GNOME first-login bootstrap; AccountsService user
   templates give new users the Lucciola session. The validator skips
   Margine's GNOME expectations when the product is Lucciola.
+- **What Bluefin provided without anyone noticing is now Margine's own**, found
+  by a trial build on `ghcr.io/ublue-os/silverblue-main:44`: the unit that
+  runs `flatpak preinstall` at boot (Fedora ships none; without it no
+  Flatpak would be installed), Bazaar in Margine's preinstall lists (it only
+  came from Bluefin's `bazaar.preinstall`), `uupd` from the Universal Blue
+  COPR when the base lacks it (key pinned), fastfetch and the Dash to Dock,
+  Caffeine and GSConnect extensions as Fedora packages, Gradia Capture and
+  Bazaar Companion built from pinned commits. On today's base this changes
+  nothing visible; it is what lets the base become a parameter.
 
 ### Removed (2026-10-10)
 - **3.6 GB of packages nothing needed.** A package audit of the image by

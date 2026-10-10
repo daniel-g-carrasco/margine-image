@@ -517,6 +517,7 @@ flatpaks:
       - org.gnome.Firmware
       - it.mijorus.smile
       - net.sapples.LiveCaptions  # on-device captions for any audio; floats over the video (2026-09-22)
+      - io.github.kolunmi.Bazaar  # the app store; in Margine's own lists since 2026-10-10 (it only came from Bluefin's bazaar.preinstall)
     documentation:
       # GTK 4 markdown viewer/editor (libadwaita). Used as the default
       # `.md` opener so docs in margine-fedora-atomic and similar repos

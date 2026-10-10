@@ -52,7 +52,9 @@ font_family = "JetBrains Mono"
 font_weight = 500
 start = ["workspaces", "active_window"]
 center = ["clock"]
-end = ["tray", "privacy", "network", "bluetooth", "caffeine", "volume", "battery", "notifications", "control-center"]
+# No control-centre button: Mod+N opens that panel, and the notifications
+# button sits next to where it was (2026-10-11).
+end = ["tray", "privacy", "network", "bluetooth", "caffeine", "volume", "battery", "notifications"]
 
 [widget.workspaces]
 style = "minimal"
@@ -75,3 +77,22 @@ tooltip_format = "{:%A %d %B %Y}"
 # labels the title starts ~160px in: 340 leaves a gap before the clock.
 [widget.active_window]
 max_length = 340
+
+# The right side stays short (2026-10-11): the bar is 1240px wide with the
+# clock centred, and a growing right side ends up under the clock.
+# Network: the glyph alone, as in GNOME; the name, band and interface are
+# in the tooltip.
+[widget.network]
+show_label = false
+
+# Privacy: nothing until something captures the microphone, the camera or
+# the screen, then the icon of what is in use, as in GNOME.
+[widget.privacy]
+hide_inactive = true
+
+# Tray: one button opening a panel with every icon; right-click > Pin keeps
+# an icon in the bar. Noctalia has no "collapse above N icons" setting, and
+# four inline icons already reached the clock.
+[widget.tray]
+drawer = true
+drawer_columns = 4

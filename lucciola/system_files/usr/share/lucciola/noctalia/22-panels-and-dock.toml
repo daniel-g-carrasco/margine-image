@@ -1,0 +1,32 @@
+# Panels, dock and motion, as settled after a week of daily use (2026-10-10).
+# Sorted after 20-margine-style.toml, so these win over it; a user's own
+# files and the GUI choices in ~/.local/state still win over these.
+
+[bar.default]
+# The bar's outline in the primary colour (beige with the Margine palette),
+# like the focused window's border.
+border = "on_primary"
+
+[shell.animation]
+speed = 1.5
+
+[shell.panel]
+# The control centre hangs from the bar; launcher, session and wallpaper
+# panels stay floating (20-margine-style.toml).
+control_center_placement = "attached"
+shadow = true
+floating_offset = 6
+list_item_background = true
+
+# A dock, as Margine's GNOME has one: on the active monitor only, small
+# icons, a little off the bottom edge. What is pinned to it is personal.
+[dock]
+enabled = true
+active_monitor_only = true
+icon_size = 34
+item_spacing = 12
+main_axis_padding = 12
+cross_axis_padding = 2
+margin_edge = 2
+margin_ends = 64
+launcher_icon = "grid-goldenratio"

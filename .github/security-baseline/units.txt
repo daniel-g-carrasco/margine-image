@@ -3,6 +3,7 @@ etc/systemd/system/bluetooth.target.wants/bluetooth.service
 etc/systemd/system/default.target.wants/bluefin-dx-groups.service
 etc/systemd/system/default.target.wants/brew-setup.service
 etc/systemd/system/default.target.wants/input-remapper.service
+etc/systemd/system/default.target.wants/margine-dev-groups.service
 etc/systemd/system/dev-virtio\x2dports-org.qemu.guest_agent.0.device.wants/qemu-guest-agent.service
 etc/systemd/system/factory-reset.target.wants/systemd-tpm2-clear.service
 etc/systemd/system/getty.target.wants/getty@tty1.service
@@ -48,7 +49,6 @@ etc/systemd/system/multi-user.target.wants/sssd.service
 etc/systemd/system/multi-user.target.wants/sysstat.service
 etc/systemd/system/multi-user.target.wants/systemd-homed.service
 etc/systemd/system/multi-user.target.wants/systemd-oomd.service
-etc/systemd/system/multi-user.target.wants/tailscaled.service
 etc/systemd/system/multi-user.target.wants/thermald.service
 etc/systemd/system/multi-user.target.wants/tuned.service
 etc/systemd/system/multi-user.target.wants/ublue-system-setup.service
@@ -64,7 +64,6 @@ etc/systemd/system/sockets.target.wants/avahi-daemon.socket
 etc/systemd/system/sockets.target.wants/cups.socket
 etc/systemd/system/sockets.target.wants/dbus.socket
 etc/systemd/system/sockets.target.wants/dm-event.socket
-etc/systemd/system/sockets.target.wants/docker.socket
 etc/systemd/system/sockets.target.wants/iscsid.socket
 etc/systemd/system/sockets.target.wants/iscsiuio.socket
 etc/systemd/system/sockets.target.wants/pcscd.socket
@@ -275,9 +274,7 @@ usr/lib/systemd/system/timers.target.wants/margine-flatpak-update.timer
 usr/lib/systemd/system/timers.target.wants/systemd-tmpfiles-clean.timer
 usr/lib/systemd/user/gnome-session-x11-services-ready.target.wants/org.gnome.SettingsDaemon.XSettings.service
 usr/lib/systemd/user/gnome-session-x11-services.target.wants/org.gnome.SettingsDaemon.XSettings.service
-usr/lib/systemd/user/gnome-session.target.wants/gnome-initial-setup-first-login.service
 usr/lib/systemd/user/gnome-session.target.wants/org.freedesktop.IBus.session.GNOME.service
-usr/lib/systemd/user/graphical-session-pre.target.wants/gnome-initial-setup-copy-worker.service
 usr/lib/systemd/user/graphical-session.target.wants/margine-mok-notify.service
 usr/lib/systemd/user/graphical-session.target.wants/margine-upgrade-notify.service
 usr/lib/systemd/user/graphical-session.target.wants/spice-vdagent.service

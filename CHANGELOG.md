@@ -36,6 +36,19 @@ stable release is cut.
   these families by name and proves qemu-kvm, its firmware and libvirt's
   qemu driver survive.
 
+### Fixed (2026-10-10)
+- **Layering works again after the ROCm trim.** With `hipcc` gone,
+  `rocm-hip` required a name nothing provided, and rpm-ostree refuses to
+  layer onto an inconsistent package set: the smoke test's gaming-native
+  dry run failed on the first image built that way. A package of
+  Margine's own, `margine-rocm-hip-runtime`, now provides the name (and
+  nothing else), and the build fails on any unmet dependency (`dnf check
+  --dependencies`). The dry run itself retries while rpm-ostreed is busy,
+  reports a timeout as a skip and quotes rpm-ostree when it fails. Root's
+  home is cleaned of build residue, and the security baseline follows the
+  trims (tailscaled, docker.socket, gnome-initial-setup and its polkit
+  rule gone, `margine-dev-groups` enabled, one setuid helper fewer).
+
 ### Added (2026-10-09)
 - **Foliate preinstalled, to read e-books** (EPUB, MOBI, FB2, CBZ):
   `com.github.johnfactotum.Foliate` from Flathub, in the installer's BAKE

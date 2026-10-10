@@ -89,6 +89,8 @@ DECLARED_PKGS=(
   rocminfo rocm-opencl                     # amd_gpu_extras
   lm_sensors powertop powerstat smartmontools  # hardware_diagnostics
   gnome-shell-extension-appindicator       # gnome_tools: enabled by 30-gnome-defaults
+  nautilus-python                          # gnome_tools: Files extensions (Spola's sync emblems);
+                                           # today in the image only as a dependency of gsconnect
   jetbrains-mono-fonts cascadia-code-fonts # fonts
   tmux glow                                # core_cli
   podman-tui                               # container_tooling

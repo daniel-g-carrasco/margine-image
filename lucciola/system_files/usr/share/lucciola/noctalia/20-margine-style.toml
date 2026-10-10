@@ -77,6 +77,9 @@ tooltip_format = "{:%A %d %B %Y}"
 # labels the title starts ~160px in: 340 leaves a gap before the clock.
 [widget.active_window]
 max_length = 340
+# The title alone: the application's icon next to it repeated what the
+# title already says (2026-10-11).
+display = "text_only"
 
 # The right side stays short (2026-10-11): the bar is 1240px wide with the
 # clock centred, and a growing right side ends up under the clock.

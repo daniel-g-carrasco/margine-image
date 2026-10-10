@@ -14,6 +14,8 @@ stable release is cut.
   0.625 and the Chromium family by 0.47 so all three move like GTK 4, and
   the touchpad `scroll-factor` (0.15, the one knob) sets the pace. What
   wayland-scroll-factor cannot do on GNOME (#29 there), done per window.
+- **Lucciola: the active window's title without its application icon** in
+  the bar (`display = "text_only"`).
 - **Lucciola: a shorter right side of the bar.** The network widget shows
   the glyph alone (name, band and interface in the tooltip), the privacy
   widget appears only while the microphone, the camera or the screen is

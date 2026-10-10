@@ -219,7 +219,7 @@ done
 # A failure here means the user has to manually `sudo usermod -aG ...`
 # or stay sudo-bound for docker/incus/libvirt commands.
 if (( ! IS_LIVE )); then
-  info "wheel-membership check skipped (image context — bluefin-dx-groups applies it at boot)"
+  info "wheel-membership check skipped (image context: margine-dev-groups applies it at boot)"
 elif WHEEL_USERS=$(getent group wheel 2>/dev/null | cut -d: -f4 | tr ',' ' '); [[ -z "${WHEEL_USERS// /}" ]]; then
   warn "wheel group is empty — no admin users to check group membership for"
 else
@@ -228,11 +228,16 @@ else
     # id -nG is robust (uses NSS, sees both /etc/group and /etc/passwd
     # secondary groups, plus any LDAP/SSSD source on enterprise installs).
     USER_GROUPS=" $(id -nG "$u" 2>/dev/null) "
-    for required in docker incus-admin libvirt; do
+    # libvirt always; docker and incus-admin only when the package that
+    # brings the group is layered (ujust margine-docker, or incus by hand).
+    REQUIRED_GROUPS=(libvirt)
+    rpm -q docker-ce >/dev/null 2>&1 && REQUIRED_GROUPS+=(docker)
+    rpm -q incus >/dev/null 2>&1 && REQUIRED_GROUPS+=(incus-admin)
+    for required in "${REQUIRED_GROUPS[@]}"; do
       if [[ "$USER_GROUPS" == *" $required "* ]]; then
-        ok "user '$u' is in group '$required' (bluefin-dx-groups effect OK)"
+        ok "user '$u' is in group '$required' (margine-dev-groups effect OK)"
       else
-        bad "user '$u' is NOT in group '$required' — the dev-groups service (bluefin-dx-groups or margine-dev-groups) may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
+        bad "user '$u' is NOT in group '$required': margine-dev-groups may have failed at boot. Manual fix: sudo usermod -aG $required $u && relogin"
       fi
     done
   done

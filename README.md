@@ -314,11 +314,13 @@ bad signature exits non-zero. The signing public key lives in this repo at
 <summary>Full stack summary</summary>
 
 **Base image**: Bluefin DX (stable), Universal Blue's developer-oriented
-Bluefin variant. Built on Fedora Silverblue 44. Includes Mesa freeworld,
-the full virt stack (libvirt, qemu-kvm, virt-manager, swtpm, edk2-ovmf),
-container tooling (podman, docker, distrobox, toolbox), Visual Studio
-Code, Cockpit, Tailscale, bpftrace, sysprof. Inherited unchanged by
-Margine.
+Bluefin variant. Built on Fedora Silverblue 44. Margine keeps Mesa
+freeworld, the x86 virt stack (libvirt, qemu-kvm, virt-manager, swtpm,
+edk2-ovmf), Podman with distrobox and toolbox, Visual Studio Code, ROCm
+OpenCL and the HIP runtime. The rest of DX's developer stack is one
+command away instead of in every install: `ujust margine-docker`
+(Docker CE), `ujust margine-devtools` (bpftrace, bcc, sysprof,
+igt-gpu-tools, gcc), `ujust margine-tailscale`.
 
 **Kernel**: CachyOS mainline from
 [`bieszczaders/kernel-cachyos`](https://copr.fedorainfracloud.org/coprs/bieszczaders/kernel-cachyos/).

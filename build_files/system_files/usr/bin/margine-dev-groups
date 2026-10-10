@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Put every wheel member in the docker, incus-admin and libvirt groups, once.
-# Margine's stand-in for Bluefin DX's bluefin-dx-groups, used only when the
-# base image does not ship that one (see build_files/15-devstack).
+# Put every wheel member in the libvirt group, and in the docker and
+# incus-admin groups when those exist (after `ujust margine-docker`, or incus
+# layered by hand). Runs at every boot (build_files/15-devstack enables it):
+# a group can appear later, and usermod -aG on a member is a no-op.
+# Margine's stand-in for Bluefin DX's bluefin-dx-groups, which expects the
+# docker and incus-admin groups and restarts every 30 s when they are gone.
 set -u
-VER=1
-STATE=/etc/margine/dev-groups
-mkdir -p /etc/margine
-if [[ -f $STATE && "$(cat "$STATE")" == "$VER" ]]; then
-  exit 0
-fi
 # Groups defined by packages live in /usr/lib/group on an ostree system;
 # copy the entry into /etc/group so usermod can find it.
 for g in docker incus-admin libvirt; do
@@ -16,7 +13,7 @@ for g in docker incus-admin libvirt; do
 done
 for u in $(getent group wheel | cut -d: -f4 | tr ',' ' '); do
   for g in docker incus-admin libvirt; do
+    getent group "$g" >/dev/null 2>&1 || continue
     usermod -aG "$g" "$u" 2>/dev/null || true
   done
 done
-echo "$VER" >"$STATE"

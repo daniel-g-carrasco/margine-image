@@ -13,4 +13,3 @@ udp 5353
 tcp 1716
 udp 1716
 # tailscaled, enabled by default by the base. Pending decision D4.
-udp 41641

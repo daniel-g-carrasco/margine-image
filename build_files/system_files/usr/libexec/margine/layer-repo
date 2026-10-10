@@ -1,0 +1,37 @@
+#!/usr/bin/bash
+# Add a third-party RPM repository with its signing key pinned by
+# fingerprint, for the ujust recipes that layer packages from it
+# (margine-docker, margine-tailscale). Root only.
+#
+#   layer-repo NAME REPO_URL KEY_URL FINGERPRINT
+#
+# The key is fetched, its primary fingerprint compared with the one the
+# recipe carries, and only then imported into rpm and saved under
+# /etc/pki/rpm-gpg; the repo file is rewritten to point at that saved key.
+# The repo file stays: rpm-ostree needs it for every later update of the
+# layered packages.
+set -euo pipefail
+name="${1:?name}" repo_url="${2:?repo url}" key_url="${3:?key url}" expected="${4:?fingerprint}"
+[[ $EUID -eq 0 ]] || { echo "layer-repo: run as root" >&2; exit 1; }
+[[ "$name" =~ ^[a-z0-9-]+$ ]] || { echo "layer-repo: bad name '$name'" >&2; exit 1; }
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL --retry 3 -o "$tmp/key" "$key_url"
+curl -fsSL --retry 3 -o "$tmp/repo" "$repo_url"
+
+mkdir -p "$tmp/gnupg" && chmod 700 "$tmp/gnupg"
+actual="$(GNUPGHOME="$tmp/gnupg" gpg --batch --no-options --show-keys --with-colons "$tmp/key" 2>/dev/null \
+  | awk -F: '$1 == "fpr" { print $10; exit }')"
+if [[ "$actual" != "$expected" ]]; then
+  echo "layer-repo: $name signing key fingerprint mismatch, refusing" >&2
+  echo "  expected: $expected" >&2
+  echo "  fetched:  ${actual:-<unreadable>}" >&2
+  exit 1
+fi
+
+install -Dm0644 "$tmp/key" "/etc/pki/rpm-gpg/RPM-GPG-KEY-$name"
+rpm --import "/etc/pki/rpm-gpg/RPM-GPG-KEY-$name"
+sed -E "s|^gpgkey=.*|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-$name|" "$tmp/repo" > "$tmp/repo.local"
+install -m0644 "$tmp/repo.local" "/etc/yum.repos.d/$name.repo"
+echo "layer-repo: $name added (/etc/yum.repos.d/$name.repo), key $expected"

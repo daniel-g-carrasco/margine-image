@@ -45,6 +45,24 @@
 # The families are matched by name pattern, so they are removed whatever
 # the base's version of them; the prove-it block then checks that
 # everything the x86 VMs need is still there.
+#
+# DEVELOPER STACK ON DEMAND (2026-10-10)
+#
+# Bluefin DX ships a developer stack most installs never open. What stays
+# is what Margine's recipes and validators use: the x86 virt stack, Podman
+# (with podman-docker answering to `docker`), ROCm OpenCL and the HIP
+# runtime. What goes, and comes back with one ujust command:
+#   - Docker CE (409 MB): `ujust margine-docker`
+#   - cockpit, eBPF tracing (bcc, bpftrace, bpftop and their LLVM 21),
+#     sysprof, igt-gpu-tools, the host toolchain (gcc, g++, glibc-devel,
+#     kernel-devel): `ujust margine-devtools`; distrobox is the everyday
+#     way to build things
+#   - tailscale (72 MB and a daemon with an open UDP port on every install,
+#     docs/SECURITY-CLAIMS.md D4): `ujust margine-tailscale`
+#   - incus and incus-agent, rclone, restic, borgbackup: layer them or
+#     `brew install` them
+#   - the HIP compiler and its 2 GB of static LLVM (rocm-llvm-static,
+#     rocm-device-libs, hipcc and the rocm -devel packages): see below.
 set -euo pipefail
 . /ctx/00-common.sh
 log() { printf '[base-trim] %s\n' "$*"; }
@@ -59,6 +77,14 @@ TRIM_PKGS=(
   fluid-soundfont-gm fluid-soundfont-gs fluid-soundfont-lite-patches wildmidi-libs  # MIDI soundfonts, orphans
   python3-boto3 python3-botocore python3-s3transfer         # AWS SDK, orphans
   gnome-user-docs yelp yelp-libs yelp-xsl                   # GNOME help: Margine ships offline docs
+  # Developer stack on demand (see the header): dnf also takes the
+  # packages that require these, e.g. docker-ce-rootless-extras,
+  # gcc-plugin-annobin, python3-bcc, systemtap-devel.
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  bcc bpftrace bpftop clang21-libs llvm21-libs libomp21 compiler-rt21
+  sysprof sysprof-cli libsysprof-capture igt-gpu-tools
+  gcc gcc-c++ cpp glibc-devel libstdc++-devel kernel-headers kernel-cachyos-devel
+  tailscale incus incus-agent rclone restic borgbackup
 )
 
 # What the x86 VMs keep: the x86 system emulator with its UEFI firmware,
@@ -75,10 +101,10 @@ done
 while read -r p; do
   [[ -n "$p" ]] && PRESENT+=("$p")
 done < <(rpm -qa --qf '%{NAME}\n' | grep -E '^(qemu|edk2)' | grep -v -E "$QEMU_KEEP" || true)
-# The wine family, whatever is left of it.
+# The wine family, whatever is left of it, and every cockpit piece.
 while read -r p; do
   [[ -n "$p" ]] && PRESENT+=("$p")
-done < <(rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw)' || true)
+done < <(rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw|cockpit)' || true)
 
 if (( ${#PRESENT[@]} == 0 )); then
   log "base ships none of the ${#TRIM_PKGS[@]} trim candidates, nothing to do"
@@ -87,19 +113,44 @@ else
   dnf -y remove --setopt=clean_requirements_on_remove=False "${PRESENT[@]}"
 fi
 
+# --- ROCm: keep OpenCL and the HIP runtime, drop the HIP compiler -----------
+# rocm-hip requires hipcc, and rocm-device-libs requires rocm-llvm-static
+# (1963 MB), by packaging, not at run time: with all of them gone,
+# rocm-opencl still builds every one of darktable's 42 kernels and
+# libamdhip64 and libamdocl64 resolve (tested in a fedora:44 container,
+# 2026-10-10). dnf would cascade the removal up to rocm-hip, so these go
+# through rpm alone, leaving one unmet dependency on an installed package
+# (rocm-hip -> hipcc). dnf5 tolerates it (tested), and the smoke test's
+# layering dry run checks that rpm-ostree does too.
+ROCM_DEV=(hipcc rocm-device-libs rocm-llvm-static rocm-clang rocm-llvm rocm-lld
+          rocm-clang-devel rocm-llvm-devel rocm-libc++-devel rocm-clang-runtime-devel rocm-runtime-devel)
+ROCM_PRESENT=()
+for p in "${ROCM_DEV[@]}"; do
+  rpm -q "$p" >/dev/null 2>&1 && ROCM_PRESENT+=("$p")
+done
+if (( ${#ROCM_PRESENT[@]} )); then
+  log "removing the HIP compiler and ROCm development packages: ${ROCM_PRESENT[*]}"
+  rpm -e --nodeps "${ROCM_PRESENT[@]}"
+fi
+
 # --- Prove it -------------------------------------------------------------
-for p in "${TRIM_PKGS[@]}"; do
+for p in "${TRIM_PKGS[@]}" "${ROCM_DEV[@]}"; do
   if rpm -q "$p" >/dev/null 2>&1; then err "$p still present after base-trim"; exit 1; fi
 done
 if rpm -qa --qf '%{NAME}\n' | grep -E '^(qemu|edk2)' | grep -v -E "$QEMU_KEEP" | grep -q .; then
   err "qemu packages outside the keep list survived base-trim"; exit 1
 fi
-if rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw)' | grep -q .; then
-  err "the wine family survived base-trim"; exit 1
+if rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw|cockpit)' | grep -q .; then
+  err "the wine family or cockpit survived base-trim"; exit 1
 fi
+for lib in /usr/lib64/libamdhip64.so.* /usr/lib64/libamdocl64.so.*; do
+  [[ -e "$lib" ]] || continue
+  if ldd "$lib" | grep -q 'not found'; then err "$lib no longer resolves after the ROCm trim"; exit 1; fi
+done
 # What the trim must never take with it (present in today's image).
 for p in fuse python3-rpm python3-systemd NetworkManager-team \
-         qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu; do
+         qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu \
+         podman podman-compose podman-machine distrobox rocm-opencl rocm-hip rocm-comgr rocm-runtime rocminfo; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p is gone: the trim removed more than it should"; exit 1; }
 done
 log "base trim complete"

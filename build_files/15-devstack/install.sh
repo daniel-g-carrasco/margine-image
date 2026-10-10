@@ -38,7 +38,6 @@ err() { printf '[devstack] ERROR: %s\n' "$*" >&2; }
 # and https://packages.microsoft.com/keys/microsoft.asc. A rotation fails
 # this build loudly, which is the point.
 # shellcheck disable=SC2034  # read indirectly by verify_key_fpr callers below
-DOCKER_CE_FPR="060A61C51B558A7F742B77AAC52FEB6B621E9F35"
 # shellcheck disable=SC2034
 MICROSOFT_FPR="BC528686B50D79E339D3721CEB3E94ADBE1229CF"
 
@@ -50,13 +49,13 @@ missing() {
 
 # --- 1. Virtualisation + container tooling from Fedora's own repos -------
 # The list is margine-atomic.yaml host_packages.virtualization plus the
-# podman extras DX carried and incus, which the group check expects.
+# podman extras DX carried. podman-docker answers to `docker` for scripts:
+# Margine ships Podman only (2026-10-10), Docker CE is `ujust margine-docker`.
 FEDORA_PKGS=(
   libvirt libvirt-nss qemu-kvm virt-manager virt-viewer edk2-ovmf swtpm dnsmasq
   qemu-img qemu-device-display-virtio-gpu qemu-device-display-virtio-vga
   qemu-device-usb-redirect qemu-char-spice
-  podman-compose podman-machine
-  incus incus-agent
+  podman-compose podman-machine podman-docker
 )
 mapfile -t NEED < <(missing "${FEDORA_PKGS[@]}")
 if (( ${#NEED[@]} == 0 )); then
@@ -105,22 +104,10 @@ else
   retry 3 30 dnf -y install --setopt=install_weak_deps=False "${NEED[@]}"
 fi
 
-# --- 2. Docker CE, from Docker's repo, key pinned ------------------------
-DOCKER_PKGS=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
-mapfile -t NEED < <(missing "${DOCKER_PKGS[@]}")
-if (( ${#NEED[@]} == 0 )); then
-  log "docker-ce already in the base"
-else
-  log "base lacks docker (${NEED[*]}), installing from download.docker.com"
-  retry_curl_strict https://download.docker.com/linux/fedora/gpg /run/docker-ce.asc
-  verify_key_fpr /run/docker-ce.asc "$DOCKER_CE_FPR" "docker-ce" || exit 1
-  rpm --import /run/docker-ce.asc
-  retry_curl_strict https://download.docker.com/linux/fedora/docker-ce.repo /etc/yum.repos.d/docker-ce.repo
-  retry 3 30 dnf -y install --setopt=install_weak_deps=False "${NEED[@]}"
-  rm -f /etc/yum.repos.d/docker-ce.repo /run/docker-ce.asc
-  # Same sysctl DX ships: docker networking needs forwarding.
-  install -Dm0644 /ctx/system_files/usr/lib/sysctl.d/margine-docker-ce.conf /usr/lib/sysctl.d/margine-docker-ce.conf
-fi
+# --- 2. Docker CE: not in the image since 2026-10-10 ---------------------
+# 12-base-trim removes what a base ships; `ujust margine-docker` layers it
+# from Docker's repository (key pinned by fingerprint, same as the key
+# check here used to do) for the few tools wired to Docker's own daemon.
 
 # --- 3. VS Code, from Microsoft's repo, key pinned ------------------------
 # Kept for parity with what DX shipped and what the reference host uses.
@@ -146,42 +133,37 @@ REPO
 fi
 
 # --- 4. Boot-time services DX provided ------------------------------------
-# Only when the base does not ship its own. On Bluefin DX the bluefin-*
-# units exist and stay in charge; ours are present in the image but left
-# disabled, so there is exactly one owner of each job.
+# Group membership is Margine's job on every base (2026-10-10): the base's
+# bluefin-dx-groups expects the docker and incus-admin groups, which left
+# the image with Docker CE and incus, and it restarts every 30 s when
+# usermod fails. margine-dev-groups adds wheel users to the groups that
+# exist (libvirt, and docker after `ujust margine-docker`), every boot.
 if [[ -f /usr/lib/systemd/system/bluefin-dx-groups.service ]]; then
-  log "bluefin-dx-groups.service present in the base, leaving group setup to it"
-else
-  log "enabling margine-dev-groups.service (wheel -> docker, incus-admin, libvirt at boot)"
-  systemctl enable margine-dev-groups.service
+  systemctl mask bluefin-dx-groups.service
+  log "masked the base's bluefin-dx-groups.service (its groups are gone)"
 fi
+systemctl enable margine-dev-groups.service
+log "enabled margine-dev-groups.service (wheel -> libvirt, docker when present, at boot)"
 if [[ -f /usr/lib/systemd/system/libvirt-workaround.service ]]; then
   log "libvirt-workaround.service present in the base"
 else
   systemctl enable margine-libvirt-workaround.service
   log "enabled margine-libvirt-workaround.service"
 fi
-if [[ -f /usr/lib/systemd/system/incus-workaround.service ]] || ! rpm -q incus >/dev/null 2>&1; then
-  log "incus workaround: base handles it or incus absent"
+if systemctl is-enabled podman.socket >/dev/null 2>&1; then
+  log "podman.socket already enabled"
 else
-  systemctl enable margine-incus-workaround.service
-  log "enabled margine-incus-workaround.service"
+  systemctl enable podman.socket; log "enabled podman.socket"
 fi
-for unit in docker.socket podman.socket; do
-  if systemctl is-enabled "$unit" >/dev/null 2>&1; then
-    log "$unit already enabled"
-  elif [[ -f "/usr/lib/systemd/system/$unit" ]]; then
-    systemctl enable "$unit"; log "enabled $unit"
-  fi
-done
 
 # --- 5. Prove it ---------------------------------------------------------
 # What this script promises the rest of the image. A base that still lacks
 # any of these after the steps above is not something to ship.
-for p in libvirt virt-manager qemu-kvm docker-ce code "${DECLARED_PKGS[@]}"; do
+for p in libvirt virt-manager qemu-kvm podman-docker code "${DECLARED_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p still missing after devstack"; exit 1; }
 done
-for g in docker libvirt incus-admin; do
-  grep -q "^$g:" /usr/lib/group /etc/group 2>/dev/null || { err "group $g missing after devstack"; exit 1; }
-done
+grep -q "^libvirt:" /usr/lib/group /etc/group 2>/dev/null || { err "group libvirt missing after devstack"; exit 1; }
+if rpm -q docker-ce >/dev/null 2>&1 || rpm -q incus >/dev/null 2>&1; then
+  err "docker-ce or incus still in the image after base-trim"; exit 1
+fi
 log "developer stack complete"

@@ -1396,6 +1396,93 @@ margine-darktable-bench MODE="quick" *RAWS:
     #!/usr/bin/bash
     exec /usr/libexec/margine/darktable-bench/bench "$@"
 
+# Docker CE on demand. Margine ships Podman only; podman-docker answers to
+# `docker` for scripts. For the tools wired to Docker's own daemon, this
+# layers Docker CE from Docker's repository (signing key pinned by
+# fingerprint), in place of podman-docker, enables the socket and the IPv4
+# forwarding Docker needs; margine-dev-groups puts wheel users in the
+# docker group at the next boot.
+# Docker CE from Docker's repository: install (default) / remove / status.
+[group('Developer')]
+margine-docker ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    PKGS=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin)
+    case "{{ ACTION }}" in
+      status)
+        if rpm -q docker-ce >/dev/null 2>&1; then
+          echo "Docker CE: installed ($(rpm -q --qf '%{VERSION}' docker-ce)); docker.socket: $(systemctl is-enabled docker.socket 2>/dev/null || echo not-enabled)"
+        else
+          echo "Docker CE: not installed (podman answers to docker). Install: ujust margine-docker"
+        fi ;;
+      remove)
+        sudo rpm-ostree override reset podman-docker $(printf -- '--uninstall %s ' "${PKGS[@]}")
+        sudo rm -f /etc/yum.repos.d/docker-ce.repo /etc/sysctl.d/margine-docker-ce.conf \
+          /etc/systemd/system/sockets.target.wants/docker.socket
+        echo "Docker CE removed, podman-docker is back. Reboot to apply." ;;
+      install)
+        sudo /usr/libexec/margine/layer-repo docker-ce \
+          https://download.docker.com/linux/fedora/docker-ce.repo \
+          https://download.docker.com/linux/fedora/gpg \
+          060A61C51B558A7F742B77AAC52FEB6B621E9F35
+        sudo rpm-ostree override remove podman-docker $(printf -- '--install %s ' "${PKGS[@]}")
+        printf 'net.ipv4.ip_forward = 1\n' | sudo tee /etc/sysctl.d/margine-docker-ce.conf >/dev/null
+        # The unit only exists in the new deployment: enable it by hand.
+        sudo mkdir -p /etc/systemd/system/sockets.target.wants
+        sudo ln -sf /usr/lib/systemd/system/docker.socket /etc/systemd/system/sockets.target.wants/docker.socket
+        echo "Docker CE layered. Reboot: margine-dev-groups then adds wheel users to the docker group." ;;
+      *) echo "usage: ujust margine-docker [install|remove|status]"; exit 2 ;;
+    esac
+
+# Tailscale on demand. Not in the image since 2026-10-10: it ran a daemon
+# with UDP 41641 open on every install (docs/SECURITY-CLAIMS.md D4).
+# Layers it from Tailscale's repository (key pinned) and enables tailscaled.
+# Tailscale from its repository: install (default) / remove / status.
+[group('Developer')]
+margine-tailscale ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    case "{{ ACTION }}" in
+      status)
+        if rpm -q tailscale >/dev/null 2>&1; then
+          echo "tailscale: installed; tailscaled: $(systemctl is-active tailscaled 2>/dev/null || true)"
+          tailscale status 2>/dev/null | head -3 || true
+        else
+          echo "tailscale: not installed. Install: ujust margine-tailscale"
+        fi ;;
+      remove)
+        sudo rpm-ostree uninstall tailscale
+        sudo rm -f /etc/yum.repos.d/tailscale.repo /etc/systemd/system/multi-user.target.wants/tailscaled.service
+        echo "Tailscale removed. Reboot to apply." ;;
+      install)
+        sudo /usr/libexec/margine/layer-repo tailscale \
+          https://pkgs.tailscale.com/stable/fedora/tailscale.repo \
+          https://pkgs.tailscale.com/stable/fedora/repo.gpg \
+          2596A99EAAB33821893C0A79458CA832957F5868
+        sudo rpm-ostree install --idempotent tailscale
+        sudo mkdir -p /etc/systemd/system/multi-user.target.wants
+        sudo ln -sf /usr/lib/systemd/system/tailscaled.service /etc/systemd/system/multi-user.target.wants/tailscaled.service
+        echo "Tailscale layered. Reboot, then: sudo tailscale up" ;;
+      *) echo "usage: ujust margine-tailscale [install|remove|status]"; exit 2 ;;
+    esac
+
+# Developer tools on demand, what Bluefin DX used to ship and the image no
+# longer carries (2026-10-10): eBPF tracing (bcc, bpftrace, bpftop),
+# sysprof, the GPU test tools (igt-gpu-tools) and a host toolchain (gcc,
+# g++, make). For everyday builds, distrobox and toolbox stay the way.
+# Developer tools layer (bpf, sysprof, igt, gcc): install (default) / remove / status.
+[group('Developer')]
+margine-devtools ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    PKGS=(bcc bpftrace bpftop sysprof igt-gpu-tools gcc gcc-c++ make)
+    case "{{ ACTION }}" in
+      status) for p in "${PKGS[@]}"; do printf '  %-14s %s\n' "$p" "$(rpm -q "$p" >/dev/null 2>&1 && echo installed || echo -)"; done ;;
+      remove) sudo rpm-ostree uninstall "${PKGS[@]}"; echo "Removed. Reboot to apply." ;;
+      install) sudo rpm-ostree install --idempotent "${PKGS[@]}"; echo "Layered. Reboot to use them." ;;
+      *) echo "usage: ujust margine-devtools [install|remove|status]"; exit 2 ;;
+    esac
+
 # Install/reinstall Koofr Desktop (native, rootless, autostart hidden).
 # `ujust install-koofr launchers` only rewrites the menu and autostart
 # entries of an existing install (e.g. to pick up the tray fix).

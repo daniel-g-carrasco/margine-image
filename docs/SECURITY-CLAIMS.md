@@ -26,7 +26,7 @@ gated, the rest is not), **unverified** (nothing automated checks it),
 | C5 | The image carries no secret and no per-machine identity: every install generates its own keys | one leaked image = keys of every install (a root adb key shipped until 2026-10-04) | image scan, secrets fatal on every event (#451) | pending #451 |
 | C6 | Security-relevant files, privileged binaries, enabled units and build residue only change through a reviewed diff | silent changes from our build or from the base image | image scan against `.github/security-baseline/` (#451): fails PRs, opens a drift issue on main | pending #451 |
 | C7 | SELinux labels user homes correctly | a home relabeled to `default_t` (sshd cannot read keys; confined apps break) | build fix + validator A.4.selinux-home (#439), smoke `selinux-*` (#452) | verified (build); smoke pending #452 |
-| C8 | A fresh install exposes no network service beyond the reviewed set | an unexpected listener reachable from any network | smoke `listener` check against `.github/smoke/listeners-allow.txt` (#452); today's set: LLMNR 5355 (D3), mDNS 5353, GSConnect 1716 (D5), tailscaled 41641 (D4) | pending #452 |
+| C8 | A fresh install exposes no network service beyond the reviewed set | an unexpected listener reachable from any network | smoke `listener` check against `.github/smoke/listeners-allow.txt` (#452); today's set: LLMNR 5355 (D3), mDNS 5353, GSConnect 1716 (D5); tailscaled 41641 left the set with D4 | pending #452 |
 | C9 | The firewall blocks unsolicited inbound traffic | services the user starts being reachable from the LAN | none: Fedora's `FedoraWorkstation` zone (inherited) allows all TCP/UDP ports above 1024 | limitation, decision D2 |
 | C10 | The disk is encrypted | data read from a stolen disk | none: LUKS is offered by the installer, not enforced, and no CI install checks it | unverified |
 | C11 | TPM auto-unlock does not weaken disk encryption | someone with the laptop in hand | `margine-tpm-unlock` keeps the passphrase slot; GRUB menu lock closes kernel command-line editing (#444, VM-tested; on installs with a read-only `/boot` it needs #456); the initramfs on `/boot` is neither signed nor measured into PCR 7, so it can be replaced by someone who can boot other media | limitation, decision D1 |
@@ -44,7 +44,7 @@ monthly review lists it until then.
 | D1 | TPM unlock against an attacker with the laptop in hand | TPM + PIN (`--tpm2-with-pin`), passphrase only, or a signed UKI with a PCR 11 policy (ADR-0007) | 2026-10-31 |
 | D2 | Default firewall zone | keep `FedoraWorkstation` (high ports open, Fedora default) or ship a stricter Margine zone | 2026-10-31 |
 | D3 | LLMNR (systemd-resolved, port 5355 on all interfaces) | keep the Fedora default or turn it off | 2026-11-30 |
-| D4 | `tailscaled` is enabled by default (inherited from Bluefin) and opens a UDP port on all interfaces | keep it (zero-setup VPN) or ship it disabled, enabled by the user when they log in to Tailscale | 2026-10-31 |
+| D4 | `tailscaled` is enabled by default (inherited from Bluefin) and opens a UDP port on all interfaces | decided 2026-10-10: not shipped; `ujust margine-tailscale` layers and enables it on request | done |
 | D5 | GSConnect (KDE Connect protocol) listens on port 1716 TCP/UDP on every interface by default, paired phone or not, and the default firewall zone lets the LAN reach it | keep it on, ship it off until the user enables it, or restrict 1716 to the home/trusted zone | 2026-10-31 |
 
 ## Engineering items

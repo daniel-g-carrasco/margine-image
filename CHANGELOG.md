@@ -7,6 +7,23 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-10-10)
+- **The developer stack is on demand, 3.2 GB lighter.** The image keeps
+  what Margine's recipes use: the x86 virt stack, Podman (with
+  `podman-docker` answering to `docker`), VS Code, ROCm OpenCL and the HIP
+  runtime. Gone from every install, back with one command: Docker CE
+  (`ujust margine-docker`, 409 MB), eBPF tracing, sysprof, igt-gpu-tools and
+  the host toolchain (`ujust margine-devtools`, 675 MB), Tailscale
+  (`ujust margine-tailscale`, 72 MB and a daemon with an open UDP port:
+  SECURITY-CLAIMS D4 closed), cockpit, incus, rclone, restic and borgbackup
+  (161 MB). The HIP compiler and its 2 GB of static LLVM go too: darktable's
+  kernels still build on ROCm OpenCL and Blender's HIP runtime stays. The
+  base's `bluefin-dx-groups` is masked (it expected the docker and
+  incus-admin groups and restarted every 30 s without them);
+  `margine-dev-groups` adds wheel users to the groups that exist, every boot.
+  Third-party repositories added by the recipes pin the signing key by
+  fingerprint (`/usr/libexec/margine/layer-repo`).
+
 ### Removed (2026-10-10)
 - **3.6 GB of packages nothing needed.** A package audit of the image by
   originating layer found: qemu for every architecture but x86 (57

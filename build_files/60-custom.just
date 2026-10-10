@@ -1554,6 +1554,76 @@ install-koofr ACTION="install":
 
     echo; echo "Koofr installed in ${DEST}. Autostart = hidden to tray; menu launch = normal window."
 
+# Install Spola, the Koofr sync client that replaces Koofr Desktop
+# (https://spola.neistar.com): a Flatpak from its own signed repository,
+# with the Files emblems ready to turn on in its Preferences.
+# `ujust install-spola migrate` stops Koofr Desktop for good, takes its
+# folder pairs over into Spola and starts Spola again: then every pair is
+# aligned from Spola's window, each after its preview.
+# `ujust install-spola remove` uninstalls Spola (its data and the folders stay).
+[group('Apps')]
+install-spola ACTION="install":
+    #!/usr/bin/bash
+    set -euo pipefail
+    APP=io.github.daniel_g_carrasco.spola
+    REF=https://daniel-g-carrasco.github.io/spola/spola.flatpakref
+    KOOFR_AUTOSTART="${HOME}/.config/autostart/koofr.desktop"
+    installed() { flatpak info --user "${APP}" >/dev/null 2>&1 || flatpak info --system "${APP}" >/dev/null 2>&1; }
+    running() { gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+                  --method org.freedesktop.DBus.NameHasOwner "${APP}" 2>/dev/null | grep -q true; }
+    quit_spola() {
+      running || return 0
+      gdbus call --session --dest "${APP}" --object-path /io/github/daniel_g_carrasco/spola \
+        --method org.freedesktop.Application.ActivateAction quit "[]" "{}" >/dev/null 2>&1 || true
+      for _ in $(seq 1 90); do running || return 0; sleep 1; done
+      echo "Spola did not quit: close it from its tray icon and run this again."; exit 1
+    }
+    case "{{ ACTION }}" in
+      install)
+        if installed; then
+          echo "Spola is installed. Updates come with 'flatpak update' (and GNOME Software)."
+        else
+          echo "Installing Spola from ${REF}…"
+          flatpak install -y --user "${REF}"
+        fi
+        echo
+        echo "Next: open Spola, sign in with a Koofr app password (Koofr account settings,"
+        echo "Passwords), add folders, or take Koofr Desktop's over with: ujust install-spola migrate"
+        echo "Files emblems: Spola > Preferences > 'Show sync status in Files', then nautilus -q."
+        ;;
+      migrate)
+        installed || { echo "Install Spola first: ujust install-spola"; exit 1; }
+        [ -f "${HOME}/.koofr/config.json" ] || { echo "No Koofr Desktop configuration found (${HOME}/.koofr/config.json)."; exit 1; }
+        echo "Stopping Koofr Desktop: two sync engines on the same folders would lose files."
+        systemctl --user stop koofr.service 2>/dev/null || true
+        pkill -x storagegui 2>/dev/null || true
+        pkill -x storagesync 2>/dev/null || true
+        [ -f "${KOOFR_AUTOSTART}" ] && mv -f "${KOOFR_AUTOSTART}" "${KOOFR_AUTOSTART}.disabled-by-spola"
+        quit_spola
+        echo "Taking the folder pairs over…"
+        flatpak run --command=spola "${APP}" import-koofr-desktop
+        echo
+        echo "Starting Spola in the background. In its window every pair shows 'Align…':"
+        echo "open each preview and confirm it; Koofr Desktop's folders are usually already"
+        echo "identical on both sides, so nothing is transferred. Paused pairs stay paused."
+        setsid -f flatpak run "${APP}" --background >/dev/null 2>&1
+        echo "Koofr Desktop's files stay in ${HOME}/.koofr-dist and ${HOME}/.koofr: remove them"
+        echo "when everything is in order (ujust install-koofr remove)."
+        ;;
+      remove|uninstall)
+        quit_spola
+        flatpak uninstall -y --user "${APP}" 2>/dev/null || flatpak uninstall -y "${APP}" 2>/dev/null || true
+        rm -f "${HOME}/.config/autostart/${APP}.desktop"
+        echo "Spola removed. Its settings and listings are in ${HOME}/.var/app/${APP}; the synced folders are untouched."
+        ;;
+      *) echo "usage: ujust install-spola [install|migrate|remove]"; exit 2 ;;
+    esac
+
+# alias for install-spola
+[group('Apps')]
+spola ACTION="install":
+    @ujust install-spola {{ ACTION }}
+
 # alias for install-koofr
 [group('Apps')]
 koofr ACTION="install":

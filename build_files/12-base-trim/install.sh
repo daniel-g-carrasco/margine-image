@@ -93,6 +93,18 @@ TRIM_PKGS=(
 # three user-mode emulators containers-common pulls for multi-arch podman.
 QEMU_KEEP='^(qemu-system-x86(-core)?|qemu-kvm(-core)?|qemu-img|qemu-common|qemu-tools|qemu-pr-helper|qemu-guest-agent|qemu-user-static-(aarch64|arm|x86)|edk2-ovmf|qemu-(ui|device|char|audio|block)-.*)$'
 
+# What the trim must never take with it. Checked against what was there
+# BEFORE the trim: a base that never had one of these (silverblue-main
+# has no python3-rpm, the kernel step's akmods tooling brings and removes
+# it) is not the trim's doing, and must not fail the build here.
+KEEP_PKGS=(fuse python3-rpm python3-systemd NetworkManager-team
+           qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu
+           podman podman-compose podman-machine distrobox rocm-opencl rocm-hip rocm-comgr rocm-runtime rocminfo)
+KEEP_BEFORE=()
+for p in "${KEEP_PKGS[@]}"; do
+  rpm -q "$p" >/dev/null 2>&1 && KEEP_BEFORE+=("$p")
+done
+
 PRESENT=()
 for p in "${TRIM_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 && PRESENT+=("$p")
@@ -198,10 +210,8 @@ done
 if ! unmet="$(dnf check --dependencies 2>&1)"; then
   err "unmet dependencies after base-trim:"; echo "$unmet" >&2; exit 1
 fi
-# What the trim must never take with it (present in today's image).
-for p in fuse python3-rpm python3-systemd NetworkManager-team \
-         qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu \
-         podman podman-compose podman-machine distrobox rocm-opencl rocm-hip rocm-comgr rocm-runtime rocminfo; do
+# What the trim must never take with it, among what the base had.
+for p in "${KEEP_BEFORE[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p is gone: the trim removed more than it should"; exit 1; }
 done
 log "base trim complete"

@@ -26,9 +26,9 @@ on:
         required: false
         default: "ghcr.io/daniel-g-carrasco/margine:candidate"
       layer:
-        description: "Package to layer before the rebase (exercises the re-solve); empty = none"
+        description: "Package to layer before the rebase (exercises the re-solve; pick one the image lacks); empty = none"
         required: false
-        default: "htop"
+        default: "cowsay"
       expect_id_like:
         description: "ID_LIKE expected on the new deployment"
         required: false

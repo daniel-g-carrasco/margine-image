@@ -23,6 +23,10 @@ import tempfile
 import time
 
 PROMPT = "MPROMPT> "
+# What the guest shell sends besides text: CSI sequences (colours, bracketed
+# paste) and OSC sequences (Fedora's bash shell integration, OSC 3008, wraps
+# every prompt and command). Both are stripped before matching.
+ESCAPES = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[ -/]*[@-~]|\r")
 
 
 class Serial:
@@ -64,7 +68,7 @@ class Serial:
             text = data.decode("utf-8", errors="replace")
             self.log.write(text)
             self.log.flush()
-            self.buf += text
+            self.buf = ESCAPES.sub("", self.buf + text)
             if len(self.buf) > 400000:
                 self.buf = self.buf[-200000:]
         return None
@@ -111,7 +115,7 @@ def main():
     ap.add_argument("--disk", required=True)
     ap.add_argument("--sb-vars", required=True)
     ap.add_argument("--to", required=True, help="image ref to rebase to (digest form preferred)")
-    ap.add_argument("--layer", default="htop", help="package to layer before the rebase; empty = none")
+    ap.add_argument("--layer", default="cowsay", help="package to layer before the rebase (one the image lacks); empty = none")
     ap.add_argument("--expect-id-like", default="fedora")
     ap.add_argument("--user", default="probe")
     ap.add_argument("--password", default=os.environ.get("UPGRADE_PASSWORD", ""))
@@ -144,16 +148,20 @@ def main():
         if not s.expect(r"Password: ?", 60):
             raise SystemExit("MARGINE-UPGRADE: FAIL no password prompt")
         s.send(a.password + "\n")
-        time.sleep(2)
-        s.send(f"stty -echo; export PS1='{PROMPT}'; unset HISTFILE\n")
-        if not s.expect(re.escape(PROMPT) + r"$", 60):
+        time.sleep(3)
+        # A bare bash: no profile, so no shell integration and no colour
+        # prompt; our own prompt marks the end of each command.
+        s.send("exec bash --noprofile --norc\n")
+        time.sleep(1)
+        s.send(f"stty -echo; PS1='{PROMPT}'; unset HISTFILE PROMPT_COMMAND\n")
+        if not s.expect(re.escape(PROMPT) + r"\s*$", 60):
             say(s.tail())
             raise SystemExit("MARGINE-UPGRADE: FAIL shell prompt not reached after login")
 
     def run(cmd, timeout=120):
         """Run a command, return (rc, output)."""
         s.send(cmd + '; echo "RC=$?"\n')
-        m = s.expect(r"RC=(\d+)\r?\n" + re.escape(PROMPT) + r"$", timeout)
+        m = s.expect(r"RC=(\d+)\s*\n.*?" + re.escape(PROMPT) + r"\s*$", timeout)
         if not m:
             return None, s.tail(60)
         return int(m.group(1)), None
@@ -161,10 +169,10 @@ def main():
     def capture(cmd, timeout=120):
         """Run a command whose output we want: wrap in markers."""
         s.send(f'echo __B__; {cmd}; echo "__E__ RC=$?"\n')
-        m = s.expect(r"__B__\r?\n(.*?)__E__ RC=(\d+)\r?\n" + re.escape(PROMPT) + r"$", timeout)
+        m = s.expect(r"__B__\s*\n(.*?)__E__ RC=(\d+).*?" + re.escape(PROMPT) + r"\s*$", timeout)
         if not m:
             return None, s.tail(60)
-        return int(m.group(2)), m.group(1).replace("\r", "")
+        return int(m.group(2)), m.group(1)
 
     sudo = f"echo '{a.password}' | sudo -S -p '' "
 
@@ -184,7 +192,9 @@ def main():
             rc, out = capture("rpm-ostree status | grep -A1 -i LayeredPackages | head -3", 60)
             say("layered: " + (out or "").strip())
     say(f"rebasing to {a.to}")
+    t_rebase = time.monotonic()
     rc, out = capture(sudo + f"rpm-ostree rebase ostree-image-signed:docker://{a.to} 2>&1 | tail -8", 2400)
+    say(f"rebase took {int(time.monotonic() - t_rebase)}s, rc={rc}")
     if rc != 0:
         say(out or "")
         print("MARGINE-UPGRADE: FAIL rebase failed")

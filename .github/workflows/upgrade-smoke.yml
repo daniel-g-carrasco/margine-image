@@ -1,0 +1,181 @@
+# Upgrade smoke: does an INSTALLED Margine move to a new image cleanly?
+#
+# The smoke-boot gate boots a fresh disk of the image under test. This
+# one boots a disk built from an OLD image (what users run today), layers
+# a package, rebases to the NEW image the way `ujust margine-update` does
+# (ostree-image-signed, signature verified against the installed policy),
+# reboots and checks the result over the serial console: the booted
+# deployment, Secure Boot, failed units, the layered package, the base's
+# masked timers, Flathub only, uupd, the /etc merge, the gaming-native
+# dry run, the shipped validator. Written for the base switch of
+# 2026-10-11 (Bluefin DX to Universal Blue's silverblue-main), kept as a
+# tool for every change that touches what an upgrade has to carry.
+#
+# Manual only (workflow_dispatch); nothing is promoted or published.
+name: Upgrade smoke (old install to new image)
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_ref:
+        description: "OLD image: what the installed system runs (tag or tag@digest)"
+        required: false
+        default: "ghcr.io/daniel-g-carrasco/margine@sha256:3df51a8e67134f9ccfdf7219088af93549b28a01fc9645eb66798aa141bd2d42"
+      to_ref:
+        description: "NEW image to rebase to (tag or tag@digest)"
+        required: false
+        default: "ghcr.io/daniel-g-carrasco/margine:candidate"
+      layer:
+        description: "Package to layer before the rebase (exercises the re-solve); empty = none"
+        required: false
+        default: "htop"
+      expect_id_like:
+        description: "ID_LIKE expected on the new deployment"
+        required: false
+        default: "fedora"
+
+concurrency:
+  group: upgrade-smoke
+  cancel-in-progress: false
+
+jobs:
+  upgrade_smoke:
+    name: Install old, rebase to new, boot and check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Maximize build space
+        # Same reason as smoke-boot.yml: BIB extracts the image and builds
+        # a qcow2 from it, 25 GB peak.
+        uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
+        with:
+          remove-codeql: true
+
+      - name: Keep bwrap children in the parent AppArmor profile (Ubuntu 26.04)
+        # See smoke-boot.yml for the why (bootc-dev/actions#55).
+        run: |
+          if sudo test -r /etc/apparmor.d/bwrap-userns-restrict &&
+             sudo test -r /sys/kernel/security/apparmor/profiles &&
+             sudo grep -qx 'bwrap (enforce)' /sys/kernel/security/apparmor/profiles; then
+            printf '%s\n' 'priority=100 allow file rwlkm /**,' 'priority=100 allow ix /**,' \
+              | sudo tee /etc/apparmor.d/local/bwrap-userns-restrict >/dev/null
+            sudo apparmor_parser -Q /etc/apparmor.d/bwrap-userns-restrict
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+            echo "bwrap AppArmor override installed"
+          else
+            echo "bwrap-userns-restrict not enforced on this runner, nothing to do"
+          fi
+
+      - name: Install QEMU + OVMF + tools
+        run: |
+          apt_retry() {
+            for i in 1 2 3; do
+              sudo timeout 600 apt-get "$@" && return 0
+              echo "::warning::apt-get $* failed/timed out (attempt $i); retrying in $((i * 15))s"
+              sleep $((i * 15))
+            done
+            return 1
+          }
+          apt_retry update -qq
+          apt_retry install -y -qq qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools python3-virt-firmware
+          ls -la /dev/kvm || true
+
+      - name: Resolve both refs to digests
+        id: ref
+        env:
+          FROM_REF: ${{ inputs.from_ref }}
+          TO_REF: ${{ inputs.to_ref }}
+        run: |
+          set -euo pipefail
+          resolve() {
+            local ref="$1" base digest
+            if [[ "$ref" == *"@sha256:"* ]]; then base="${ref%@*}"; digest="${ref#*@}"
+            else base="${ref%:*}"; digest="$(sudo skopeo inspect --no-tags --format '{{.Digest}}' "docker://$ref")"; fi
+            echo "${base}@${digest}"
+          }
+          FROM="$(resolve "$FROM_REF")"; TO="$(resolve "$TO_REF")"
+          echo "from=$FROM" >> "$GITHUB_OUTPUT"; echo "to=$TO" >> "$GITHUB_OUTPUT"
+          echo "Installed system: $FROM"; echo "Target image:     $TO"
+          for r in "$FROM" "$TO"; do
+            sudo skopeo inspect --no-tags "docker://$r" | python3 -c '
+          import json,sys; d=json.load(sys.stdin); l=d.get("Labels",{})
+          print("  base", l.get("org.opencontainers.image.base.name","?"), "| created", d.get("Created","")[:16], "| rev", l.get("org.opencontainers.image.revision","?")[:7])'
+          done
+
+      - name: Build the installed system (qcow2 from the OLD image)
+        env:
+          FROM: ${{ steps.ref.outputs.from }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sudo podman pull "$FROM"
+          # A login for the serial console: user "probe" in wheel, password
+          # generated here and handed to the driver through the environment.
+          PW="$(openssl rand -hex 12)"; echo "::add-mask::$PW"; echo "UPGRADE_PASSWORD=$PW" >> "$GITHUB_ENV"
+          HASH="$(openssl passwd -6 "$PW")"
+          sed "s|@PASSWORD_HASH@|$HASH|" disk_config/disk-upgrade.toml > disk-upgrade.toml
+          sudo podman run --rm \
+            --privileged \
+            --security-opt label=type:unconfined_t \
+            -v "$(pwd)/output:/output" \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            -v "$(pwd)/disk-upgrade.toml:/config.toml:ro" \
+            quay.io/centos-bootc/bootc-image-builder@sha256:7ae88b8d6f2cabfa971d7836b96d6cac19cd1384e658031bd154f9687e929905 \
+            --type qcow2 \
+            --rootfs btrfs \
+            "$FROM"
+          ls -la output/qcow2/
+          sudo chown "$(id -u):$(id -g)" -R output/
+
+      - name: Prepare Secure Boot variables (Microsoft keys + Margine MOK)
+        env:
+          IMG: ${{ steps.ref.outputs.from }}
+        run: |
+          set -euo pipefail
+          sudo podman run --rm --entrypoint /usr/bin/cat "$IMG" /usr/share/cert/MOK.der | cat > MOK.der
+          openssl x509 -inform DER -in MOK.der -out MOK.pem
+          virt-fw-vars --input /usr/share/OVMF/OVMF_VARS_4M.ms.fd --output sb-vars.fd \
+            --add-mok 605dab50-e046-4300-abb6-3dd810dd8b23 MOK.pem
+
+      - name: Boot, layer, rebase, reboot, check
+        env:
+          TO: ${{ steps.ref.outputs.to }}
+          LAYER: ${{ inputs.layer }}
+          EXPECT_ID_LIKE: ${{ inputs.expect_id_like }}
+        run: |
+          set -euo pipefail
+          QCOW=$(ls output/qcow2/*.qcow2 | head -1)
+          python3 .github/scripts/upgrade-smoke.py --disk "$QCOW" --sb-vars sb-vars.fd \
+            --to "$TO" --layer "$LAYER" --expect-id-like "$EXPECT_ID_LIKE" --log serial.log \
+            | tee driver.log
+          grep -q '^MARGINE-UPGRADE: PASS' driver.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Upgrade smoke"
+            echo
+            echo "- installed: \`${{ steps.ref.outputs.from }}\`"
+            echo "- target: \`${{ steps.ref.outputs.to }}\`"
+            echo
+            echo '```'
+            grep -E 'MARGINE-UPGRADE|FAIL:|old deployment|booted deployment|validator' -A3 driver.log 2>/dev/null | head -80 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upgrade-smoke-logs
+          path: |
+            serial.log
+            driver.log
+            qemu.err
+          retention-days: 7

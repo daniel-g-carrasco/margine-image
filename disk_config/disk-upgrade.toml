@@ -1,0 +1,15 @@
+# The disk of the upgrade smoke (.github/workflows/upgrade-smoke.yml): the
+# layout of disk.toml with the smoke VM's 40 GiB root, plus a login for the
+# serial console. The password hash is filled in by the workflow from a
+# password generated per run; console=ttyS0 gives the VM a serial getty.
+[[customizations.filesystem]]
+mountpoint = "/"
+minsize = "40 GiB"
+
+[[customizations.user]]
+name = "probe"
+password = "@PASSWORD_HASH@"
+groups = ["wheel"]
+
+[customizations.kernel]
+append = "console=ttyS0,115200"

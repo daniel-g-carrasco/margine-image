@@ -68,13 +68,16 @@ for f in /usr/share/glib-2.0/schemas/org.gnome.shell.extensions.*.gschema.xml; d
   [[ -e "$f" ]] || continue
   rpm -qf "$f" >/dev/null 2>&1 || rm -f "$f"
 done
-# A section goes with the comment lines right above it.
+# A section goes with the comment lines right above it. Bluefin's zz0 exists
+# only on a Bluefin base (Margine built on one until 2026-10-11).
 python3 - /usr/share/glib-2.0/schemas/zz0-bluefin-modifications.gschema.override \
           /usr/share/glib-2.0/schemas/zz1-margine.gschema.override <<'PY'
-import re, sys
+import os, re, sys
 drop = re.compile(r'^\[org\.gnome\.(shell|mutter|desktop\.wm|desktop\.app-folders'
                   r'|desktop\.search-providers|desktop\.peripherals|settings-daemon)[.\]:]')
 for path in sys.argv[1:]:
+    if not os.path.exists(path):   # a base without Bluefin has no zz0
+        continue
     out, pending, keep = [], [], True
     for line in open(path):
         if line.startswith('['):

@@ -46,7 +46,11 @@ rmdir /var/lib/authselect 2>/dev/null || true
 #    file when it needs one.
 #  - rpmdb.sqlite-shm: replaced by a fresh one at the very end, after the
 #    last rpm call of this script (see below).
-find /run -mindepth 1 -delete   # all of it: the build's GPG home, COPR keys, locks, selinux-policy scratch
+# All of it: the build's GPG home, COPR keys, locks, selinux-policy scratch.
+# Two entries are the build container's own bind mounts (/run/.containerenv,
+# /run/systemd/resolve/stub-resolv.conf) and cannot be removed from inside;
+# their empty mount points are the residue the security baseline lists.
+find /run -mindepth 1 -delete 2>/dev/null || true
 rm -rf /var/roothome/.android /var/roothome/.cache /var/roothome/.mozc
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \

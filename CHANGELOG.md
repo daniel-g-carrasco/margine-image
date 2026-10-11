@@ -27,7 +27,10 @@ stable release is cut.
   smoke. Two packages the new base brings and no Margine ever shipped are
   removed on purpose: GNOME Software (Bazaar is the store, and GNOME
   Software would stage OS and firmware updates outside Margine's update
-  path) and Fedora's background-logo extension.
+  path) and Fedora's background-logo extension. The security baseline
+  follows what the whole desktop brings back: gnome-initial-setup's polkit
+  rule and user units, open-vm-tools' setuid wrapper, and uupd's polkit
+  rule now under `/usr/share`.
 
 ### Changed (2026-10-11)
 - **Base image: Universal Blue's `silverblue-main:44` instead of Bluefin DX**

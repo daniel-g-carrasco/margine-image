@@ -6,6 +6,13 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# The overrides directory is created by flatpak's first `flatpak override`,
+# which on a base without Bluefin has not happened by the time the timer
+# fires: a ReadWritePaths= target that does not exist fails the mount
+# namespace (status=226/NAMESPACE, trial on silverblue-main, 2026-10-11).
+# The '+' step runs outside the sandbox and makes the directory first;
+# the '-' below keeps the unit starting even if it could not.
+ExecStartPre=+/usr/bin/mkdir -p /var/lib/flatpak/overrides
 ExecStart=/usr/libexec/margine/docs-refresh
 StateDirectory=margine
 TimeoutStartSec=10min
@@ -16,7 +23,7 @@ TimeoutStartSec=10min
 # place the state dir under /var/lib/private (0700), unreadable by
 # docs-open/users' browsers.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/flatpak/overrides
+ReadWritePaths=-/var/lib/flatpak/overrides
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

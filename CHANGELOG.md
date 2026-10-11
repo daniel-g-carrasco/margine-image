@@ -22,6 +22,15 @@ stable release is cut.
   gone (Mod+N opens that panel). Four tray icons plus the network name
   were reaching the centred clock of the 1240px bar.
 
+### Fixed (2026-10-11)
+- **`margine-docs-refresh.service` starts on a base without Flatpak
+  overrides.** Its sandbox listed `/var/lib/flatpak/overrides` as writable,
+  a directory only the first `flatpak override` creates; on
+  silverblue-main it did not exist ten minutes after the first boot and
+  systemd failed the unit's mount namespace (226/NAMESPACE, the one red
+  check of the trial's smoke-boot). The unit now creates the directory
+  before the sandbox is set up and tolerates its absence.
+
 ### Changed (2026-10-10)
 - **VS Code is a Flatpak** (`com.visualstudio.code`, first-boot preinstall),
   979 MB less in the image. Extensions that run host tools need the native

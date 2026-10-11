@@ -147,6 +147,48 @@ info "os-release NAME=$NAME ID=$ID VARIANT_ID=$VARIANT_ID"
 [[ "$VARIANT_ID" == "$EXPECTED_OS_VARIANT_ID"  ]] && ok "VARIANT_ID == $EXPECTED_OS_VARIANT_ID"   || bad "VARIANT_ID is '$VARIANT_ID', expected '$EXPECTED_OS_VARIANT_ID'"
 
 # ---------------------------------------------------------------------------
+hdr "1b. The desktop is whole (base-trim cascade guardrail)"
+# On 2026-10-11 the base trim removed a library that negativo17's
+# gstreamer1-plugins-bad links; gtk4 requires that plugin set, and dnf took
+# 65 dependents with it: Files, Ptyxis, the Bluetooth panel, the System
+# Monitor, the GTK 4 input method, the VPN plugins. The build was green,
+# every unit started, this validator passed: nothing checked that the
+# desktop's own packages were still there. This does. The list is what a
+# user opens or types in, plus what the session stands on.
+DESKTOP_PKGS=(
+  gnome-shell gdm mutter gnome-session gnome-settings-daemon gnome-control-center
+  gtk4 libadwaita xdg-desktop-portal-gnome xdg-desktop-portal-gtk
+  nautilus ptyxis vte291-gtk4 gnome-system-monitor gnome-bluetooth gnome-disk-utility gnome-tweaks
+  ibus-gtk4 ibus-gtk3 zenity
+  NetworkManager-openvpn-gnome NetworkManager-openconnect-gnome
+)
+missing_desktop=()
+for p in "${DESKTOP_PKGS[@]}"; do
+  rpm -q "$p" >/dev/null 2>&1 || missing_desktop+=("$p")
+done
+if (( ${#missing_desktop[@]} )); then
+  bad "desktop packages missing: ${missing_desktop[*]} (a trim or a base change took them; update to an image that has them)"
+else
+  ok "all ${#DESKTOP_PKGS[@]} desktop packages present (Shell, GDM, Files, Ptyxis, portals, Bluetooth, input methods)"
+fi
+# What Margine does not ship on purpose: a system Firefox RPM (the spec
+# ships Zen and org.mozilla.firefox as Flatpaks) and GNOME Software (Bazaar
+# is the store; GNOME Software would check, stage and announce OS and
+# firmware updates outside Margine's update path). On an installed system
+# they can only be the user's own layers, so there they are a warning.
+for p in firefox gnome-software; do
+  if rpm -q "$p" >/dev/null 2>&1; then
+    if (( IS_LIVE )); then
+      warn "$p is installed: a user layer? Margine's image does not ship it"
+    else
+      bad "$p is in the image: 12-base-trim did not remove it"
+    fi
+  else
+    ok "$p not in the image (on purpose)"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 hdr "2. Kernel and boot integrity"
 # ---------------------------------------------------------------------------
 if (( ! IS_LIVE )); then

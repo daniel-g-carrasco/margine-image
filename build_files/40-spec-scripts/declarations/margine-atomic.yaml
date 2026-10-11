@@ -419,6 +419,7 @@ host_packages:
     # them, Universal Blue's main does not (image diff of 2026-10-11);
     # 15-devstack installs them.
     user_shells_and_compat:
+      - ptyxis          # the terminal (Super+Return, ujust, nautilus-open-any-terminal)
       - zsh
       - fish
       - fuse-libs
@@ -426,6 +427,13 @@ host_packages:
       - xdg-terminal-exec
       - ncurses-term
       - libxcrypt-compat
+    # The desktop's own applications. The base ships them; they are
+    # declared because 12-base-trim's dependency cascade took them once
+    # (2026-10-11) and nothing noticed until a user looked for the terminal.
+    gnome_desktop_core:
+      - nautilus
+      - gnome-system-monitor
+      - gnome-bluetooth
   optional_after_validation:
     intel_gpu_extras:
       - libva-intel-media-driver

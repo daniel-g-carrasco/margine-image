@@ -7,6 +7,28 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-10-12)
+- **The base trim took the desktop with it.** On silverblue-main the
+  negativo17 build of `gstreamer1-plugins-bad` links `libWildMidi`, `gtk4`
+  requires that plugin set, and removing `wildmidi-libs` (or the soundfont
+  patches it requires) made dnf remove 65 dependents: GTK 4, libadwaita,
+  GNOME Shell, GDM, Files, Ptyxis, the
+  GNOME portal, the Bluetooth panel, the System Monitor, the VPN plugins,
+  the GTK 4 input method. Later steps pulled the Shell and GDM back as
+  dependencies; Files, Ptyxis and the rest did not come back, and the
+  images of 2026-10-11 (`stable.20261011`, `lucciola.20261011`) shipped
+  without them. `wildmidi-libs` and the patches are out of the trim list;
+  the trim now
+  compares the package set before and after and fails the build when dnf
+  removed anything the list does not name; the desktop's own packages are
+  in the trim's keep list, in `DECLARED_PKGS` (Files, System Monitor,
+  Bluetooth, Ptyxis) and in a new validator section, "the desktop is
+  whole", that runs on the image, in the smoke VM and in the upgrade
+  smoke. Two packages the new base brings and no Margine ever shipped are
+  removed on purpose: GNOME Software (Bazaar is the store, and GNOME
+  Software would stage OS and firmware updates outside Margine's update
+  path) and Fedora's background-logo extension.
+
 ### Changed (2026-10-11)
 - **Base image: Universal Blue's `silverblue-main:44` instead of Bluefin DX**
   (ADR 0010). What Bluefin DX added had become either a `ujust` recipe on

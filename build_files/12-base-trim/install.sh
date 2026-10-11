@@ -64,6 +64,24 @@
 #   - the HIP compiler and its 2 GB of static LLVM (rocm-llvm-static,
 #     rocm-device-libs, hipcc and the rocm -devel packages): removed in
 #     15-devstack, right after the step that installs rocm-hip.
+# THE CASCADE (2026-10-12)
+#
+# `dnf remove` takes the packages that require what it removes, and
+# clean_requirements_on_remove=False does not change that: it only keeps
+# the orphans. On silverblue-main the negativo17 build of
+# gstreamer1-plugins-bad links libWildMidi, gtk4 requires that plugin
+# set, and removing wildmidi-libs (or the soundfont patches it requires,
+# which the first rehearsal of this fix tried) took 65 dependents: gtk4,
+# libadwaita, GNOME Shell, GDM, Nautilus, Ptyxis, the GNOME portal, the
+# Bluetooth panel, the System Monitor, the VPN plugins, the GTK 4 input
+# method. Later build steps pulled the Shell and GDM back as dependencies
+# of what they install; Files, Ptyxis and the rest did not come back, and
+# the images of 2026-10-11 shipped without them. Neither the keep list
+# nor `dnf check` saw it: the result was consistent, only smaller. Since
+# then the trim compares the package set before and after the removal and
+# fails the build when dnf took anything the list does not name, the
+# desktop's own packages are in the keep list, and the system validator
+# checks that the desktop is whole (section 1b).
 set -euo pipefail
 . /ctx/00-common.sh
 log() { printf '[base-trim] %s\n' "$*"; }
@@ -73,18 +91,28 @@ TRIM_PKGS=(
   anaconda-core anaconda-live anaconda-tui anaconda-webui  # the installer
   livesys-scripts dracut-live isomd5sum                     # live-boot plumbing
   cockpit-ws                                                # Anaconda WebUI transport
-  qt6-qtwebengine                                           # 277 MiB, required by nothing
-  firefox mozilla-openh264                                  # spec: no system Firefox RPM
-  fluid-soundfont-gm fluid-soundfont-gs fluid-soundfont-lite-patches wildmidi-libs  # MIDI soundfonts, orphans
+  qt6-qtwebengine qt6-qtwebview slitherer                   # 277 MiB, required by nothing but these two
+  firefox firefox-langpacks mozilla-openh264                # spec: no system Firefox RPM
+  fluid-soundfont-gm fluid-soundfont-gs                     # MIDI soundfonts, orphans when a base ships them
+  # Not wildmidi-libs, nor fluid-soundfont-lite-patches which it requires:
+  # negativo17's gstreamer1-plugins-bad (custom-kernel's codec swap) links
+  # libWildMidi and gtk4 requires that package (THE CASCADE above).
   python3-boto3 python3-botocore python3-s3transfer         # AWS SDK, orphans
   gnome-user-docs yelp yelp-libs yelp-xsl                   # GNOME help: Margine ships offline docs
-  # Developer stack on demand (see the header): dnf also takes the
-  # packages that require these, e.g. docker-ce-rootless-extras,
-  # gcc-plugin-annobin, python3-bcc, systemtap-devel.
-  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  bcc bpftrace bpftop clang21-libs llvm21-libs libomp21 compiler-rt21
+  # Two packages the new base brings and no Margine ever shipped (Bluefin
+  # excluded both): GNOME Software, because Bazaar is the store and GNOME
+  # Software would check, stage and announce OS and firmware updates on
+  # its own, outside uupd and margine-update; and Fedora's desktop
+  # watermark extension, which Margine's enabled set never lists.
+  gnome-software gnome-software-rpm-ostree
+  gnome-shell-extension-background-logo
+  # Developer stack on demand (see the header). The packages that require
+  # these are listed too: dnf takes them anyway, and the guard below
+  # accepts only what the list names.
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras
+  bcc python3-bcc bpftrace bpftop clang21-libs llvm21-libs libomp21 compiler-rt21
   sysprof sysprof-cli libsysprof-capture igt-gpu-tools
-  gcc gcc-c++ cpp glibc-devel libstdc++-devel kernel-headers kernel-cachyos-devel
+  gcc gcc-c++ cpp gcc-plugin-annobin glibc-devel libstdc++-devel kernel-headers kernel-cachyos-devel systemtap-devel
   tailscale incus incus-agent rclone restic borgbackup
   code                                                      # VS Code RPM: the Flatpak is preinstalled, `ujust margine-vscode` layers the RPM
 )
@@ -100,7 +128,11 @@ QEMU_KEEP='^(qemu-system-x86(-core)?|qemu-kvm(-core)?|qemu-img|qemu-common|qemu-
 # it) is not the trim's doing, and must not fail the build here.
 KEEP_PKGS=(fuse python3-rpm python3-systemd NetworkManager-team
            qemu-kvm qemu-system-x86-core qemu-img qemu-common edk2-ovmf virtiofsd libvirt-daemon-driver-qemu
-           podman podman-compose podman-machine distrobox rocm-opencl rocm-hip rocm-comgr rocm-runtime rocminfo)
+           podman podman-compose podman-machine distrobox rocm-opencl rocm-hip rocm-comgr rocm-runtime rocminfo
+           # the desktop: what gtk4 took with it on 2026-10-11 (THE CASCADE)
+           gtk4 libadwaita gstreamer1-plugins-bad gnome-shell gdm mutter gnome-session gnome-settings-daemon
+           gnome-control-center nautilus ptyxis vte291-gtk4 gnome-system-monitor gnome-bluetooth
+           xdg-desktop-portal-gnome xdg-desktop-portal-gtk ibus-gtk4)
 KEEP_BEFORE=()
 for p in "${KEEP_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 && KEEP_BEFORE+=("$p")
@@ -124,7 +156,25 @@ if (( ${#PRESENT[@]} == 0 )); then
   log "base ships none of the ${#TRIM_PKGS[@]} trim candidates, nothing to do"
 else
   log "base ships ${#PRESENT[@]} packages Margine does not install, removing: ${PRESENT[*]}"
+  rpm -qa --qf '%{NAME}\n' | sort -u > /tmp/base-trim.before
   dnf -y remove --setopt=clean_requirements_on_remove=False "${PRESENT[@]}"
+  rpm -qa --qf '%{NAME}\n' | sort -u > /tmp/base-trim.after
+  # dnf takes the packages that require what it removes. Everything it
+  # took must be in the list: a dependent outside it means the list names
+  # something the desktop stands on (THE CASCADE), and the build stops
+  # here instead of shipping a smaller system that still looks consistent.
+  mapfile -t taken < <(comm -23 /tmp/base-trim.before /tmp/base-trim.after)
+  unlisted=()
+  if (( ${#taken[@]} )); then
+    mapfile -t unlisted < <(comm -23 <(printf '%s\n' "${taken[@]}") <(printf '%s\n' "${PRESENT[@]}" | sort -u))
+  fi
+  rm -f /tmp/base-trim.before /tmp/base-trim.after
+  if (( ${#unlisted[@]} )); then
+    err "dnf removed ${#unlisted[@]} packages the trim list does not name: ${unlisted[*]}"
+    err "they require something the list names: find it with 'rpm -q --whatrequires <name>' on the base, then drop that entry or list its dependents on purpose"
+    exit 1
+  fi
+  log "removed ${#taken[@]} packages, every one of them listed"
 fi
 
 # --- Prove it -------------------------------------------------------------

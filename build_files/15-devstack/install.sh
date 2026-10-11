@@ -102,6 +102,8 @@ DECLARED_PKGS=(
   gnome-shell-extension-dash-to-dock gnome-shell-extension-caffeine gnome-shell-extension-gsconnect
   # Found by diffing the last Bluefin DX image against the first on
   # silverblue-main (2026-10-11): users had these, the new base lacks them.
+  ptyxis                                   # THE terminal: Super+Return, ujust recipes, the dconf default
+  nautilus gnome-system-monitor gnome-bluetooth   # the desktop's own applications: the base ships them, 12-base-trim's cascade took them once (2026-10-11)
   rocm-hip                                 # HIP runtime for Blender; the compiler it drags in goes in 1c
   zsh fish                                 # login shells a user may have chosen: a missing shell locks the account out of GDM
   fuse-libs                                # libfuse.so.2, what AppImages open

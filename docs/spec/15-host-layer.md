@@ -179,7 +179,7 @@ installed explicitly with `rpm-ostree install` when needed.
 
 | Bluefin choice | Margine choice | Reason |
 | --- | --- | --- |
-| Remove `gnome-software` and ship `bazaar` | Keep `gnome-software` | It's the standard surface on Silverblue; users discover Flatpak apps through it |
+| Remove `gnome-software` and ship `bazaar` | The same, on purpose since 2026-10-12: `12-base-trim` removes `gnome-software` | Bazaar is the store Margine installs and documents. GNOME Software would check, stage and announce OS and firmware updates on its own, outside `uupd` and `margine-update`. No Margine image ever shipped it (Bluefin excluded it; the first base to bring it was silverblue-main) |
 | `uupd` as update orchestrator | inherited — Margine now uses Bluefin's `uupd.timer` directly (see ADR 0004 amendment) |
 | Custom signed kernel from `ublue-os/akmods` | Stock Fedora kernel (CachyOS lab option) | Different trust model; keeps the Fedora signing chain intact |
 | Bluefin wallpapers, faces, custom GNOME schema overrides | None | Branding noise outside this project's scope |

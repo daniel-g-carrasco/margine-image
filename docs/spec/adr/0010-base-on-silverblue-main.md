@@ -65,3 +65,14 @@ no Secure Boot chain, no `FROM` derivation).
   they are updated separately, this ADR being the reference meanwhile.
 - `Containerfile.plan-b-from-bluefin` is removed: the contingency it
   described landed differently (silverblue-main, not plain Bluefin).
+- Amendment (2026-10-12): the first images on the new base lost Files,
+  Ptyxis and some sixty other desktop packages to a dependency cascade in
+  the base trim (`wildmidi-libs` and the soundfont patches it requires:
+  negativo17's `gstreamer1-plugins-bad` links it, and `gtk4` requires that
+  package). The trial build, the
+  smoke boot and the upgrade smoke all passed: they checked that the
+  system was consistent and that the update worked, not that the
+  desktop's packages were still there. The trim now fails the build when
+  dnf removes anything outside its list, and the validator has a "desktop
+  is whole" section that runs on the image, in the smoke VM and in the
+  upgrade smoke (CHANGELOG, 2026-10-12).

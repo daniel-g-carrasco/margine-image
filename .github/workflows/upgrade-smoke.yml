@@ -83,7 +83,11 @@ jobs:
           }
           apt_retry update -qq
           apt_retry install -y -qq qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools python3-virt-firmware
-          ls -la /dev/kvm || true
+          # The runner user is not in the kvm group (smoke-boot runs QEMU under
+          # sudo for the same reason); the driver runs unprivileged, so open the
+          # device to it. First run died on "Could not access KVM kernel module".
+          sudo chmod 666 /dev/kvm
+          ls -la /dev/kvm
 
       - name: Resolve both refs to digests
         id: ref

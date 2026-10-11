@@ -42,7 +42,8 @@ class Serial:
 
     def expect(self, pattern, timeout):
         """Wait until the regex matches the buffer; return the match. The
-        buffer is cut after the match so the next expect starts fresh."""
+        buffer is cut after the match so the next expect starts fresh. A
+        closed socket means QEMU is gone: say so, with its stderr."""
         rx = re.compile(pattern, re.S)
         end = time.monotonic() + timeout
         while time.monotonic() < end:
@@ -54,6 +55,9 @@ class Serial:
                 data = self.sock.recv(65536)
             except socket.timeout:
                 continue
+            except OSError as e:
+                err = open("qemu.err").read() if os.path.exists("qemu.err") else ""
+                raise SystemExit(f"MARGINE-UPGRADE: FAIL serial connection lost ({e}); qemu said: {err.strip()[-400:]}")
             if not data:
                 time.sleep(0.5)
                 continue

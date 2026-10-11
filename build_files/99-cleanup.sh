@@ -46,7 +46,7 @@ rmdir /var/lib/authselect 2>/dev/null || true
 #    file when it needs one.
 #  - rpmdb.sqlite-shm: replaced by a fresh one at the very end, after the
 #    last rpm call of this script (see below).
-rm -rf /run/margine-gnupg /run/akmods /run/dnf /run/copr-*.gpg
+find /run -mindepth 1 -delete   # all of it: the build's GPG home, COPR keys, locks, selinux-policy scratch
 rm -rf /var/roothome/.android /var/roothome/.cache /var/roothome/.mozc
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \

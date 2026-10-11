@@ -1,8 +1,0 @@
-// Allow libvirt-dbus running in dedicated account to use libvirt
-
-polkit.addRule(function(action, subject) {
-    if (action.id == "org.libvirt.unix.manage" &&
-        subject.user == "libvirtdbus") {
-        return polkit.Result.YES;
-    }
-});

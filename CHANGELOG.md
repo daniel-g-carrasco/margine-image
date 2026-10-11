@@ -15,7 +15,12 @@ stable release is cut.
   a full smoke-boot of the trial image (boot, GUI with 9 extensions,
   security checks, gaming-native dry run, all green). `ID_LIKE=fedora`;
   labels, `/etc/issue`, the status page and `margine-system` name the new
-  lineage. The first update of an existing install downloads a full image.
+  lineage. The base's own update timers (`rpm-ostreed-automatic`, the
+  Flatpak update timers) and the Fedora Flatpak remote service are masked:
+  one updater (uupd and Margine's timers), Flathub only. `/run` is emptied
+  at the end of the build, and the security baseline follows the new base
+  (five setuid binaries and Bluefin's units gone). The first update of an
+  existing install downloads a full image.
 - **Lucciola: the same scroll speed in every application.** A unit of touchpad
   scrolling becomes 2.5 logical pixels in GTK 4, 4 in Firefox and 5.3 in
   Chromium and Electron; niri window rules scale the Firefox family by

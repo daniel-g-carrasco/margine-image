@@ -23,7 +23,7 @@
       "quay.io/toolbx-images": [
         {
           "type": "sigstoreSigned",
-          "keyPath": "/usr/lib/pki/containers/quay.io-toolbx-images.pub",
+          "keyPath": "/etc/pki/containers/quay.io-toolbx-images.pub",
           "signedIdentity": {
             "type": "matchRepository"
           }
@@ -33,8 +33,8 @@
         {
           "type": "sigstoreSigned",
           "keyPaths": [
-            "/usr/lib/pki/containers/ublue-os.pub",
-            "/usr/lib/pki/containers/ublue-os-backup.pub"
+            "/etc/pki/containers/ublue-os.pub",
+            "/etc/pki/containers/ublue-os-backup.pub"
           ],
           "signedIdentity": {
             "type": "matchRepository"

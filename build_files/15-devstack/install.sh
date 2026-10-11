@@ -159,6 +159,21 @@ REPOEOF
   rm -f /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:ublue-os:packages.repo /run/copr-ublue-packages.gpg
 fi
 systemctl enable uupd.timer
+# One updater. Universal Blue's main images enable their own timers:
+# rpm-ostreed-automatic.timer (stages the next deployment by itself),
+# flatpak-system-update.timer and the per-user flatpak-user-update.timer
+# (ublue-os-update-services). Margine updates through uupd and its own
+# margine-flatpak-update timers; a second set would race them (rpm-ostreed
+# runs one transaction at a time). Masked, so a preset cannot bring them
+# back; the Bluefin base did not ship them enabled either.
+for t in rpm-ostreed-automatic.timer flatpak-system-update.timer; do
+  systemctl disable "$t" >/dev/null 2>&1 || true
+  systemctl mask "$t" >/dev/null
+  [[ "$(readlink -f /etc/systemd/system/$t)" == /dev/null ]] || { err "$t not masked"; exit 1; }
+done
+systemctl --global disable flatpak-user-update.timer >/dev/null 2>&1 || true
+systemctl --global mask flatpak-user-update.timer >/dev/null
+[[ "$(readlink -f /etc/systemd/user/flatpak-user-update.timer)" == /dev/null ]] || { err "flatpak-user-update.timer not masked"; exit 1; }
 
 # --- 4. Boot-time services DX provided ------------------------------------
 # Group membership is Margine's job on every base (2026-10-10): the base's

@@ -1,4 +1,0 @@
-run/setrans
-run/systemd
-run/systemd/resolve
-run/systemd/resolve/stub-resolv.conf

@@ -62,7 +62,8 @@
 #   - incus and incus-agent, rclone, restic, borgbackup: layer them or
 #     `brew install` them
 #   - the HIP compiler and its 2 GB of static LLVM (rocm-llvm-static,
-#     rocm-device-libs, hipcc and the rocm -devel packages): see below.
+#     rocm-device-libs, hipcc and the rocm -devel packages): removed in
+#     15-devstack, right after the step that installs rocm-hip.
 set -euo pipefail
 . /ctx/00-common.sh
 log() { printf '[base-trim] %s\n' "$*"; }
@@ -126,72 +127,8 @@ else
   dnf -y remove --setopt=clean_requirements_on_remove=False "${PRESENT[@]}"
 fi
 
-# --- ROCm: keep OpenCL and the HIP runtime, drop the HIP compiler -----------
-# rocm-hip requires hipcc, and rocm-device-libs requires rocm-llvm-static
-# (1963 MB), by packaging, not at run time: with all of them gone,
-# rocm-opencl still builds every one of darktable's 42 kernels and
-# libamdhip64 and libamdocl64 resolve (tested in a fedora:44 container,
-# 2026-10-10). dnf would cascade the removal up to rocm-hip, so these go
-# through rpm alone. That leaves rocm-hip requiring a name nothing
-# provides, and rpm-ostree re-solves every installed package when it
-# layers: the first image built this way failed the smoke test's
-# gaming-native dry run (2026-10-10). So a package of Margine's own,
-# margine-rocm-hip-runtime, provides the name `hipcc` and nothing else,
-# and the prove-it below asks dnf for every unmet dependency.
-ROCM_DEV=(hipcc rocm-device-libs rocm-llvm-static rocm-clang rocm-llvm rocm-lld
-          rocm-clang-devel rocm-llvm-devel rocm-libc++-devel rocm-clang-runtime-devel rocm-runtime-devel)
-ROCM_PRESENT=()
-for p in "${ROCM_DEV[@]}"; do
-  rpm -q "$p" >/dev/null 2>&1 && ROCM_PRESENT+=("$p")
-done
-if (( ${#ROCM_PRESENT[@]} )); then
-  log "removing the HIP compiler and ROCm development packages: ${ROCM_PRESENT[*]}"
-  rpm -e --nodeps "${ROCM_PRESENT[@]}"
-fi
-if rpm -q rocm-hip >/dev/null 2>&1 && ! rpm -q hipcc >/dev/null 2>&1; then
-  # rpm-build is not in the image (custom-kernel removes it with the other
-  # build-only packages): borrow it for one rpmbuild and take back exactly
-  # what the borrowing added.
-  before="$(rpm -qa --qf '%{NAME}\n' | sort)"
-  dnf -y install --setopt=install_weak_deps=False rpm-build
-  mapfile -t borrowed < <(comm -13 <(echo "$before") <(rpm -qa --qf '%{NAME}\n' | sort))
-  stub=/run/margine-rocm-hip-runtime
-  mkdir -p "$stub"
-  cat > "$stub/margine-rocm-hip-runtime.spec" <<'SPEC'
-Name:           margine-rocm-hip-runtime
-Version:        1
-Release:        1
-Summary:        The ROCm HIP runtime without the HIP compiler
-License:        MIT
-BuildArch:      noarch
-# rocm-hip requires hipcc by name; the compiler and its 2 GB of LLVM are
-# not in the Margine image (build_files/12-base-trim/install.sh). This
-# package satisfies the name so the rpm database stays consistent and
-# rpm-ostree can layer packages. It compiles nothing: `rpm-ostree install
-# hipcc` brings the real compiler, next to this package.
-Provides:       hipcc
-
-%description
-Satisfies rocm-hip's packaging requirement on hipcc in an image that
-ships the HIP runtime (for Blender) but not the HIP compiler.
-
-%files
-
-%changelog
-* Fri Oct 10 2026 Margine - 1-1
-- rocm-hip without hipcc: the requirement, not the compiler
-SPEC
-  rpmbuild --quiet --define "_topdir $stub/top" -bb "$stub/margine-rocm-hip-runtime.spec"
-  rpm -i "$stub"/top/RPMS/noarch/margine-rocm-hip-runtime-*.noarch.rpm
-  rm -rf "$stub"
-  if (( ${#borrowed[@]} )); then
-    dnf -y remove --setopt=clean_requirements_on_remove=False "${borrowed[@]}"
-  fi
-  log "margine-rocm-hip-runtime provides hipcc: rocm-hip's requirement is met without the compiler"
-fi
-
 # --- Prove it -------------------------------------------------------------
-for p in "${TRIM_PKGS[@]}" "${ROCM_DEV[@]}"; do
+for p in "${TRIM_PKGS[@]}"; do
   if rpm -q "$p" >/dev/null 2>&1; then err "$p still present after base-trim"; exit 1; fi
 done
 if rpm -qa --qf '%{NAME}\n' | grep -E '^(qemu|edk2)' | grep -v -E "$QEMU_KEEP" | grep -q .; then
@@ -200,10 +137,6 @@ fi
 if rpm -qa --qf '%{NAME}\n' | grep -E '^(wine|mingw|cockpit)' | grep -q .; then
   err "the wine family or cockpit survived base-trim"; exit 1
 fi
-for lib in /usr/lib64/libamdhip64.so.* /usr/lib64/libamdocl64.so.*; do
-  [[ -e "$lib" ]] || continue
-  if ldd "$lib" | grep -q 'not found'; then err "$lib no longer resolves after the ROCm trim"; exit 1; fi
-done
 # Every installed package must still have what it requires: rpm-ostree
 # re-solves the whole set on each layering, so one dangling requirement
 # breaks every `rpm-ostree install` (the gaming layer first).

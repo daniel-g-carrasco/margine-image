@@ -21,6 +21,17 @@ stable release is cut.
   at the end of the build, and the security baseline follows the new base
   (five setuid binaries and Bluefin's units gone). The first update of an
   existing install downloads a full image.
+- **What the new base lacks that users had.** A package-by-package diff of
+  the last Bluefin DX image against the first on silverblue-main (224
+  packages fewer) found a handful that matter: the HIP runtime for Blender
+  (`rocm-hip`, with the compiler trim moved right after its install), the
+  `zsh` and `fish` shells (a login shell that disappears locks the account
+  out of the login screen), `fuse-libs` for AppImages, GNOME Tweaks,
+  `xdg-terminal-exec`, `ncurses-term` and `libxcrypt-compat`. All declared
+  and installed by `15-devstack`; `ujust margine-devtools` adds `git-lfs`
+  and `git-credential-libsecret`. The rest of the diff (Bluefin's setup
+  units, ZFS, Samba server, enterprise directory bits, development
+  toolchains) stays out on purpose.
 - **Lucciola: the same scroll speed in every application.** A unit of touchpad
   scrolling becomes 2.5 logical pixels in GTK 4, 4 in Firefox and 5.3 in
   Chromium and Electron; niri window rules scale the Firefox family by

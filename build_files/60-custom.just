@@ -1503,7 +1503,7 @@ margine-vscode ACTION="install":
 margine-devtools ACTION="install":
     #!/usr/bin/bash
     set -euo pipefail
-    PKGS=(bcc bpftrace bpftop sysprof igt-gpu-tools gcc gcc-c++ make)
+    PKGS=(bcc bpftrace bpftop sysprof igt-gpu-tools gcc gcc-c++ make git-lfs git-credential-libsecret)
     case "{{ ACTION }}" in
       status) for p in "${PKGS[@]}"; do printf '  %-14s %s\n' "$p" "$(rpm -q "$p" >/dev/null 2>&1 && echo installed || echo -)"; done ;;
       remove) sudo rpm-ostree uninstall "${PKGS[@]}"; echo "Removed. Reboot to apply." ;;

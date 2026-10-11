@@ -100,6 +100,13 @@ DECLARED_PKGS=(
   # two from git, Fedora packages them).
   fastfetch
   gnome-shell-extension-dash-to-dock gnome-shell-extension-caffeine gnome-shell-extension-gsconnect
+  # Found by diffing the last Bluefin DX image against the first on
+  # silverblue-main (2026-10-11): users had these, the new base lacks them.
+  rocm-hip                                 # HIP runtime for Blender; the compiler it drags in goes in 1c
+  zsh fish                                 # login shells a user may have chosen: a missing shell locks the account out of GDM
+  fuse-libs                                # libfuse.so.2, what AppImages open
+  gnome-tweaks                             # GNOME's own extra settings
+  xdg-terminal-exec ncurses-term libxcrypt-compat   # GNOME's terminal launcher; terminfo for other terminals; libcrypt.so.1 for old binaries
 )
 # Bluefin ships Dash to Dock and Caffeine as plain directories built from
 # git; Fedora's packages install into the same directories. A package laid
@@ -118,6 +125,73 @@ if (( ${#NEED[@]} == 0 )); then
 else
   log "base lacks ${#NEED[@]} declared host packages, installing: ${NEED[*]}"
   retry 3 30 dnf -y install --setopt=install_weak_deps=False "${NEED[@]}"
+fi
+
+# --- 1c. ROCm: keep OpenCL and the HIP runtime, drop the HIP compiler ------
+# Lived in 12-base-trim while the base shipped rocm-hip; Universal Blue's
+# main does not, so rocm-hip is installed above (DECLARED_PKGS) and the
+# compiler it drags in is removed here, right after.
+# rocm-hip requires hipcc, and rocm-device-libs requires rocm-llvm-static
+# (1963 MB), by packaging, not at run time: with all of them gone,
+# rocm-opencl still builds every one of darktable's 42 kernels and
+# libamdhip64 and libamdocl64 resolve (tested in a fedora:44 container,
+# 2026-10-10). dnf would cascade the removal up to rocm-hip, so these go
+# through rpm alone. That leaves rocm-hip requiring a name nothing
+# provides, and rpm-ostree re-solves every installed package when it
+# layers: the first image built this way failed the smoke test's
+# gaming-native dry run (2026-10-10). So a package of Margine's own,
+# margine-rocm-hip-runtime, provides the name `hipcc` and nothing else,
+# and the prove-it of this script asks dnf for every unmet dependency.
+ROCM_DEV=(hipcc rocm-device-libs rocm-llvm-static rocm-clang rocm-llvm rocm-lld
+          rocm-clang-devel rocm-llvm-devel rocm-libc++-devel rocm-clang-runtime-devel rocm-runtime-devel)
+ROCM_PRESENT=()
+for p in "${ROCM_DEV[@]}"; do
+  rpm -q "$p" >/dev/null 2>&1 && ROCM_PRESENT+=("$p")
+done
+if (( ${#ROCM_PRESENT[@]} )); then
+  log "removing the HIP compiler and ROCm development packages: ${ROCM_PRESENT[*]}"
+  rpm -e --nodeps "${ROCM_PRESENT[@]}"
+fi
+if rpm -q rocm-hip >/dev/null 2>&1 && ! rpm -q hipcc >/dev/null 2>&1; then
+  # rpm-build is not in the image (custom-kernel removes it with the other
+  # build-only packages): borrow it for one rpmbuild and take back exactly
+  # what the borrowing added.
+  before="$(rpm -qa --qf '%{NAME}\n' | sort)"
+  dnf -y install --setopt=install_weak_deps=False rpm-build
+  mapfile -t borrowed < <(comm -13 <(echo "$before") <(rpm -qa --qf '%{NAME}\n' | sort))
+  stub=/run/margine-rocm-hip-runtime
+  mkdir -p "$stub"
+  cat > "$stub/margine-rocm-hip-runtime.spec" <<'SPEC'
+Name:           margine-rocm-hip-runtime
+Version:        1
+Release:        1
+Summary:        The ROCm HIP runtime without the HIP compiler
+License:        MIT
+BuildArch:      noarch
+# rocm-hip requires hipcc by name; the compiler and its 2 GB of LLVM are
+# not in the Margine image (build_files/15-devstack/install.sh). This
+# package satisfies the name so the rpm database stays consistent and
+# rpm-ostree can layer packages. It compiles nothing: `rpm-ostree install
+# hipcc` brings the real compiler, next to this package.
+Provides:       hipcc
+
+%description
+Satisfies rocm-hip's packaging requirement on hipcc in an image that
+ships the HIP runtime (for Blender) but not the HIP compiler.
+
+%files
+
+%changelog
+* Fri Oct 10 2026 Margine - 1-1
+- rocm-hip without hipcc: the requirement, not the compiler
+SPEC
+  rpmbuild --quiet --define "_topdir $stub/top" -bb "$stub/margine-rocm-hip-runtime.spec"
+  rpm -i "$stub"/top/RPMS/noarch/margine-rocm-hip-runtime-*.noarch.rpm
+  rm -rf "$stub"
+  if (( ${#borrowed[@]} )); then
+    dnf -y remove --setopt=clean_requirements_on_remove=False "${borrowed[@]}"
+  fi
+  log "margine-rocm-hip-runtime provides hipcc: rocm-hip's requirement is met without the compiler"
 fi
 
 # --- 2. Docker CE: not in the image since 2026-10-10 ---------------------
@@ -205,6 +279,19 @@ fi
 for p in libvirt virt-manager qemu-kvm podman-docker uupd "${DECLARED_PKGS[@]}"; do
   rpm -q "$p" >/dev/null 2>&1 || { err "$p still missing after devstack"; exit 1; }
 done
+for p in "${ROCM_DEV[@]}"; do
+  if rpm -q "$p" >/dev/null 2>&1; then err "$p still present after the ROCm trim"; exit 1; fi
+done
+for lib in /usr/lib64/libamdhip64.so.* /usr/lib64/libamdocl64.so.*; do
+  [[ -e "$lib" ]] || continue
+  if ldd "$lib" | grep -q 'not found'; then err "$lib no longer resolves after the ROCm trim"; exit 1; fi
+done
+# Every installed package must still have what it requires: rpm-ostree
+# re-solves the whole set on each layering, so one dangling requirement
+# breaks every `rpm-ostree install` (the gaming layer first).
+if ! unmet="$(dnf check --dependencies 2>&1)"; then
+  err "unmet dependencies after devstack:"; echo "$unmet" >&2; exit 1
+fi
 grep -q "^libvirt:" /usr/lib/group /etc/group 2>/dev/null || { err "group libvirt missing after devstack"; exit 1; }
 [[ -f /usr/lib/systemd/system/flatpak-preinstall.service ]] || { err "flatpak-preinstall.service missing: no Flatpak would be installed at first boot"; exit 1; }
 if rpm -q docker-ce >/dev/null 2>&1 || rpm -q incus >/dev/null 2>&1; then

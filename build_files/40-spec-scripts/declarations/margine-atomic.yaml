@@ -415,6 +415,17 @@ host_packages:
       - liberation-mono-fonts
       - google-noto-color-emoji-fonts
       - google-noto-sans-cjk-vf-fonts   # variable build; 14-fonts replaces the static google-noto-sans-cjk-fonts a base may ship
+    # Shells and compatibility bits a user may rely on. Bluefin DX carried
+    # them, Universal Blue's main does not (image diff of 2026-10-11);
+    # 15-devstack installs them.
+    user_shells_and_compat:
+      - zsh
+      - fish
+      - fuse-libs
+      - gnome-tweaks
+      - xdg-terminal-exec
+      - ncurses-term
+      - libxcrypt-compat
   optional_after_validation:
     intel_gpu_extras:
       - libva-intel-media-driver
@@ -424,6 +435,7 @@ host_packages:
       - intel-vpl-gpu-rt
     amd_gpu_extras:
       - rocm-opencl
+      - rocm-hip        # HIP runtime (Blender); the compiler it requires is replaced by margine-rocm-hip-runtime, see 15-devstack
       - rocminfo
       - radeontop
     framework_audio_optional:

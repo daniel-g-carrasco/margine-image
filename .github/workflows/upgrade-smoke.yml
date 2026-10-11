@@ -18,9 +18,13 @@ on:
   workflow_dispatch:
     inputs:
       from_ref:
-        description: "OLD image: what the installed system runs (tag or tag@digest)"
+        # A dated tag, not a bare digest: an untagged manifest is garbage
+        # collected (the last Bluefin-based :stable vanished the day :stable
+        # moved on and its dated tag was overwritten by the new build of the
+        # same day). stable.20261010 is the last image built on Bluefin DX.
+        description: "OLD image: what the installed system runs (tag or tag@digest; a dated tag survives GC, a bare digest may not)"
         required: false
-        default: "ghcr.io/daniel-g-carrasco/margine@sha256:3df51a8e67134f9ccfdf7219088af93549b28a01fc9645eb66798aa141bd2d42"
+        default: "ghcr.io/daniel-g-carrasco/margine:stable.20261010"
       to_ref:
         description: "NEW image to rebase to (tag or tag@digest)"
         required: false

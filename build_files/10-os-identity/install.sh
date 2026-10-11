@@ -11,10 +11,9 @@ set -euo pipefail
 # Override the os-release file so `cat /etc/os-release`, `hostnamectl`,
 # GNOME's About panel, and our own validate-atomic-layout all see
 # "Margine". ID=fedora (see below) keeps distro-tooling that branches
-# on Fedora behaviour working; ID_LIKE=bluefin records the actual
-# parent for anything Bluefin-aware. (This comment used to claim
-# ID_LIKE=fedora while the code shipped ID_LIKE=bluefin — fixed
-# 2026-06-12.)
+# on Fedora behaviour working; ID_LIKE=fedora names the family (the
+# base is Universal Blue's silverblue-main since 2026-10-11; it read
+# ID_LIKE=bluefin while Margine built on Bluefin DX).
 #
 # Layout: /usr/lib/os-release is the canonical file (writable here at
 # build time), /etc/os-release is a symlink to the relative path
@@ -56,7 +55,7 @@ log "Stamping os-release as Margine (canonical Fedora layout: /etc → /usr/lib 
 #     distro margine-44" if ID=margine (BIB does NOT fall back to ID_LIKE,
 #     and there's no --distro CLI override — confirmed against osbuild/images
 #     pkg/distro/defs/id.go). Setting ID=fedora makes BIB resolve to fedora-44
-#     which is what Bluefin DX is in fact based on.
+#     which is what the base is in fact built from.
 #   * VARIANT_ID=margine — the discriminator. validate-margine-system in
 #     margine-fedora-atomic now checks this instead of ID to identify a
 #     Margine install.
@@ -64,7 +63,7 @@ OS_RELEASE_CONTENT=$(cat <<EOF
 NAME="Margine OS"
 VERSION="${FEDORA_VER} (Margine OS)"
 ID=fedora
-ID_LIKE=bluefin
+ID_LIKE=fedora
 VERSION_ID=${FEDORA_VER}
 VERSION_CODENAME=""
 PLATFORM_ID="platform:f${FEDORA_VER}"

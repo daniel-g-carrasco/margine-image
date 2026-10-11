@@ -1,10 +1,10 @@
 # =============================================================================
-# Margine — a Bluefin DX based bootc image with CachyOS kernel
+# Margine: a bootc image on Fedora Silverblue (Universal Blue main), CachyOS kernel
 # =============================================================================
 #
 # This Containerfile composes the Margine image as:
 #
-#   FROM ghcr.io/ublue-os/bluefin-dx:stable   (Universal Blue Bluefin DX)
+#   FROM ghcr.io/ublue-os/silverblue-main:44  (Universal Blue main: Fedora Silverblue 44)
 #   + custom kernel from CachyOS COPR (signed with our MOK)
 #   + Margine deltas (o-tiling default tiler, Smile emoji picker, branding
 #     extensions off, curated GNOME settings)
@@ -12,25 +12,24 @@
 # Built by GitHub Actions on every push, pushed to:
 #   ghcr.io/daniel-g-carrasco/margine:stable
 #
-# End-user install: rebase a vanilla Bluefin DX (or Fedora Atomic) to
+# End-user install: rebase a Fedora Atomic or Universal Blue system to
 # this image:
 #   rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 # =============================================================================
 
 # ----- Base image, as a build argument ---------------------------------------
-# Default unchanged: Bluefin DX on the Fedora track. Declared as an ARG so
-# a build can be pointed at another base without editing this file:
+# Universal Blue's silverblue-main: Fedora Silverblue plus their automation
+# (ujust, the update services, signing policy, udev rules) and nothing else.
+# Margine built on Bluefin DX until 2026-10-11; what DX added is Margine's
+# own now (build_files/15-devstack, 12-base-trim, the flatpak-preinstall
+# unit, uupd from the COPR) and the switch was proven by trial builds and a
+# smoke-boot of the trial image (ADR 0010). Still an ARG, so a build can be
+# pointed at another base without editing this file:
 #
-#   buildah build --build-arg BASE_IMAGE=ghcr.io/projectbluefin/bluefin:testing
+#   buildah build --build-arg BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:45
 #
-# Why this exists (2026-08-25): Universal Blue is moving Bluefin to the
-# projectbluefin organisation and has written "no more -dx images" once
-# developer tooling moves to userspace (ujust devmode). The -dx tag we are
-# FROM will one day stop being refreshed. build_files/15-devstack backfills
-# what -dx used to add whenever the base lacks it, so the switch is this
-# one line plus a proven trial build (build.yml, workflow_dispatch with
-# base_image), not a rewrite under pressure.
-ARG BASE_IMAGE=ghcr.io/ublue-os/bluefin-dx:stable
+# (build.yml: workflow_dispatch with base_image publishes :trial only.)
+ARG BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:44
 
 # ----- Build context: scripts that should NOT end up in the final image -----
 FROM scratch AS ctx
@@ -43,7 +42,7 @@ COPY build_files /
 # 2026-06-06 so there is no installer/flatpaks-gaming any more.
 COPY installer/flatpaks-base    /installer-flatpaks-base
 
-# ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) unless overridden -----
+# ----- Base: Universal Blue silverblue-main:44 unless overridden -----
 FROM ${BASE_IMAGE}
 
 # ----- Custom kernel: CachyOS via COPR + MOK signing -----

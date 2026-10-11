@@ -212,17 +212,14 @@ jobs:
 
       - name: Inspect the upstream base image and measure its age
         id: base
-        # Margine is FROM ghcr.io/ublue-os/bluefin-dx:stable, and that tag
-        # has a shelf life nobody has dated: Universal Blue is moving
-        # Bluefin to the projectbluefin organisation and has said there
-        # will be "no more -dx images" once developer tooling moves to
-        # userspace (ujust devmode). When that happens the tag will either
-        # vanish or quietly stop being refreshed, and every Margine build
-        # after that would silently ship an ageing base. Bluefin promotes
-        # :stable weekly, so 14 days means two missed promotions. The tag
-        # disappearing is its own alarm, never a silent pass.
+        # Margine is FROM ghcr.io/ublue-os/silverblue-main:44, which
+        # Universal Blue rebuilds daily. A tag that quietly stops being
+        # refreshed would have every Margine build after it silently ship
+        # an ageing base, so 14 days without a refresh is an alarm, and
+        # the tag disappearing is its own alarm, never a silent pass
+        # (that is how the -dx retirement would have shown up).
         env:
-          BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
+          BASE_IMAGE: ghcr.io/ublue-os/silverblue-main:44
           BASE_MAX_AGE: ${{ inputs.base_max_age_days || '14' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
@@ -258,11 +255,11 @@ jobs:
           [ -n "${NTFY_URL:-}" ] || { echo "NTFY_TOPIC_URL secret not set, skipping notification."; exit 0; }
           if [ "$STATE" = "gone" ]; then
             TITLE="The upstream base image cannot be read"
-            MSG="${IMAGE} no longer inspects. If Bluefin has retired the -dx tag, every future Margine build is blocked until the FROM moves (see the Dakota analysis note, 2026-08-25)."
+            MSG="${IMAGE} no longer inspects. If Universal Blue has retired the tag, every future Margine build is blocked until the FROM moves."
             PRIO="urgent"; TAGS="rotating_light,package"
           else
             TITLE="The upstream base is ${AGE} days old"
-            MSG="${IMAGE} has not been refreshed in ${AGE} days. Bluefin promotes :stable weekly; either upstream is stuck or the -dx tag is being wound down."
+            MSG="${IMAGE} has not been refreshed in ${AGE} days. Universal Blue rebuilds main daily; either upstream is stuck or the tag is being wound down."
             PRIO="high"; TAGS="hourglass,package"
           fi
           curl -fsS -X POST -H "Title: ${TITLE}" -H "Priority: ${PRIO}" -H "Tags: ${TAGS}" -d "${MSG}" "$NTFY_URL" >/dev/null

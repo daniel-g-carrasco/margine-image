@@ -13,14 +13,14 @@ profile:
 base:
   family: fedora-atomic-desktop
   variant: margine
-  derives_from: bluefin-dx
+  derives_from: silverblue-main   # Universal Blue main; bluefin-dx until 2026-10-11 (ADR 0010)
   fedora_release: 44
   desktop: gnome
   architecture: x86_64
   update_engine: bootc
   legacy_variants_for_reference:
     - silverblue        # phase-0 lab base, before ADR 0005
-    - bluefin-dx        # phase-1 rebase target, before the published image
+    - bluefin-dx        # phase-1 rebase target, then the published image's base until 2026-10-11
   image_workflow:
     current: margine-bootc-image
     image_ref: ghcr.io/daniel-g-carrasco/margine:stable
@@ -67,14 +67,15 @@ base:
         action: configure-gnome-{keybindings,extensions,app-folders,appearance,default-applications}
 
 updates:
-  orchestrator: bluefin-uupd
+  orchestrator: uupd
   orchestrator_note: >
-    Bluefin DX ships uupd (Universal Updater) with uupd.timer enabled by
-    default. It runs daily and orchestrates bootc upgrade + flatpak update
-    + brew update + distrobox upgrade in the right order, with reboot
-    detection. Margine inherits this — no custom update orchestrator is
-    needed or maintained. The validators below are on-demand health checks,
-    not pre/post-update hooks.
+    uupd (Universal Blue's updater) runs daily from uupd.timer and
+    orchestrates bootc upgrade + flatpak update + brew update + distrobox
+    upgrade in the right order, with reboot detection. Bluefin DX shipped
+    it; since 2026-10-11 build_files/15-devstack installs it from the
+    ublue-os/packages COPR when the base lacks it. No custom update
+    orchestrator is needed or maintained. The validators below are
+    on-demand health checks, not pre/post-update hooks.
   system:
     engine: bootc
     transport: ostree-image-signed
@@ -82,7 +83,7 @@ updates:
     require_reboot_judgment: true
   bootc:
     phase: shipping
-    orchestrated_by: bluefin-uupd
+    orchestrated_by: uupd
   firmware:
     automatic: false
     reason: requires-hardware-runbook
@@ -229,16 +230,15 @@ kernel:
 host_packages:
   baseline_note: >
     Reference list of what the Margine baseline expects to find on disk.
-    On the shipping path (Margine bootc image rebased FROM bluefin-dx),
-    every package in `baseline` is ALREADY provided by Bluefin DX — Margine
-    does not re-layer them. This section is the contract used by the future
-    `validate-declared-state` drift detector to confirm Bluefin still ships
-    them; if Bluefin removes one, we'll need to layer it back in the image
-    build.
+    On the shipping path the base (Universal Blue's silverblue-main since
+    2026-10-11, Bluefin DX before) provides part of `baseline` and
+    build_files/15-devstack installs the rest when the base lacks it.
+    This section is the contract `validate-declared-state` checks the
+    image against.
 
     The legacy `scripts/apply-host-layer` (Silverblue phase-0 lab path)
     uses this same list to layer the packages on stock Silverblue.
-  baseline_provided_by: bluefin-dx
+  baseline_provided_by: silverblue-main-and-15-devstack
   baseline:
     # ---------------------------------------------------------------------
     # creator_tier: shared userland tools that benefit BOTH creator

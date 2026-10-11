@@ -2,16 +2,16 @@
 # Margine status.json producer.
 #
 # Emits the schemaVersion-2 document that drives the website's /status flow
-# page (Fedora Atomic → Bluefin DX → Margine). Run by status-json.yml after
+# page (Fedora Atomic → Universal Blue main → Margine). Run by status-json.yml after
 # every build / smoke-promotion / ISO, and on a daily schedule so upstream
-# Bluefin drift is reflected even when Margine itself didn't change.
+# base drift is reflected even when Margine itself didn't change.
 #
 # What's STATIC (lineage story — names, per-layer deltas, prose, links, the
 # two verify commands) lives in the python block below; it changes only when
 # the story changes. Everything else is resolved live:
-#   - bluefin / margine version + date + digest  ← skopeo inspect :stable
+#   - base (key "bluefin", kept for the page) / margine version + date + digest
 #   - baseDigestMatchesBluefin                    ← margine base-digest label
-#                                                   vs current bluefin digest
+#                                                   vs current base digest
 #   - margine kernel                              ← preserved from the last
 #                                                   published status.json
 #                                                   (no clean pre-build label;
@@ -25,7 +25,7 @@
 #        BLUEFIN_IMAGE / MARGINE_IMAGE / MARGINE_REPO (optional overrides)
 set -euo pipefail
 
-BLUEFIN_IMAGE="${BLUEFIN_IMAGE:-ghcr.io/ublue-os/bluefin-dx:stable}"
+BLUEFIN_IMAGE="${BLUEFIN_IMAGE:-ghcr.io/ublue-os/silverblue-main:44}"   # the base; the variable name predates the switch
 MARGINE_IMAGE="${MARGINE_IMAGE:-ghcr.io/daniel-g-carrasco/margine:stable}"
 REPO="${MARGINE_REPO:-daniel-g-carrasco/margine-image}"
 
@@ -112,7 +112,7 @@ def health(c):
 # Margine layer status, in precedence order:
 #   - "unknown" when the image couldn't be inspected at all (registry blip /
 #     made private / GC race) — never assert green over a void;
-#   - "behind"  when built from an older Bluefin than what's published now;
+#   - "behind"  when built from an older base than what's published now;
 #   - "failed"  (wins) when the build OR smoke gate failed / timed out.
 mar_resolved = bool(mar.get("Digest") or mar_l)
 mar_status = "current" if mar_resolved else "unknown"
@@ -132,15 +132,15 @@ doc = {
             "link": "https://fedoraproject.org/atomic-desktops/silverblue/",
         },
         {
-            "key": "bluefin", "name": "Bluefin DX", "version": blu_ver or "—",
+            "key": "bluefin", "name": "Universal Blue main", "version": blu_ver or "—",
             "date": blu_date, "status": "current",
             "delta": [
-                "Developer / container / virt toolbox (DX)",
-                "Universal Blue automation — uupd auto-updates, ujust recipes",
-                "Codecs, hardware enablement, Flathub",
+                "Fedora Silverblue as a bootc image, rebuilt daily",
+                "Universal Blue automation: ujust recipes, update services",
+                "Signing policy, udev rules, the Flathub remote",
             ],
-            "detail": "Universal Blue's developer image — what Margine builds FROM.",
-            "link": "https://github.com/ublue-os/bluefin/pkgs/container/bluefin-dx",
+            "detail": "Universal Blue's plain Silverblue image, what Margine builds FROM (Bluefin DX until 2026-10-11).",
+            "link": "https://github.com/ublue-os/main/pkgs/container/silverblue-main",
         },
         {
             "key": "margine", "name": "Margine OS", "version": mar_ver or "—",

@@ -237,7 +237,7 @@ log "Installed: GDM background + greeter logo overrides"
 
 # (e) /etc/issue — text-mode banner shown on console (e.g. emergency shell)
 cat > /etc/issue <<'EOF'
-Margine \r (\m) — Bluefin DX + CachyOS signed kernel
+Margine \r (\m): Fedora Silverblue + CachyOS signed kernel
 \d \t
 
 EOF

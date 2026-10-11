@@ -1,10 +1,10 @@
 # Plan B — Bluefin DX deprecation contingency
 
-> **Status:** Contingency plan. Not active. `Containerfile` still
-> uses `FROM ghcr.io/ublue-os/bluefin-dx:stable`. This document and the
-> sibling `Containerfile.plan-b-from-bluefin` exist so that, if/when the
-> Bluefin team deprecates the -dx variant, Margine can switch tracks in
-> a single PR without an emergency redesign.
+> **Status:** Executed on 2026-10-11, with a different landing than
+> sketched here: Margine builds `FROM ghcr.io/ublue-os/silverblue-main:44`
+> (Universal Blue's plain Silverblue), see [ADR 0010](spec/adr/0010-base-on-silverblue-main.md).
+> The sibling `Containerfile.plan-b-from-bluefin` was removed with the
+> switch. Kept as the record of the reasoning.
 
 ## Why
 

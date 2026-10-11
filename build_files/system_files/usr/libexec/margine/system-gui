@@ -247,7 +247,7 @@ class SystemWindow(Adw.ApplicationWindow):
         self._version_row.set_subtitle(booted)
         self._kernel_row.set_subtitle(os.uname().release)
 
-        self._base_row.set_subtitle("Fedora → Bluefin DX → Margine")
+        self._base_row.set_subtitle("Fedora → Universal Blue main → Margine")
 
         layered = self._state.get("layered") or []
         if layered:

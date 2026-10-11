@@ -127,7 +127,7 @@ the `margine.dev` domain, the ghcr.io/`margine` image name.
 | `VARIANT` | `Margine OS` | About |
 | `VARIANT_ID` | `margine` | **the authoritative discriminator** (anaconda profile, scripts, countme) — do not change |
 | `ID` | `fedora` | kept for bootc-image-builder / tooling compat — **do not change** |
-| `ID_LIKE` | `bluefin` | provenance |
+| `ID_LIKE` | `fedora` | family (was `bluefin` until the base switch of 2026-10-11) |
 | `LOGO` | `margine-logo` | GNOME About logo (icon-theme lookup) |
 | `ANSI_COLOR` | `0;38;2;232;186;0` | terminal accent = **#E8BA00** (the Margine yellow) |
 | `HOME_URL` / `DOCUMENTATION_URL` | `https://margine.dev` / `/docs` | About "Website", links |
@@ -441,7 +441,7 @@ All under `build_files/system_files/`. All autostart entries follow Golden Rules
   (`ublue-motd.sh`, `ublue-fastfetch.sh`, `90-bluefin-starship.sh`,
   `91-bluefin-aliases.sh`) are deleted from **both** `/etc/profile.d` and
   `/usr/etc/profile.d` (Golden Rule 1).
-- **`/etc/issue`:** first line `Margine \r (\m) — Bluefin DX + CachyOS signed
+- **`/etc/issue`:** first line `Margine \r (\m): Fedora Silverblue + CachyOS signed
   kernel`, second line `\d \t` (emergency console only).
 - **ujust:** recipes live in `build_files/60-custom.just`, mostly under
   `[group('Margine')]` (`margine-bootstrap`, `margine-ai`, `margine-test-vm`, …;

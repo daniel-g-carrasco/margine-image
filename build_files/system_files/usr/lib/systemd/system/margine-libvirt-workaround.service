@@ -1,5 +1,5 @@
 [Unit]
-Description=Relabel libvirt files and directories (Bluefin DX workaround, Margine copy)
+Description=Relabel libvirt files and directories (Margine; originally a Bluefin DX workaround)
 ConditionPathIsDirectory=/var/lib/libvirt/
 After=local-fs.target
 

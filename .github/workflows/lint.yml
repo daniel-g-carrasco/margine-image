@@ -46,8 +46,8 @@ jobs:
           python3 .github/scripts/check-job-conditions.py .github/workflows/*.yml
 
       - name: hadolint (Containerfile)
-        # Lints the active bootc ./Containerfile (Containerfile.plan-b-from-
-        # bluefin is a dormant fallback, intentionally not linted). Rules and
+        # Lints the bootc ./Containerfile (the only one since the plan B
+        # Containerfile went with the base switch of 2026-10-11). Rules and
         # the warning-level failure threshold live in .hadolint.yaml so a
         # local `hadolint Containerfile` matches CI. SHA-pinned like every
         # other action here.

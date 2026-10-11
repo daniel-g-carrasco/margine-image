@@ -67,10 +67,11 @@ Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base 
 | [adr/0002-gnome-in-phase-1.md](adr/0002-gnome-in-phase-1.md) | Why GNOME stock in phase 1 and not Hyprland |
 | [adr/0003-fedora-native-boot-security.md](adr/0003-fedora-native-boot-security.md) | Why Fedora shim/systemd-cryptenroll and not Arch/Limine/sbctl patterns |
 | [adr/0004-rpm-ostree-base-boundary.md](adr/0004-rpm-ostree-base-boundary.md) | Why the base-OS update step owns pre/post validation, reboot judgment, and rollback (superseded — implementation moved to Bluefin `uupd`) |
-| [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deploys as Bluefin DX rebase + 5 diffs, not as stock Silverblue + layer |
+| [adr/0005-base-on-bluefin-dx.md](adr/0005-base-on-bluefin-dx.md) | Why Margine deployed as Bluefin DX rebase + 5 diffs (superseded by ADR 0010 on 2026-10-11) |
 | [adr/0006-kernel-cachyos-decision.md](adr/0006-kernel-cachyos-decision.md) | Why Margine stays on `kernel-cachyos` (bieszczaders COPR), not OGC, not ublue-akmods — BORE + ThinLTO + HZ=1000 + creator-first identity |
 | [adr/0007-sealed-bootable-images-tracker.md](adr/0007-sealed-bootable-images-tracker.md) | Watchlist for upstream "sealed/UKI" bootable-image work; what Margine adopts when it matures |
 | [adr/0008-titanoboa-migration-plan.md](adr/0008-titanoboa-migration-plan.md) | Why the ISO moved from BIB Anaconda-ISO to Titanoboa, and the phased cutover (Phases 0–7 done) |
+| [adr/0010-base-on-silverblue-main.md](adr/0010-base-on-silverblue-main.md) | Why Margine builds on Universal Blue's `silverblue-main` since 2026-10-11, and how the switch was proven |
 
 ## Handbook
 

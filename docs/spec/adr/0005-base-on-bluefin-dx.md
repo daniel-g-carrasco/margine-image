@@ -1,5 +1,9 @@
 # ADR 0005 — Base Margine on Bluefin DX (Fedora track), not on stock Silverblue
 
+> **Superseded on 2026-10-11 by [ADR 0010](0010-base-on-silverblue-main.md):**
+> Margine builds on Universal Blue's `silverblue-main` now. Kept as the
+> record of the Bluefin DX era (2026-05-25 to 2026-10-11).
+
 **Date:** 2026-05-25 (amended 2026-05-26)
 **Status:** Accepted and shipping. Margine is published as a bootc image
 (`ghcr.io/daniel-g-carrasco/margine:stable`) built by GitHub Actions from

@@ -6,8 +6,9 @@
 
 Bomb-proof by design, fast on the CachyOS kernel, with a GNOME re-wired for
 tiling, every codec and driver already in place, and a curated set of creator
-tools that make it ready for work from minute one. Built on
-[Bluefin DX](https://projectbluefin.io/) with a Secure Boot-signed
+tools that make it ready for work from minute one. Built on Fedora
+Silverblue through [Universal Blue](https://universal-blue.org/)'s
+`silverblue-main` image, with a Secure Boot-signed
 [CachyOS](https://cachyos.org/) kernel.
 
 <p>
@@ -27,7 +28,7 @@ tools that make it ready for work from minute one. Built on
   <a href="https://scorecard.dev/viewer/?uri=github.com/daniel-g-carrasco/margine-image"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/daniel-g-carrasco/margine-image/badge"></a>
   <a href="https://github.com/daniel-g-carrasco/margine-image/pkgs/container/margine"><img alt="ghcr.io margine" src="https://img.shields.io/badge/ghcr.io-margine%3Astable-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://margine.dev/#install"><img alt="Install" src="https://img.shields.io/badge/install-from%20ISO-D97757"></a>
-  <a href="https://projectbluefin.io/"><img alt="Built on Bluefin DX" src="https://img.shields.io/badge/built%20on-Bluefin%20DX-0066CC"></a>
+  <a href="https://universal-blue.org/"><img alt="Built on Universal Blue" src="https://img.shields.io/badge/built%20on-Universal%20Blue-0066CC"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-4D9F4A"></a>
 </p>
 
@@ -108,8 +109,9 @@ As of 2026-06-11, the primary install path is the **Margine live ISO**:
 it boots a full GNOME live session with Margine already baked in — try
 it, then install from the desktop with the graphical installer. The
 ISO is built with [Titanoboa](https://github.com/ublue-os/titanoboa)
-(ADR-0008) and was validated end to end in a VM. Rebasing from
-Bluefin DX remains fully supported as the alternative. Current status:
+(ADR-0008) and was validated end to end in a VM. Rebasing from a
+Fedora Atomic or Universal Blue system remains fully supported as the
+alternative. Current status:
 <https://margine.dev/docs/install-status>.
 
 **Hardware requirement: an x86-64-v3 CPU** (AVX2: Intel Haswell or
@@ -168,10 +170,10 @@ parts.
 Step-by-step walkthrough with screenshots:
 <https://margine.dev/docs/install-iso>.
 
-### Option B — Rebase from Bluefin DX
+### Option B: rebase from Fedora Atomic or Universal Blue
 
 Fully supported alternative, handy if you already run a Fedora Atomic
-system. Install Bluefin DX stable, boot it once, check that the CPU is
+system (Silverblue, Bluefin, Aurora, Bazzite). Boot it once, check that the CPU is
 x86-64-v3 (see the hardware requirement above; a rebase on an older CPU
 boots to a black screen and you will have to pick the previous
 deployment in GRUB to get back), then switch to the Margine image:
@@ -313,8 +315,9 @@ bad signature exits non-zero. The signing public key lives in this repo at
 <details>
 <summary>Full stack summary</summary>
 
-**Base image**: Bluefin DX (stable), Universal Blue's developer-oriented
-Bluefin variant. Built on Fedora Silverblue 44. Margine keeps Mesa
+**Base image**: `ghcr.io/ublue-os/silverblue-main:44`, Universal Blue's
+plain Fedora Silverblue 44 image (Bluefin DX until 2026-10-11, ADR-0010).
+Margine adds Mesa
 freeworld, the x86 virt stack (libvirt, qemu-kvm, virt-manager, swtpm,
 edk2-ovmf), Podman with distrobox and toolbox, ROCm OpenCL and the HIP
 runtime; Visual Studio Code is preinstalled as a Flatpak. The rest of DX's developer stack is one
@@ -362,7 +365,8 @@ for the full rationale.
 Pin: `daniel-g-carrasco/titanoboa@cce73fc` (our fork of upstream `ublue-os/titanoboa@5c457c3d` + 3 carried patches; see `.github/workflows/build-disk.yml`).
 
 **Enabled GNOME extensions**: AppIndicator Support, Bazaar Integration,
-Dash to Dock, Gradia Integration, GSConnect (from Bluefin); o-tiling,
+Dash to Dock, Gradia Integration, GSConnect (Fedora packages or pinned
+builds); o-tiling,
 Hide Cursor, Caffeine, and the Smile emoji-picker companion (added by
 Margine). Blur My Shell, Search Light and LogoMenu (Bluefin defaults)
 are removed.
@@ -375,8 +379,9 @@ Studio, EasyEffects, Reaper, Apostrophe.
 optional TPM2 auto-unlock via `systemd-cryptenroll`; `cosign`
 signature on the registry image.
 
-**Update orchestration**: daily via `uupd.timer` (inherited from
-Bluefin), which auto-detects the deployment and runs `bootc upgrade`
+**Update orchestration**: daily via `uupd.timer` (Universal Blue's
+updater, installed by the image build when the base lacks it), which
+auto-detects the deployment and runs `bootc upgrade`
 (unlayered) or `rpm-ostree upgrade` (when packages are layered, e.g.
 gaming-native) — staged, applied on next reboot. `flatpak update`,
 `brew upgrade`, `distrobox upgrade` also orchestrated by `uupd`. Manual
@@ -410,8 +415,10 @@ under [`docs/spec/`](docs/spec/) in this repo.
 
 ## Credits
 
-- [**Bluefin**](https://projectbluefin.io/) — base image and source
-  of most of what Margine ships.
+- [**Universal Blue**](https://universal-blue.org/): the `silverblue-main`
+  base image and the automation around it.
+- [**Bluefin**](https://projectbluefin.io/): Margine's base until
+  2026-10-11 and the source of many of its ideas.
 - [**Universal Blue**](https://universal-blue.org/) — image-template,
   CI patterns, `uupd`.
 - [**CachyOS**](https://cachyos.org/) — scheduler and kernel patches.

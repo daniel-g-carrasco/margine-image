@@ -1060,7 +1060,7 @@ margine-test-vm ISO="" NAME="" DISK="80":
     TEMPLATE="margine-test-template"
 
     for b in virt-install virsh; do
-      command -v "$b" >/dev/null 2>&1 || { echo "Missing '$b' — the Bluefin DX virt stack should provide it."; exit 1; }
+      command -v "$b" >/dev/null 2>&1 || { echo "Missing '$b': the image's virt stack (build_files/15-devstack) should provide it."; exit 1; }
     done
     virsh -c "$CONN" version >/dev/null 2>&1 || { echo "Cannot reach libvirt at $CONN."; exit 1; }
 

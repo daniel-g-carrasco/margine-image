@@ -10,7 +10,7 @@ install guide is self-contained.
 | --- | --- |
 | [00-goals.md](00-goals.md) | Primary goal, technical goals, non-goals, working hypotheses, decision gates |
 | [01-architecture.md](01-architecture.md) | Fedora Atomic model: ostree, rpm-ostree, Btrfs, Flatpak, toolbox, channels |
-| [02-install-lab.md](02-install-lab.md) | Current Bluefin DX rebase install note plus the legacy Silverblue VM lab procedure |
+| [02-install-lab.md](02-install-lab.md) | Install note (live ISO, or a rebase of a Fedora Atomic install) plus the legacy Silverblue VM lab procedure |
 | [02a-custom-partitioning.md](02a-custom-partitioning.md) | Custom Anaconda partitioning with LUKS2 and a dedicated `@data` Btrfs subvolume |
 | [02b-lab-vm-setup.md](02b-lab-vm-setup.md) | Operational guide: libvirt + virt-install + virt-viewer for spinning up a Margine smoke-test VM with UEFI + Secure Boot + vTPM 2.0 (Arch-host friendly prereqs) |
 | [upstream-inspirations.md](upstream-inspirations.md) | Attribution and provenance: which upstream projects Margine derives from (Origami's custom-kernel script, MorrOS's image-template pattern, Bluefin DX as `FROM`, rechunk action, …), with file-level pointers and a quarterly review mechanism via `scripts/check-upstreams.sh` |
@@ -44,7 +44,7 @@ install guide is self-contained.
 | [08-gnome-personal-layer.md](08-gnome-personal-layer.md) | Home layout, fonts, icons, GNOME theme, folder metadata |
 | [10-hardware-media-stack.md](10-hardware-media-stack.md) | Intel/AMD drivers, Mesa, VA-API, Vulkan, OpenCL, PipeWire, codecs |
 | [11-gaming-runtime.md](11-gaming-runtime.md) | Desktop gaming runtime: Flatpak launchers, host helpers, Gamescope, split-lock |
-| [15-host-layer.md](15-host-layer.md) | **Legacy** Bluefin-style host baseline for stock Silverblue (superseded by ADR 0005 — Margine now rebases to Bluefin DX). Preserved for audit / fallback path. |
+| [15-host-layer.md](15-host-layer.md) | **Legacy** Bluefin-style host baseline for stock Silverblue (superseded by ADR 0005, then ADR 0010: Margine builds on Bluefin DX from May 2026 and on Universal Blue's silverblue-main from October 2026). Preserved for audit / fallback path. |
 | [16-developer-toolbox.md](16-developer-toolbox.md) | Daily-use guide for the developer surfaces: toolbox tools (just, glow, gum, fastfetch), distrobox for non-Fedora distros, Homebrew on Linux, starship prompt, GNOME app folders, daily workflow |
 | [17-keyboard-bindings.md](17-keyboard-bindings.md) | Hyprland-style keyboard layout for GNOME: dynamic workspaces, Fedora Workspace Indicator, custom app launchers (Ptyxis terminal, SUPER+E Nautilus), o-tiling actions (`Super+Arrow` move / `Super+Shift+Arrow` focus); full Hyprland→GNOME mapping |
 | [18-observability.md](18-observability.md) | Three independent notification mechanisms: ntfy push on every build/smoke-boot/ISO outcome, `margine-staleness.timer` (warn if `:stable` hasn't refreshed in >7 days), `margine-upgrade-notify` (desktop notification after a reboot picks up a new deployment) |
@@ -57,7 +57,7 @@ install guide is self-contained.
 | [09-declarative-model.md](09-declarative-model.md) | Declarative desired-state model; channel-aware adapters; phase plan |
 | [roadmap.md](roadmap.md) | Phase plan with objectives and decision gates |
 
-Updates are orchestrated by **Bluefin's `uupd.timer`** (inherited from the base image); see [01-architecture.md § Update Orchestration](01-architecture.md#update-orchestration).
+Updates are orchestrated by **Universal Blue's `uupd.timer`** (the build installs uupd when the base lacks it); see [01-architecture.md § Update Orchestration](01-architecture.md#update-orchestration).
 
 ## Architecture decisions
 

@@ -14,7 +14,7 @@ go stale silently.
 
 | Upstream | Role for Margine | Derivation level | Files / patterns of ours | Last reviewed |
 | --- | --- | --- | --- | --- |
-| [Bluefin DX](https://github.com/ublue-os/bluefin) | The `FROM` base of every Margine image; we ship as their image + small delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-10-03 |
+| [Universal Blue main](https://github.com/ublue-os/main) (`silverblue-main`) | The `FROM` base of every Margine image since 2026-10-11 ([Bluefin DX](https://github.com/ublue-os/bluefin) from May to October 2026); we ship as their image + our delta | **Infrastructure** (we build on top, not from) | the entire image stack inherits; `zz1-margine.gschema.override` is a layered companion to their `zz0-bluefin-modifications.gschema.override` | 2026-10-03 |
 | [Origami Linux](https://gitlab.com/origami-linux/images) | Custom-kernel signing pipeline (CachyOS via COPR + MOK signing + first-boot enrollment) | **Direct code derivation** | `margine-image/build_files/custom-kernel/install.sh` | 2026-10-03 |
 | [MorrOS](https://github.com/morrolinux/morros) (by Morrolinux) | The "personal distro = fork the Universal Blue image-template + small delta" pattern; pragmatic Italian-community example | **Architectural inspiration** | overall repo shape (margine-image fork of `ublue-os/image-template`, `build_files/build.sh` as the single delta script) | 2026-10-03 |
 | [Universal Blue image-template](https://github.com/ublue-os/image-template) | The starting scaffold for `margine-image` (Containerfile + GH Actions structure) | **Initial fork** | `margine-image/Containerfile`, `margine-image/.github/workflows/build.yml` (heavily modified since) | 2026-10-03 |
@@ -122,7 +122,7 @@ We follow the same recipe in `margine-image`:
 
 | MorrOS pattern | Margine implementation |
 | --- | --- |
-| `Containerfile` based on `FROM ghcr.io/ublue-os/<base>:<tag>` + `RUN /ctx/build.sh` | Identical structure, with `bluefin-dx:stable` as the base |
+| `Containerfile` based on `FROM ghcr.io/ublue-os/<base>:<tag>` + `RUN /ctx/build.sh` | Identical structure, with `silverblue-main:44` as the base (`bluefin-dx:stable` until 2026-10-11) |
 | Single `build_files/build.sh` script doing all delta work (preinstall flatpaks, gschema overrides, configure user-state helpers) | Same pattern; our `build.sh` is structured into numbered sections (`0. OS identity`, `1. Flatpaks`, `2. GNOME defaults`, `3. configure-* helpers`, `4. visual branding`, `5. ujust recipes`) |
 | GH Actions workflow forked from the image-template, customised for cosign signing + nightly + PR builds | Same shape; we added Layer A image-internals inspection and (now) rechunk |
 | Honest scope (personal distro, not a "Linux for everyone" project) | Margine is explicitly a personal Fedora Atomic workstation — see `docs/00-goals.md` |
@@ -151,11 +151,14 @@ theirs:
 
 ---
 
-## Bluefin DX — the actual `FROM`
+## The base: Universal Blue main, and Bluefin DX before it
 
 **License:** Apache-2.0. **Role:** Margine is not just inspired by
-Bluefin, Margine IS a Bluefin DX image + delta. Every Margine boot
-runs Bluefin's full package set + our additions/swaps.
+Universal Blue, Margine IS one of their images + our delta: `silverblue-main`
+since 2026-10-11 (ADR 0010), Bluefin DX from May to October 2026 (ADR 0005).
+Every Margine boot runs the base's package set + our additions/swaps; what
+Bluefin DX added on top of main is now either a `ujust` recipe or a Margine
+build step. The patterns below came from Bluefin and still apply.
 
 Specific patterns we follow:
 
@@ -169,12 +172,13 @@ Specific patterns we follow:
 - `/usr/share/ublue-os/just/*.just` — Bluefin's mechanism for
   contributing `ujust` recipes. Our `60-custom.just` is dropped
   there.
-- `uupd.timer` — Bluefin's update orchestrator. Margine inherits it
-  unchanged (we explicitly do NOT ship our own — see ADR 0005 and the
+- `uupd.timer`, Universal Blue's update orchestrator. Margine runs it
+  unchanged, installing uupd from the `ublue-os/packages` COPR when the
+  base lacks it (we explicitly do NOT ship our own, see ADR 0005 and the
   superseded `scripts/update-all` in margine-fedora-atomic).
 
-Bluefin updates roughly weekly. Each Bluefin update is a potential
-behaviour shift for us — see the review cadence below.
+Universal Blue rebuilds main daily. Each base update is a potential
+behaviour shift for us, see the review cadence below.
 
 ---
 
@@ -222,7 +226,7 @@ Each upstream listed above is expected to be re-reviewed when:
 2. **a Margine build starts failing in a way that smells like an
    upstream behaviour change** (e.g. dracut output path moved, OCI
    label semantics changed, rechunk arguments deprecated), OR
-3. **a Bluefin major-version bump occurs** (currently Fedora 44; the
+3. **a Fedora release bump of the base occurs** (currently Fedora 44; the
    next will be Fedora 45).
 
 To check whether any upstream has new commits since the last
@@ -240,6 +244,7 @@ set -euo pipefail
 DOC="docs/upstream-inspirations.md"
 
 declare -A repos=(
+  [main]="ublue-os/main"
   [bluefin]="ublue-os/bluefin"
   [origami]="john-holt4/Origami-Linux"   # mirror; original is on GitLab
   [morros]="morrolinux/morros"

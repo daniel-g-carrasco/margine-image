@@ -27,7 +27,7 @@ commands in build context run inside the image build.
 ## Table of contents
 
 - [1. The atomic, image-based OS model](#1-the-atomic-image-based-os-model)
-- [----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----](#------base-bluefin-dx-fedora-44-track-stable-tag------)
+- [----- Base: Universal Blue silverblue-main:44 unless overridden -----](#------base-universal-blue-silverblue-main44-unless-overridden------)
   - [1.1 Mutable vs image-based](#11-mutable-vs-image-based)
   - [1.2 ostree: a content-addressed object store for filesystems](#12-ostree-a-content-addressed-object-store-for-filesystems)
 - [On Silverblue with composefs (Fedora 39+), /usr is embedded in the root](#on-silverblue-with-composefs-fedora-39-usr-is-embedded-in-the-root)
@@ -58,7 +58,7 @@ commands in build context run inside the image build.
 - [/ctx/installer-flatpaks-base. Single source of truth for the BAKE](#ctxinstaller-flatpaks-base-single-source-of-truth-for-the-bake)
 - [Flatpak list (audit §3.5: drop the duplicate here-doc in build.sh).](#flatpak-list-audit-35-drop-the-duplicate-here-doc-in-buildsh)
 - [/var/home/daniel/dev/margine-image/Containerfile](#varhomedanieldevmargine-imagecontainerfile)
-- [----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----](#------base-bluefin-dx-fedora-44-track-stable-tag------)
+- [----- Base: Universal Blue silverblue-main:44 unless overridden -----](#------base-universal-blue-silverblue-main44-unless-overridden------)
 - [/var/home/daniel/dev/margine-image/Containerfile](#varhomedanieldevmargine-imagecontainerfile)
   - [2.3 The build orchestrator and numbered stages](#23-the-build-orchestrator-and-numbered-stages)
 - [/var/home/daniel/dev/margine-image/build_files/build.sh](#varhomedanieldevmargine-imagebuildfilesbuildsh)
@@ -298,7 +298,7 @@ commands in build context run inside the image build.
 - [build_files/40-spec-scripts/scripts/validate-staged-deployment](#build_files40-spec-scriptsscriptsvalidate-staged-deployment)
   - [11.5 Rollback, pinning, /etc merge and drift](#115-rollback-pinning-etc-merge-and-drift)
 - [docs/spec/02-install-lab.md — before the CachyOS kernel experiment](#docsspec02-install-labmd--before-the-cachyos-kernel-experiment)
-  - [11.6 The rebase path from Bluefin DX](#116-the-rebase-path-from-bluefin-dx)
+  - [11.6 The rebase path from another Fedora Atomic](#116-the-rebase-path-from-another-fedora-atomic)
 - [margine-image/README.md — Option A](#margine-imagereadmemd--option-a)
 - [build_files/40-spec-scripts/scripts/validate-staged-deployment](#build_files40-spec-scriptsscriptsvalidate-staged-deployment)
 - [THE check that motivated Bug 5: ostree-prepare-root must be inside](#the-check-that-motivated-bug-5-ostree-prepare-root-must-be-inside)
@@ -325,10 +325,13 @@ Margine is not "a Fedora with packages preinstalled". It is an **OCI container i
 The whole product fits in one sentence from the top of the image repo:
 
 ```dockerfile
-# ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----
-FROM ghcr.io/ublue-os/bluefin-dx:stable
+ARG BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:44
+# ----- Base: Universal Blue silverblue-main:44 unless overridden -----
+FROM ${BASE_IMAGE}
 ```
-*`/var/home/daniel/dev/margine-image/Containerfile` (line 32)*
+*`/var/home/daniel/dev/margine-image/Containerfile` (lines 33 and 47)*
+
+The base moved from Bluefin DX to Universal Blue's `silverblue-main` on 2026-10-11 (ADR 0010): the chapters below say "the base" where the distinction does not matter, and name Bluefin where a lesson was learnt on it.
 
 A distro is a `FROM` line plus deltas. Everything else in this handbook is about making those deltas correct, signed, and bootable.
 
@@ -617,7 +620,7 @@ The trade-off accepted: OCI was not designed to carry bootable filesystems, henc
 | swupd manifest/bundle deltas | Clear Linux (discontinued 2025) | fine-grained per-file deltas without reboot atomicity; bespoke infra died with the distro |
 | Sealed bootable containers (UKI + composefs/fs-verity) | Fedora/bootc test images, future Bluefin — tracked in Margine ADR 0007 | fully verified boot chain and sane TPM2 defaults; immature, breaks current MOK/GRUB pipelines |
 
-Margine sits in row one deliberately: it inherits Bluefin DX's maintenance (codecs, Mesa, virt stack, ADR 0005's "stop hand-rolling 70% of Bluefin") and spends its own effort only on the deltas the next chapters cover: a signed CachyOS kernel, GNOME defaults, branding, an installer, and a CI gate that refuses to ship an image that didn't boot.
+Margine sits in row one deliberately: it inherits Fedora's and Universal Blue's maintenance through `silverblue-main` (ADR 0005 chose Bluefin DX for the same reason in May 2026, ADR 0010 moved the base in October) and spends its own effort only on the deltas the next chapters cover: a signed CachyOS kernel, GNOME defaults, branding, an installer, and a CI gate that refuses to ship an image that didn't boot.
 
 
 ---
@@ -639,7 +642,7 @@ Margine descends from the Universal Blue **image-template** pattern (`github.com
 Margine credits this explicitly (`/var/home/daniel/dev/margine-image/README.md`):
 
 ```text
-- Bluefin — base image and source of most of what Margine ships.
+- Universal Blue main (`silverblue-main`): the base image since 2026-10-11; Bluefin DX before it, and the source of many of the patterns here.
 - Universal Blue — image-template, CI patterns, `uupd`.
 - Origami Linux — reference for the MOK-signing kernel script.
 - hhd-dev/rechunk — ostree rechunking action.
@@ -677,15 +680,16 @@ COPY installer/flatpaks-base    /installer-flatpaks-base
 
 Practical effect: scripts live in a throwaway `scratch` stage and reach the real build only through an ephemeral `--mount=type=bind`. Nothing in `build_files/` can leak into a shipped layer, and editing a script does not invalidate the base layer cache. The extra `COPY installer/flatpaks-base` makes one file the single source of truth for both the OCI image and the Anaconda installer (chapter on ISOs).
 
-### `FROM bluefin-dx` and pinning
+### `FROM silverblue-main` and pinning
 
 ```dockerfile
 # /var/home/daniel/dev/margine-image/Containerfile
-# ----- Base: Bluefin DX (Fedora 44 track, "stable" tag) -----
-FROM ghcr.io/ublue-os/bluefin-dx:stable
+ARG BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:44
+# ----- Base: Universal Blue silverblue-main:44 unless overridden -----
+FROM ${BASE_IMAGE}
 ```
 
-Margine pins to the floating `:stable` tag, not a digest. Trade-off: every weekly rebuild silently absorbs whatever Bluefin shipped (good: free maintenance of GNOME, drivers, dev tooling; bad: an upstream regression lands without a diff to review). The mitigations are downstream: a CI asset validator and a QEMU smoke-boot gate must pass before anything is promoted to Margine's own `:stable` (chapter on CI). The stricter alternative (digest pinning with Renovate/Dependabot bump PRs) is what several uBlue community images do; it buys reviewability at the cost of merge churn.
+Margine pins the Fedora release in the tag (`:44`) and nothing more, not a digest. Trade-off: every rebuild silently absorbs whatever Universal Blue shipped on that release (good: free maintenance of GNOME, drivers, dev tooling; bad: an upstream regression lands without a diff to review). The mitigations are downstream: a CI asset validator and a QEMU smoke-boot gate must pass before anything is promoted to Margine's own `:stable` (chapter on CI). The stricter alternative (digest pinning with Renovate/Dependabot bump PRs) is what several uBlue community images do; it buys reviewability at the cost of merge churn.
 
 ### `RUN --mount` anatomy
 
@@ -760,12 +764,12 @@ The stages:
 | `30-gnome-defaults/` | `zz1-margine.gschema.override` (10 enabled extensions, favorites, accent), dconf keyfiles in `/etc/dconf/db/distro.d/` |
 | `40-spec-scripts/` | install the vendored `configure-*`/`validate-*` helpers + `declarations.yaml` to `/usr/bin` |
 | `45-wsf/` | build `wayland-scroll-factor`, install `LD_PRELOAD` drop-in for `org.gnome.Shell@.service` |
-| `50-branding/` | logo, wallpaper, Plymouth theme, offline docs, GDM background, strip Bluefin branding |
+| `50-branding/` | logo, wallpaper, Plymouth theme, offline docs, GDM background, strip the base's branding (Bluefin's, when present) |
 | `60-ujust-services/` | `60-custom.just` recipes, mask `systemd-remount-fs`, skel defaults |
 
 The boot-time passwd re-seed unit, staleness/upgrade notifiers, and first-boot autostarts no longer have a build stage of their own: their payloads ship as tracked files under `build_files/system_files/` (libexec scripts + systemd units), copied wholesale into the rootfs by stage `10-os-identity`, the system_files overlay this chapter already describes.
 
-One detail in `60-ujust-services` generalizes to any Bluefin derivative: the recipe file **must** be named `60-custom.just`.
+One detail in `60-ujust-services` generalizes to any Universal Blue derivative: the recipe file **must** be named `60-custom.just`.
 
 ```bash
 # /var/home/daniel/dev/margine-image/build_files/60-ujust-services/install.sh
@@ -806,7 +810,7 @@ Stage 10 also rewrites OS identity. The non-obvious part is which fields a deriv
 # /var/home/daniel/dev/margine-image/build_files/10-os-identity/install.sh
 NAME="Margine"
 ID=fedora            # bootc-image-builder fails "could not find def file for
-ID_LIKE=bluefin      # distro margine-44" if ID=margine; BIB does NOT fall
+ID_LIKE=fedora       # distro margine-44" if ID=margine; BIB does NOT fall
 VARIANT_ID=margine   # back to ID_LIKE. Discriminate on VARIANT_ID instead.
 ...
 printf '%s\n' "$OS_RELEASE_CONTENT" > /usr/lib/os-release
@@ -903,7 +907,7 @@ Two related mechanisms in the same family:
 - **openSUSE MicroOS/Aeon**: built with KIWI on OBS; btrfs-snapshot atomicity (`transactional-update`), not image-based delivery.
 
 **Base pinning**
-- Floating tag (`bluefin-dx:stable`, Margine, most uBlue customs): zero maintenance, regressions absorbed silently; compensate with CI gates.
+- Release tag (`silverblue-main:44`, Margine since 2026-10-11; `bluefin-dx:stable` before) or floating tag (most uBlue customs): zero maintenance, regressions absorbed silently; compensate with CI gates.
 - Digest pin + Renovate bumps: reviewable upstream diffs, constant PR churn.
 - Build-from-source base (Bazzite, Bluefin themselves build from `ublue-os/main`/Fedora base): full control, full maintenance burden.
 
@@ -929,7 +933,7 @@ Two related mechanisms in the same family:
 
 The kernel is just files in the image: `/usr/lib/modules/<kver>/vmlinuz`, the module tree next to it, and an `initramfs.img` in the same directory. In a bootc image build you can remove the stock kernel and install another one with plain `dnf` inside the Containerfile: no bootloader scripting, no per-machine `kernel-install` dance. What makes it hard is everything around the files: the kernel-install hooks that assume a running system, out-of-tree modules that must be built against the *new* headers, an initramfs that must be regenerated for hardware the build container cannot see, and a handful of ostree-specific invariants (output path, dracut `ostree` module, the `ostree.linux` OCI label) that fail only at first boot.
 
-Margine replaces Bluefin DX's stock kernel with `kernel-cachyos` from the `bieszczaders/kernel-cachyos` COPR. The whole swap lives in one script, invoked as the first RUN stage so every later stage (Plymouth, extensions) already sees the final kernel:
+Margine replaces the base's stock Fedora kernel with `kernel-cachyos` from the `bieszczaders/kernel-cachyos` COPR. The whole swap lives in one script, invoked as the first RUN stage so every later stage (Plymouth, extensions) already sees the final kernel:
 
 ```dockerfile
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
@@ -948,13 +952,13 @@ The BuildKit `type=secret` mounts stage the MOK signing material as ephemeral fi
 
 The decision is written down in ADR 0006 (`docs/spec/adr/0006-kernel-cachyos-decision.md`). Three options were on the table for a Fedora-Atomic-derived desktop in 2026:
 
-| | A — `kernel-cachyos` (chosen) | B — OGC kernel (Bazzite et al.) | C — Bluefin's stock kernel |
+| | A: `kernel-cachyos` (chosen) | B: OGC kernel (Bazzite et al.) | C: the base's stock Fedora kernel |
 |---|---|---|---|
 | BORE scheduler | builtin (`CONFIG_SCHED_BORE=y`) | opt-in upstream, not in default config | no |
 | ThinLTO build | yes (~3-5% win) | no | no |
 | `CONFIG_HZ` | 1000 | 300 | 300 |
 | Handheld HID / NTSYNC / gyro | not the focus | yes, in tree | no |
-| Maintainer surface | single Fedora packager | 8-distro shared CI | Bluefin/uBlue team |
+| Maintainer surface | single Fedora packager | 8-distro shared CI | Fedora kernel team |
 | Build pipeline cost | ~420 LOC + MOK secrets in CI | adopt akmods OCI pull | zero — inherit from base |
 
 Margine is creator-first (real-time audio: Reaper, EasyEffects on PipeWire), so BORE + `HZ=1000` + ThinLTO win over OGC's handheld patch set; for a gaming/handheld distro the matrix flips. Option C is the correct answer if you don't have a measured reason to deviate: it deletes this entire chapter from your build. The accepted risk is the single-maintainer COPR, mitigated with a re-review trigger ("no new COPR build for >30 days while kernel releases are in flight") watched by `scripts/check-upstreams.sh`.
@@ -1218,7 +1222,7 @@ It also warns if stock Fedora `kernel-*` RPMs are visible in the deployment, and
 
 ## 3.6 Benchmarking the kernel
 
-The kernel is Margine's one performance-relevant delta from Bluefin DX, so it is the one thing worth measuring, and the only fair way to measure it is to hold everything else constant. The harness lives in `tools/bench/` in the image repo; it is host-side, never baked into the image, and excluded from CI (`tools/**` is in `build.yml`'s `paths-ignore`).
+The kernel is Margine's one performance-relevant delta from its base, so it is the one thing worth measuring, and the only fair way to measure it is to hold everything else constant. The harness lives in `tools/bench/` in the image repo; it is host-side, never baked into the image, and excluded from CI (`tools/**` is in `build.yml`'s `paths-ignore`).
 
 **The harness, `margine-bench-kernel.sh`.** Margine's host has no `dnf`, so the benchmark tools (`perf`, `sysbench`, `stress-ng`, and an optional `schbench` built from git) run inside a throwaway Fedora distrobox with a dedicated scratch `HOME`. This is sound because *a distrobox container shares the host kernel*, the numbers reflect the real booted CachyOS/BORE kernel, not the container's userspace. Four scheduler benchmarks run under a `stress-ng --cpu` background load, because an idle machine tells you nothing about behaviour under use:
 
@@ -1269,7 +1273,7 @@ Approaches to "which kernel ships in the image", roughly by increasing maintenan
 
 # 4. Secure Boot for a custom kernel: shim → MOK
 
-Chapter 3 swapped Bluefin's stock kernel for CachyOS. That swap breaks exactly one link in the
+Chapter 3 swapped the base's stock Fedora kernel for CachyOS. That swap breaks exactly one link in the
 UEFI trust chain: the kernel image is no longer signed by Fedora. This chapter covers how Margine
 repairs that link with a Machine Owner Key (MOK), signing at image build, certificate shipping,
 and the first-boot enrollment UX, and what the alternatives would have cost.
@@ -2468,23 +2472,23 @@ re-layers the image with `hhd-dev/rechunk` before pushing.
 
 ## 7.1 Why naive podman layers churn
 
-Margine's `Containerfile` has four `RUN` stages on top of Bluefin DX
+Margine's `Containerfile` has four `RUN` stages on top of its base image
 (`/var/home/daniel/dev/margine-image/Containerfile`): the CachyOS kernel swap,
 the `build.sh` orchestrator, the extensions bake, and `bootc container lint`.
-That yields four Margine-owned layers stacked on Bluefin's own layer set, and
+That yields four Margine-owned layers stacked on the base's own layer set, and
 the result is pathological for updates:
 
 - **Layer identity is the digest of the layer tarball, not of the files.**
   A `RUN` that re-executes produces a new tar (new mtimes, new inode order)
   so the layer digest changes even when zero bytes of content changed.
   Every weekly rebuild (the Sunday cron exists precisely to pick up upstream
-  Bluefin changes) re-runs all four stages.
+  base changes) re-runs all four stages.
 - **Layers group files by *when they were written*, not by *how often they
   change*.** The kernel stage layer contains vmlinuz + all modules + a ~300 MB
   initramfs; the `build.sh` layer contains everything from branding PNGs to
   the offline docs mirror. One changed wallpaper invalidates the whole
   multi-GB blob.
-- **The base is no better.** `FROM ghcr.io/ublue-os/bluefin-dx:stable` means a
+- **The base is no better.** `FROM ghcr.io/ublue-os/silverblue-main:44` means a
   base rebuild upstream shifts every parent layer digest; the client re-pulls
   them all even though 95% of the file content is identical.
 
@@ -2978,7 +2982,7 @@ docker:
 
 Without this, verification looks for a lookaside (web-server) sigstore and fails with "no signature found" even though the signature exists on GHCR.
 
-Because Margine derives from Bluefin DX, the base image already ships a populated `/etc/containers/policy.json` and `/etc/pki/containers/` for the `ghcr.io/ublue-os` scope; the Margine-specific scope and key are the distro's job to add at image build time, so every installed host verifies its own updates. The 2026-06-05 audit flags this as the load-bearing check (§6.5):
+Because Margine derives from a Universal Blue image, the base already ships a populated `/etc/containers/policy.json` and the `ghcr.io/ublue-os` keys (under `/etc/pki/containers/` on silverblue-main, `/usr/lib/pki/containers/` on Bluefin DX); the Margine-specific scope and key are the distro's job to add at image build time, so every installed host verifies its own updates. The 2026-06-05 audit flags this as the load-bearing check (§6.5):
 
 > Verify `/etc/containers/policy.json` allows your registry path with `cosign` verification, not just `insecureAcceptAnything`. This is what makes `bootc switch --enforce-container-sigpolicy ghcr.io/daniel-g-carrasco/margine:stable` *actually* verify, not just succeed.
 > `docs/spec/audits/2026-06-05-margine-stack-audit.md`
@@ -3042,7 +3046,7 @@ A `@v6` tag is a mutable pointer in someone else's repo; the tj-actions/changed-
 
 One deliberate exception, worth stating because pinning is a policy, not a reflex (a former second one, `hhd-dev/rechunk`, once tag-pinned at `@v1.2.4`, is now closed: it is SHA-pinned `hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2 # v1.2.4` like every other action):
 
-- **`FROM ghcr.io/ublue-os/bluefin-dx:stable`** in the Containerfile floats on purpose. Margine *wants* upstream drift: the weekly cron (`schedule: '0 4 * * 0'` in `build.yml`) rebuilds against whatever Bluefin DX currently is, and the QEMU smoke gate (chapter 7) catches breakage before `:stable` moves. Digest-pinning the base would trade silent drift for a Renovate-style bump treadmill; the gate makes the float survivable. If you have no boot gate, pin the FROM digest.
+- **`FROM ghcr.io/ublue-os/silverblue-main:44`** in the Containerfile floats within the Fedora release on purpose. Margine *wants* upstream drift: the weekly cron (`schedule: '0 4 * * 0'` in `build.yml`) rebuilds against whatever Bluefin DX currently is, and the QEMU smoke gate (chapter 7) catches breakage before `:stable` moves. Digest-pinning the base would trade silent drift for a Renovate-style bump treadmill; the gate makes the float survivable. If you have no boot gate, pin the FROM digest.
 
 A third reproducibility note, and a piece of history. The scripts, branding and declarations the image installs used to live in a separate spec repo (`margine-fedora-atomic`), fetched over the network at build time. That fetch had to be ref-pinned to a commit SHA (resolved at build start, passed in as `--build-arg MARGINE_REF=<sha>`, stamped as an OCI label) or the image would not be reproducible, and even then it carried a TOCTOU caveat. Since the 2026-07-05 unification those files are vendored in this repo under `build_files/`, so the build fetches nothing at all. Reproducibility comes for free: every image is byte-reproducible from the single `margine-image` commit it was built from, stamped as the standard `org.opencontainers.image.revision` label, with no second ref to pin and no fetch to race.
 
@@ -3179,7 +3183,7 @@ on:
     branches: [main]
   schedule:
     # Weekly nightly: Sunday 04:00 UTC = 06:00 CEST. Picks up upstream
-    # Bluefin DX changes even if there are no commits to this repo.
+    # base image changes even if there are no commits to this repo.
     - cron: '0 4 * * 0'
   workflow_dispatch:
 ```
@@ -3436,7 +3440,7 @@ matrix:
 Notables in the `build_disk` job (and the retired `anaconda-iso` path it once carried):
 
 - **BIB pinned by digest** (`quay.io/centos-bootc/bootc-image-builder@sha256:7ae88…`) and pre-pulled with 8-attempt exponential backoff, because quay.io 5xx brownouts otherwise surface as a single opaque failed pull inside the action.
-- **`rootfs: btrfs` is mandatory**: Bluefin DX doesn't set the `containers.bootc.rootfs` OCI label, so BIB errors with "DefaultRootFs missing" without it.
+- **`rootfs: btrfs` is mandatory**: the base image doesn't set the `containers.bootc.rootfs` OCI label, so BIB errors with "DefaultRootFs missing" without it.
 - **Installer-image pattern (Bazzite)** *(historical, only the retired `anaconda-iso` path used it)*: a transient `margine-installer:run-<run_id>` image was built first, base image + ~29 Flatpaks baked into `/var/lib/flatpak`, and *that* fed to BIB, so the kickstart only rsynced Flatpaks instead of downloading them in the installer environment (which OOM'd `/tmp` and failed silently; chapter 8). The build needed `--cap-add sys_admin --security-opt label=disable` because `flatpak install` uses bwrap user namespaces inside the container. The Titanoboa path keeps the same trick in `live-env` (§10.2).
 - **GHCR garbage collection**: each ISO run pushes a new run-scoped tag and GHCR keeps everything forever, so an `always()` step prunes the package via `gh api`, keeping the newest 3 versions.
 - **Checksums with relative paths**: `SHA256SUMS` is written with paths relative to the output dir, because absolute build-side paths broke `sha256sum -c` after the artifact was re-unpacked in the publish job at a different root (run #26789024483).
@@ -3524,7 +3528,7 @@ The website's `/status` page answers one question, "is the Margine you'd install
 
 ```bash
 # margine-image/.github/scripts/build-status-json.sh (shape)
-skopeo inspect docker://ghcr.io/ublue-os/bluefin-dx:stable   # version/date/digest/labels
+skopeo inspect docker://ghcr.io/ublue-os/silverblue-main:44  # version/date/digest/labels
 skopeo inspect docker://ghcr.io/daniel-g-carrasco/margine:stable
 gh api .../actions/runs --jq 'first conclusion in success|failure|timed_out'
 ```
@@ -3536,7 +3540,7 @@ Two subtleties make it honest rather than merely green:
 
 A guard aborts the producer if **both** skopeo inspects come back empty, so a transient registry outage can't overwrite the last-good document with an all-`unknown` one. `publish-status-json.sh` then pushes the JSON straight to the website repo's `main` (see §9.12 for why no PR), rebasing on a push race, **preserving the curated `kernel` value** already published, and skipping the commit when only the timestamp would change (no churn). `status-json.yml` runs the pair after every build/smoke/ISO (`workflow_run`), daily, and on demand.
 
-To make the `behind` check possible, `build.yml` stamps the image with the Bluefin digest it was built **from**, best-effort, so a lookup failure never fails a build:
+To make the `behind` check possible, `build.yml` stamps the image with the digest of the base it was built **from**, best-effort, so a lookup failure never fails a build:
 
 ```yaml
 # margine-image/.github/workflows/build.yml (base-digest label step)
@@ -3544,7 +3548,7 @@ To make the `behind` check possible, `build.yml` stamps the image with the Bluef
   continue-on-error: true
   run: |
     DIGEST="$(skopeo inspect --no-tags --format '{{.Digest}}' \
-      docker://ghcr.io/ublue-os/bluefin-dx:stable)"
+      docker://ghcr.io/ublue-os/silverblue-main:44)"
     echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 # → label org.opencontainers.image.base.digest=<digest>
 ```
@@ -3748,7 +3752,7 @@ This was the matrix-conditional BIB invocation while the `anaconda-iso` entry st
     rootfs: btrfs
     types: ${{ matrix.disk-type }}
 ```
-*`margine-image/.github/workflows/build-disk.yml` (`build_disk` job).* One trap still encoded here: `rootfs: btrfs` is mandatory because Bluefin DX doesn't set the `containers.bootc.rootfs` OCI label, without it BIB dies with `DefaultRootFs missing`. (In the retired ISO branch, the build also consumed the *installer* tag, not `:stable`.)
+*`margine-image/.github/workflows/build-disk.yml` (`build_disk` job).* One trap still encoded here: `rootfs: btrfs` is mandatory because the base image doesn't set the `containers.bootc.rootfs` OCI label, without it BIB dies with `DefaultRootFs missing`. (In the retired ISO branch, the build also consumed the *installer* tag, not `:stable`.)
 
 ### Why Path A was replaced
 
@@ -3880,7 +3884,7 @@ default_partitioning =
 [User Interface]
 webui_web_engine = slitherer
 ```
-*`margine-image/live-env/src/anaconda/profile.d/margine.conf` (trimmed).* Margine keeps `ID=fedora` in os-release (Bluefin inheritance), so `os_id` alone would collide with stock Fedora, `variant_id=margine` must also match, and both must hold for the profile to activate. `slitherer` is the WebUI engine Bluefin/Bazzite ship in production; falling back to GTK Anaconda is a one-line change (`webui_web_engine = none`).
+*`margine-image/live-env/src/anaconda/profile.d/margine.conf` (trimmed).* Margine keeps `ID=fedora` in os-release (as its base does), so `os_id` alone would collide with stock Fedora, `variant_id=margine` must also match, and both must hold for the profile to activate. `slitherer` is the WebUI engine Bluefin/Bazzite ship in production; falling back to GTK Anaconda is a one-line change (`webui_web_engine = none`).
 
 > **Lesson, explicit `part` crashes Anaconda WebUI 68.**
 > *Symptom:* WebUI dies at startup with "Reading information about the computer failed" (DBus `InvalidArgs`).
@@ -4099,7 +4103,7 @@ Margine maintains **no update orchestrator of its own**. The declaration is expl
 ```yaml
 # build_files/40-spec-scripts/declarations/margine-atomic.yaml
 updates:
-  orchestrator: bluefin-uupd
+  orchestrator: uupd
   system:
     engine: bootc
     transport: ostree-image-signed
@@ -4107,7 +4111,7 @@ updates:
     require_reboot_judgment: true
 ```
 
-Bluefin DX ships uupd (Universal Updater) with `uupd.timer` enabled; Margine inherits the unit unchanged. Per `docs/01-architecture.md`, one daily pass orders:
+uupd (Universal Blue's updater) runs from `uupd.timer`; Bluefin DX shipped it, and since the move to silverblue-main the build installs it from the `ublue-os/packages` COPR when the base lacks it. Per `docs/01-architecture.md`, one daily pass orders:
 
 1. `bootc upgrade` (or `rpm-ostree upgrade` on layered installs);
 2. `flatpak update` (system + user);
@@ -4228,12 +4232,12 @@ That "local wins forever" rule is the main day-2 footgun: a stale local edit can
 > ConditionFileNotEmpty=/usr/lib/passwd
 > ```
 
-## 11.6 The rebase path from Bluefin DX
+## 11.6 The rebase path from another Fedora Atomic
 
-Margine's recommended install today is not the ISO, it is a rebase from a vanilla Bluefin DX install:
+Next to the ISO, Margine supports a rebase from an existing Fedora Atomic or Universal Blue install (Silverblue, Bluefin, Aurora, Bazzite):
 
 ```sh
-# margine-image/README.md — Option A
+# margine-image/README.md, Option B
 rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 ```
@@ -4269,7 +4273,7 @@ Every check in that script encodes a defect that previously landed a VM in a dra
 - Vanilla OS, NixOS: ISO on GitHub Releases, free, capped at 2 GiB per file, which a Flatpak-baked ISO blows through.
 
 **Update orchestration**
-- uupd (Bluefin/Bazzite/Aurora, inherited by Margine): Go rewrite superseding `ublue-update`, which was a Topgrade wrapper, the history Margine recapitulated in miniature (custom `update-all` + topgrade.toml → deleted in favor of uupd).
+- uupd (Bluefin/Bazzite/Aurora; Margine installs it from Universal Blue's COPR when the base lacks it): Go rewrite superseding `ublue-update`, which was a Topgrade wrapper, the history Margine recapitulated in miniature (custom `update-all` + topgrade.toml → deleted in favor of uupd).
 - Plain `rpm-ostree upgrade` + `rpm-ostreed-automatic.timer` (stock Silverblue/Kinoite): base OS only; Flatpaks update via GNOME Software, two cadences, no distrobox/brew coverage.
 - `bootc-fetch-apply-updates.timer` (Fedora bootc minimal): fetch, apply, *auto-reboot*, right for servers/appliances, wrong for desktops.
 - openSUSE MicroOS/Aeon: `transactional-update.timer` + health-checker, btrfs snapshot per update, rollback via snapper, equivalent guarantees, filesystem-level instead of image-level.

@@ -1,8 +1,9 @@
 # Manual Lab Installation
 
-> **Two paths today.** The recommended way to install Margine is to rebase
-> a Bluefin DX install to the published bootc image — see
-> [ADR 0005](adr/0005-base-on-bluefin-dx.md) and the
+> **Two paths today.** The recommended way to install Margine is the live
+> ISO; a rebase of an existing Fedora Atomic or Universal Blue install to
+> the published bootc image is the alternative, see
+> [ADR 0010](adr/0010-base-on-silverblue-main.md) and the
 > [margine-image README](https://github.com/daniel-g-carrasco/margine-image#install).
 > As of 2026-06-08, fresh Margine ISOs are tester media while the
 > installer path is being hardened; the live status page is

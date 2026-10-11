@@ -1,6 +1,6 @@
 # Host Layer Baseline (legacy — Bluefin-style on stock Silverblue)
 
-> **Status: superseded by [ADR 0005](adr/0005-base-on-bluefin-dx.md).**
+> **Status: superseded by [ADR 0005](adr/0005-base-on-bluefin-dx.md) and [ADR 0010](adr/0010-base-on-silverblue-main.md).**
 >
 > Margine's recommended deployment path is now **Bluefin DX rebase + 5
 > Margine diffs**, applied via `scripts/apply-margine-on-bluefin`.

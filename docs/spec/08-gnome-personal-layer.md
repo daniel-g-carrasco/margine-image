@@ -264,10 +264,10 @@ The phase 1 GNOME extension set:
 | Extension | Source | Role |
 | --- | --- | --- |
 | `appindicatorsupport@rgcjonas.gmail.com` | Fedora (`gnome-shell-extension-appindicator`) | legacy tray icons (Bitwarden, Steam, etc.) |
-| `bazaar-integration@kolunmi.github.io` | inherited from Bluefin DX | Bazaar app store integration |
+| `bazaar-integration@kolunmi.github.io` | built from a pinned commit (Bluefin shipped it until 2026-10-11) | Bazaar app store integration |
 | `blur-my-shell@aunetx` | Fedora (`gnome-shell-extension-blur-my-shell`) | transparent/blurred top bar + overview + dash |
-| `dash-to-dock@micxgx.gmail.com` | inherited from Bluefin (baked from upstream, no RPM) | fixed semi-transparent dock with running-app dots |
-| `gradia-integration@alexandervanhee.github.io` | inherited from Bluefin DX | screenshot-edit tool integration |
+| `dash-to-dock@micxgx.gmail.com` | Fedora (`gnome-shell-extension-dash-to-dock`; Bluefin baked it from git until 2026-10-11) | fixed semi-transparent dock with running-app dots |
+| `gradia-integration@alexandervanhee.github.io` | built from a pinned commit (Bluefin shipped it until 2026-10-11) | screenshot-edit tool integration |
 | `gsconnect@andyholmes.github.io` | Fedora (`gnome-shell-extension-gsconnect`) | KDE Connect for GNOME |
 | `search-light@icedman.github.com` | Bluefin-baked; **not enabled by Margine** | superseded by GNOME-native search (Super = overview, Super+Space = app-grid); stays installed + patched so it can be re-enabled |
 | `o-tiling@oliwebd.github.com` | user-install (pinned release zip) | binary-tree auto-split tiling (replaces Tiling Shell as of 2026-06-02) |
@@ -329,7 +329,7 @@ The phase 1 layout:
 | Photography | darktable | Photography |
 | Documentation | Apostrophe | — |
 | Multimedia | Gapless, Audacity, OBS Studio, EasyEffects, Reaper | AudioVideo, Audio, Video, Music |
-| Development | VS Code (Bluefin DX preinstall) | Development, IDE |
+| Development | VS Code (Flatpak; `ujust margine-vscode` for the RPM) | Development, IDE |
 | Utilities | — | Utility, Accessibility |
 | System | — | System, Settings |
 

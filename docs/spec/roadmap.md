@@ -2,8 +2,9 @@
 
 The phases below were drafted when Margine was a manual VM-lab on
 Fedora Silverblue. The plan changed (see [ADR
-0005](adr/0005-base-on-bluefin-dx.md)): Margine ships as a real
-bootc image derived from Bluefin DX, with a CI pipeline that gates
+0005](adr/0005-base-on-bluefin-dx.md), then [ADR 0010](adr/0010-base-on-silverblue-main.md)):
+Margine ships as a real bootc image derived from Bluefin DX until
+2026-10-11 and from Universal Blue's silverblue-main since, with a CI pipeline that gates
 `:stable` on a QEMU smoke-boot test. This page now records the **status
 as of 2026-06-13**, what we delivered against each original milestone,
 and what's still pending.

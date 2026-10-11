@@ -59,8 +59,8 @@ Explicit non-goals for phase 1:
 - no implicit kernel.split_lock_mitigate=0 gaming tweak
 - no Steam Gaming Mode as the first GNOME phase
 - no Bazzite rebase as the default Margine base
-- no custom update orchestrator: routine updates flow through Bluefin's
-  `uupd.timer` (inherited from the base image); the on-demand validators in
+- no custom update orchestrator: routine updates flow through Universal Blue's
+  `uupd.timer` (installed by the image build when the base lacks it); the on-demand validators in
   `scripts/` are the only update-adjacent tooling Margine maintains
 
 Repository state to inspect in /home/daniel/dev/margine-fedora-atomic:
@@ -123,7 +123,7 @@ Fedora-native redesign:
 - PipeWire/WirePlumber validation
 - gaming runtime split between runtime helpers and launchers
 - split-lock mitigation as explicit operator policy only
-- update-all as orchestration concept, retired in Margine in favor of Bluefin's `uupd`
+- update-all as orchestration concept, retired in Margine in favor of Universal Blue's `uupd`
 
 Validation tasks:
 
@@ -160,7 +160,7 @@ Validation tasks:
    - split-lock tweak not hidden
 8. Validate update orchestration:
    - the repo does NOT ship a custom orchestrator; routine updates flow via
-     Bluefin's `uupd.timer` (inherited from the base image)
+     Universal Blue's `uupd.timer` (installed by the image build when the base lacks it)
    - `bootc` is the base-OS update path; `rpm-ostree upgrade` is its CLI alias
    - the on-demand validators in `scripts/` are available but not wired to
      `uupd` hooks

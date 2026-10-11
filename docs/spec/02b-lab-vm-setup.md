@@ -26,7 +26,8 @@ system-level (`qemu:///system`).
 
 ## Prerequisites (Arch host)
 
-Margine's spec runs on Bluefin DX, but the lab host can be any
+Margine's spec runs on Universal Blue's silverblue-main (Bluefin DX until
+2026-10-11), but the lab host can be any
 distro. These notes are for Arch — on Fedora/openSUSE most of this
 is already configured.
 
@@ -90,8 +91,9 @@ export LIBVIRT_DEFAULT_URI=qemu:///system
 
 ## Get the Bluefin ISO
 
-Margine ships as a bootc image, not as an ISO. We install Bluefin
-first, then rebase. There is no "Bluefin DX ISO" — DX is a post-install
+This lab path installs Bluefin first, then rebases (Margine has had its own
+live ISO since June 2026; any Fedora Atomic ISO works as the first step,
+Bluefin's is the one used here). There is no "Bluefin DX ISO": DX is a post-install
 toggle that Margine doesn't need (see
 [ADR 0005](adr/0005-base-on-bluefin-dx.md#terminology-clarification)).
 

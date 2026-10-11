@@ -38,6 +38,12 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   system one, and Noctalia's niri template (Templates > Built-in > Niri)
   would otherwise create it with nothing but its colours, dropping every
   Lucciola default. A file holding only Noctalia's include is repaired;
+- one scroll speed for every application: toolkits turn a unit of touchpad
+  scrolling into 2.5 (GTK 4), 4 (Firefox, Zen, Thunderbird) or 5.3
+  (Chromium, Electron) logical pixels, so window rules scale the second
+  and third families down to the first; the touchpad `scroll-factor`
+  (0.15) is the one value to change, in `~/.config/niri/lucciola.kdl`
+  (repeat the whole `touchpad` block: niri replaces it, it does not merge);
 - the "Lucciola" session on the login screen, the one a new user gets
   (AccountsService user templates; whoever picks GNOME once keeps it), and
   the public name in os-release;

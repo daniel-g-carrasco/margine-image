@@ -8,6 +8,12 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-10-11)
+- **Lucciola: the same scroll speed in every application.** A unit of touchpad
+  scrolling becomes 2.5 logical pixels in GTK 4, 4 in Firefox and 5.3 in
+  Chromium and Electron; niri window rules scale the Firefox family by
+  0.625 and the Chromium family by 0.47 so all three move like GTK 4, and
+  the touchpad `scroll-factor` (0.15, the one knob) sets the pace. What
+  wayland-scroll-factor cannot do on GNOME (#29 there), done per window.
 - **Lucciola: a shorter right side of the bar.** The network widget shows
   the glyph alone (name, band and interface in the tooltip), the privacy
   widget appears only while the microphone, the camera or the screen is

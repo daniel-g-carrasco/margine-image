@@ -6,10 +6,14 @@
 #   layer-repo NAME REPO_URL KEY_URL FINGERPRINT
 #
 # The key is fetched, its primary fingerprint compared with the one the
-# recipe carries, and only then imported into rpm and saved under
-# /etc/pki/rpm-gpg; the repo file is rewritten to point at that saved key.
-# The repo file stays: rpm-ostree needs it for every later update of the
-# layered packages.
+# recipe carries, and only then saved under /etc/pki/rpm-gpg; the repo
+# file is rewritten to point at that saved key, and rpm-ostree imports it
+# from there when it layers the packages. Not `rpm --import`: on an
+# ostree system the rpm database lives in the read-only /usr, so the
+# import fails ("can't create transaction lock on /usr/share/rpm/.rpm.lock")
+# and, until 2026-10-12, took the whole helper down with it before the
+# repo file was written. The repo file stays: rpm-ostree needs it for
+# every later update of the layered packages.
 set -euo pipefail
 name="${1:?name}" repo_url="${2:?repo url}" key_url="${3:?key url}" expected="${4:?fingerprint}"
 [[ $EUID -eq 0 ]] || { echo "layer-repo: run as root" >&2; exit 1; }
@@ -31,7 +35,6 @@ if [[ "$actual" != "$expected" ]]; then
 fi
 
 install -Dm0644 "$tmp/key" "/etc/pki/rpm-gpg/RPM-GPG-KEY-$name"
-rpm --import "/etc/pki/rpm-gpg/RPM-GPG-KEY-$name"
 sed -E "s|^gpgkey=.*|gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-$name|" "$tmp/repo" > "$tmp/repo.local"
 install -m0644 "$tmp/repo.local" "/etc/yum.repos.d/$name.repo"
 echo "layer-repo: $name added (/etc/yum.repos.d/$name.repo), key $expected"

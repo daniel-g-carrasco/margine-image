@@ -8,6 +8,14 @@ stable release is cut.
 ## [Unreleased]
 
 ### Fixed (2026-10-12)
+- **`ujust margine-vscode`, `margine-docker` and `margine-tailscale` could not
+  add their repository.** The shared helper `layer-repo` ran `rpm --import`
+  after verifying the key's fingerprint; on an ostree system the rpm
+  database is in the read-only `/usr`, the import failed and the helper
+  stopped before writing the repo file. The key is saved under
+  `/etc/pki/rpm-gpg` and the repo file points at it; rpm-ostree imports it
+  from there when it layers the packages. Found by the first real run of
+  `ujust margine-vscode`.
 - **The base trim took the desktop with it.** On silverblue-main the
   negativo17 build of `gstreamer1-plugins-bad` links `libWildMidi`, `gtk4`
   requires that plugin set, and removing `wildmidi-libs` (or the soundfont

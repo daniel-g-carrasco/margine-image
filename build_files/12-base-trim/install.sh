@@ -59,7 +59,7 @@
 #     way to build things
 #   - tailscale (72 MB and a daemon with an open UDP port on every install,
 #     docs/SECURITY-CLAIMS.md D4): `ujust margine-tailscale`
-#   - incus and incus-agent, rclone, restic, borgbackup: layer them or
+#   - incus and incus-agent, restic, borgbackup: layer them or
 #     `brew install` them
 #   - the HIP compiler and its 2 GB of static LLVM (rocm-llvm-static,
 #     rocm-device-libs, hipcc and the rocm -devel packages): removed in
@@ -113,7 +113,7 @@ TRIM_PKGS=(
   bcc python3-bcc bpftrace bpftop clang21-libs llvm21-libs libomp21 compiler-rt21
   sysprof sysprof-cli libsysprof-capture igt-gpu-tools
   gcc gcc-c++ cpp gcc-plugin-annobin glibc-devel libstdc++-devel kernel-headers kernel-cachyos-devel systemtap-devel
-  tailscale incus incus-agent rclone restic borgbackup
+  tailscale incus incus-agent restic borgbackup                 # not rclone: declared, see 15-devstack
   code                                                      # VS Code RPM: the Flatpak is preinstalled, `ujust margine-vscode` layers the RPM
 )
 

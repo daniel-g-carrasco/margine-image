@@ -8,6 +8,10 @@ stable release is cut.
 ## [Unreleased]
 
 ### Fixed (2026-10-12)
+- **rclone is back in the image.** The developer-stack trim of 2026-10-10
+  listed it as on demand; it is part of the required set (cloud mounts
+  and copies: Koofr, S3, WebDAV). Declared in `DECLARED_PKGS` and in the
+  `cloud_sync` group of the declarations.
 - **`ujust margine-vscode`, `margine-docker` and `margine-tailscale` could not
   add their repository.** The shared helper `layer-repo` ran `rpm --import`
   after verifying the key's fingerprint; on an ostree system the rpm

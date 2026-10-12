@@ -434,6 +434,10 @@ host_packages:
       - nautilus
       - gnome-system-monitor
       - gnome-bluetooth
+    # Cloud storage from the command line and as a mount (Koofr, S3,
+    # WebDAV); part of the required set, not of the developer stack.
+    cloud_sync:
+      - rclone
   optional_after_validation:
     intel_gpu_extras:
       - libva-intel-media-driver

@@ -104,6 +104,7 @@ DECLARED_PKGS=(
   # silverblue-main (2026-10-11): users had these, the new base lacks them.
   ptyxis                                   # THE terminal: Super+Return, ujust recipes, the dconf default
   nautilus gnome-system-monitor gnome-bluetooth   # the desktop's own applications: the base ships them, 12-base-trim's cascade took them once (2026-10-11)
+  rclone                                   # cloud_sync: remote mounts and copies (Koofr, S3, WebDAV); Bluefin DX carried it, main does not, and the trim of 2026-10-10 listed it as on-demand by mistake
   rocm-hip                                 # HIP runtime for Blender; the compiler it drags in goes in 1c
   zsh fish                                 # login shells a user may have chosen: a missing shell locks the account out of GDM
   fuse-libs                                # libfuse.so.2, what AppImages open

@@ -16,9 +16,17 @@ log() { echo "[lucciola-build] $*"; }
 #    Noctalia is pinned: upstream supports only its latest release and Fedora
 #    ships every one within a day, so a new version arrives only through a
 #    reviewed change of NOCTALIA_EVR, never by itself.
-log "installing niri, xwayland-satellite, noctalia-${NOCTALIA_EVR}"
+#    ddcutil: Noctalia's brightness slider drives external monitors over
+#    DDC/CI when it finds it (GNOME has no such path, so Margine itself
+#    does not carry it). The Fedora package brings the udev rule that
+#    opens /dev/i2c-* to the logged-in user and the modules-load entry
+#    for i2c-dev.
+log "installing niri, xwayland-satellite, noctalia-${NOCTALIA_EVR}, ddcutil"
 dnf5 -y --setopt=install_weak_deps=False install \
-  niri xwayland-satellite "noctalia-${NOCTALIA_EVR}"
+  niri xwayland-satellite "noctalia-${NOCTALIA_EVR}" ddcutil
+for f in /usr/lib/udev/rules.d/60-ddcutil-i2c.rules /usr/lib/modules-load.d/ddcutil.conf; do
+  [[ -f "$f" ]] || { echo "ERROR: $f missing: the ddcutil package layout changed, external-monitor brightness would need a rule of our own" >&2; exit 1; }
+done
 for p in waybar mako fuzzel alacritty swaylock; do
   if rpm -q "$p" >/dev/null 2>&1; then
     echo "ERROR: $p got installed; it would compete with Noctalia" >&2

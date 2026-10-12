@@ -7,6 +7,12 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-10-12)
+- **Lucciola: `ddcutil`.** Noctalia's brightness slider drives external
+  monitors over DDC/CI when it finds it; the Fedora package brings the udev
+  rule for the i2c devices and the modules-load entry for i2c-dev. Margine's
+  GNOME has no such path, so only the Lucciola image carries it.
+
 ### Fixed (2026-10-12)
 - **`ujust margine-vscode`, `margine-docker` and `margine-tailscale` could not
   add their repository.** The shared helper `layer-repo` ran `rpm --import`

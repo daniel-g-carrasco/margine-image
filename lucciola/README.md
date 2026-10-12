@@ -44,6 +44,9 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   and third families down to the first; the touchpad `scroll-factor`
   (0.15) is the one value to change, in `~/.config/niri/lucciola.kdl`
   (repeat the whole `touchpad` block: niri replaces it, it does not merge);
+- `ddcutil`, so Noctalia's brightness slider also drives external monitors
+  over DDC/CI (the package's udev rule opens the i2c devices to the
+  logged-in user, its modules-load entry loads i2c-dev);
 - the "Lucciola" session on the login screen, the one a new user gets
   (AccountsService user templates; whoever picks GNOME once keeps it), and
   the public name in os-release;

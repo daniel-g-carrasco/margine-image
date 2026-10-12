@@ -1557,8 +1557,14 @@ install-koofr ACTION="install":
 
     if [ "{{ ACTION }}" = "remove" ] || [ "{{ ACTION }}" = "uninstall" ]; then
       echo "Removing Koofr Desktop…"
+      # the instances systemd started from the autostart folder (niri and the
+      # other sessions without gnome-session), then any left
+      systemctl --user stop 'app-koofr*@autostart.service' 2>/dev/null || true
       pkill -f "${DEST}/storage" 2>/dev/null || true
-      rm -rf "${DEST}" "${MENU}" "${AUTOSTART}"
+      # also the autostart entry the first `ujust install-spola migrate` renamed
+      # in place: systemd's generator still runs it under that name
+      rm -rf "${DEST}" "${MENU}" "${AUTOSTART}" "${AUTOSTART}.disabled-by-spola"
+      systemctl --user daemon-reload 2>/dev/null || true
       echo "Done."; exit 0
     fi
 
@@ -1623,10 +1629,18 @@ install-spola ACTION="install":
         installed || { echo "Install Spola first: ujust install-spola"; exit 1; }
         [ -f "${HOME}/.koofr/config.json" ] || { echo "No Koofr Desktop configuration found (${HOME}/.koofr/config.json)."; exit 1; }
         echo "Stopping Koofr Desktop: two sync engines on the same folders would lose files."
-        systemctl --user stop koofr.service 2>/dev/null || true
+        systemctl --user stop koofr.service 'app-koofr*@autostart.service' 2>/dev/null || true
         pkill -x storagegui 2>/dev/null || true
         pkill -x storagesync 2>/dev/null || true
-        [ -f "${KOOFR_AUTOSTART}" ] && mv -f "${KOOFR_AUTOSTART}" "${KOOFR_AUTOSTART}.disabled-by-spola"
+        # Out of the autostart folder, not renamed inside it: systemd's
+        # xdg-autostart generator (niri, and every session without
+        # gnome-session) runs any file there, whatever its name. That is how
+        # a renamed koofr.desktop.disabled-by-spola started Koofr Desktop again
+        # next to Spola; it is moved away here too.
+        for f in "${KOOFR_AUTOSTART}" "${KOOFR_AUTOSTART}.disabled-by-spola"; do
+          [ -f "${f}" ] && mv -f "${f}" "${HOME}/.koofr/koofr.desktop.autostart-disabled-by-spola"
+        done
+        systemctl --user daemon-reload 2>/dev/null || true
         quit_spola
         echo "Taking the folder pairs over…"
         flatpak run --command=spola "${APP}" import-koofr-desktop

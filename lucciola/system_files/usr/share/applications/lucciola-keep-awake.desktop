@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Keep Awake Today
+Comment=No suspend and no lock until midnight; closing the lid does nothing
+Exec=/usr/libexec/lucciola/keep-awake on
+Icon=power-profile-performance-symbolic
+Categories=System;
+Keywords=awake;keep;sleep;suspend;lid;caffeine;inhibit;
+Terminal=false

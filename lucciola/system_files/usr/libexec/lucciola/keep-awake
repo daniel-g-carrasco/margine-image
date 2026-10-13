@@ -1,0 +1,67 @@
+#!/usr/bin/bash
+# Keep the laptop awake until local midnight: no suspend, no idle blanking
+# or lock, and closing the lid does nothing. The same "Keep Awake Today" the
+# Arch + Hyprland Margine had, for long copies, downloads or a session left
+# running with the lid closed on the desk.
+#
+#   keep-awake on | off | toggle | status
+#
+# "on" starts a transient user unit that holds a logind block inhibitor for
+# sleep, idle and the lid switch until midnight. The bar shows it through
+# Noctalia's caffeine widget (its click is bound to "toggle" in
+# 20-margine-style.toml), so the icon is lit exactly while the inhibitor
+# holds: the unit turns caffeine on when it starts and off when it stops,
+# whether by "off", by the bar or by midnight.
+set -euo pipefail
+
+unit=lucciola-keep-awake.service
+self="$(readlink -f "$0")"
+
+active() { systemctl --user --quiet is-active "$unit"; }
+notify() { command -v notify-send >/dev/null && notify-send -a "Keep Awake" -i "$1" "$2" "$3" >/dev/null 2>&1 || true; }
+
+on() {
+  if active; then
+    notify power-profile-performance-symbolic "Keep Awake is already on" "Until $(systemctl --user show -p Description --value "$unit" | sed 's/.*until //')"
+    return 0
+  fi
+  local end secs until
+  end=$(date -d 'tomorrow 00:00' +%s)
+  secs=$(( end - $(date +%s) ))
+  (( secs >= 60 )) || secs=60
+  until=$(date -d "@$(( $(date +%s) + secs ))" +%H:%M)
+  systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
+  systemd-run --user --quiet --collect --unit="$unit" \
+    --description="Keep Awake until $until" \
+    -p ExecStartPre="-/usr/bin/noctalia msg caffeine-enable" \
+    -p ExecStopPost="-/usr/bin/noctalia msg caffeine-disable" \
+    /usr/bin/systemd-inhibit --what=sleep:idle:handle-lid-switch --mode=block \
+      --who="Keep Awake" --why="Keep Awake until $until: no suspend, closing the lid does nothing" \
+      /usr/bin/sleep "$secs"
+  notify power-profile-performance-symbolic "Keep Awake on until $until" "No suspend, no screen lock; closing the lid does nothing."
+}
+
+off() {
+  if active; then
+    systemctl --user stop "$unit"
+    notify power-profile-balanced-symbolic "Keep Awake off" "The laptop suspends again when you close the lid."
+  else
+    # The bar may show caffeine on without the inhibitor (a reload, a crash):
+    # bring it back in line.
+    /usr/bin/noctalia msg caffeine-disable >/dev/null 2>&1 || true
+  fi
+}
+
+case "${1:-status}" in
+  on) on ;;
+  off) off ;;
+  toggle) if active; then off; else on; fi ;;
+  status)
+    if active; then
+      echo "on: $(systemctl --user show -p Description --value "$unit")"
+      systemd-inhibit --list --no-legend | grep -F "Keep Awake" || true
+    else
+      echo off
+    fi ;;
+  *) echo "usage: ${self##*/} on|off|toggle|status" >&2; exit 2 ;;
+esac

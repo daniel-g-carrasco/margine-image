@@ -7,6 +7,15 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-10-13)
+- **Lucciola: Keep Awake.** As on the Arch + Hyprland Margine: "Keep Awake
+  Today" in the launcher blocks suspend, idle lock and the lid switch until
+  midnight through a logind inhibitor held by a transient user unit;
+  "Stop Keep Awake" ends it. Noctalia's coffee cup in the bar is the
+  indicator: the unit lights it while the inhibitor holds, and a click on
+  it toggles the whole thing, so the icon never says awake while the lid
+  would still suspend.
+
 ### Added (2026-10-12)
 - **Lucciola: `ddcutil`.** Noctalia's brightness slider drives external
   monitors over DDC/CI when it finds it; the Fedora package brings the udev

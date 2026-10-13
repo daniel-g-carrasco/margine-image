@@ -44,6 +44,10 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   and third families down to the first; the touchpad `scroll-factor`
   (0.15) is the one value to change, in `~/.config/niri/lucciola.kdl`
   (repeat the whole `touchpad` block: niri replaces it, it does not merge);
+- Keep Awake: "Keep Awake Today" in the launcher, or a click on the coffee
+  cup in the bar, blocks suspend, idle lock and the lid switch until
+  midnight (`/usr/libexec/lucciola/keep-awake`); the cup is lit while it
+  holds, "Stop Keep Awake" or another click ends it;
 - `ddcutil`, so Noctalia's brightness slider also drives external monitors
   over DDC/CI (the package's udev rule opens the i2c devices to the
   logged-in user, its modules-load entry loads i2c-dev);

@@ -56,6 +56,15 @@ center = ["clock"]
 # button sits next to where it was (2026-10-11).
 end = ["tray", "privacy", "network", "bluetooth", "caffeine", "volume", "battery", "notifications"]
 
+# The coffee cup is Keep Awake: lit while /usr/libexec/lucciola/keep-awake
+# holds the inhibitor (no suspend, no lock, the lid does nothing, until
+# midnight). A click turns the whole thing on or off, not only the idle
+# inhibitor, so the icon never says "awake" while closing the lid would
+# still suspend. "Keep Awake Today" and "Stop Keep Awake" in the launcher
+# do the same.
+[widget.caffeine.actions]
+left = "exec /usr/libexec/lucciola/keep-awake toggle"
+
 [widget.workspaces]
 style = "minimal"
 show_labels = true

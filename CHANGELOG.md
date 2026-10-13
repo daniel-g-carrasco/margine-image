@@ -8,6 +8,13 @@ stable release is cut.
 ## [Unreleased]
 
 ### Added (2026-10-13)
+- **Super+Return opens a new terminal window** on Margine (GNOME) and
+  Lucciola (niri): `ptyxis --new-window`. Plain `ptyxis` only raised the
+  window already open.
+- **Lucciola: Ptyxis in the Noctalia palette.** A Noctalia template writes
+  a Ptyxis palette from the terminal colours of the current palette and a
+  hook selects it once in the default profile (Noctalia ships no Ptyxis
+  template, built-in or community).
 - **Lucciola: Keep Awake.** As on the Arch + Hyprland Margine: "Keep Awake
   Today" in the launcher blocks suspend, idle lock and the lid switch until
   midnight through a logind inhibitor held by a transient user unit;

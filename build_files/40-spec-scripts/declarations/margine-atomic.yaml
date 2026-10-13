@@ -932,7 +932,7 @@ gnome:
     custom:
       - name: terminal
         binding: '<Super>Return'
-        command: 'ptyxis'
+        command: 'ptyxis --new-window'   # without it Ptyxis only raises the window it already has
       - name: browser
         binding: '<Super><Shift>Return'
         command: 'flatpak run app.zen_browser.zen'

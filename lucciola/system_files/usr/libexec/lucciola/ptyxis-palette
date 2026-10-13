@@ -1,0 +1,14 @@
+#!/usr/bin/bash
+# Noctalia post-hook for the Ptyxis palette (26-ptyxis-colors.toml). The
+# template writes ~/.local/share/org.gnome.Ptyxis/palettes/noctalia.palette;
+# this selects it in the default Ptyxis profile, once: a user who later picks
+# another palette in Ptyxis's preferences keeps it. Noctalia renders one mode
+# at a time, so both sections of the palette carry the current one.
+set -uo pipefail
+marker="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola/ptyxis-palette-selected"
+[[ -e "$marker" ]] && exit 0
+command -v ptyxis >/dev/null || exit 0
+uuid="$(gsettings get org.gnome.Ptyxis default-profile-uuid 2>/dev/null | tr -d "'")"
+[[ -n "$uuid" ]] || exit 0
+gsettings set "org.gnome.Ptyxis.Profile:/org/gnome/Ptyxis/Profiles/$uuid/" palette 'noctalia' || exit 0
+mkdir -p "${marker%/*}" && touch "$marker"

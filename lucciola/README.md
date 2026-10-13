@@ -44,6 +44,9 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   and third families down to the first; the touchpad `scroll-factor`
   (0.15) is the one value to change, in `~/.config/niri/lucciola.kdl`
   (repeat the whole `touchpad` block: niri replaces it, it does not merge);
+- Ptyxis in the Noctalia palette: a Noctalia template writes a Ptyxis palette
+  (`noctalia.palette`) and selects it once in the default profile; another
+  palette picked later in Ptyxis stays;
 - Keep Awake: "Keep Awake Today" in the launcher, or a click on the coffee
   cup in the bar, blocks suspend, idle lock and the lid switch until
   midnight (`/usr/libexec/lucciola/keep-awake`); the cup is lit while it

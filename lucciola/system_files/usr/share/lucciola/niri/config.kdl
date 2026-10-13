@@ -180,7 +180,8 @@ binds {
     Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }
 
     // Applications (same keys as Margine)
-    Mod+Return hotkey-overlay-title="Terminale" { spawn "ptyxis"; }
+    // --new-window: without it Ptyxis only raises the window it already has.
+    Mod+Return hotkey-overlay-title="Terminale" { spawn "ptyxis" "--new-window"; }
     Mod+Shift+Return hotkey-overlay-title="Browser" { spawn "flatpak" "run" "app.zen_browser.zen"; }
     Mod+E hotkey-overlay-title="File" { spawn "nautilus" "--new-window"; }
     Mod+Ctrl+T hotkey-overlay-title="Monitor di sistema" { spawn "ptyxis" "--" "btop"; }

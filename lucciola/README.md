@@ -51,6 +51,9 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   cup in the bar, blocks suspend, idle lock and the lid switch until
   midnight (`/usr/libexec/lucciola/keep-awake`); the cup is lit while it
   holds, "Stop Keep Awake" or another click ends it;
+  "Keep Awake Until Tomorrow Night" runs through the end of the next day, and
+  `keep-awake on UNTIL` / `keep-awake schedule START [UNTIL]` take any time
+  `date -d` reads ("tomorrow 08:00", "+3 hours");
 - `ddcutil`, so Noctalia's brightness slider also drives external monitors
   over DDC/CI (the package's udev rule opens the i2c devices to the
   logged-in user, its modules-load entry loads i2c-dev);

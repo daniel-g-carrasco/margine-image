@@ -1,67 +1,131 @@
 #!/usr/bin/bash
-# Keep the laptop awake until local midnight: no suspend, no idle blanking
-# or lock, and closing the lid does nothing. The same "Keep Awake Today" the
-# Arch + Hyprland Margine had, for long copies, downloads or a session left
-# running with the lid closed on the desk.
+# Keep the laptop awake: no suspend, no idle blanking or lock, and closing the
+# lid does nothing. The "Keep Awake Today" the Arch + Hyprland Margine had,
+# for long copies, downloads or a session left running with the lid closed.
 #
-#   keep-awake on | off | toggle | status
+#   keep-awake on [UNTIL]          from now until UNTIL (default: midnight)
+#   keep-awake tomorrow            from now until the end of tomorrow
+#   keep-awake schedule START [UNTIL]
+#                                  start later (default UNTIL: the midnight
+#                                  after START), e.g. schedule "tomorrow 08:00"
+#   keep-awake off                 stop now (a scheduled start stays)
+#   keep-awake cancel              drop the scheduled start
+#   keep-awake toggle | status
+#
+# UNTIL and START are anything `date -d` reads: "tomorrow 23:59", "+3 hours",
+# "2026-10-20 18:00". "on" while already on moves the end later, never
+# earlier.
 #
 # "on" starts a transient user unit that holds a logind block inhibitor for
-# sleep, idle and the lid switch until midnight. The bar shows it through
+# sleep, idle and the lid switch until the end time. The bar shows it through
 # Noctalia's caffeine widget (its click is bound to "toggle" in
 # 20-margine-style.toml), so the icon is lit exactly while the inhibitor
 # holds: the unit turns caffeine on when it starts and off when it stops,
-# whether by "off", by the bar or by midnight.
+# whether by "off", by the bar or at the end time.
 set -euo pipefail
 
-unit=lucciola-keep-awake.service
+# KEEP_AWAKE_TEST=1 runs on separate units and leaves the bar and notifications alone.
+t="${KEEP_AWAKE_TEST:+-test}"
+unit=lucciola-keep-awake$t.service
+sched=lucciola-keep-awake-scheduled$t
+caffeine() { [[ -n "$t" ]] || /usr/bin/noctalia msg "caffeine-$1" >/dev/null 2>&1 || true; }
 self="$(readlink -f "$0")"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola"
+endfile="$state/keep-awake-until$t"
 
 active() { systemctl --user --quiet is-active "$unit"; }
-notify() { command -v notify-send >/dev/null && notify-send -a "Keep Awake" -i "$1" "$2" "$3" >/dev/null 2>&1 || true; }
+notify() { [[ -z "$t" ]] && command -v notify-send >/dev/null && notify-send -a "Keep Awake" -i "$1" "$2" "$3" >/dev/null 2>&1 || true; }
+when() {  # epoch -> "23:59" today, "tomorrow 23:59", or "Sat 18 Oct 23:59"
+  local e=$1 d
+  d=$(date -d "@$e" +%F)
+  if [[ "$d" == "$(date +%F)" ]]; then date -d "@$e" +%H:%M
+  elif [[ "$d" == "$(date -d tomorrow +%F)" ]]; then echo "tomorrow $(date -d "@$e" +%H:%M)"
+  else LC_TIME=C date -d "@$e" "+%a %d %b %H:%M"; fi
+}
+epoch() { date -d "$1" +%s 2>/dev/null || { echo "keep-awake: cannot read the time '$1'" >&2; exit 2; }; }
 
 on() {
+  local end now secs
+  now=$(date +%s)
+  end=$(epoch "${1:-tomorrow 00:00}")
+  (( end > now + 60 )) || end=$(( now + 60 ))
   if active; then
-    notify power-profile-performance-symbolic "Keep Awake is already on" "Until $(systemctl --user show -p Description --value "$unit" | sed 's/.*until //')"
-    return 0
+    local cur; cur=$(cat "$endfile" 2>/dev/null || echo 0)
+    if (( end <= cur )); then
+      notify power-profile-performance-symbolic "Keep Awake is already on" "Until $(when "$cur")."
+      return 0
+    fi
+    systemctl --user stop "$unit"   # restarted below with the later end
   fi
-  local end secs until
-  end=$(date -d 'tomorrow 00:00' +%s)
-  secs=$(( end - $(date +%s) ))
-  (( secs >= 60 )) || secs=60
-  until=$(date -d "@$(( $(date +%s) + secs ))" +%H:%M)
+  secs=$(( end - now ))
+  mkdir -p "$state"; echo "$end" > "$endfile"
   systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
   systemd-run --user --quiet --collect --unit="$unit" \
-    --description="Keep Awake until $until" \
-    -p ExecStartPre="-/usr/bin/noctalia msg caffeine-enable" \
-    -p ExecStopPost="-/usr/bin/noctalia msg caffeine-disable" \
+    --description="Keep Awake until $(when "$end")" \
+    ${t:+--setenv=KEEP_AWAKE_TEST=1} \
+    -p ExecStartPre="-/usr/bin/sh -c '[ -n \"\$KEEP_AWAKE_TEST\" ] || exec /usr/bin/noctalia msg caffeine-enable'" \
+    -p ExecStopPost="-/usr/bin/sh -c '[ -n \"\$KEEP_AWAKE_TEST\" ] || exec /usr/bin/noctalia msg caffeine-disable'" \
     /usr/bin/systemd-inhibit --what=sleep:idle:handle-lid-switch --mode=block \
-      --who="Keep Awake" --why="Keep Awake until $until: no suspend, closing the lid does nothing" \
+      --who="Keep Awake" --why="Keep Awake until $(when "$end"): no suspend, closing the lid does nothing" \
       /usr/bin/sleep "$secs"
-  notify power-profile-performance-symbolic "Keep Awake on until $until" "No suspend, no screen lock; closing the lid does nothing."
+  notify power-profile-performance-symbolic "Keep Awake on until $(when "$end")" "No suspend, no screen lock; closing the lid does nothing."
 }
 
 off() {
   if active; then
     systemctl --user stop "$unit"
+    rm -f "$endfile"
     notify power-profile-balanced-symbolic "Keep Awake off" "The laptop suspends again when you close the lid."
   else
     # The bar may show caffeine on without the inhibitor (a reload, a crash):
     # bring it back in line.
-    /usr/bin/noctalia msg caffeine-disable >/dev/null 2>&1 || true
+    caffeine disable
+  fi
+}
+
+schedule() {
+  local start until s
+  start=$(epoch "${1:?usage: keep-awake schedule START [UNTIL]}")
+  (( start > $(date +%s) )) || { echo "keep-awake: the start time is in the past" >&2; exit 2; }
+  if [[ -n "${2:-}" ]]; then until=$(epoch "$2"); else until=$(date -d "$(date -d "@$start" +%F) +1 day 00:00" +%s); fi
+  (( until > start )) || { echo "keep-awake: the end must come after the start" >&2; exit 2; }
+  systemctl --user stop "$sched.timer" >/dev/null 2>&1 || true
+  systemctl --user reset-failed "$sched.timer" "$sched.service" >/dev/null 2>&1 || true
+  s=$(date -d "@$start" "+%F %T")
+  systemd-run --user --quiet --collect --unit="$sched" --on-calendar="$s" --timer-property=AccuracySec=1s ${t:+--setenv=KEEP_AWAKE_TEST=1} \
+    --description="Keep Awake from $(when "$start") until $(when "$until")" \
+    "$self" on "@$until"
+  notify power-profile-performance-symbolic "Keep Awake scheduled" "From $(when "$start") until $(when "$until")."
+  echo "Keep Awake scheduled from $(when "$start") until $(when "$until")."
+}
+
+cancel() {
+  if systemctl --user --quiet is-active "$sched.timer"; then
+    systemctl --user stop "$sched.timer"
+    notify power-profile-balanced-symbolic "Scheduled Keep Awake cancelled" ""
+    echo "Scheduled Keep Awake cancelled."
+  else
+    echo "Nothing scheduled."
+  fi
+}
+
+status() {
+  if active; then
+    if [[ -f "$endfile" ]]; then echo "on until $(when "$(cat "$endfile")")"
+    else echo "on: $(systemctl --user show -p Description --value "$unit")"; fi
+  else echo "off"; fi
+  if systemctl --user --quiet is-active "$sched.timer"; then
+    echo "scheduled: $(systemctl --user show -p Description --value "$sched.timer" | sed 's/^Keep Awake //')"
   fi
 }
 
 case "${1:-status}" in
-  on) on ;;
+  on) on "${2:-}" ;;
+  tomorrow) on "tomorrow 23:59:59" ;;
+  schedule) schedule "${2:-}" "${3:-}" ;;
   off) off ;;
+  cancel) cancel ;;
   toggle) if active; then off; else on; fi ;;
-  status)
-    if active; then
-      echo "on: $(systemctl --user show -p Description --value "$unit")"
-      systemd-inhibit --list --no-legend | grep -F "Keep Awake" || true
-    else
-      echo off
-    fi ;;
-  *) echo "usage: ${self##*/} on|off|toggle|status" >&2; exit 2 ;;
+  status) status ;;
+  *) echo "usage: ${self##*/} on [UNTIL] | tomorrow | schedule START [UNTIL] | off | cancel | toggle | status" >&2; exit 2 ;;
 esac

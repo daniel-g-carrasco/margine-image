@@ -7,6 +7,14 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-10-15)
+- **Lucciola: Keep Awake until a time, or from a time.** `keep-awake on
+  UNTIL` ends at any time `date -d` reads, `keep-awake tomorrow` (and the
+  launcher "Keep Awake Until Tomorrow Night") runs through the end of the
+  next day, `keep-awake schedule START [UNTIL]` starts later through a
+  transient timer accurate to the second, `keep-awake cancel` drops it.
+  "on" while already on only moves the end later.
+
 ### Added (2026-10-13)
 - **Super+Return opens a new terminal window** on Margine (GNOME) and
   Lucciola (niri): `ptyxis --new-window`. Plain `ptyxis` only raised the

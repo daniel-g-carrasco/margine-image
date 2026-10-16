@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="#d9b88f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Tabler Icons "zzz-off" (MIT, https://tabler.io/icons), recoloured for Lucciola -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="#e8e3dc" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Tabler Icons "zzz-off" (MIT, https://tabler.io/icons), one colour, as the bar glyphs -->
   <path d="M4 12h6l-6 8h6" />
   <path d="M14 4h6l-5.146 6.862m1.146 1.138h4" />
   <path d="M3 3l18 18" />

@@ -1,0 +1,31 @@
+# Keep Awake (/usr/libexec/lucciola/keep-awake) has its own Noctalia plugin,
+# shipped read-only with the image as a path source and enabled here: a bar
+# indicator that appears only while Keep Awake is on or scheduled, a
+# control-centre tile in place of Noctalia's caffeine, a panel with quick
+# durations and a scheduler, and launcher results ("awake", "sveglio", "2h").
+# Noctalia's caffeine is still what keeps its own idle lock away while Keep
+# Awake holds; it just no longer has a button of its own.
+[[plugins.source]]
+name = "lucciola"
+kind = "path"
+location = "/usr/share/lucciola/noctalia/plugins"
+enabled = true
+
+[plugins]
+enabled = ["lucciola/keep_awake"]
+
+[widget.keep-awake]
+type = "lucciola/keep_awake:indicator"
+
+[[control_center.shortcuts]]
+type = "wifi"
+[[control_center.shortcuts]]
+type = "bluetooth"
+[[control_center.shortcuts]]
+type = "lucciola/keep_awake:tile"
+[[control_center.shortcuts]]
+type = "nightlight"
+[[control_center.shortcuts]]
+type = "notification"
+[[control_center.shortcuts]]
+type = "power_profile"

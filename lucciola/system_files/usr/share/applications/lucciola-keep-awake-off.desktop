@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Stop Keep Awake
-Comment=The laptop suspends again on idle and when the lid closes
-Exec=/usr/libexec/lucciola/keep-awake off
-Icon=power-profile-balanced-symbolic
-Categories=System;
-Keywords=awake;keep;sleep;suspend;lid;caffeine;inhibit;
-Terminal=false

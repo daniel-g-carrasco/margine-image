@@ -10,7 +10,7 @@
 #                                  after START), e.g. schedule "tomorrow 08:00"
 #   keep-awake off                 stop now (a scheduled start stays)
 #   keep-awake cancel              drop the scheduled start
-#   keep-awake toggle | status
+#   keep-awake toggle | status [--json]
 #
 # UNTIL and START are anything `date -d` reads: "tomorrow 23:59", "+3 hours",
 # "2026-10-20 18:00". "on" while already on moves the end later, never
@@ -18,10 +18,10 @@
 #
 # "on" starts a transient user unit that holds a logind block inhibitor for
 # sleep, idle and the lid switch until the end time. The bar shows it through
-# Noctalia's caffeine widget (its click is bound to "toggle" in
-# 20-margine-style.toml), so the icon is lit exactly while the inhibitor
-# holds: the unit turns caffeine on when it starts and off when it stops,
-# whether by "off", by the bar or at the end time.
+# Lucciola's Keep Awake plugin for Noctalia (bar indicator, panel,
+# control-centre tile, launcher), which reads `status --json`. The unit also
+# turns Noctalia's caffeine on while it holds: Noctalia's own idle lock and
+# screen-off follow Wayland idle inhibitors, not logind's.
 set -euo pipefail
 
 # KEEP_AWAKE_TEST=1 runs on separate units and leaves the bar and notifications alone.
@@ -32,6 +32,7 @@ caffeine() { [[ -n "$t" ]] || /usr/bin/noctalia msg "caffeine-$1" >/dev/null 2>&
 self="$(readlink -f "$0")"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/lucciola"
 endfile="$state/keep-awake-until$t"
+schedfile="$state/keep-awake-scheduled$t"
 
 active() { systemctl --user --quiet is-active "$unit"; }
 notify() { [[ -z "$t" ]] && command -v notify-send >/dev/null && notify-send -a "Keep Awake" -i "$1" "$2" "$3" >/dev/null 2>&1 || true; }
@@ -59,12 +60,15 @@ on() {
   fi
   secs=$(( end - now ))
   mkdir -p "$state"; echo "$end" > "$endfile"
+  # A scheduled start that has just fired is no longer pending.
+  if [[ -f "$schedfile" ]] && (( $(cut -d" " -f1 "$schedfile") <= now + 5 )); then rm -f "$schedfile"; fi
   systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
   systemd-run --user --quiet --collect --unit="$unit" \
     --description="Keep Awake until $(when "$end")" \
     ${t:+--setenv=KEEP_AWAKE_TEST=1} \
     -p ExecStartPre="-/usr/bin/sh -c '[ -n \"\$KEEP_AWAKE_TEST\" ] || exec /usr/bin/noctalia msg caffeine-enable'" \
     -p ExecStopPost="-/usr/bin/sh -c '[ -n \"\$KEEP_AWAKE_TEST\" ] || exec /usr/bin/noctalia msg caffeine-disable'" \
+    -p ExecStopPost="-/usr/bin/rm -f $endfile" \
     /usr/bin/systemd-inhibit --what=sleep:idle:handle-lid-switch --mode=block \
       --who="Keep Awake" --why="Keep Awake until $(when "$end"): no suspend, closing the lid does nothing" \
       /usr/bin/sleep "$secs"
@@ -95,6 +99,7 @@ schedule() {
   systemd-run --user --quiet --collect --unit="$sched" --on-calendar="$s" --timer-property=AccuracySec=1s ${t:+--setenv=KEEP_AWAKE_TEST=1} \
     --description="Keep Awake from $(when "$start") until $(when "$until")" \
     "$self" on "@$until"
+  mkdir -p "$state"; echo "$start $until" > "$schedfile"
   notify power-profile-performance-symbolic "Keep Awake scheduled" "From $(when "$start") until $(when "$until")."
   echo "Keep Awake scheduled from $(when "$start") until $(when "$until")."
 }
@@ -102,6 +107,7 @@ schedule() {
 cancel() {
   if systemctl --user --quiet is-active "$sched.timer"; then
     systemctl --user stop "$sched.timer"
+    rm -f "$schedfile"
     notify power-profile-balanced-symbolic "Scheduled Keep Awake cancelled" ""
     echo "Scheduled Keep Awake cancelled."
   else
@@ -109,7 +115,15 @@ cancel() {
   fi
 }
 
+status_json() {
+  local a=false u=0 ss=0 su=0
+  if active; then a=true; u=$(cat "$endfile" 2>/dev/null || echo 0); fi
+  if systemctl --user --quiet is-active "$sched.timer" && [[ -f "$schedfile" ]]; then read -r ss su < "$schedfile"; fi
+  printf '{"active":%s,"until":%s,"scheduled_start":%s,"scheduled_until":%s,"now":%s}\n' "$a" "${u:-0}" "${ss:-0}" "${su:-0}" "$(date +%s)"
+}
+
 status() {
+  [[ "${1:-}" == "--json" ]] && { status_json; return; }
   if active; then
     if [[ -f "$endfile" ]]; then echo "on until $(when "$(cat "$endfile")")"
     else echo "on: $(systemctl --user show -p Description --value "$unit")"; fi
@@ -126,6 +140,6 @@ case "${1:-status}" in
   off) off ;;
   cancel) cancel ;;
   toggle) if active; then off; else on; fi ;;
-  status) status ;;
+  status) status "${2:-}" ;;
   *) echo "usage: ${self##*/} on [UNTIL] | tomorrow | schedule START [UNTIL] | off | cancel | toggle | status" >&2; exit 2 ;;
 esac

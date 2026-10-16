@@ -54,16 +54,10 @@ start = ["workspaces", "active_window"]
 center = ["clock"]
 # No control-centre button: Mod+N opens that panel, and the notifications
 # button sits next to where it was (2026-10-11).
-end = ["tray", "privacy", "network", "bluetooth", "caffeine", "volume", "battery", "notifications"]
+end = ["tray", "privacy", "network", "bluetooth", "keep-awake", "volume", "battery", "notifications"]
 
-# The coffee cup is Keep Awake: lit while /usr/libexec/lucciola/keep-awake
-# holds the inhibitor (no suspend, no lock, the lid does nothing, until
-# midnight). A click turns the whole thing on or off, not only the idle
-# inhibitor, so the icon never says "awake" while closing the lid would
-# still suspend. "Keep Awake Today" and "Stop Keep Awake" in the launcher
-# do the same.
-[widget.caffeine.actions]
-left = "exec /usr/libexec/lucciola/keep-awake toggle"
+# keep-awake is Lucciola's Keep Awake plugin indicator (27-keep-awake.toml):
+# shown only while Keep Awake is on or scheduled.
 
 [widget.workspaces]
 style = "minimal"

@@ -47,13 +47,14 @@ verified by the device, rollback, and every Margine fix. This layer adds:
 - Ptyxis in the Noctalia palette: a Noctalia template writes a Ptyxis palette
   (`noctalia.palette`) and selects it once in the default profile; another
   palette picked later in Ptyxis stays;
-- Keep Awake: "Keep Awake Today" in the launcher, or a click on the coffee
-  cup in the bar, blocks suspend, idle lock and the lid switch until
-  midnight (`/usr/libexec/lucciola/keep-awake`); the cup is lit while it
-  holds, "Stop Keep Awake" or another click ends it;
-  "Keep Awake Until Tomorrow Night" runs through the end of the next day, and
-  `keep-awake on UNTIL` / `keep-awake schedule START [UNTIL]` take any time
-  `date -d` reads ("tomorrow 08:00", "+3 hours");
+- Keep Awake, a Noctalia plugin over `/usr/libexec/lucciola/keep-awake`: no
+  suspend, no idle lock and the lid does nothing, now, until a time, or from a
+  scheduled time. A bar indicator appears only while it is on (lit) or
+  scheduled (clock); the control-centre tile takes the place of Noctalia's
+  caffeine; the panel (click the indicator, right-click the tile) has quick
+  durations and a scheduler; the launcher answers "awake", "sveglio", "2h",
+  "18:30". From a terminal: `keep-awake on [UNTIL] | tomorrow | schedule START
+  [UNTIL] | off | cancel | status [--json]`;
 - `ddcutil`, so Noctalia's brightness slider also drives external monitors
   over DDC/CI (the package's udev rule opens the i2c devices to the
   logged-in user, its modules-load entry loads i2c-dev);

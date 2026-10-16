@@ -1,0 +1,71 @@
+# Keep Awake for Lucciola: no suspend, no idle lock, and the lid does nothing,
+# now, until a chosen time, or from a scheduled time. The work is done by
+# /usr/libexec/lucciola/keep-awake (a logind inhibitor in a transient user
+# unit, scheduled starts as transient timers); this plugin is its face:
+#
+#   service   -> polls `keep-awake status --json`, runs the commands the UI
+#                entries send through noctalia.state
+#   indicator -> bar glyph, visible only while active or scheduled
+#   tile      -> control-centre toggle (right click opens the panel)
+#   panel     -> quick durations and a scheduler
+#   launcher  -> "awake", "sveglio", "2h", "18:30" in the launcher
+id = "lucciola/keep_awake"
+name = "Keep Awake"
+version = "1.0.0"
+plugin_api = 24
+author = "lucciola"
+license = "MIT"
+icon = "zzz-off"
+description = "Keep the laptop awake now, until a time, or from a scheduled time; the lid does nothing."
+tags = ["power", "suspend", "lid"]
+dependencies = ["systemd"]
+
+[[setting]]
+key = "command"
+type = "string"
+label_key = "settings.command.label"
+description_key = "settings.command.description"
+default = "/usr/libexec/lucciola/keep-awake"
+advanced = true
+
+[[service]]
+id = "service"
+entry = "service.luau"
+
+[[widget]]
+id = "indicator"
+entry = "indicator.luau"
+
+  [[widget.setting]]
+  key = "show_when_idle"
+  type = "bool"
+  label_key = "settings.show_when_idle.label"
+  description_key = "settings.show_when_idle.description"
+  default = false
+
+  [[widget.setting]]
+  key = "show_time"
+  type = "bool"
+  label_key = "settings.show_time.label"
+  description_key = "settings.show_time.description"
+  default = false
+
+[[shortcut]]
+id = "tile"
+entry = "tile.luau"
+
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 380
+height = 470
+placement = "attached"
+position = "auto"
+open_near_click = true
+
+[[launcher_provider]]
+id = "launcher"
+entry = "launcher.luau"
+prefix = "awake"
+glyph = "zzz-off"
+include_in_global_search = true

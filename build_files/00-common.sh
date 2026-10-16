@@ -151,3 +151,30 @@ verify_rpmfusion_keys() {
   done
   return $rc
 }
+
+# regenerate_initramfs <kver>
+# Write /usr/lib/modules/<kver>/initramfs.img so that the same packages give
+# the same bytes whatever the build date (2026-10-16). Every daily update used
+# to re-download the whole 297 MB initramfs layer although its files were
+# identical day to day: only timestamps differed (the kernel modules are
+# re-signed on every build, so they carry the build time) and the build date
+# in initrd-release, which dracut copies from os-release's PRETTY_NAME.
+#   - --reproducible with SOURCE_DATE_EPOCH = the kernel package's build time
+#     clamps every timestamp dracut would take from the build
+#   - os-release is handed to dracut without the "(YYYYMMDD)" in PRETTY_NAME
+#     and restored right after; the installed system keeps the dated name
+regenerate_initramfs() {
+  local kver="$1" dir="/usr/lib/modules/$1" osr=/usr/lib/os-release epoch saved rc=0
+  command -v zstd >/dev/null || { err "zstd missing: dracut would silently gzip the initramfs"; return 1; }
+  epoch=$(rpm -qf --qf '%{BUILDTIME}\n' "$dir/vmlinuz" | head -n1)
+  [[ "$epoch" =~ ^[0-9]+$ ]] || { err "no build time for the package owning $dir/vmlinuz"; return 1; }
+  saved=$(mktemp)
+  cp -p "$osr" "$saved"
+  sed -i -E 's/^(PRETTY_NAME=".*) \([0-9]{8}\)"$/\1"/' "$osr"
+  DRACUT_NO_XATTR=1 SOURCE_DATE_EPOCH="$epoch" dracut --force --zstd --reproducible \
+      --no-hostonly --no-hostonly-cmdline --add ostree --kver "$kver" \
+      "$dir/initramfs.img" || rc=$?
+  cp -p "$saved" "$osr"
+  rm -f "$saved"
+  return "$rc"
+}

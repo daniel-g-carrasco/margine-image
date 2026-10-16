@@ -102,18 +102,12 @@ fi
 # the bootc/ostree-expected path. --add ostree explicitly includes the
 # ostree dracut module (without which switch-root fails — see comment
 # in custom-kernel/install.sh).
+# regenerate_initramfs (00-common.sh): zstd, --add ostree, and
+# byte-reproducible (same packages, same bytes, whatever the build date).
 if command -v dracut >/dev/null 2>&1; then
-  # zstd-compress explicitly (don't rely on inheriting Bluefin's
-  # 10-compression.conf); fail loudly if zstd is missing rather than let
-  # dracut silently gzip the initramfs.
-  command -v zstd >/dev/null || { log "ERROR: zstd missing — dracut would silently gzip the initramfs"; exit 1; }
-  export DRACUT_NO_XATTR=1
   for kver_dir in /usr/lib/modules/*/; do
     kver=$(basename "$kver_dir")
-    dracut --force --zstd --no-hostonly --no-hostonly-cmdline \
-        --add "ostree" \
-        --kver "$kver" \
-        "${kver_dir}initramfs.img"
+    regenerate_initramfs "$kver" || { log "ERROR: dracut failed for $kver"; exit 1; }
   done
 fi
 

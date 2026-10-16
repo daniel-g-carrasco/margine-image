@@ -8,6 +8,18 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-10-16)
+- **The daily update no longer re-downloads an unchanged initramfs.** The
+  initramfs layer (297 MB) changed on every build although its files were
+  identical day to day: the kernel modules carry the build time after
+  re-signing, and initrd-release carries the build date from os-release.
+  Both dracut calls go through `regenerate_initramfs` (00-common.sh):
+  `--reproducible` with `SOURCE_DATE_EPOCH` set to the kernel package's
+  build time, and os-release handed to dracut without the date. The
+  re-signed modules and vmlinuz get the kernel's build time back, which
+  also keeps their own layers stable. Simulated on two build days: same
+  bytes with the change, different bytes without.
+
+### Changed (2026-10-16)
 - **Fewer pointless PR builds.** Renovate PRs that wait for a human (major
   updates such as the Fedora 45 base, and chunkah) rebase only on a
   conflict: every merge to main used to rebase them, and their vm-test

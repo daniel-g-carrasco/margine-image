@@ -760,6 +760,15 @@ sign_kernel
 
 log "Signing kernel modules with MOK"
 sign_kernel_modules
+# Signing rewrites every module, so each one carried the build time and the
+# modules' layers (and the initramfs that packs them) changed on every build
+# with identical bytes inside. Back to the kernel package's build time, the
+# same clock vmlinuz is signed with.
+_mod_epoch=$(rpm -q --qf '%{BUILDTIME}\n' "$KERNEL_PKG" | head -n1)
+[[ "$_mod_epoch" =~ ^[0-9]+$ ]] || { err "no build time for $KERNEL_PKG"; exit 1; }
+find "/usr/lib/modules/${KERNEL_VERSION}" -type f \( -name '*.ko' -o -name '*.ko.*' \) \
+  -exec touch -h -d "@${_mod_epoch}" {} +
+touch -h -d "@${_mod_epoch}" "/usr/lib/modules/${KERNEL_VERSION}/vmlinuz"
 
 log "Creating MOK enroll unit for first-boot import"
 create_mok_enroll_unit
@@ -845,14 +854,11 @@ log "Regenerating initramfs for all installed kernels (generic, bootc-path, ostr
 # inheriting Bluefin's 10-compression.conf; nothing pins it). Pass --zstd
 # explicitly AND fail loudly if the tool is missing, so dracut can never
 # silently fall back to gzip (slower boot, bigger initramfs).
-command -v zstd >/dev/null || { err "zstd binary missing — dracut would silently gzip the initramfs"; exit 1; }
-export DRACUT_NO_XATTR=1
+# regenerate_initramfs (00-common.sh) passes --zstd and fails when zstd is
+# missing, and makes the result byte-reproducible.
 for kver_dir in /usr/lib/modules/*/; do
   kver=$(basename "$kver_dir")
-  dracut --force --zstd --no-hostonly --no-hostonly-cmdline \
-      --add "ostree" \
-      --kver "$kver" \
-      "${kver_dir}initramfs.img"
+  regenerate_initramfs "$kver" || { err "dracut failed for $kver"; exit 1; }
   log "Wrote ${kver_dir}initramfs.img ($(du -h "${kver_dir}initramfs.img" | cut -f1))"
 done
 

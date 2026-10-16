@@ -53,7 +53,7 @@ on() {
   if active; then
     local cur; cur=$(cat "$endfile" 2>/dev/null || echo 0)
     if (( end <= cur )); then
-      notify power-profile-performance-symbolic "Keep Awake is already on" "Until $(when "$cur")."
+      notify lucciola-keep-awake "Keep Awake is already on" "Until $(when "$cur")."
       return 0
     fi
     systemctl --user stop "$unit"   # restarted below with the later end
@@ -72,14 +72,14 @@ on() {
     /usr/bin/systemd-inhibit --what=sleep:idle:handle-lid-switch --mode=block \
       --who="Keep Awake" --why="Keep Awake until $(when "$end"): no suspend, closing the lid does nothing" \
       /usr/bin/sleep "$secs"
-  notify power-profile-performance-symbolic "Keep Awake on until $(when "$end")" "No suspend, no screen lock; closing the lid does nothing."
+  notify lucciola-keep-awake "Keep Awake on until $(when "$end")" "No suspend, no screen lock; closing the lid does nothing."
 }
 
 off() {
   if active; then
     systemctl --user stop "$unit"
     rm -f "$endfile"
-    notify power-profile-balanced-symbolic "Keep Awake off" "The laptop suspends again when you close the lid."
+    notify lucciola-keep-awake-off "Keep Awake off" "The laptop suspends again when you close the lid."
   else
     # The bar may show caffeine on without the inhibitor (a reload, a crash):
     # bring it back in line.
@@ -100,7 +100,7 @@ schedule() {
     --description="Keep Awake from $(when "$start") until $(when "$until")" \
     "$self" on "@$until"
   mkdir -p "$state"; echo "$start $until" > "$schedfile"
-  notify power-profile-performance-symbolic "Keep Awake scheduled" "From $(when "$start") until $(when "$until")."
+  notify lucciola-keep-awake-scheduled "Keep Awake scheduled" "From $(when "$start") until $(when "$until")."
   echo "Keep Awake scheduled from $(when "$start") until $(when "$until")."
 }
 
@@ -108,7 +108,7 @@ cancel() {
   if systemctl --user --quiet is-active "$sched.timer"; then
     systemctl --user stop "$sched.timer"
     rm -f "$schedfile"
-    notify power-profile-balanced-symbolic "Scheduled Keep Awake cancelled" ""
+    notify lucciola-keep-awake-off "Scheduled Keep Awake cancelled" ""
     echo "Scheduled Keep Awake cancelled."
   else
     echo "Nothing scheduled."

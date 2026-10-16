@@ -5,7 +5,8 @@
 #
 #   service   -> polls `keep-awake status --json`, runs the commands the UI
 #                entries send through noctalia.state
-#   indicator -> bar glyph, visible only while active or scheduled
+#   indicator -> bar glyph: lit while on, a clock while scheduled, dim when
+#                off (show_when_idle = false hides it then)
 #   tile      -> control-centre toggle (right click opens the panel)
 #   panel     -> quick durations and a scheduler
 #   launcher  -> "awake", "sveglio", "2h", "18:30" in the launcher
@@ -41,7 +42,7 @@ entry = "indicator.luau"
   type = "bool"
   label_key = "settings.show_when_idle.label"
   description_key = "settings.show_when_idle.description"
-  default = false
+  default = true
 
   [[widget.setting]]
   key = "show_time"

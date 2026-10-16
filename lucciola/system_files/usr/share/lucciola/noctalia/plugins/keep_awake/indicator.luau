@@ -1,7 +1,7 @@
 --!nonstrict
 -- Keep Awake bar indicator. Lit (primary) while Keep Awake holds, a clock
--- while a start is scheduled, hidden otherwise (show_when_idle keeps a dim
--- glyph). Click opens the panel; right click turns it on until midnight or
+-- while a start is scheduled, dim when off (hidden then if show_when_idle is
+-- false). Click opens the panel; right click turns it on until midnight or
 -- off.
 
 local common = require("./lib/common.luau")

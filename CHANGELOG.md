@@ -7,6 +7,13 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-10-16)
+- **Lucciola follows the nightly :stable again.** base-watch rebuilds and
+  smoke-tests :stable through workflow_dispatch, and GitHub fires no
+  workflow_run for runs started with GITHUB_TOKEN, so build-lucciola never
+  ran: :stable moved on the 15th and 16th, :lucciola stayed on the 14th.
+  A dispatched smoke-boot that promoted now starts the Lucciola build.
+
 ### Added (2026-10-16)
 - **Lucciola: Keep Awake gets its own Noctalia plugin.** A bar indicator
   lit while Keep Awake is on, a clock while it is scheduled, dim when off,

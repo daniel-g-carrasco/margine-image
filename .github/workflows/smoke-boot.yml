@@ -79,6 +79,7 @@ jobs:
     permissions:
       contents: read
       packages: write   # needed for the candidate→stable promotion step
+      actions: write    # dispatch build-lucciola after a dispatched promotion
 
     steps:
       # The Layer C injection + boot-watch logic lives in versioned,
@@ -394,6 +395,22 @@ jobs:
             echo "- Layer C GUI probe: \`${{ steps.boot.outputs.gui || 'n/a' }}\`"
             echo "- Gaming-native dry-run: \`${{ steps.boot.outputs.gaming || 'n/a' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # build-lucciola rebuilds on every green smoke-boot through its
+      # workflow_run trigger, but GitHub fires no workflow_run for a run that
+      # was itself started with GITHUB_TOKEN: base-watch's nightly
+      # build + smoke-boot promoted :stable on 2026-10-15 and 16 while
+      # :lucciola stayed on the 14th. A dispatched run that promoted starts
+      # the Lucciola build itself; a workflow_run-triggered one leaves it to
+      # the trigger, so nothing builds twice.
+      - name: Rebuild Lucciola on the new :stable (dispatched runs)
+        if: success() && steps.promote.outcome == 'success' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run build-lucciola.yml --repo "${{ github.repository }}" --ref main
+          echo "::notice::build-lucciola dispatched on the new :stable"
 
       # Last step, so the message reports what actually happened: the
       # signature gate and the promotion run after the boot verdict.

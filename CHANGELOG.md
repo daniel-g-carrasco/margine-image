@@ -8,6 +8,16 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-10-17)
+- **The daily update no longer re-downloads 189 MB of unchanged files.**
+  Between two builds of the same packages the `chunkah/unclaimed` layer
+  still changed: the kernel's scriptlets leave a boot entry in `/boot`
+  named after the build container's random machine id. The image's `/boot`
+  is now emptied at the end of the build, as the base images ship it (28 MB
+  of kernel copies bootc never uses). With the initramfs fix of 2026-10-16,
+  a build with no package changes differs from the last one only by the
+  rpm database (33 MB) and Margine's own changed files.
+
+### Changed (2026-10-17)
 - **Lucciola: emoji from Noctalia's launcher.** Mod+Period opens the
   launcher on its emoji picker instead of Smile, and new Lucciola installs
   no longer get the Smile Flatpak: it is a picker for GNOME, paired with

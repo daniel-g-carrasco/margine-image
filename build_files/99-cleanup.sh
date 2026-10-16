@@ -51,6 +51,16 @@ rmdir /var/lib/authselect 2>/dev/null || true
 # /run/systemd/resolve/stub-resolv.conf) and cannot be removed from inside;
 # their empty mount points are the residue the security baseline lists.
 find /run -mindepth 1 -delete 2>/dev/null || true
+# /boot: kernel-install, run by the kernel package's scriptlets, leaves 28 MB
+# there: copies of vmlinuz, System.map and config that no package owns, the
+# %ghost symvers, and a BLS entry named after the build container's random
+# machine id (loader/entries/<id>-<kver>.conf). bootc boots the kernel from
+# /usr/lib/modules and ostree writes the host's own entries, so none of it is
+# ever used, and the bases ship an empty /boot. That one random file name
+# moved the whole chunkah/unclaimed layer (189 MB) between two builds of the
+# same packages: measured file by file on 2026-10-17, it was the only
+# difference besides a real script change.
+find /boot -mindepth 1 -delete 2>/dev/null || true
 rm -rf /var/roothome/.android /var/roothome/.cache /var/roothome/.mozc
 rm -f /usr/lib/sysimage/libdnf5/transaction_history.sqlite \
       /usr/lib/sysimage/libdnf5/transaction_history.sqlite-shm \

@@ -39,6 +39,11 @@ notify() { [[ -z "$t" ]] && command -v notify-send >/dev/null && notify-send -a 
 when() {  # epoch -> "23:59" today, "tomorrow 23:59", or "Sat 18 Oct 23:59"
   local e=$1 d
   d=$(date -d "@$e" +%F)
+  # Midnight is the end of the day before it, not the start of the next.
+  if [[ "$(date -d "@$e" +%H:%M)" == "00:00" ]]; then
+    if [[ "$d" == "$(date -d tomorrow +%F)" ]]; then echo "midnight"; return; fi
+    if [[ "$d" == "$(date -d '2 days' +%F)" ]]; then echo "tomorrow at midnight"; return; fi
+  fi
   if [[ "$d" == "$(date +%F)" ]]; then date -d "@$e" +%H:%M
   elif [[ "$d" == "$(date -d tomorrow +%F)" ]]; then echo "tomorrow $(date -d "@$e" +%H:%M)"
   else LC_TIME=C date -d "@$e" "+%a %d %b %H:%M"; fi

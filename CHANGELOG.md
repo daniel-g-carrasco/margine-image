@@ -10,8 +10,8 @@ stable release is cut.
 ### Added (2026-10-16)
 - **Lucciola: Keep Awake gets its own Noctalia plugin.** A bar indicator
   lit while Keep Awake is on, a clock while it is scheduled, dim when off,
-  with the end time in its tooltip; full-colour notification icons (on, off,
-  scheduled) instead of symbolic ones; a control-centre tile in place of Noctalia's
+  with the end time in its tooltip; notification icons drawn from the same Tabler
+  glyphs as the bar, in Lucciola's warm tones, instead of symbolic ones; a control-centre tile in place of Noctalia's
   caffeine; a panel with quick durations (1 h, 3 h, midnight, tomorrow
   night) and a scheduler (from now or a day and time, to a day and time);
   launcher results for "awake", "sveglio", "2h", "18:30". It replaces the

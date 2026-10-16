@@ -50,7 +50,7 @@ verified by the device, rollback, and every Margine fix. This layer adds:
 - Keep Awake, a Noctalia plugin over `/usr/libexec/lucciola/keep-awake`: no
   suspend, no idle lock and the lid does nothing, now, until a time, or from a
   scheduled time. A bar indicator is lit while it is on, a clock while it is
-  scheduled, dim when off; notifications carry full-colour icons; the
+  scheduled, dim when off; notifications carry the bar's glyphs; the
   control-centre tile takes the place of Noctalia's
   caffeine; the panel (click the indicator, right-click the tile) has quick
   durations and a scheduler; the launcher answers "awake", "sveglio", "2h",

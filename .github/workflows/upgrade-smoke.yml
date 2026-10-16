@@ -103,6 +103,8 @@ jobs:
           resolve() {
             local ref="$1" base digest
             if [[ "$ref" == *"@sha256:"* ]]; then base="${ref%@*}"; digest="${ref#*@}"
+              # tag@digest: the digest wins; skopeo refuses a tag and a digest together
+              if [[ "${base##*/}" == *:* ]]; then base="${base%:*}"; fi
             else base="${ref%:*}"; digest="$(sudo skopeo inspect --no-tags --format '{{.Digest}}' "docker://$ref")"; fi
             echo "${base}@${digest}"
           }

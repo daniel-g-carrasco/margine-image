@@ -147,6 +147,24 @@ for t in standard administrator; do
   grep -q '^Session=lucciola$' "$f" || { echo "ERROR: $f not rewritten" >&2; exit 1; }
 done
 
+# 2d. Emoji: Noctalia's launcher has an emoji picker (Mod+Period opens it
+#     on "/emo"), so Margine's Smile, an emoji picker for GNOME paired with
+#     a Shell extension 2b removes, is not preinstalled. An install that
+#     already has it keeps it; Bazaar removes it.
+pre=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
+grep -q '^\[Flatpak Preinstall it.mijorus.smile\]$' "$pre" || { echo "ERROR: Smile is no longer in $pre: drop step 2d" >&2; exit 1; }
+python3 - "$pre" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+s = re.sub(r"\[Flatpak Preinstall it\.mijorus\.smile\]\n(?:[^\[\n].*\n)*\n?", "", s)
+open(p, "w").write(s)
+PY
+bake=/usr/share/margine/installer-flatpaks-base
+sed -i -E '/^it\.mijorus\.smile([[:space:]]|$)/d' "$bake"
+if grep -q 'it.mijorus.smile' "$pre" "$bake"; then echo "ERROR: Smile still preinstalled" >&2; exit 1; fi
+log "Smile left out of the preinstalled Flatpaks (Noctalia's launcher picks emoji)"
+
 # 3. Identity. Only the public name changes: ID, VARIANT_ID and the rest stay
 #    Margine's, because the tooling underneath (validators, status, update
 #    helpers) is Margine's and keys on them.

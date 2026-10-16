@@ -7,6 +7,13 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-10-17)
+- **Lucciola: emoji from Noctalia's launcher.** Mod+Period opens the
+  launcher on its emoji picker instead of Smile, and new Lucciola installs
+  no longer get the Smile Flatpak: it is a picker for GNOME, paired with
+  a Shell extension Lucciola does not ship. An install that has it keeps
+  it (Bazaar removes it); Margine's GNOME is unchanged.
+
 ### Fixed (2026-10-16)
 - **Three places still named Bluefin after the base switch.**
   `margine-status` printed the lineage as "Fedora → Bluefin" from

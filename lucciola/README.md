@@ -8,8 +8,9 @@ signed with the Margine key, Secure Boot, TPM2 disk unlock, image signatures
 verified by the device, rollback, and every Margine fix. This layer adds:
 
 - `niri` and `xwayland-satellite` from Fedora, and `noctalia` from Fedora at a
-  pinned version (`NOCTALIA_EVR` in the Containerfile: bump it only together
-  with a test boot, since upstream supports only its latest release);
+  pinned version (`NOCTALIA_VR` in the Containerfile, the Fedora tag comes
+  from the base: bump it only together with a test boot, since upstream
+  supports only its latest release);
 - the niri defaults in `/usr/share/lucciola/niri/config.kdl`, loaded through
   `/etc/niri/config.kdl`, with Margine's keybindings; personal settings go in
   `~/.config/niri/lucciola.kdl`;

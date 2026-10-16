@@ -23,9 +23,12 @@ matches the base; go through this list first, then bump the number.
 ## Release-pinned names in this tree
 
 - `build_files/45-wsf/install.sh`: `WSF_RPM` ends in `fc44`, and
-  `.github/workflows/wsf-pin-sha.yml` builds the same name.
-- `lucciola/Containerfile`: `NOCTALIA_EVR=...fc44`; check the Noctalia
-  version Fedora ships on the new release and test-boot Lucciola.
+  `.github/workflows/wsf-pin-sha.yml` builds the same name. The fc44 RPM
+  installs and runs on Fedora 45 (no Python ABI pin, libinput's getters
+  unchanged), so a fc45 WSF release can follow at its own pace.
+- `lucciola/Containerfile`: `NOCTALIA_VR` carries no Fedora tag (build.sh
+  adds the base's); check that the new release ships the same
+  version-release and test-boot Lucciola.
 - `build_files/40-spec-scripts/scripts/validate-baseline-packages`:
   `quay.io/fedora/fedora:44`.
 - `build_files/40-spec-scripts/declarations/margine-atomic.yaml`: the

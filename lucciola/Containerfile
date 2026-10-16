@@ -18,8 +18,9 @@ COPY build.sh /build.sh
 
 FROM ${BASE_IMAGE}
 
-# Bump only together with a test boot: see the comment in build.sh.
-ARG NOCTALIA_EVR=5.2.1-1.fc44
+# Bump only together with a test boot: see the comment in build.sh. Version
+# and release only: build.sh adds the base's Fedora tag (.fc44, .fc45).
+ARG NOCTALIA_VR=5.2.1-1
 
 COPY system_files/ /
 
@@ -29,5 +30,5 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/var/cache \
     --mount=type=tmpfs,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
-    NOCTALIA_EVR="${NOCTALIA_EVR}" bash /ctx/build.sh \
+    NOCTALIA_VR="${NOCTALIA_VR}" bash /ctx/build.sh \
  && bootc container lint

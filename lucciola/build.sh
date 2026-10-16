@@ -6,16 +6,19 @@ set -euo pipefail
 
 log() { echo "[lucciola-build] $*"; }
 
-: "${NOCTALIA_EVR:?NOCTALIA_EVR must be set (the pinned noctalia version)}"
+: "${NOCTALIA_VR:?NOCTALIA_VR must be set (the pinned noctalia version-release)}"
+# The Fedora tag comes from the base, so the pin holds across a Fedora
+# release: the same version-release, built for the release underneath.
+NOCTALIA_EVR="${NOCTALIA_VR}.fc$(rpm -E %fedora)"
 
 # 1. Packages. Weak dependencies off: niri's package recommends waybar,
 #    fuzzel, alacritty and swaylock, a second bar, launcher, terminal and
-#    locker next to Noctalia, which owns those jobs (its other recommendations,
-#    gnome-keyring, wireplumber and the GNOME/GTK portals, are already in the
-#    Margine image).
+#    locker next to Noctalia, which owns those jobs. Its other recommendations
+#    are covered by the Margine image: wireplumber, the GNOME/GTK portals, and
+#    gnome-keyring, whose job (the Secret Service) oo7 does from Fedora 45.
 #    Noctalia is pinned: upstream supports only its latest release and Fedora
 #    ships every one within a day, so a new version arrives only through a
-#    reviewed change of NOCTALIA_EVR, never by itself.
+#    reviewed change of NOCTALIA_VR, never by itself.
 #    ddcutil: Noctalia's brightness slider drives external monitors over
 #    DDC/CI when it finds it (GNOME has no such path, so Margine itself
 #    does not carry it). The Fedora package brings the udev rule that

@@ -3,13 +3,12 @@
 #
 # Shows your booted deployment vs the latest published image of the tag it
 # follows (:stable for most installs), plus the
-# Fedora → Bluefin → Margine lineage and the running kernel. Read-only; makes
+# Fedora → Universal Blue → Margine lineage and the running kernel. Read-only; makes
 # no changes. Mirrors the website's /status page from the machine's POV.
 set -uo pipefail
 
 IMAGE="ghcr.io/daniel-g-carrasco/margine:stable"
 REPO="${IMAGE%:*}"
-BLUEFIN="ghcr.io/ublue-os/bluefin-dx:stable"
 SITE="https://margine.dev/status"
 
 if [ -t 1 ]; then
@@ -62,8 +61,23 @@ kernel="$(uname -r)"
 # --- latest published image of the followed tag + lineage ---
 latest_ver="$(label "$IMAGE" org.opencontainers.image.version)"; latest_ver="${latest_ver:-unknown}"
 latest_digest="$(digest "$IMAGE")"
-blu_ver="$(label "$BLUEFIN" org.opencontainers.image.version)"; blu_ver="${blu_ver:-unknown}"
-fedora_ver="${blu_ver%%.*}"; [ "$fedora_ver" = "$blu_ver" ] && fedora_ver="44"
+# The base the latest image was built FROM, as the image's own label names
+# it: Bluefin until 2026-10-11, Universal Blue's silverblue-main since.
+# Lucciola is built FROM a Margine image: follow that one hop down.
+base_ref="$(label "$IMAGE" org.opencontainers.image.base.name)"
+case "$base_ref" in
+  "$REPO":*|"$REPO"@*) base_ref="$(label "$base_ref" org.opencontainers.image.base.name)" ;;
+esac
+case "$base_ref" in
+  *silverblue-main*) base_name="Universal Blue main" ;;
+  *bluefin*)         base_name="Bluefin" ;;
+  "")                base_name="base" ;;
+  *)                 base_name="${base_ref##*/}"; base_name="${base_name%%:*}" ;;
+esac
+base_ver=""; [ -n "$base_ref" ] && base_ver="$(label "$base_ref" org.opencontainers.image.version)"
+base_ver="${base_ver:-unknown}"
+fedora_ver="${base_ver%%.*}"
+[ "$fedora_ver" = "$base_ver" ] && fedora_ver="$(sed -n 's/^VERSION_ID=//p' /usr/lib/os-release)"
 
 # --- verdict ---
 # Distinguish the two failure modes so we never blame the network when it was
@@ -95,7 +109,7 @@ printf '  %-15s %s%s%s   %s← your deployment%s\n' "Margine OS"     "$c_ember" 
 [ -n "$staged_ver" ] && \
 printf '  %-15s %s   %s(applies at next boot)%s\n' "Staged"        "$staged_ver" "$c_dim" "$c_reset"
 printf '  %-15s %s   %s\n'                          "Latest :${TAG}" "$latest_ver" "$verdict"
-printf '  %-15s Fedora %s → Bluefin %s → Margine\n' "Chain"          "$fedora_ver" "$blu_ver"
+printf '  %-15s Fedora %s → %s %s → Margine\n' "Chain"          "$fedora_ver" "$base_name" "$base_ver"
 kdef=EEVDF; grep -q '^CONFIG_SCHED_BORE=y' "/usr/lib/modules/$(uname -r)/config" 2>/dev/null && kdef=BORE
 printf '  %-15s %s  %s(CachyOS / %s)%s\n'         "Kernel"         "$kernel" "$c_dim" "$kdef" "$c_reset"
 if [ "$uupd_result" = "timeout" ]; then

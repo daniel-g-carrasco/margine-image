@@ -43,8 +43,7 @@ concurrency:
 env:
   IMAGE_NAME: margine
   IMAGE_DESC: "Margine OS, LTS kernel variant for x86-64-v2 CPUs (experimental): kernel-cachyos-lts, MOK-signed"
-  IMAGE_KEYWORDS: "bootc,fedora,bluefin,cachyos,lts,x86-64-v2"
-  BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
+  IMAGE_KEYWORDS: "bootc,ublue,silverblue,cachyos,lts,x86-64-v2"
 jobs:
   build-lts:
     runs-on: ubuntu-26.04
@@ -75,6 +74,11 @@ jobs:
           [ -n "$TAG" ] || TAG=lts
           [ "${{ github.event_name }}" = push ] && TAG=lts-test
           command -v skopeo >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          # The build runs FROM the Containerfile's default base; the labels
+          # name that one (they named bluefin-dx:stable until 2026-10-16).
+          BASE_IMAGE="$(sed -nE 's/^ARG BASE_IMAGE=(.*)$/\1/p' Containerfile | head -1)"
+          [ -n "$BASE_IMAGE" ] || { echo "::error::no ARG BASE_IMAGE in the Containerfile"; exit 1; }
+          echo "BASE_IMAGE=$BASE_IMAGE" >> "$GITHUB_ENV"
           DIGEST="$(skopeo inspect --no-tags "docker://${BASE_IMAGE}" --format '{{.Digest}}' 2>/dev/null || echo '')"
           {
             echo "tag=$TAG"

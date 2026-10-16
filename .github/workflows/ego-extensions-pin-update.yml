@@ -14,7 +14,7 @@ name: EGO extensions pin update
 # the build still verifies the sha256.
 #
 # Each run: resolve the GNOME Shell major the NEXT build will use (from the
-# bluefin-dx:stable base, same source the build reads via `gnome-shell --version`),
+# base the Containerfile names, same source the build reads via `gnome-shell --version`),
 # ask EGO for the latest version approved for THAT shell, and if the version_tag
 # differs from the pin, recompute the sha256 and open a PR. EGO only serves
 # shell-compatible reviewed versions, so a bump can never introduce an
@@ -38,7 +38,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BASE_IMAGE: ghcr.io/ublue-os/bluefin-dx:stable
   EXT_FILE: build_files/build-margine-extensions.sh
 
 jobs:
@@ -55,6 +54,11 @@ jobs:
         id: shell
         run: |
           set -euo pipefail
+          # The base the next build uses: the Containerfile's default, read the
+          # way build.yml reads it (it was bluefin-dx:stable here until the
+          # base switch of 2026-10-11 left this behind).
+          BASE_IMAGE="$(sed -nE 's/^ARG BASE_IMAGE=(.*)$/\1/p' Containerfile | head -1)"
+          [ -n "$BASE_IMAGE" ] || { echo "::error::no ARG BASE_IMAGE in the Containerfile"; exit 1; }
           ver="$(docker run --rm "$BASE_IMAGE" gnome-shell --version | awk '{print $3}')"
           major="${ver%%.*}"
           [ -n "$major" ] || { echo "::error::could not read gnome-shell version from $BASE_IMAGE"; exit 1; }

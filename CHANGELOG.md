@@ -7,6 +7,19 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-10-16)
+- **Three places still named Bluefin after the base switch.**
+  `margine-status` printed the lineage as "Fedora → Bluefin" from
+  `bluefin-dx:stable`; it now reads the base from the image's own
+  `base.name` label (through the Margine image, for Lucciola) and prints
+  "Fedora 44 → Universal Blue main 44.YYYYMMDD.N → Margine". The weekly
+  EGO pin check read the GNOME Shell version from `bluefin-dx:stable`
+  instead of the base the build uses: with Fedora 45 it would have looked
+  for GNOME 50 extensions on a GNOME 51 base. The LTS image's
+  `base.name`/`base.digest` labels named `bluefin-dx:stable` although the
+  image is built on `silverblue-main`. All three now read the
+  Containerfile's `BASE_IMAGE`, as `build.yml` does.
+
 ### Changed (2026-10-16)
 - **The daily update no longer re-downloads an unchanged initramfs.** The
   initramfs layer (297 MB) changed on every build although its files were

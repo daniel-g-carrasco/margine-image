@@ -7,6 +7,15 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (2026-10-16)
+- **Fewer pointless PR builds.** Renovate PRs that wait for a human (major
+  updates such as the Fedora 45 base, and chunkah) rebase only on a
+  conflict: every merge to main used to rebase them, and their vm-test
+  label turned each rebase into a full image build. The security baseline
+  accepts the line a Fedora SELinux update added to
+  `file_contexts.subs_dist` (rpm-ostree issue 5616), which made every PR
+  image build fail the drift check since 2026-10-07.
+
 ### Fixed (2026-10-16)
 - **Lucciola follows the nightly :stable again.** base-watch rebuilds and
   smoke-tests :stable through workflow_dispatch, and GitHub fires no

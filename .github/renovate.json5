@@ -93,6 +93,26 @@
       ],
     },
     {
+      // PRs that wait for a human (major updates, chunkah) rebase only on a
+      // conflict, not every time main moves. With 'behind-base-branch' each
+      // merge to main rebased them, and the vm-test label made each rebase a
+      // full 30-45 minute image build: on 2026-10-16 three merges meant six
+      // builds for #501 (Fedora 45 base) and #503 (chunkah), red or cancelled,
+      // each one a notification. Automerged PRs keep rebasing on their own;
+      // a manual PR is brought up to date with the "rebase" checkbox in its
+      // description when someone is ready to look at it.
+      matchUpdateTypes: [
+        'major',
+      ],
+      rebaseWhen: 'conflicted',
+    },
+    {
+      matchDepNames: [
+        'quay.io/coreos/chunkah',
+      ],
+      rebaseWhen: 'conflicted',
+    },
+    {
       enabled: false,
       matchUpdateTypes: [
         'digest',

@@ -8,6 +8,14 @@ stable release is cut.
 ## [Unreleased]
 
 ### Changed (2026-10-17)
+- **And 49.5 MB less again.** `/usr/lib/os-release` carries the build date,
+  so it changes every day, and the chunker filed it with fedora-release:
+  the date dragged a 49.5 MB layer of unrelated packages into every update.
+  It is now its own layer (chunkah's `user.component` xattr). A build with
+  no package changes then differs from the last one by the rpm database
+  and a few bytes.
+
+### Changed (2026-10-17)
 - **The daily update no longer re-downloads 189 MB of unchanged files.**
   Between two builds of the same packages the `chunkah/unclaimed` layer
   still changed: the kernel's scriptlets leave a boot entry in `/boot`

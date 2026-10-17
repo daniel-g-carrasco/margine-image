@@ -141,6 +141,22 @@ echo "Rebuilding the system fontconfig cache against the normalised mtimes"
 fc-cache -s -r >/dev/null 2>&1 || true
 find /usr/lib/fontconfig/cache -xdev -exec touch -h -d @0 {} + 2>/dev/null || true
 
+# os-release carries the build date (PRETTY_NAME "Margine OS 44 (YYYYMMDD)"),
+# so it differs on every build day. chunkah files it under fedora-release,
+# and that one line moved the whole 49.5 MB layer of the packages packed
+# with it between two builds of the same packages (measured file by file,
+# 2026-10-17). Its own component, marked daily, keeps the change to the
+# file. The xattr component claims before the rpmdb does (chunkah repo
+# priority 0 vs 10), and the image reaches chunkah through a podman image
+# mount, so the xattr written here is what chunkah reads. Set last: a later
+# rewrite of the file (sed -i) would drop it.
+python3 - <<'PY'
+import os
+for path in ("/usr/lib/os-release",):
+    os.setxattr(path, "user.component", b"margine/os-release")
+    os.setxattr(path, "user.update-interval", b"daily")
+PY
+
 # Last: the rpmdb's SQLite shared-memory index (rpmdb.sqlite-shm). The
 # one left by the build's dnf transactions differs on every build, but the
 # file itself is REQUIRED: the rpmdb is in WAL mode and cannot be opened

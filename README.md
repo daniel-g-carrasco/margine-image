@@ -183,9 +183,18 @@ below) Secure Boot refuses to start it.
 
 ```sh
 /lib64/ld-linux-x86-64.so.2 --help | grep x86-64-v3   # must print a line
-rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:stable
+rpm-ostree rebase ostree-unverified-registry:ghcr.io/daniel-g-carrasco/margine:stable
 systemctl reboot
 ```
+
+The first pull is unverified on purpose: a stock Fedora system has no
+signature policy for Margine and its default accepts anything, so
+rpm-ostree refuses the signed transport outright ("refusing usage"), and on
+Universal Blue images the signed transport would fall through to that same
+accept-anything rule. Margine's policy arrives with the image, and at the
+first boot `margine-signed-origin.service` moves the system to
+`ostree-image-signed:` on the same tag, so every update after that is
+signature-checked.
 
 After the reboot, two more one-time steps:
 
@@ -285,11 +294,12 @@ key. You keep the sched_ext scheduler picker; you lose BORE and run the
 and it has not been booted on real x86-64-v2 hardware yet (issue #382):
 
 ```sh
-rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:lts
+rpm-ostree rebase ostree-unverified-registry:ghcr.io/daniel-g-carrasco/margine:lts
 systemctl reboot
 ```
 
-Then the same two one-time steps as Option B.
+(From a Margine install, `ostree-image-signed:docker://` works too.) Then
+the same two one-time steps as Option B.
 
 ### Post-install verification
 

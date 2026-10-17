@@ -176,7 +176,10 @@ Fully supported alternative, handy if you already run a Fedora Atomic
 system (Silverblue, Bluefin, Aurora, Bazzite). Boot it once, check that the CPU is
 x86-64-v3 (see the hardware requirement above; a rebase on an older CPU
 boots to a black screen and you will have to pick the previous
-deployment in GRUB to get back), then switch to the Margine image:
+deployment in GRUB to get back), then switch to the Margine image. If
+Secure Boot is on, turn it off in the firmware first: the Margine kernel is
+signed with Margine's own key, and until that key is enrolled (step 1
+below) Secure Boot refuses to start it.
 
 ```sh
 /lib64/ld-linux-x86-64.so.2 --help | grep x86-64-v3   # must print a line
@@ -189,11 +192,15 @@ After the reboot, two more one-time steps:
 1. **Enroll the Margine signing key into Secure Boot.** After rebasing,
    `mok-enroll.service` submits the request during the first Margine
    boot. Reboot once more; a blue/grey screen called **MOK Manager**
-   appears automatically. Choose `Enroll MOK` -> `Continue` -> `Yes`,
+   appears automatically (it waits 10 seconds; run
+   `ujust margine-secureboot enroll` before rebooting to make it wait
+   for you). Choose `Enroll MOK` -> `Continue` -> `Yes`,
    type the passphrase **`margine`** when prompted, and reboot. From
    this point on the kernel boots normally under Secure Boot and you
-   will not see this screen again. Full walkthrough with the exact
-   screen-by-screen flow is at
+   will not see this screen again. If you turned Secure Boot off, turn
+   it back on now: `ujust margine-secureboot` tells you when the key is
+   in and walks you through the firmware step. Full walkthrough with
+   the exact screen-by-screen flow is at
    <https://margine.dev/docs/install-iso>.
 2. Run **`ujust margine-bootstrap`**.
 

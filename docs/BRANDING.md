@@ -68,6 +68,7 @@ These five cut across almost every touchpoint below:
 | Phone Camera app (name/icon/id) | `…/applications/dev.margine.PhoneCam.desktop` + `…/icons/hicolor/scalable/apps/dev.margine.PhoneCam.svg` + `…/libexec/margine/phone-cam-gui` | `dev.margine.PhoneCam`, `Margine Phone Cam` |
 | fastfetch / MOTD / `/etc/issue` | `build_files/50-branding/install.sh`, `…/fastfetch/margine.jsonc`, `build_files/60-ujust-services/install.sh` | `ascii-logo.txt`, `no-show-user-motd`, `/etc/issue` |
 | **Lucciola** (niri + Noctalia product on top of Margine): public name, login session, validator name | `lucciola/build.sh`, `lucciola/system_files/usr/share/margine/product-name` | `NAME="Lucciola"`, `lucciola.desktop`, `product-name` |
+| Product name in messages (`margine-status`, Secure Boot notice and `ujust margine-secureboot`, the System app's "Built from"): `product-name`, else os-release `NAME`, else "Margine OS"; "Margine key" stays, it is the MOK's own name | `…/usr/bin/margine-status`, `…/libexec/margine/mok-notify`, `build_files/60-custom.just`, `…/libexec/margine/system-gui` | `product-name` |
 
 ---
 

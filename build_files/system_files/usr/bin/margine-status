@@ -10,6 +10,12 @@ set -uo pipefail
 IMAGE="ghcr.io/daniel-g-carrasco/margine:stable"
 REPO="${IMAGE%:*}"
 SITE="https://margine.dev/status"
+# The name the image declares for itself: a product built FROM Margine
+# (Lucciola) ships it in product-name, Margine only in os-release.
+on_top="$(head -n1 /usr/share/margine/product-name 2>/dev/null)"
+PRODUCT="$on_top"
+[ -n "$PRODUCT" ] || PRODUCT="$(sed -n 's/^NAME=//p' /usr/lib/os-release 2>/dev/null | tr -d "\"'")"
+PRODUCT="${PRODUCT:-Margine OS}"
 
 if [ -t 1 ]; then
   c_reset=$'\e[0m'; c_dim=$'\e[2m'; c_grn=$'\e[32m'; c_ylw=$'\e[33m'; c_ember=$'\e[38;5;208m'
@@ -39,7 +45,8 @@ ros="$(rpm-ostree status --json 2>/dev/null || echo '{}')"
 # Compare against the tag this machine actually follows (:stable, :lts,
 # :nvidia, :lucciola...). Hardcoding :stable told every :lts install that an
 # update was available, forever. Only tags of the Margine repository count;
-# a digest pin or another image keeps the :stable comparison.
+# a digest pin or another image keeps the :stable comparison. The Margine
+# System app applies the same rule (followed_image in system-gui).
 origin="$(printf '%s' "$ros" | jq -r '[.deployments[]? | select(.booted==true)][0]."container-image-reference" // ""' 2>/dev/null)"
 followed="${origin#*:}"; followed="${followed#docker://}"
 case "$followed" in
@@ -105,11 +112,11 @@ blocked_apps=""
 [ -s "$blocked_file" ] && blocked_apps="$(awk '{printf "%s%s", sep, $1; sep=", "}' "$blocked_file" 2>/dev/null)"
 
 printf '\n'
-printf '  %-15s %s%s%s   %s← your deployment%s\n' "Margine OS"     "$c_ember" "$booted_ver" "$c_reset" "$c_dim" "$c_reset"
+printf '  %-15s %s%s%s   %s← your deployment%s\n' "$PRODUCT"       "$c_ember" "$booted_ver" "$c_reset" "$c_dim" "$c_reset"
 [ -n "$staged_ver" ] && \
 printf '  %-15s %s   %s(applies at next boot)%s\n' "Staged"        "$staged_ver" "$c_dim" "$c_reset"
 printf '  %-15s %s   %s\n'                          "Latest :${TAG}" "$latest_ver" "$verdict"
-printf '  %-15s Fedora %s → %s %s → Margine\n' "Chain"          "$fedora_ver" "$base_name" "$base_ver"
+printf '  %-15s Fedora %s → %s %s → Margine%s\n' "Chain"        "$fedora_ver" "$base_name" "$base_ver" "${on_top:+ → $on_top}"
 kdef=EEVDF; grep -q '^CONFIG_SCHED_BORE=y' "/usr/lib/modules/$(uname -r)/config" 2>/dev/null && kdef=BORE
 printf '  %-15s %s  %s(CachyOS / %s)%s\n'         "Kernel"         "$kernel" "$c_dim" "$kdef" "$c_reset"
 if [ "$uupd_result" = "timeout" ]; then

@@ -21,19 +21,25 @@ STAMP="$STAMP_DIR/mok-notify.boot"
 BOOT_ID="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)"
 [[ "$(cat "$STAMP" 2>/dev/null)" = "$BOOT_ID" ]] && exit 0
 
+# The name the image declares for itself (Lucciola, built on Margine, ships
+# product-name), so the notice names the system the user is running.
+product="$(head -n1 /usr/share/margine/product-name 2>/dev/null || true)"
+[[ -n "$product" ]] || product="$(sed -n 's/^NAME=//p' /usr/lib/os-release 2>/dev/null | tr -d "\"'" || true)"
+product="${product:-Margine OS}"
+
 state="$("$HELPER" status 2>/dev/null || true)"
 case "$state" in
   pending)
     "$MN" -u critical \
       "Secure Boot key: one step at the next restart" \
-      "At the next restart a blue screen (MOK Manager) appears before Margine starts. Press a key within 10 seconds, then choose Enroll MOK, Continue, Yes, and type the password: margine. This lets Margine boot with Secure Boot on. Details: ujust margine-secureboot" \
+      "At the next restart a blue screen (MOK Manager) appears before $product starts. Press a key within 10 seconds, then choose Enroll MOK, Continue, Yes, and type the password: margine. This lets $product boot with Secure Boot on. Details: ujust margine-secureboot" \
       && printf '%s\n' "$BOOT_ID" > "$STAMP" ;;
   absent)
     switch="$(tr -d '[:space:]' < /etc/margine/secureboot-enroll 2>/dev/null || true)"
     [[ "$switch" = off ]] && exit 0
     "$MN" -u normal \
       "Secure Boot key not enrolled" \
-      "Margine could not register its Secure Boot key, so Secure Boot must stay off for now. Run: ujust margine-secureboot enroll" \
+      "$product could not register its Secure Boot key, so Secure Boot must stay off for now. Run: ujust margine-secureboot enroll" \
       && printf '%s\n' "$BOOT_ID" > "$STAMP" ;;
 esac
 exit 0

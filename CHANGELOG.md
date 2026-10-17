@@ -7,6 +7,31 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Fixed (2026-10-17)
+- **The Margine System app compares Lucciola with :lucciola.** It checked
+  every machine against `:stable`, so a current Lucciola always showed
+  "Update Available". It now reads the tag the booted deployment follows,
+  with the same rule as `margine-status`, and "Built from" ends in
+  "→ Margine → Lucciola" on Lucciola.
+- **Lucciola's name where Lucciola is running.** `margine-status` labels
+  the deployment with the image's own name and ends the chain in
+  "→ Lucciola"; the Secure Boot notice and `ujust margine-secureboot` say
+  "before Lucciola starts". The name comes from `product-name`, then
+  os-release; "Margine key" stays, it is the key's own name.
+- **`margine-collect-diagnostics` writes where it can.** Installed in
+  `/usr/bin`, it wrote next to itself, to the read-only `/usr`; the bundle
+  now goes to `~/.local/state/margine/diagnostics/`, and it prints both
+  paths.
+- **Lucciola: `lucciola-keep-awake` on the PATH.** The README told people
+  to run `keep-awake`, which only existed in `/usr/libexec/lucciola`.
+- **Lucciola: no Extension Manager on new installs.** Its GNOME has no
+  extensions to manage. Installs that have it keep it; the validators no
+  longer expect it (or Smile) there.
+- **Rebasing from another Fedora Atomic system with Secure Boot on.** The
+  README (and Lucciola's) now says to turn Secure Boot off first, enroll
+  the Margine key, then turn it back on; Lucciola's README adds the
+  command from a system that is not Margine.
+
 ### Changed (2026-10-17)
 - **And 49.5 MB less again.** `/usr/lib/os-release` carries the build date,
   so it changes every day, and the chunker filed it with fedora-release:

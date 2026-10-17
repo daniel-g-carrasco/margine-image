@@ -16,6 +16,9 @@
 # "2026-10-20 18:00". "on" while already on moves the end later, never
 # earlier.
 #
+# On PATH as lucciola-keep-awake (a symlink in /usr/bin). The scheduled start
+# runs the resolved path ($self), so the name it is called by does not matter.
+#
 # "on" starts a transient user unit that holds a logind block inhibitor for
 # sleep, idle and the lid switch until the end time. The bar shows it through
 # Lucciola's Keep Awake plugin for Noctalia (bar indicator, panel,
@@ -146,5 +149,5 @@ case "${1:-status}" in
   cancel) cancel ;;
   toggle) if active; then off; else on; fi ;;
   status) status "${2:-}" ;;
-  *) echo "usage: ${self##*/} on [UNTIL] | tomorrow | schedule START [UNTIL] | off | cancel | toggle | status" >&2; exit 2 ;;
+  *) echo "usage: ${0##*/} on [UNTIL] | tomorrow | schedule START [UNTIL] | off | cancel | toggle | status" >&2; exit 2 ;;
 esac

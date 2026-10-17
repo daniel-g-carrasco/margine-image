@@ -157,6 +157,23 @@ def check_rpm_packages(packages: Iterable[str], section_name: str) -> None:
             bad(f"{pkg}: NOT installed (rpm -q --whatprovides returned nonzero)")
 
 
+def product_left_out() -> tuple[str, set[str] | None]:
+    """A product built on the Margine image (Lucciola) names itself in
+    product-name and may drop apps from Margine's preinstall set (Smile,
+    Extension Manager); the spec stays Margine's. Returns the product and
+    the apps its preinstall file keeps, or ("", None) on Margine itself."""
+    try:
+        product = Path("/usr/share/margine/product-name").read_text().split("\n")[0].strip()
+        pre = Path("/usr/share/flatpak/preinstall.d/margine-defaults.preinstall").read_text()
+    except OSError:
+        return "", None
+    if not product:
+        return "", None
+    kept = {line[len("[Flatpak Preinstall "):-1] for line in pre.splitlines()
+            if line.startswith("[Flatpak Preinstall ") and line.endswith("]")}
+    return product, kept
+
+
 def check_flatpaks(apps: Iterable[str], section_name: str) -> None:
     """Every Flatpak app-id should be in `flatpak list --system`."""
     hdr(f"Flatpaks — {section_name}")
@@ -165,9 +182,12 @@ def check_flatpaks(apps: Iterable[str], section_name: str) -> None:
         return
     cp = run(["flatpak", "list", "--system", "--app", "--columns=application"])
     installed = {line.strip() for line in cp.stdout.splitlines() if line.strip()}
+    product, kept = product_left_out()
     for app in apps:
         if app in installed:
             ok(f"{app}: installed (system flatpak)")
+        elif kept is not None and app not in kept:
+            info(f"{app}: not preinstalled on {product}")
         else:
             warn(f"{app}: not in system flatpak list (may be in DEFER queue still)")
 

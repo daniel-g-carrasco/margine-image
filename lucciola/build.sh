@@ -147,23 +147,28 @@ for t in standard administrator; do
   grep -q '^Session=lucciola$' "$f" || { echo "ERROR: $f not rewritten" >&2; exit 1; }
 done
 
-# 2d. Emoji: Noctalia's launcher has an emoji picker (Mod+Period opens it
+# 2d. Flatpaks for the GNOME that 2b takes apart are not preinstalled.
+#     Emoji: Noctalia's launcher has an emoji picker (Mod+Period opens it
 #     on "/emo"), so Margine's Smile, an emoji picker for GNOME paired with
-#     a Shell extension 2b removes, is not preinstalled. An install that
-#     already has it keeps it; Bazaar removes it.
+#     a Shell extension 2b removes, is not needed. Extension Manager has no
+#     Shell extensions left to manage. Only new installs change: an install
+#     that already has them keeps them; Bazaar removes them.
 pre=/usr/share/flatpak/preinstall.d/margine-defaults.preinstall
-grep -q '^\[Flatpak Preinstall it.mijorus.smile\]$' "$pre" || { echo "ERROR: Smile is no longer in $pre: drop step 2d" >&2; exit 1; }
-python3 - "$pre" <<'PY'
+bake=/usr/share/margine/installer-flatpaks-base
+for app in it.mijorus.smile com.mattjakeman.ExtensionManager; do
+  rx="${app//./\\.}"
+  grep -q "^\[Flatpak Preinstall ${rx}\]$" "$pre" || { echo "ERROR: $app is no longer in $pre: drop it from step 2d" >&2; exit 1; }
+  python3 - "$pre" "$app" <<'PY'
 import re, sys
-p = sys.argv[1]
+p, app = sys.argv[1], sys.argv[2]
 s = open(p).read()
-s = re.sub(r"\[Flatpak Preinstall it\.mijorus\.smile\]\n(?:[^\[\n].*\n)*\n?", "", s)
+s = re.sub(r"\[Flatpak Preinstall " + re.escape(app) + r"\]\n(?:[^\[\n].*\n)*\n?", "", s)
 open(p, "w").write(s)
 PY
-bake=/usr/share/margine/installer-flatpaks-base
-sed -i -E '/^it\.mijorus\.smile([[:space:]]|$)/d' "$bake"
-if grep -q 'it.mijorus.smile' "$pre" "$bake"; then echo "ERROR: Smile still preinstalled" >&2; exit 1; fi
-log "Smile left out of the preinstalled Flatpaks (Noctalia's launcher picks emoji)"
+  sed -i -E "/^${rx}([[:space:]]|$)/d" "$bake"
+  if grep -q "$rx" "$pre" "$bake"; then echo "ERROR: $app still preinstalled" >&2; exit 1; fi
+done
+log "Smile and Extension Manager left out of the preinstalled Flatpaks (no GNOME Shell extensions here)"
 
 # 3. Identity. Only the public name changes: ID, VARIANT_ID and the rest stay
 #    Margine's, because the tooling underneath (validators, status, update
@@ -202,7 +207,9 @@ for part in ("normal", "bright"):
 if missing:
     sys.exit("ERROR: Margine palette incomplete, Noctalia would ignore it: " + ", ".join(missing))
 PY
-for f in /usr/libexec/lucciola/{session-start,lock,bar-widths,color-calibration}; do
+# lucciola-keep-awake is a symlink from system_files: -x follows it, so a
+# dangling one fails here.
+for f in /usr/libexec/lucciola/{session-start,lock,bar-widths,color-calibration,keep-awake} /usr/bin/lucciola-keep-awake; do
   [[ -x "$f" ]] || { echo "ERROR: $f missing or not executable" >&2; exit 1; }
 done
 # The Python helpers must at least parse (ast, so no __pycache__ in /usr).

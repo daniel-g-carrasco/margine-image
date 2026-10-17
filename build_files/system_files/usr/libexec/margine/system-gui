@@ -17,8 +17,9 @@
 #
 # Read-only state comes from unprivileged sources on purpose:
 # `rpm-ostree status --json` for the local deployments (bootc status
-# requires root), skopeo for the published :stable, and the
-# margine-validate-* scripts, which are all user-runnable by design.
+# requires root), skopeo for the published image of the tag this machine
+# follows, and the margine-validate-* scripts, which are all
+# user-runnable by design.
 
 import json
 import os
@@ -33,7 +34,9 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 APP_ID = "dev.margine.System"
-IMAGE = "ghcr.io/daniel-g-carrasco/margine:stable"
+REPO = "ghcr.io/daniel-g-carrasco/margine"
+IMAGE = f"{REPO}:stable"
+PRODUCT_FILE = "/usr/share/margine/product-name"
 SYSTEM_UPDATE = "/usr/libexec/margine/system-update"
 BREW = "/home/linuxbrew/.linuxbrew/bin/brew"
 
@@ -48,11 +51,34 @@ def run(argv, timeout=30):
         return ""
 
 
+def followed_image(origin):
+    """The published image to compare against: the tag this machine follows
+    (:stable, :lts, :nvidia, :lucciola...), read from the booted origin.
+    Comparing every machine with :stable told each Lucciola install that an
+    update was available, forever. Same rule as margine-status, keep the two
+    in step: only tags of the Margine repository count; a digest pin or
+    another image keeps the :stable comparison."""
+    ref = origin.partition(":")[2].removeprefix("docker://")
+    if ref.startswith(REPO + ":") and "@" not in ref:
+        return ref
+    return IMAGE
+
+
+def product_on_top():
+    """The name of a product built FROM the Margine image (Lucciola), which
+    ships it in product-name; empty on Margine itself."""
+    try:
+        with open(PRODUCT_FILE) as f:
+            return f.readline().strip()
+    except OSError:
+        return ""
+
+
 def local_state():
     """Booted / staged / rollback deployments from rpm-ostree."""
     out = run(["rpm-ostree", "status", "--json"])
     state = {"booted": None, "staged": None, "rollback": None, "layered": [],
-             "booted_digest": "", "staged_digest": ""}
+             "booted_digest": "", "staged_digest": "", "image": IMAGE}
     if not out:
         return state
     try:
@@ -73,6 +99,7 @@ def local_state():
         elif dep.get("booted"):
             state["booted"] = version
             state["booted_digest"] = digest
+            state["image"] = followed_image(dep.get("container-image-reference") or "")
             seen_booted = True
             state["layered"] = sorted(
                 set(dep.get("requested-packages") or []) | set(dep.get("packages") or [])
@@ -247,7 +274,9 @@ class SystemWindow(Adw.ApplicationWindow):
         self._version_row.set_subtitle(booted)
         self._kernel_row.set_subtitle(os.uname().release)
 
-        self._base_row.set_subtitle("Fedora → Universal Blue main → Margine")
+        chain = "Fedora → Universal Blue main → Margine"
+        on_top = product_on_top()
+        self._base_row.set_subtitle(f"{chain} → {on_top}" if on_top else chain)
 
         layered = self._state.get("layered") or []
         if layered:
@@ -335,10 +364,12 @@ class SystemWindow(Adw.ApplicationWindow):
         self._action_button.set_visible(True)
 
     def _refresh_latest_async(self):
+        image = self._state.get("image") or IMAGE
+
         def worker():
             out = run(
                 [
-                    "skopeo", "inspect", "--no-tags", f"docker://{IMAGE}",
+                    "skopeo", "inspect", "--no-tags", f"docker://{image}",
                     "--format",
                     "{{.Digest}} {{ index .Labels \"org.opencontainers.image.version\" }}",
                 ],

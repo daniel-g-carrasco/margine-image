@@ -194,13 +194,14 @@ The gaming runtime is acceptable when:
 Script:
 
 ```sh
-scripts/collect-diagnostics
+scripts/collect-diagnostics      # installed as margine-collect-diagnostics
 ```
 
-It creates:
+It creates, under `${XDG_STATE_HOME:-~/.local/state}/margine/diagnostics/`
+(it prints both paths):
 
-- `diagnostics/<timestamp>/`;
-- `diagnostics/<timestamp>.tar.gz`.
+- `<timestamp>/`;
+- `<timestamp>.tar.gz`.
 
 The bundle may contain hostnames, usernames, local paths, enabled repositories,
 package names, and journal excerpts. Treat it as local diagnostic data, not as an

@@ -55,8 +55,8 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   control-centre tile takes the place of Noctalia's
   caffeine; the panel (click the indicator, right-click the tile) has quick
   durations and a scheduler; the launcher answers "awake", "sveglio", "2h",
-  "18:30". From a terminal: `keep-awake on [UNTIL] | tomorrow | schedule START
-  [UNTIL] | off | cancel | status [--json]`;
+  "18:30". From a terminal: `lucciola-keep-awake on [UNTIL] | tomorrow |
+  schedule START [UNTIL] | off | cancel | status [--json]`;
 - `ddcutil`, so Noctalia's brightness slider also drives external monitors
   over DDC/CI (the package's udev rule opens the i2c devices to the
   logged-in user, its modules-load entry loads i2c-dev);
@@ -77,10 +77,28 @@ on main, signed like every Margine tag. Pull requests that touch Lucciola push
 Switch a Margine install to it (and back with the previous boot entry, or by
 rebasing to `:stable`):
 
-```
+```sh
 sudo rpm-ostree rebase ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/margine:lucciola
 systemctl reboot
 ```
+
+From another Fedora Atomic system (Silverblue, Bluefin, Aurora, Bazzite),
+rebase on the unverified transport: Margine's signature policy arrives with
+the image, and at the first boot `margine-signed-origin.service` stages the
+same tag on the signed transport (it applies at the next restart):
+
+```sh
+sudo rpm-ostree rebase ostree-unverified-registry:ghcr.io/daniel-g-carrasco/margine:lucciola
+systemctl reboot
+```
+
+Coming from another system with Secure Boot on, turn it off before rebasing
+(a Margine install already has the key): the kernel is signed with the
+Margine key, and until that key is enrolled Secure Boot refuses to start it.
+After the first boot `mok-enroll.service` stages the key;
+`ujust margine-secureboot enroll` makes the blue MOK Manager screen at the
+next restart wait for you (Enroll MOK, Continue, Yes, password `margine`).
+Turn Secure Boot back on when `ujust margine-secureboot` says so.
 
 ## Logo
 

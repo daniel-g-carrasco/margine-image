@@ -460,8 +460,11 @@ RESOLVED_LOGO="/usr/share/pixmaps/${LOGO_KEY:-margine-logo}.png"
 # Margine preinstalls com.mattjakeman.ExtensionManager via the flatpak
 # preinstall API (commit 517b520). On a fresh-rebased system this
 # triggers async at first user login; warn if absent rather than
-# bad-fail, since it may still be queued.
-if (( IS_LIVE )) && command -v flatpak >/dev/null 2>&1; then
+# bad-fail, since it may still be queued. Lucciola leaves it out of the
+# preinstall set (its GNOME has no extensions).
+if [[ "$EXPECTED_OS_NAME" == "Lucciola" ]]; then
+  info "Extension Manager: skipped, Lucciola ships no GNOME extensions"
+elif (( IS_LIVE )) && command -v flatpak >/dev/null 2>&1; then
   if flatpak info com.mattjakeman.ExtensionManager >/dev/null 2>&1; then
     ok "Extension Manager (com.mattjakeman.ExtensionManager) installed"
   else

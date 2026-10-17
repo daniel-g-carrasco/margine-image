@@ -3,13 +3,13 @@ set -u
 set -o pipefail
 
 umask 077
-
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Per user, not next to the script: installed in /usr/bin, "../diagnostics"
+# meant /usr/diagnostics, which is read-only on an image-based system.
+base="${XDG_STATE_HOME:-$HOME/.local/state}/margine/diagnostics"
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-out_dir="${repo_root}/diagnostics/${timestamp}"
-archive="${repo_root}/diagnostics/${timestamp}.tar.gz"
-
-mkdir -p "$out_dir"
+out_dir="${base}/${timestamp}"
+archive="${base}/${timestamp}.tar.gz"
+mkdir -p "$out_dir" || exit 1
 
 capture() {
   local name=$1
@@ -98,7 +98,7 @@ if command -v btrfs >/dev/null 2>&1; then
   capture btrfs-subvolume-list.txt btrfs subvolume list /sysroot
 fi
 
-tar -C "${repo_root}/diagnostics" -czf "$archive" "$timestamp"
+tar -C "$base" -czf "$archive" "$timestamp"
 
 printf 'Diagnostics directory: %s\n' "$out_dir"
 printf 'Diagnostics archive: %s\n' "$archive"

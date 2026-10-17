@@ -8,9 +8,9 @@
    BAR_WIDTH wide, centred.
 2. One workspace on secondary screens, as in GNOME. The primary screen is
    the one holding the named workspace "1"; with more than one screen, the
-   others get a bar without the workspace indicator (the Super+1..5
-   workspaces live on the primary). Unplug the primary and its workspaces
-   move to the remaining screen, which becomes primary again.
+   others get a bar without the workspace indicator (the Super+1 and
+   Super+2 workspaces live on the primary). Unplug the primary and its
+   workspaces move to the remaining screen, which becomes primary again.
 
 The overrides go to Noctalia's config folder (30-lucciola-monitors.toml),
 and Noctalia is asked to reload when they change. niri announces no monitor

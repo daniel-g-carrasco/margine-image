@@ -145,15 +145,18 @@ find /usr/lib/fontconfig/cache -xdev -exec touch -h -d @0 {} + 2>/dev/null || tr
 # so it differs on every build day. chunkah files it under fedora-release,
 # and that one line moved the whole 49.5 MB layer of the packages packed
 # with it between two builds of the same packages (measured file by file,
-# 2026-10-17). Its own component, marked daily, keeps the change to the
-# file. The xattr component claims before the rpmdb does (chunkah repo
-# priority 0 vs 10), and the image reaches chunkah through a podman image
-# mount, so the xattr written here is what chunkah reads. Set last: a later
-# rewrite of the file (sed -i) would drop it.
+# 2026-10-17). A component of its own is not a layer of its own: chunkah
+# packed it with 44 MB of other files (PR #516's first build). So it joins
+# the rpm database, which changes on every build anyway (33 MB, its own
+# layer until now): one component, one layer, and the date costs nothing.
+# The xattr repo claims before rpm and bigfiles (chunkah priority 0 vs 10
+# and 80), and the image reaches chunkah through a podman image mount, so
+# the xattrs written here are what chunkah reads. Set last: a later rewrite
+# of either file would drop them.
 python3 - <<'PY'
 import os
-for path in ("/usr/lib/os-release",):
-    os.setxattr(path, "user.component", b"margine/os-release")
+for path in ("/usr/lib/os-release", "/usr/share/rpm/rpmdb.sqlite"):
+    os.setxattr(path, "user.component", b"margine/changes-every-build")
     os.setxattr(path, "user.update-interval", b"daily")
 PY
 

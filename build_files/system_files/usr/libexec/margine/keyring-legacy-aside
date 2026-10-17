@@ -1,0 +1,27 @@
+#!/bin/sh
+# Margine: set a plaintext gnome-keyring login keyring aside before
+# oo7-daemon starts (ExecStartPre, oo7-daemon.service.d/50-margine-keyring-legacy.conf).
+#
+# `ujust margine-keyring blank` (Fedora 44 and older) left the login keyring
+# in gnome-keyring's plaintext format. oo7, the Secret Service from Fedora
+# 45, reads only the encrypted one: with the login password at hand it tries
+# to migrate keyrings/login.keyring, fails on the header and exits, so the
+# session has no Secret Service at all; without the password it skips the
+# file and starts an empty Login keyring. Renamed out of the *.keyring names
+# oo7 scans, the file stays on disk and keyring-import-legacy moves its
+# items into oo7 (margine-keyring-import.service at login, or
+# `ujust margine-keyring import`). Back on Fedora 44 the file can be renamed
+# back to login.keyring.
+#
+# Only for oo7 0.7.0~beta, what Fedora 45 ships today: the next oo7 reads
+# the plaintext format itself (linux-credentials/oo7#579, 2026-09-26) and
+# migrates it, without a password when there is none, which is better for
+# fingerprint users than anything done here. From that version on the file
+# stays where oo7 looks for it.
+[ "$(rpm -q --qf '%{VERSION}' oo7-daemon 2>/dev/null)" = "0.7.0~beta" ] || exit 0
+f="${XDG_DATA_HOME:-$HOME/.local/share}/keyrings/login.keyring"
+[ -f "$f" ] || exit 0
+[ "$(head -c 9 "$f")" = "[keyring]" ] || exit 0
+dest="$f.margine-plaintext"
+[ -e "$dest" ] && dest="$dest.$(date +%Y%m%d-%H%M%S)"
+mv -n "$f" "$dest" && echo "plaintext login keyring set aside: $dest"

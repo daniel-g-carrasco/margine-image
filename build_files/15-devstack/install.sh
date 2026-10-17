@@ -109,6 +109,12 @@ DECLARED_PKGS=(
   fuse-libs                                # libfuse.so.2, what AppImages open
   gnome-tweaks                             # GNOME's own extra settings
   xdg-terminal-exec ncurses-term libxcrypt-compat   # GNOME's terminal launcher; terminfo for other terminals; libcrypt.so.1 for old binaries
+  # Found by diffing silverblue-main:44 against :45 (2026-10-16): Fedora 45
+  # dropped these from the base, Margine on 44 shipped them. A user may have
+  # SSH VPN connections, and the full connection editor reaches what GNOME
+  # Settings does not show. The vpnc plugin cannot come back: Fedora 45
+  # retired it (NetworkManager 1.58 Obsoletes NetworkManager-vpnc{,-gnome}).
+  NetworkManager-ssh-gnome sshpass nm-connection-editor
 )
 # Bluefin ships Dash to Dock and Caffeine as plain directories built from
 # git; Fedora's packages install into the same directories. A package laid
@@ -184,11 +190,13 @@ ships the HIP runtime (for Blender) but not the HIP compiler.
 %files
 
 %changelog
-* Fri Oct 10 2026 Margine - 1-1
+* Sat Oct 10 2026 Margine - 1-1
 - rocm-hip without hipcc: the requirement, not the compiler
 SPEC
   rpmbuild --quiet --define "_topdir $stub/top" -bb "$stub/margine-rocm-hip-runtime.spec"
-  rpm -i "$stub"/top/RPMS/noarch/margine-rocm-hip-runtime-*.noarch.rpm
+  # Built here and never signed: rpm 6.1 (Fedora 45) verifies signatures on
+  # every install (%_pkgverify_level all) and refuses it without the flag.
+  rpm -i --nosignature "$stub"/top/RPMS/noarch/margine-rocm-hip-runtime-*.noarch.rpm
   rm -rf "$stub"
   if (( ${#borrowed[@]} )); then
     dnf -y remove --setopt=clean_requirements_on_remove=False "${borrowed[@]}"

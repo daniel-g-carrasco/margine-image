@@ -12,7 +12,8 @@ disable systemd-boot-update.service
 enable systemd-resolved.service
 
 # https://fedoraproject.org/wiki/Changes/EnableSystemdOomd
-enable systemd-oomd.*
+enable systemd-oomd.socket
+enable systemd-oomd.service
 
 # These presets were last validated en-masse on 2015-09-09
 # https://fedorahosted.org/fesco/ticket/1472
@@ -22,6 +23,12 @@ enable systemd-oomd.*
 enable dbus.socket
 enable dbus-broker.service
 enable sshd.service
+
+# Enable kmsconvt@.service as implementation for autovt@.service.
+# Explicitly disable getty@.service which is enabled by systemd.
+# https://bugzilla.redhat.com/show_bug.cgi?id=2429626
+enable kmsconvt@.service
+disable getty@.service
 
 # Locally-running services
 enable atd.*

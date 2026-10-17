@@ -73,7 +73,7 @@ CONFIG_GLOBS = (
     "usr/lib/pki/containers/*", "etc/pki/containers/*",
     "etc/selinux/config", "etc/selinux/targeted/contexts/files/file_contexts.subs_dist",
     "etc/sudoers", "etc/sudoers.d/*",
-    "etc/pam.d/*",
+    "etc/pam.d/*", "usr/lib/pam.d/*",
     "etc/polkit-1/rules.d/*", "usr/share/polkit-1/rules.d/*",
     "etc/ssh/sshd_config", "etc/ssh/sshd_config.d/*",
     "etc/security/*.conf",

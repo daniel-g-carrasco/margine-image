@@ -1,12 +1,14 @@
-auth        substack      switchable-auth
-auth        optional      pam_gnome_keyring.so
+auth        substack      gdm-switchable-auth-substack
+-auth       optional      pam_gnome_keyring.so
+-auth       optional      pam_oo7.so
 auth        include       postlogin
 
 account     required      pam_nologin.so
 account     include       switchable-auth
 
-password    substack       switchable-auth
+password    substack       gdm-switchable-auth-substack
 -password   optional       pam_gnome_keyring.so use_authtok
+-password   optional       pam_oo7.so use_authtok
 
 session     required      pam_selinux.so close
 session     required      pam_loginuid.so
@@ -14,5 +16,6 @@ session     required      pam_selinux.so open
 session     optional      pam_keyinit.so force revoke
 session     required      pam_namespace.so
 session     include       switchable-auth
-session     optional      pam_gnome_keyring.so auto_start
+-session    optional      pam_gnome_keyring.so auto_start
+-session    optional      pam_oo7.so auto_start
 session     include       postlogin

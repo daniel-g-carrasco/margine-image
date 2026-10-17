@@ -1,0 +1,5 @@
+auth     include   smartcard-auth
+auth     required  pam_deny.so
+
+password include   smartcard-auth
+password required  pam_deny.so

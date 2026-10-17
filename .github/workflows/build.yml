@@ -421,7 +421,7 @@ jobs:
             io.artifacthub.package.prerelease=false
             containers.bootc=1
             org.opencontainers.image.base.digest=${{ steps.basedigest.outputs.digest }}
-            org.opencontainers.image.base.name=ghcr.io/ublue-os/silverblue-main:44
+            org.opencontainers.image.base.name=ghcr.io/ublue-os/silverblue-main:45
           sep-tags: " "
           sep-annotations: " "
 

@@ -1,114 +1,149 @@
 #!/usr/bin/env bash
-# margine-keyring — inspect / blank / restore the GNOME login keyring's master
-# password.
+# margine-keyring: the login keyring for fingerprint and autologin users,
+# and the move from Fedora 44's keyring (Fedora 45, oo7).
 #
-# WHY: with fingerprint login OR GDM autologin, PAM never hands gnome-keyring
-# the login PASSWORD that encrypts the "login" keyring, so GNOME pops "unlock
-# Login keyring" at first secret access every session. The login keyring cannot
-# be unlocked by a fingerprint — the only fix is to set its master password to
-# EMPTY, after which it auto-unlocks. It is then stored UNENCRYPTED on disk,
-# acceptable ONLY because Margine encrypts the disk at rest (LUKS + TPM2).
+# WHY: the login keyring is encrypted with the login password, and pam_oo7
+# hands that password to oo7 only on a password login. With fingerprint
+# login or GDM autologin the keyring stays locked, and the first app that
+# needs a saved password asks for it. On Fedora 44 the fix was an empty
+# keyring password (`blank`, through Seahorse); oo7 refuses an empty
+# password and cannot read the plaintext file gnome-keyring kept for one.
 #
-# There is NO supported headless API to change a keyring's master password
-# (the Secret Service exposes only ChangeWithMasterPassword, which needs the
-# session-negotiated encrypted transport, and ChangeWithPrompt, which raises a
-# GUI dialog). So `blank` backs up the keyring, opens Seahorse to the right
-# place, prints the exact steps + the security warning, and `status` verifies.
+# The Fedora 45 answer is oo7's own: the keyring password as a systemd
+# credential, encrypted for this user (with the TPM when the machine has
+# one), which oo7-daemon loads when it starts
+# (ImportCredential=oo7.keyring-encryption-password). The keyring stays
+# encrypted on disk and opens at login, like the disk itself. Anyone who
+# can read the credential AND use this machine's TPM as root can decrypt
+# it: the same trust the TPM disk unlock already places in the machine.
 #
-# Per-user — NO sudo (the keyring lives under $HOME).
+# Per-user, no sudo.
 set -euo pipefail
 
+CRED_NAME=oo7.keyring-encryption-password
+CRED="${XDG_CONFIG_HOME:-$HOME/.config}/credstore.encrypted/$CRED_NAME"
 KEYDIR="${XDG_DATA_HOME:-$HOME/.local/share}/keyrings"
-LOGIN="$KEYDIR/login.keyring"
+IMPORT=/usr/libexec/margine/keyring-import-legacy
 
-# Encrypted GNOME keyrings begin with the magic "GnomeKeyring\n\r\0\n". The
-# empty-password keyring is written in the textual (GKeyFile) format starting
-# with "[keyring]" — no magic. So a "GnomeKeyring" prefix == still encrypted.
-is_encrypted() {
-  [[ -f "$LOGIN" ]] || return 1
-  [[ "$(head -c 12 "$LOGIN" 2>/dev/null)" == "GnomeKeyring" ]]
+login_locked() {
+  # "true" / "false"; empty when the Secret Service does not answer. A few
+  # tries: oo7 0.7.0~beta takes its bus name before its collections exist
+  # (linux-credentials/oo7#581), so a daemon this call just started answers
+  # "Unknown object" for a moment.
+  local _ out
+  for _ in 1 2 3 4 5; do
+    out="$(busctl --user get-property org.freedesktop.secrets \
+      /org/freedesktop/secrets/aliases/default \
+      org.freedesktop.Secret.Collection Locked 2>/dev/null | awk '{print $2}')"
+    [[ -n "$out" ]] && { echo "$out"; return; }
+    sleep 1
+  done
+}
+
+# oo7-daemon's log since its last start (the credential line comes just
+# before "Starting oo7-daemon", so it is kept too).
+daemon_log() {
+  journalctl --user -b -u oo7-daemon.service -o cat --no-pager 2>/dev/null \
+    | sed -E 's/\x1b\[[0-9;]*m//g' \
+    | awk '/Starting oo7-daemon/ { buf = prev ORS $0; prev = $0; next }
+           { if (buf != "") buf = buf ORS $0; prev = $0 }
+           END { print buf }'
 }
 
 status() {
   echo "== margine-keyring status =="
-  if [[ ! -f "$LOGIN" ]]; then
-    echo "  login keyring: ABSENT ($LOGIN)"
-    echo "  (created on next secret store; with no password set it auto-unlocks)"
-    return 0
-  fi
-  if is_encrypted; then
-    echo "  login keyring: PASSWORD-PROTECTED (encrypted)"
-    echo "  => GNOME WILL prompt to unlock it on fingerprint / autologin."
-    echo "  fix: ujust margine-keyring blank"
+  local locked
+  locked="$(login_locked)"
+  case "$locked" in
+    false) echo "  login keyring: unlocked [OK]" ;;
+    true)  echo "  login keyring: LOCKED (apps will ask for its password)"
+           echo "  fix for fingerprint/autologin: ujust margine-keyring tpm" ;;
+    *)     echo "  login keyring: the Secret Service (oo7-daemon) did not answer" ;;
+  esac
+
+  if [[ -f "$CRED" ]]; then
+    local log
+    log="$(daemon_log)"
+    if grep -q "Received login secret from helper" <<<"$log"; then
+      echo "  unlock at login: TPM credential present; this login used the login password"
+    elif grep -q -E "credential contains wrong password|with provided secret: Incorrect secret|Incorrect secret or corrupted" <<<"$log"; then
+      echo "  unlock at login: credential present, but it holds a WRONG password"
+      echo "  (login password changed since?) fix: ujust margine-keyring tpm"
+    elif grep -q "Unlocking session keyring with systemd credential" <<<"$log"; then
+      echo "  unlock at login: TPM credential, used at this login [OK]"
+    else
+      echo "  unlock at login: TPM credential present ($CRED)"
+      echo "  (not used yet at this login: it applies from the next one)"
+    fi
   else
-    echo "  login keyring: empty-password (unencrypted) — auto-unlocks, no prompt [OK]"
+    echo "  unlock at login: password login only (no credential; ujust margine-keyring tpm)"
   fi
-  echo "  file: $LOGIN ($(stat -c '%s bytes, mode %a' "$LOGIN" 2>/dev/null))"
-  local bak
-  bak="$(ls -1t "$LOGIN".margine.bak.* 2>/dev/null | head -1 || true)"
-  # NB: plain `[[ -n "$bak" ]] && echo` would make status() exit non-zero under
-  # `set -e` when there is no backup — use an if so `ujust margine-keyring`
-  # (default action) always exits 0.
-  if [[ -n "$bak" ]]; then echo "  backup: $bak (restore with: ujust margine-keyring restore)"; fi
+
+  if [[ -f "$KEYDIR/login.keyring.margine-plaintext" ]]; then
+    if [[ -f "$KEYDIR/login.keyring.margine-plaintext.imported" ]]; then
+      echo "  Fedora 44 keyring: imported; the plaintext copy is still at"
+      echo "    $KEYDIR/login.keyring.margine-plaintext"
+      echo "    (delete it once your passwords work: it is unencrypted)"
+    else
+      echo "  Fedora 44 keyring: waiting to be imported: ujust margine-keyring import"
+    fi
+  elif [[ -f "$KEYDIR/login.keyring" && ! -f "$KEYDIR/v1/login.keyring" ]]; then
+    echo "  Fedora 44 keyring: oo7 moves it over the first time it opens"
+  fi
 }
 
-blank() {
-  [[ -f "$LOGIN" ]] || { echo "No login keyring yet — nothing to blank."; exit 0; }
-  if ! is_encrypted; then
-    echo "login keyring is already empty-password (unencrypted) — nothing to do [OK]"; exit 0
+tpm() {
+  local how=host
+  # systemd 262 moved has-tpm2 to systemd-analyze; the old spelling still redirects.
+  if systemd-analyze has-tpm2 >/dev/null 2>&1 || systemd-creds has-tpm2 >/dev/null 2>&1; then
+    how=tpm2
+  else
+    echo "No usable TPM: the credential will be bound to this machine's host key instead."
   fi
-  cat <<'WARN'
-========================= SECURITY NOTICE =========================
-Setting the login keyring password to EMPTY stores it UNENCRYPTED on
-disk. Its contents (saved Wi-Fi/VPN/browser/online-account secrets)
-are then protected ONLY by file permissions AND your full-disk
-encryption (Margine: LUKS + TPM2). This is the standard, reasonable
-fix for fingerprint/autologin on an FDE machine — but do NOT do it on
-a machine WITHOUT disk encryption.
-==================================================================
-WARN
-  read -r -p "Proceed? type 'yes' to continue: " ans
-  [[ "$ans" == "yes" ]] || { echo "aborted (no change)."; exit 1; }
-
-  local ts bak
-  ts="$(date +%Y%m%d-%H%M%S)"
-  bak="$LOGIN.margine.bak.$ts"
-  cp -a "$LOGIN" "$bak"
-  echo "backed up -> $bak"
-
-  command -v seahorse >/dev/null 2>&1 \
-    || { echo "ERROR: seahorse not installed (run 'ujust margine-update' to the image that ships it)"; exit 1; }
-
-  cat <<'STEPS'
-
-Opening Seahorse. In its window:
-  1. Left sidebar: Passwords  ->  right-click "Login"
-  2. Change Password
-  3. Enter your CURRENT login password
-  4. Leave the NEW password EMPTY  ->  Continue  ->  confirm the
-     "stored unencrypted" warning
-
-Then close Seahorse and verify:   ujust margine-keyring status
-(should report: empty-password — auto-unlocks). To undo:
-   ujust margine-keyring restore
-STEPS
-  seahorse >/dev/null 2>&1 &
-  exit 0
+  cat <<'INFO'
+Enter the password of your login keyring: the password you log in with
+(unless you changed the keyring's own password). It is stored encrypted for
+your user on this machine, and oo7 opens the keyring with it at every login.
+INFO
+  local pw1 pw2
+  pw1="$(systemd-ask-password --timeout=0 "Keyring password:")"
+  pw2="$(systemd-ask-password --timeout=0 "Again:")"
+  [[ -n "$pw1" ]] || { echo "empty password: nothing stored"; exit 1; }
+  [[ "$pw1" == "$pw2" ]] || { echo "the two passwords differ: nothing stored"; exit 1; }
+  mkdir -p "$(dirname "$CRED")"
+  chmod 700 "$(dirname "$CRED")"
+  printf '%s' "$pw1" | systemd-creds encrypt --user --with-key=auto \
+    --name="$CRED_NAME" - "$CRED"
+  unset pw1 pw2
+  chmod 600 "$CRED"
+  echo "stored ($how): $CRED"
+  echo "From the next login the keyring opens without asking."
+  echo "Check after logging in again: ujust margine-keyring status"
+  if "$IMPORT" --check; then
+    echo
+    echo "Your Fedora 44 passwords are still to be imported:"
+    "$IMPORT"
+  fi
 }
 
-restore() {
-  local bak
-  bak="$(ls -1t "$LOGIN".margine.bak.* 2>/dev/null | head -1 || true)"
-  [[ -n "$bak" ]] || { echo "no margine backup found in $KEYDIR"; exit 1; }
-  cp -a "$bak" "$LOGIN"
-  echo "restored $LOGIN from $bak"
-  echo "(the password-protected keyring is back; GNOME will prompt again on login)"
+tpm_off() {
+  if [[ -f "$CRED" ]]; then
+    rm -f "$CRED"
+    echo "removed $CRED: the keyring opens only on a password login again"
+  else
+    echo "no credential stored, nothing to do"
+  fi
 }
 
 case "${1:-status}" in
   status)  status ;;
-  blank)   blank ;;
-  restore) restore ;;
-  -h|--help) echo "usage: margine-keyring [status|blank|restore]" ;;
-  *) echo "usage: margine-keyring [status|blank|restore]"; exit 2 ;;
+  tpm)     tpm ;;
+  tpm-off) tpm_off ;;
+  import)  exec "$IMPORT" ;;
+  blank|restore)
+    echo "Fedora 45 replaced gnome-keyring with oo7, which has no empty keyring password."
+    echo "For fingerprint or autologin use: ujust margine-keyring tpm"
+    exit 2 ;;
+  -h|--help) echo "usage: margine-keyring [status|tpm|tpm-off|import]" ;;
+  *) echo "usage: margine-keyring [status|tpm|tpm-off|import]"; exit 2 ;;
 esac

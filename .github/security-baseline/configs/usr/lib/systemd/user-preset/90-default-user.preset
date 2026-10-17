@@ -40,3 +40,7 @@ enable mpris-proxy.service
 # Ensure xdg-user-dirs are created properly
 # https://bugzilla.redhat.com/show_bug.cgi?id=2319081
 enable xdg-user-dirs.service
+
+# Enable Phosh Tour
+# https://bugzilla.redhat.com/show_bug.cgi?id=2447760
+enable mobi.phosh.PhoshTour-first-login.service

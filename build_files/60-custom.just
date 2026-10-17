@@ -987,7 +987,7 @@ margine-grub-lock ACTION="status":
 margine-grub-hidpi:
     @sudo /usr/libexec/margine/grub-hidpi-apply
 
-# Inspect/fix the GNOME login keyring password (status/blank/restore).
+# Login keyring: status, open it at every login with the TPM (tpm/tpm-off), import Fedora 44's (import).
 [group('Margine')]
 margine-keyring ACTION="status":
     @/usr/bin/margine-keyring "{{ ACTION }}"

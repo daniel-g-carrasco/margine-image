@@ -1,0 +1,223 @@
+#!/usr/bin/python3
+"""keyring-import-legacy: move a plaintext gnome-keyring login keyring into oo7.
+
+`ujust margine-keyring blank` (Fedora 44 and older) set the login keyring's
+password to empty, and gnome-keyring then keeps the keyring as a plaintext
+key file ("[keyring]" ...). oo7, the Secret Service from Fedora 45, migrates
+only gnome-keyring's encrypted format, so keyring-legacy-aside renames the
+plaintext file to login.keyring.margine-plaintext before oo7-daemon starts
+(otherwise the daemon fails to start, or starts an empty Login keyring).
+
+This copies every item of that file into the default collection over the
+Secret Service API, with its label and attributes, then marks the file
+<file>.imported. The file itself stays where it is. Run inside the user's
+session; the default collection must be unlocked, and the Secret Service
+asks for its password when it is not (unless --no-prompt).
+
+usage: keyring-import-legacy [--check | --dry-run | --no-prompt] [FILE]
+  FILE         default: $XDG_DATA_HOME/keyrings/login.keyring.margine-plaintext
+  --check      exit 0 when there is a plaintext keyring to import, 1 otherwise
+  --dry-run    list what would be imported, change nothing
+  --no-prompt  when the keyring is locked, notify and exit 75 instead of asking
+"""
+import os
+import subprocess
+import sys
+
+ENCRYPTED_HEADER = b"GnomeKeyring\n\r\0\n"
+BUS_NAME = "org.freedesktop.secrets"
+SERVICE_PATH = "/org/freedesktop/secrets"
+IFACE = "org.freedesktop.Secret"
+NOTIFY = "/usr/libexec/margine/margine-notify"
+# gnome-keyring's item-type numbers and the schema names it reported for them
+# (pkcs11/secret-store/gkm-secret-compat.c), for items with no xdg:schema.
+ITEM_TYPE_SCHEMA = {
+    0: "org.freedesktop.Secret.Generic",
+    1: "org.gnome.keyring.NetworkPassword",
+    2: "org.gnome.keyring.Note",
+    3: "org.gnome.keyring.ChainedKeyring",
+    4: "org.gnome.keyring.EncryptionKey",
+    0x100: "org.gnome.keyring.PkStorage",
+}
+
+
+def keyrings_dir():
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(data, "keyrings")
+
+
+def aside_file():
+    return os.path.join(keyrings_dir(), "login.keyring.margine-plaintext")
+
+
+def original_file():
+    return os.path.join(keyrings_dir(), "login.keyring")
+
+
+def stamp_of(path):
+    return path + ".imported"
+
+
+def state(path):
+    """plaintext, encrypted, imported, absent or unknown."""
+    if not os.path.exists(path):
+        return "absent"
+    if os.path.exists(stamp_of(path)):
+        return "imported"
+    with open(path, "rb") as f:
+        head = f.read(len(ENCRYPTED_HEADER))
+    if head == ENCRYPTED_HEADER:
+        return "encrypted"
+    if head.startswith(b"[keyring]"):
+        return "plaintext"
+    return "unknown"
+
+
+def parse(path):
+    """The items of a plaintext gnome-keyring file, read the way gnome-keyring
+    reads it (pkcs11/secret-store/gkm-secret-textual.c)."""
+    from gi.repository import GLib
+
+    kf = GLib.KeyFile()
+    kf.load_from_file(path, GLib.KeyFileFlags.NONE)
+    groups, _ = kf.get_groups()
+    items = []
+    for ident in groups:
+        if ident == "keyring" or ":" in ident:
+            continue
+
+        def get(key, group=ident):
+            try:
+                return kf.get_string(group, key)
+            except GLib.Error:
+                return None
+
+        if get("secret") is not None:
+            secret, ctype = get("secret").encode(), "text/plain"
+        elif get("binary-secret") is not None:
+            secret, ctype = bytes.fromhex(get("binary-secret")), "application/octet-stream"
+        else:
+            continue
+        attrs = {}
+        prefix = ident + ":attribute"
+        for g in groups:
+            if not g.startswith(prefix):
+                continue
+            name = get("name", g)
+            if name is None:
+                continue
+            if get("type", g) == "uint32":
+                value = kf.get_value(g, "value")
+            else:
+                value = get("value", g)
+            attrs[name] = value if value is not None else ""
+        if "xdg:schema" not in attrs:
+            try:
+                itype = kf.get_integer(ident, "item-type")
+            except GLib.Error:
+                itype = 0
+            attrs["xdg:schema"] = ITEM_TYPE_SCHEMA.get(itype, ITEM_TYPE_SCHEMA[0])
+        items.append((get("display-name") or "", attrs, secret, ctype))
+    return items
+
+
+def notify_locked():
+    if os.access(NOTIFY, os.X_OK):
+        subprocess.run([
+            NOTIFY, "-i", "dialog-password",
+            "Saved passwords from Fedora 44 are waiting",
+            "Margine now uses oo7 for saved passwords. The old login keyring is kept "
+            "aside until the new one is unlocked: run ujust margine-keyring import, "
+            "or ujust margine-keyring tpm to have it open at every login.",
+        ], check=False)
+
+
+def default_collection(prompt):
+    """The default collection, unlocked; None when it stays locked."""
+    import gi
+
+    gi.require_version("Secret", "1")
+    from gi.repository import Secret
+
+    # Connecting starts oo7-daemon if it is not running, and its ExecStartPre
+    # sets a plaintext login.keyring aside before oo7 looks at it.
+    service = Secret.Service.get_sync(Secret.ServiceFlags.LOAD_COLLECTIONS, None)
+    collection = Secret.Collection.for_alias_sync(
+        service, Secret.COLLECTION_DEFAULT, Secret.CollectionFlags.NONE, None)
+    if collection is None:
+        sys.exit("keyring-import-legacy: the Secret Service has no default collection")
+    if collection.get_locked() and prompt:
+        service.unlock_sync([collection], None)
+    return None if collection.get_locked() else collection
+
+
+def import_items(collection, items):
+    from gi.repository import Gio, GLib
+
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+    def call(path, iface, method, args, ret):
+        return bus.call_sync(BUS_NAME, path, f"{IFACE}.{iface}", method, args,
+                             GLib.VariantType(ret), Gio.DBusCallFlags.NONE, -1, None).unpack()
+
+    # A plain session of our own carries the secret bytes as they are.
+    _, session = call(SERVICE_PATH, "Service", "OpenSession",
+                      GLib.Variant("(sv)", ("plain", GLib.Variant("s", ""))), "(vo)")
+    try:
+        for label, attrs, secret, ctype in items:
+            props = {
+                f"{IFACE}.Item.Label": GLib.Variant("s", label),
+                f"{IFACE}.Item.Attributes": GLib.Variant("a{ss}", attrs),
+            }
+            _, prompt = call(collection.get_object_path(), "Collection", "CreateItem",
+                             GLib.Variant("(a{sv}(oayays)b)",
+                                          (props, (session, b"", secret, ctype), True)),
+                             "(oo)")
+            if prompt != "/":
+                sys.exit(f"keyring-import-legacy: the Secret Service asked to prompt for '{label}'")
+            print(f"  imported: {label}")
+    finally:
+        call(session, "Session", "Close", None, "()")
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith("--")]
+    flags = {a for a in argv if a.startswith("--")}
+    if args:
+        path = args[0]
+    elif state(aside_file()) == "plaintext" or state(original_file()) != "plaintext":
+        path = aside_file()
+    else:
+        # oo7-daemon has not run since the update: the file is still in place.
+        path = original_file()
+    if "--check" in flags:
+        return 0 if state(path) == "plaintext" else 1
+    if state(path) != "plaintext":
+        print(f"{path}: {state(path)}, nothing to import")
+        return 0
+    if "--dry-run" in flags:
+        items = parse(path)
+        for label, attrs, _, ctype in items:
+            print(f"  would import: {label} [{attrs.get('xdg:schema')}, {ctype}]")
+        print(f"{len(items)} item(s) in {path}")
+        return 0
+    collection = default_collection(prompt="--no-prompt" not in flags)
+    if not args and path == original_file():
+        path = aside_file()  # the daemon just started and set it aside
+    if collection is None:
+        if "--no-prompt" in flags:
+            notify_locked()
+            return 75
+        sys.exit("keyring-import-legacy: the keyring stayed locked, nothing imported")
+    if state(path) != "plaintext":
+        sys.exit(f"keyring-import-legacy: {path} is {state(path)}, expected the plaintext keyring")
+    items = parse(path)
+    import_items(collection, items)
+    with open(stamp_of(path), "w"):
+        pass
+    print(f"{len(items)} item(s) imported from {path}; the file stays, marked {stamp_of(path)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

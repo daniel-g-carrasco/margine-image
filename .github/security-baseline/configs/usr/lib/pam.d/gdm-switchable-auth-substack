@@ -1,0 +1,5 @@
+auth     include   switchable-auth
+auth     required  pam_deny.so
+
+password include   switchable-auth
+password required  pam_deny.so

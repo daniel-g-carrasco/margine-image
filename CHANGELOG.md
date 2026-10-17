@@ -7,6 +7,33 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Changed (Fedora 45, in preparation)
+- **Margine moves to Fedora 45** (`silverblue-main:45`, GNOME 51). The
+  saved-passwords service changes from gnome-keyring to oo7:
+  - a password login opens the Login keyring as before, and oo7 moves a
+    Fedora 44 keyring over the first time it opens it;
+  - `ujust margine-keyring tpm` replaces `blank` for fingerprint and
+    autologin: the keyring password is stored as a credential encrypted
+    for the user with the TPM, and oo7 opens the keyring with it at login.
+    oo7 has no empty keyring password;
+  - a keyring left empty-password by `blank` is in a format oo7 cannot
+    read, and it would stop oo7 from starting: Margine sets it aside before
+    oo7 starts and imports its passwords at login (or
+    `ujust margine-keyring import` when the new keyring is still locked);
+  - Lucciola starts oo7 with its niri session, and the service can be
+    started on demand in any session, as gnome-keyring could.
+  Fedora 45's base dropped the SSH VPN plugin and the network connection
+  editor: Margine installs them. Fedora 45 retired the vpnc (Cisco IPsec)
+  VPN plugin and Nautilus's AFP and archive-browsing backends (gvfs-afp,
+  gvfs-archive): those are gone with the update.
+  Extensions with GNOME 51 builds: o-tiling, Hide Cursor, Gradia Capture,
+  Bazaar Companion. Smile's companion extension, which pastes the emoji,
+  broke on GNOME 51 (a Clutter call it used is gone): the build carries the
+  fix proposed to its author until a GNOME 51 release reaches EGO.
+  Fedora 45's Caffeine (60) does not load on GNOME 51: the build uses
+  Caffeine 61 from extensions.gnome.org until Fedora's package catches up,
+  and stops if any extension Margine enables would not load.
+
 ### Changed (2026-10-17)
 - **And 49.5 MB less again.** `/usr/lib/os-release` carries the build date,
   so it changes every day, and the chunker filed it with fedora-release:

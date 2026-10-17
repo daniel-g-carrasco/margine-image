@@ -158,12 +158,20 @@ fi
 [[ -f "$ROOTFS/usr/libexec/margine/boot-writable.sh" ]] \
   || { echo "::error::usr/libexec/margine/boot-writable.sh missing: grub-lock and grub-hidpi-apply cannot write to a read-only /boot (A.4.grub-lock)"; fail=1; }
 
-# A.4.keyring — login-keyring helper + its GUI backend (2026-06-16). Lets
-# `ujust margine-keyring blank` set the login keyring password empty so it
-# auto-unlocks under fingerprint/autologin (Seahorse provides the dialog;
-# there is no headless API).
+# A.4.keyring — login keyring on oo7 (Fedora 45). margine-keyring opens the
+# keyring at login with a TPM-bound credential (fingerprint, autologin);
+# keyring-legacy-aside runs before oo7-daemon so a Fedora 44 plaintext
+# keyring cannot stop it, keyring-import-legacy moves its items over; the
+# D-Bus activation file starts oo7 outside GNOME's session target (Lucciola).
 check_exec "usr/bin/margine-keyring" "A.4.keyring"
 check_exec "usr/bin/seahorse" "A.4.keyring"
+check_exec "usr/libexec/margine/keyring-legacy-aside" "A.4.keyring"
+check_exec "usr/libexec/margine/keyring-import-legacy" "A.4.keyring"
+for f in usr/lib/systemd/user/oo7-daemon.service.d/50-margine-keyring-legacy.conf \
+         usr/share/dbus-1/services/org.freedesktop.secrets.service \
+         usr/lib/systemd/user/graphical-session.target.wants/margine-keyring-import.service; do
+  [[ -e "$ROOTFS/$f" ]] || { echo "::error::$f missing (A.4.keyring)"; fail=1; }
+done
 
 # A.4.repro: leftovers that made identical builds differ (2026-10-03).
 # Cloudflare-obfuscated text in the offline docs is unreadable offline

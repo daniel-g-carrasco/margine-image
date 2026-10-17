@@ -89,12 +89,12 @@ OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VER
 OTILING_SHA256="4bc13ee298ac8be6b3ff22e961b1f0948998bb10f1ddae5c3dead45aff4875a0"
 
 # Hide Cursor is hosted only on EGO. version_tag pinned for the GNOME
-# Shell major of the current base (50). When Bluefin bumps GNOME, the
+# Shell major of the current base (51). When the base bumps GNOME, the
 # metadata shell-version guard below fails the build with instructions
 # instead of shipping an incompatible extension.
 HIDECURSOR_UUID="hide-cursor@elcste.com"
-HIDECURSOR_VERSION_TAG="72294"   # GNOME 50 (v13); re-pinned 2026-07-04 — EGO purged 69559 (build 404)
-HIDECURSOR_SHA256="10f79e49c5d812d27033793ee7c89e58e9b0ea176a6ba3bb611f9f3e3f885392"
+HIDECURSOR_VERSION_TAG="75517"   # GNOME 51 (v15); resolved 2026-10-16 for the Fedora 45 base
+HIDECURSOR_SHA256="6c0e2013a52ce42bd0cd49a566c6feadc10a1b7bdf5c973bf717832007cbe808"
 
 # Smile's companion GNOME Shell extension — the piece that makes the Smile
 # emoji picker (the it.mijorus.smile Flatpak, already preinstalled and bound to
@@ -107,16 +107,24 @@ HIDECURSOR_SHA256="10f79e49c5d812d27033793ee7c89e58e9b0ea176a6ba3bb611f9f3e3f885
 SMILE_EXT_UUID="smile-extension@mijorus.it"
 SMILE_EXT_VERSION_TAG="70078"   # EGO v13, GNOME 50; resolved 2026-06-14
 SMILE_EXT_SHA256="e23cf17f1216c099215c6b458e96913f277a371bc770759ca56b858d98651b42"
+# Caffeine comes from Fedora (15-devstack installs the package). When
+# Fedora's build lags the GNOME major of the base (Fedora 45 shipped 60,
+# GNOME 45-50, while upstream 61 handles 51's scroll and menu changes),
+# install_caffeine_fallback swaps in this EGO build; once Fedora's package
+# declares the running GNOME, the package stays and this pin goes unused.
+CAFFEINE_UUID="caffeine@patapon.info"
+CAFFEINE_VERSION_TAG="76057"   # v61, GNOME 45-51; resolved 2026-10-17
+CAFFEINE_SHA256="3ec59c6d1a62c26ba5c45128b084b62ef4e112fa66008768b5094df940e6a164"
 # Gradia Capture (annotate screenshots with Gradia) and Bazaar Companion
 # (Bazaar from an app's right-click menu): Bluefin built both from git
 # submodules, a base without Bluefin has neither. Built here from pinned
 # commits (neither project tags releases); the tarball hashes are the pins.
 GRADIA_EXT_UUID="gradia-integration@alexandervanhee.github.io"
-GRADIA_EXT_COMMIT="f70a2127d0a9acc3c9d4d8198361fc9f4e14818f"   # 2026-08-22, shell-version 49,50
-GRADIA_EXT_SHA256="aab96784a1afd5f28a4175e93bc509c7a185ce42a4c7afd7d4a8321803fb3132"
+GRADIA_EXT_COMMIT="0b7e47e1e5c1e68e234e4d2d24b307e1da1d18a9"   # 2026-10-16, shell-version 49,50,51
+GRADIA_EXT_SHA256="59e999ed0845ee384d29371095d2e935ad0411dd2bed526c924351fec53f0974"
 BAZAAR_EXT_UUID="bazaar-integration@kolunmi.github.io"
-BAZAAR_EXT_COMMIT="3bb9134985343ffd1993520eb37c90e113bfb09b"   # 2026-04-03, shell-version 49,50
-BAZAAR_EXT_SHA256="b779610b06e1ac58af6193f515f637d3846eae67d3fb36f4af71b2e05fb05869"
+BAZAAR_EXT_COMMIT="551ab812fda96e76fecc29a06f2adc993dd4e041"   # 2026-10-16, shell-version 49,50,51
+BAZAAR_EXT_SHA256="1c5260b146fdb9175ab1659dec29d8f16b2914df6718c9a85f6d501ab491b743"
 
 # NO transient dnf installs. Lesson learned the hard way 2026-06-04
 # (build #26918323253 + #26913265617):
@@ -321,6 +329,56 @@ install_bazaar_ext() {
   assert_shell_compat "${target}"
 }
 
+install_caffeine_fallback() {
+  local target="${EXT_DIR}/${CAFFEINE_UUID}"
+  if [[ -f "${target}/metadata.json" ]] && ( assert_shell_compat "${target}" ) >/dev/null 2>&1; then
+    log "caffeine: $(rpm -q gnome-shell-extension-caffeine 2>/dev/null || echo 'the installed build') declares GNOME ${GNOME_SHELL_MAJOR}, kept"
+    return 0
+  fi
+  log "caffeine: $(rpm -q gnome-shell-extension-caffeine 2>/dev/null || echo 'no package') does not declare GNOME ${GNOME_SHELL_MAJOR}; EGO version_tag ${CAFFEINE_VERSION_TAG} instead"
+  if rpm -q gnome-shell-extension-caffeine >/dev/null 2>&1; then
+    # A leaf: nothing requires it (checked), so rpm alone takes it out; the
+    # no-dnf rule of this script is about cascades, and there is none here.
+    if rpm -q --whatrequires gnome-shell-extension-caffeine >/dev/null 2>&1; then
+      log "ERROR: something requires gnome-shell-extension-caffeine: $(rpm -q --whatrequires gnome-shell-extension-caffeine)"
+      exit 1
+    fi
+    rpm -e --nodeps gnome-shell-extension-caffeine
+  fi
+  rm -rf "${target}"
+  mkdir -p "${target}"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 10 \
+    -o /tmp/caffeine.zip \
+    "https://extensions.gnome.org/download-extension/${CAFFEINE_UUID}.shell-extension.zip?version_tag=${CAFFEINE_VERSION_TAG}"
+  verify_sha256 /tmp/caffeine.zip "${CAFFEINE_SHA256}"
+  extract_zip /tmp/caffeine.zip "${target}"
+  rm -f /tmp/caffeine.zip
+  [[ -f "${target}/metadata.json" ]] || { log "ERROR: ${target}/metadata.json missing after extraction"; exit 1; }
+  assert_shell_compat "${target}"
+  glib-compile-schemas --strict "${target}/schemas"
+}
+
+# Every extension Margine enables must declare the running GNOME: one that
+# does not loads as OUT_OF_DATE and quietly drops out of the session, with
+# every other check green (Caffeine 60 on Fedora 45, found in a VM on
+# 2026-10-17). The enabled set is the zz1 override 30-gnome-defaults wrote.
+assert_enabled_extensions_compat() {
+  local override=/usr/share/glib-2.0/schemas/zz1-margine.gschema.override uuid bad=()
+  [[ -f "$override" ]] || { log "ERROR: $override missing, cannot check the enabled extensions"; exit 1; }
+  for uuid in $(sed -n "s/^enabled-extensions=\[\(.*\)\]$/\1/p" "$override" | tr -d "' " | tr ',' ' '); do
+    if [[ ! -f "${EXT_DIR}/${uuid}/metadata.json" ]]; then
+      bad+=("${uuid} (missing)")
+    elif ! ( assert_shell_compat "${EXT_DIR}/${uuid}" ) >/dev/null 2>&1; then
+      bad+=("${uuid} (no GNOME ${GNOME_SHELL_MAJOR})")
+    fi
+  done
+  if (( ${#bad[@]} )); then
+    log "ERROR: enabled extensions that would not load on GNOME ${GNOME_SHELL_MAJOR}: ${bad[*]}"
+    exit 1
+  fi
+  log "every enabled extension declares GNOME ${GNOME_SHELL_MAJOR}"
+}
+
 install_legacy_icon_shims() {
   local dst=/usr/share/icons/hicolor/scalable/actions
   mkdir -p "$dst"
@@ -355,6 +413,37 @@ install_smile_ext() {
     ls -la "${target}"
     exit 1
   fi
+  # margine: GNOME 51 (2026-10-16). EGO has no Smile build for GNOME 51 yet
+  # (version_tag 70078 lists 45-50). GNOME 51 removed
+  # Clutter.get_default_backend(), which Smile calls for the virtual keyboard
+  # that pastes the emoji: with 51 only added to shell-version the extension
+  # loads but every paste throws a TypeError. Margine takes the seat from
+  # global.stage.context's backend (what GNOME Shell 51's keyboard.js does)
+  # and adds 51, the change proposed upstream in
+  # mijorus/smile-gnome-extension#23. Tested on a headless GNOME Shell 51.0
+  # and 50.5: ACTIVE, the CopiedEmoji signal pastes without a JS error. Tied
+  # to this version_tag: the EGO pin check's bump to a real 51 build turns it
+  # off on its own.
+  if [[ "${GNOME_SHELL_MAJOR}" == "51" && "${SMILE_EXT_VERSION_TAG}" == "70078" ]]; then
+    python3 - "${target}" <<'PY' || { log "ERROR: smile GNOME 51 patch did not apply"; exit 1; }
+import json, sys
+d = sys.argv[1]
+js = f"{d}/extension.js"
+src = open(js).read()
+old = "this.virtualKeyboard = Clutter.get_default_backend().get_default_seat().create_virtual_device(deviceType);"
+new = ("const backend = global.stage.context?.get_backend?.() ?? Clutter.get_default_backend();\n"
+       "        this.virtualKeyboard = backend.get_default_seat().create_virtual_device(deviceType);")
+if old not in src:
+    sys.exit("extension.js no longer has the get_default_backend() call")
+open(js, "w").write(src.replace(old, new, 1))
+md_path = f"{d}/metadata.json"
+md = json.load(open(md_path))
+if "51" not in [str(v) for v in md.get("shell-version", [])]:
+    md["shell-version"].append("51")
+json.dump(md, open(md_path, "w"), indent=2)
+PY
+    log "smile: GNOME 51 backend call and shell-version (mijorus/smile-gnome-extension#23)"
+  fi
   assert_shell_compat "${target}"
   if [[ -d "${target}/schemas" ]] && compgen -G "${target}/schemas/*.xml" > /dev/null; then
     glib-compile-schemas --strict "${target}/schemas"
@@ -384,7 +473,9 @@ install_hidecursor
 install_smile_ext
 install_gradia_ext
 install_bazaar_ext
+install_caffeine_fallback
 install_legacy_icon_shims
+assert_enabled_extensions_compat
 
 log "Recompiling /usr/share/glib-2.0/schemas to pick up new extension schemas"
 glib-compile-schemas /usr/share/glib-2.0/schemas
@@ -670,7 +761,7 @@ log "o-tiling: runtime config ${OTILING_RUNTIME_CONF#"$EXT_DIR"/} verified to ca
 # (Found 2026-06-15: o-tiling schema unregistered on a live host.)
 log "Registering Margine extension gschemas into the global schema set"
 shopt -s nullglob
-for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it "${GRADIA_EXT_UUID}"; do
+for uuid in o-tiling@oliwebd.github.com hide-cursor@elcste.com smile-extension@mijorus.it "${GRADIA_EXT_UUID}" "${CAFFEINE_UUID}"; do
   for xml in "/usr/share/gnome-shell/extensions/${uuid}/schemas/"*.gschema.xml; do
     base="$(basename "$xml")"
     if [[ ! -f "/usr/share/glib-2.0/schemas/${base}" ]]; then

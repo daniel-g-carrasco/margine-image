@@ -1,0 +1,20 @@
+[Unit]
+Description=Margine: move a plaintext Fedora 44 login keyring into oo7
+After=graphical-session.target
+PartOf=graphical-session.target
+
+# keyring-import-legacy --check is quick and leaves when there is nothing
+# to import, which is every login but the first ones after Fedora 45 on a
+# machine where `margine-keyring blank` was used. A locked keyring is not
+# unlocked from here: the user gets a notification (exit 75) instead of a
+# password prompt out of nowhere.
+[Service]
+Type=oneshot
+ExecCondition=/usr/libexec/margine/keyring-import-legacy --check
+ExecStart=/usr/libexec/margine/keyring-import-legacy --no-prompt
+SuccessExitStatus=75
+
+# graphical-session.target, not default.target: the notification daemon
+# must be up (same reason as margine-upgrade-notify.service).
+[Install]
+WantedBy=graphical-session.target

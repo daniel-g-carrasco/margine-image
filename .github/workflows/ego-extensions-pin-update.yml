@@ -4,6 +4,8 @@ name: EGO extensions pin update
 # version_tag + sha256 in build_files/build-margine-extensions.sh:
 #   * hide-cursor@elcste.com   (HIDECURSOR_VERSION_TAG / HIDECURSOR_SHA256)
 #   * smile-extension@mijorus.it (SMILE_EXT_VERSION_TAG / SMILE_EXT_SHA256)
+#   * caffeine@patapon.info    (CAFFEINE_VERSION_TAG / CAFFEINE_SHA256), the
+#     fallback for when Fedora's package lags the GNOME major
 #
 # Why this exists: o-tiling is watched by Renovate (GitHub releases datasource)
 # + otiling-pin-sha.yml. But Renovate has NO datasource for extensions.gnome.org,
@@ -77,7 +79,8 @@ jobs:
           # uuid : version_tag var : sha var
           for entry in \
             "hide-cursor@elcste.com:HIDECURSOR_VERSION_TAG:HIDECURSOR_SHA256" \
-            "smile-extension@mijorus.it:SMILE_EXT_VERSION_TAG:SMILE_EXT_SHA256"; do
+            "smile-extension@mijorus.it:SMILE_EXT_VERSION_TAG:SMILE_EXT_SHA256" \
+            "caffeine@patapon.info:CAFFEINE_VERSION_TAG:CAFFEINE_SHA256"; do
             uuid="${entry%%:*}"; rest="${entry#*:}"
             tagvar="${rest%%:*}"; shavar="${rest##*:}"
 

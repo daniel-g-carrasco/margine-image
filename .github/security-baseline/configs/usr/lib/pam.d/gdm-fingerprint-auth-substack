@@ -1,0 +1,5 @@
+auth     include   fingerprint-auth
+auth     required  pam_deny.so
+
+password include   fingerprint-auth
+password required  pam_deny.so

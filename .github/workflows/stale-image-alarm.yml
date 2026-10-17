@@ -219,7 +219,7 @@ jobs:
         # the tag disappearing is its own alarm, never a silent pass
         # (that is how the -dx retirement would have shown up).
         env:
-          BASE_IMAGE: ghcr.io/ublue-os/silverblue-main:44
+          BASE_IMAGE: ghcr.io/ublue-os/silverblue-main:45
           BASE_MAX_AGE: ${{ inputs.base_max_age_days || '14' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true

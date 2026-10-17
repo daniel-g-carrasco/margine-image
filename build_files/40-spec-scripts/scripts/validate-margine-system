@@ -161,6 +161,7 @@ DESKTOP_PKGS=(
   nautilus ptyxis vte291-gtk4 gnome-system-monitor gnome-bluetooth gnome-disk-utility gnome-tweaks
   ibus-gtk4 ibus-gtk3 zenity
   NetworkManager-openvpn-gnome NetworkManager-openconnect-gnome
+  NetworkManager-ssh-gnome nm-connection-editor
 )
 missing_desktop=()
 for p in "${DESKTOP_PKGS[@]}"; do

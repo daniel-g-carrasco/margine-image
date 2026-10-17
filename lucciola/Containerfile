@@ -20,7 +20,7 @@ FROM ${BASE_IMAGE}
 
 # Bump only together with a test boot: see the comment in build.sh. Version
 # and release only: build.sh adds the base's Fedora tag (.fc44, .fc45).
-ARG NOCTALIA_VR=5.2.1-1
+ARG NOCTALIA_VR=5.3.0-1
 
 COPY system_files/ /
 

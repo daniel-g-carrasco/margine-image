@@ -1,7 +1,7 @@
 # Ptyxis follows the Noctalia palette: the template writes a Ptyxis palette
 # file (Ptyxis reads user palettes from ~/.local/share/org.gnome.Ptyxis/palettes)
 # and the hook selects it in the default profile once. Noctalia has no Ptyxis
-# template of its own, built-in or community (5.2.1).
+# template of its own, built-in or community (checked again with 5.3.0).
 [theme.templates.user.lucciola_ptyxis]
 input_path = "/usr/share/lucciola/noctalia/templates/ptyxis.palette"
 output_path = "$XDG_DATA_HOME/org.gnome.Ptyxis/palettes/noctalia.palette"

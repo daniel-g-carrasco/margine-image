@@ -33,6 +33,26 @@ stable release is cut.
   command from a system that is not Margine.
 
 ### Changed (2026-10-17)
+- **Lucciola: Noctalia 5.3.0.** Fedora 44 replaced noctalia 5.2.1-1 with
+  5.3.0-1 in its stable updates on 2026-10-17, and 5.2.1 is no longer
+  installable there, so the next Lucciola build would have failed on the
+  pinned version. The pin moves to 5.3.0-1. Lucciola's Noctalia defaults
+  pass 5.3.0's own validator as they did 5.2.1's, every `noctalia msg`
+  command Lucciola uses is unchanged, and the Keep Awake plugin (plugin
+  API 24, accepted from 3 to 34) passes `noctalia plugins lint`. One
+  adjustment: 5.3.0 paints the hovered workspace label in the palette's
+  hover colour, the dark hover fill in the Margine palette, so the bar's
+  workspace labels now keep their colours under the pointer. Visible with
+  5.3.0: the launcher's new "full" layout (views, search field at the
+  bottom; `[shell.launcher] layout = "simple"` brings back the old one),
+  the screens going dark a minute after the idle lock, as Lucciola's idle
+  defaults intend (5.2.1 restarted the idle timers when it locked, so they
+  stayed on 11 more minutes), a password reveal button on the lock screen,
+  the mouse wheel in the window switcher. Fedora 45 has 5.3.0-1 in
+  updates-testing only, which its pre-release enables by default: the pin
+  holds on a released 45 once that update goes stable.
+
+### Changed (2026-10-17)
 - **And 49.5 MB less again.** `/usr/lib/os-release` carries the build date,
   so it changes every day, and the chunker filed it with fedora-release:
   the date dragged a 49.5 MB layer of unrelated packages into every update.

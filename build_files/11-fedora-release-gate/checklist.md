@@ -28,7 +28,12 @@ matches the base; go through this list first, then bump the number.
   unchanged), so a fc45 WSF release can follow at its own pace.
 - `lucciola/Containerfile`: `NOCTALIA_VR` carries no Fedora tag (build.sh
   adds the base's); check that the new release ships the same
-  version-release and test-boot Lucciola.
+  version-release and test-boot Lucciola. On 2026-10-17 the pin is 5.3.0-1,
+  and Fedora 45, still a pre-release, had 5.2.1-1 in its release
+  repository and 5.3.0-1 only in updates-testing (FEDORA-2026-04f44a27d9).
+  A pre-release enables updates-testing by default, a released Fedora does
+  not: once 45 is out, the pin resolves there only after that update is
+  stable.
 - `build_files/40-spec-scripts/scripts/validate-baseline-packages`:
   `quay.io/fedora/fedora:44`.
 - `build_files/40-spec-scripts/declarations/margine-atomic.yaml`: the

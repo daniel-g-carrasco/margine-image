@@ -37,8 +37,11 @@ verified by the device, rollback, and every Margine fix. This layer adds:
 - `~/.config/niri/config.kdl`, created at login when missing, starting with
   `include "/etc/niri/config.kdl"`: niri reads the user file *instead of* the
   system one, and Noctalia's niri template (Templates > Built-in > Niri)
-  would otherwise create it with nothing but its colours, dropping every
-  Lucciola default. A file holding only Noctalia's include is repaired;
+  adds its include to that file: up to Noctalia 5.2.1 it created the file
+  holding nothing but that include, dropping every Lucciola default; from
+  5.3.0 it creates none while `/etc/niri/config.kdl` exists, so without
+  this file the template would do nothing. A file holding only Noctalia's
+  include is repaired;
 - one scroll speed for every application: toolkits turn a unit of touchpad
   scrolling into 2.5 (GTK 4), 4 (Firefox, Zen, Thunderbird) or 5.3
   (Chromium, Electron) logical pixels, so window rules scale the second

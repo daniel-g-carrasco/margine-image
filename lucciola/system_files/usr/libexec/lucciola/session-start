@@ -21,13 +21,15 @@ TOML
   : > "$marker"
 fi
 # niri reads ~/.config/niri/config.kdl INSTEAD of /etc/niri/config.kdl as soon
-# as it exists. Noctalia's niri template (Templates > Built-in > Niri) creates
-# it holding only `include "noctalia.kdl"`, and its undo leaves it empty:
-# either way every Lucciola default is gone, keybindings included. So the
-# user file starts from the system config, and what is added later (Noctalia's
-# include, the user's own lines) lands after it. A file with nothing but
-# comments and Noctalia's include is repaired the same way; any other user
-# file is left alone.
+# as it exists. Noctalia's niri template (Templates > Built-in > Niri) up to
+# 5.2.1 created it holding only `include "noctalia.kdl"` (5.3.0 no longer
+# does while /etc/niri/config.kdl exists, but such files stay around), and
+# its undo strips that include, leaving the file empty: either way every
+# Lucciola default is gone, keybindings included. So the user file starts
+# from the system config, and what is added later (Noctalia's include, the
+# user's own lines) lands after it. A file with nothing but comments and
+# Noctalia's include is repaired the same way; any other user file is left
+# alone.
 niri_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/niri/config.kdl"
 if [ ! -e "$niri_cfg" ] || ! grep -Eqv '^[[:space:]]*(//.*)?$|^[[:space:]]*include[[:space:]]+"noctalia\.kdl"[[:space:]]*$' "$niri_cfg"; then
   mkdir -p "${niri_cfg%/*}"

@@ -70,6 +70,13 @@ hide_when_empty = true
 focused_color = "primary"
 occupied_color = "on_surface_variant"
 empty_color = "outline"
+# Since Noctalia 5.3.0 the minimal style paints the label under the pointer
+# in the palette's hover colour (upstream commit 92d829c), a role meant as a
+# bright accent; in the Margine palette it is the dark hover fill (mHover
+# #2e2e32), so the label would all but vanish on the near-black bar. Off,
+# labels keep the colours above while hovered (and the faint hover tint
+# 5.2.1 drew goes too: it hangs on the same switch).
+change_color_on_hover = false
 
 [widget.clock]
 format = "{:%a %d %b  %H:%M}"

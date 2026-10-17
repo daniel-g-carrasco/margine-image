@@ -18,7 +18,11 @@ NOCTALIA_EVR="${NOCTALIA_VR}.fc$(rpm -E %fedora)"
 #    gnome-keyring, whose job (the Secret Service) oo7 does from Fedora 45.
 #    Noctalia is pinned: upstream supports only its latest release and Fedora
 #    ships every one within a day, so a new version arrives only through a
-#    reviewed change of NOCTALIA_VR, never by itself.
+#    reviewed change of NOCTALIA_VR, never by itself. The other side of the
+#    pin: Fedora's updates repository keeps only the newest build, so a
+#    version that came as an update stops being installable the day the
+#    next one goes stable (5.2.1-1 left Fedora 44 on 2026-10-17), and this
+#    install fails until NOCTALIA_VR follows.
 #    ddcutil: Noctalia's brightness slider drives external monitors over
 #    DDC/CI when it finds it (GNOME has no such path, so Margine itself
 #    does not carry it). The Fedora package brings the udev rule that

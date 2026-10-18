@@ -187,6 +187,25 @@ sed -i \
   /usr/lib/os-release
 grep -q '^NAME="Lucciola"$' /usr/lib/os-release || { echo "ERROR: os-release not rewritten" >&2; exit 1; }
 
+# 3b. Spola's Noctalia plugin (noctalia/spola in github.com/daniel-g-carrasco/
+#     spola), next to Keep Awake's in the image's plugin source, at the commit
+#     the Containerfile pins. Without Spola installed it shows nothing in the
+#     bar (its own logic), so every Lucciola user can have it there. Fetched
+#     before the checks below: Noctalia's validator resolves the widget
+#     types from the plugins it finds in the path source.
+[[ -n "${SPOLA_PLUGIN_REF:-}" ]] || { echo "ERROR: SPOLA_PLUGIN_REF not set" >&2; exit 1; }
+plugins=/usr/share/lucciola/noctalia/plugins
+log "fetching Spola's Noctalia plugin at ${SPOLA_PLUGIN_REF:0:12}"
+mkdir -p "$plugins/spola"
+curl -fsSL --retry 3 "https://github.com/daniel-g-carrasco/spola/archive/${SPOLA_PLUGIN_REF}.tar.gz" \
+  | tar -xz -C "$plugins/spola" --strip-components=3 "spola-${SPOLA_PLUGIN_REF}/noctalia/spola"
+grep -q '^id = "daniel-g-carrasco/spola"$' "$plugins/spola/plugin.toml" \
+  || { echo "ERROR: the Spola plugin is not where the tarball used to have it" >&2; exit 1; }
+# the plugin author's own offline checks, on both plugins; a warning fails too
+out="$(noctalia plugins lint "$plugins"/* 2>&1)" || { echo "$out" >&2; exit 1; }
+grep -q "0 errors, 0 warnings" <<<"$out" || { echo "$out" >&2; echo "ERROR: plugin lint not clean" >&2; exit 1; }
+log "plugins: $(ls "$plugins" | tr '\n' ' ')"
+
 # 4. Checks: the shipped niri config must parse (includes resolved), and the
 #    helpers must be there and executable.
 niri validate -c /etc/niri/config.kdl

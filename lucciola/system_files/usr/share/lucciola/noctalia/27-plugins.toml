@@ -1,0 +1,43 @@
+# The plugins the image ships read-only, as one path source, enabled here.
+#
+# Keep Awake (/usr/libexec/lucciola/keep-awake): a bar indicator that appears
+# only while Keep Awake is on or scheduled, a control-centre tile in place of
+# Noctalia's caffeine, a panel with quick durations and a scheduler, and
+# launcher results ("awake", "sveglio", "2h"). Noctalia's caffeine is still
+# what keeps its own idle lock away while Keep Awake holds; it just no longer
+# has a button of its own.
+#
+# Spola (the Koofr sync client, github.com/daniel-g-carrasco/spola, plugin
+# fetched at build time from its repository: SPOLA_PLUGIN_REF in the
+# Containerfile): a cloud in the bar with the sync status, a panel with every
+# folder, a tile that pauses and resumes, launcher results behind "/spola".
+# Without Spola installed the bar shows nothing and the rest says so.
+[[plugins.source]]
+name = "lucciola"
+kind = "path"
+location = "/usr/share/lucciola/noctalia/plugins"
+enabled = true
+
+[plugins]
+enabled = ["lucciola/keep_awake", "daniel-g-carrasco/spola"]
+
+[widget.keep-awake]
+type = "lucciola/keep_awake:indicator"
+
+[widget.spola]
+type = "daniel-g-carrasco/spola:indicator"
+
+[[control_center.shortcuts]]
+type = "wifi"
+[[control_center.shortcuts]]
+type = "bluetooth"
+[[control_center.shortcuts]]
+type = "lucciola/keep_awake:tile"
+[[control_center.shortcuts]]
+type = "daniel-g-carrasco/spola:tile"
+[[control_center.shortcuts]]
+type = "nightlight"
+[[control_center.shortcuts]]
+type = "notification"
+[[control_center.shortcuts]]
+type = "power_profile"

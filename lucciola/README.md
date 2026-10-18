@@ -60,6 +60,13 @@ verified by the device, rollback, and every Margine fix. This layer adds:
   durations and a scheduler; the launcher answers "awake", "sveglio", "2h",
   "18:30". From a terminal: `lucciola-keep-awake on [UNTIL] | tomorrow |
   schedule START [UNTIL] | off | cancel | status [--json]`;
+- Spola's Noctalia plugin (Spola is the Koofr sync client,
+  github.com/daniel-g-carrasco/spola; the plugin lives there under
+  `noctalia/spola` and the build fetches it at the commit `SPOLA_PLUGIN_REF`
+  in the Containerfile pins): a cloud in the bar with the sync status, a
+  panel with every folder and its progress, a control-centre tile that
+  pauses and resumes, launcher results behind `/spola`. Without Spola
+  installed the bar shows nothing and the panel says so;
 - `ddcutil`, so Noctalia's brightness slider also drives external monitors
   over DDC/CI (the package's udev rule opens the i2c devices to the
   logged-in user, its modules-load entry loads i2c-dev);

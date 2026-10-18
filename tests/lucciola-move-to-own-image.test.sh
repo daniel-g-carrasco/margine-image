@@ -167,7 +167,7 @@ echo "== move-notify"
 status "ostree-unverified-registry:$M:lucciola" "$S"
 notifier "move pending, no daemon answering: no stamp" 1 - FAKE_NOTIFY_FAIL=1
 notifier "move pending: one notice, stamped with the booted deployment" 1 booted-sum
-check "  title" logged "notify -u normal Lucciola moved to its own image"
+check "  title, sent as Lucciola" logged "notify -u normal -a Lucciola Lucciola moved to its own image"
 check "  Margine's 'Update ready' for that deployment marked seen" \
   test "$(cat "$T/home/.local/state/margine/staged-seen")" = pending-sum
 notifier "next login, same deployments: silent" 0 booted-sum

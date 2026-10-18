@@ -106,6 +106,13 @@ jobs:
         # alone (other images, no policy, failed verification) is tested.
         run: bash tests/signed-origin.test.sh
 
+      - name: Lucciola move to its own image
+        # Rebases installs on margine:lucciola to ghcr.io/daniel-g-carrasco/
+        # lucciola:stable. What it leaves alone (other tags, pins, pending
+        # switches, rollbacks, the opt-out, no policy scope, an unpublished
+        # image, a failed verification) and the login notice are tested.
+        run: bash tests/lucciola-move-to-own-image.test.sh
+
       - name: Shipped public key is the signing key
         # Devices verify against the copy in system_files; CI signs with the
         # private half of secrets/cosign.pub. If they ever differ, every

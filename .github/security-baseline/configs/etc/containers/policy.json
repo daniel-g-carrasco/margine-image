@@ -54,6 +54,15 @@
             "type": "matchRepository"
           }
         }
+      ],
+      "ghcr.io/daniel-g-carrasco/lucciola": [
+        {
+          "type": "sigstoreSigned",
+          "keyPath": "/usr/lib/pki/containers/margine.pub",
+          "signedIdentity": {
+            "type": "matchRepository"
+          }
+        }
       ]
     },
     "docker-daemon": {

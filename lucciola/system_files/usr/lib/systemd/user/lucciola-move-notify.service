@@ -1,0 +1,15 @@
+[Unit]
+Description=Lucciola: tell the user that Lucciola moved to its own image
+Documentation=file:///usr/libexec/lucciola/move-notify
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lucciola/move-notify
+
+# graphical-session.target, not default.target: the notification daemon must
+# be up (same reason as margine-upgrade-notify.service). The system service
+# also starts it in sessions that are already open when the move is staged.
+[Install]
+WantedBy=graphical-session.target

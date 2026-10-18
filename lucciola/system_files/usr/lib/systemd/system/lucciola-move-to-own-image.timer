@@ -1,0 +1,14 @@
+[Unit]
+Description=Lucciola: look for Lucciola's own image after boot and daily
+
+[Timer]
+# A few minutes after boot (the service waits for the network), then daily
+# on the wall clock: Persistent fires a run missed while the laptop was off
+# or asleep. The random delay spreads the registry checks.
+OnBootSec=5min
+OnCalendar=daily
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

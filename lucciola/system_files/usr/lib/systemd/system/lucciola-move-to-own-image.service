@@ -1,0 +1,14 @@
+[Unit]
+Description=Lucciola: move from margine:lucciola to Lucciola's own image
+Documentation=file:///usr/libexec/lucciola/move-to-own-image
+ConditionPathExists=/run/ostree-booted
+Wants=network-online.target
+# After signed-origin and uupd: one rpm-ostree transaction at a time, and the
+# move replaces whatever update of margine:lucciola they staged.
+After=network-online.target rpm-ostreed.service margine-signed-origin.service uupd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lucciola/move-to-own-image
+# A rebase downloads what an update would; give it time on slow links.
+TimeoutStartSec=45min

@@ -7,6 +7,25 @@ stable release is cut.
 
 ## [Unreleased]
 
+### Added (2026-10-18)
+- **Lucciola moves to its own image.** Installs that follow
+  `margine:lucciola` rebase to `ghcr.io/daniel-g-carrasco/lucciola:stable`
+  once that tag is published: Lucciola's own repository, signed with the
+  same key, booting the same kernel signed with the Margine key.
+  `lucciola-move-to-own-image.timer`, a few minutes after boot and then
+  daily, stages it on the signed transport, so the signature is checked
+  before anything is staged; layered packages come along, and a notice
+  asks for a restart. It leaves alone other tags (`:lucciola-test`, dated
+  ones), digest pins, other images, a switch already pending, an install
+  that went back with `rpm-ostree rollback`, and any install with
+  `/etc/lucciola/stay-on-margine`. Until `:stable` exists it waits, one
+  journal line per run. Plain Margine installs do not carry it.
+- **Margine trusts Lucciola's repository.** `policy.json` requires the
+  Margine key for `ghcr.io/daniel-g-carrasco/lucciola` too, with its
+  `registries.d` entry (sigstore attachments), on every Margine tag: a
+  rebase to Lucciola's own image is verified like a Margine update.
+  Validator A.4.trust and the security baseline follow.
+
 ### Fixed (2026-10-17)
 - **The Margine System app compares Lucciola with :lucciola.** It checked
   every machine against `:stable`, so a current Lucciola always showed

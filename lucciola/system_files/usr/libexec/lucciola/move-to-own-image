@@ -1,0 +1,155 @@
+#!/usr/bin/bash
+# Move an install that follows margine:lucciola to Lucciola's own image,
+# ghcr.io/daniel-g-carrasco/lucciola:stable (2026-10-18).
+#
+# Lucciola started as this layer on the Margine image, published as
+# ghcr.io/daniel-g-carrasco/margine:lucciola. It now has its own repository
+# and image, signed with the same key and booting the same kernel signed with
+# the same Margine MOK. This stages that image on installs that follow
+# margine:lucciola; the switch applies at the next restart, like an update.
+#
+# Safe by construction: `rpm-ostree rebase` on ostree-image-signed: checks the
+# signature against /etc/containers/policy.json (the lucciola scope comes from
+# 16-image-trust) before it stages anything. If the image is not published
+# yet, does not verify, or the download fails, nothing changes: the install
+# keeps updating from margine:lucciola and the next run tries again. Layered
+# packages are carried over as on any rebase.
+#
+# Runs from lucciola-move-to-own-image.timer: a few minutes after boot, then
+# daily. Does nothing when:
+#   - /etc/lucciola/stay-on-margine exists (the opt-out);
+#   - the booted deployment does not follow exactly the margine:lucciola tag,
+#     on the signed or the unverified transport (lucciola-test, dated tags,
+#     digest pins, other images: the owner's choice);
+#   - a deployment of Lucciola's image is already pending;
+#   - another switch is pending (something the user staged; an update of
+#     margine:lucciola itself is replaced by the move);
+#   - Lucciola's image is a rollback deployment: the install ran it and went
+#     back, so it waits (the opt-out makes that permanent);
+#   - policy.json has no signature scope for Lucciola's repository (a local
+#     edit kept it out): never moved without a signature check;
+#   - Lucciola's image is not published yet (skopeo inspect, three tries).
+# After staging, it asks every logged-in user's session to show the notice
+# (lucciola-move-notify.service, which also runs at every login).
+#
+# Tests only: LUCCIOLA_MOVE_TARGET, set in a drop-in of the service, points
+# at another tag of ghcr.io/daniel-g-carrasco/lucciola (e.g. :candidate).
+set -uo pipefail
+
+SOURCE="ghcr.io/daniel-g-carrasco/margine:lucciola"
+REPO="ghcr.io/daniel-g-carrasco/lucciola"
+TARGET="${LUCCIOLA_MOVE_TARGET:-${REPO}:stable}"
+OPTOUT="${LUCCIOLA_MOVE_OPTOUT:-/etc/lucciola/stay-on-margine}"
+POLICY="${MARGINE_POLICY:-/etc/containers/policy.json}"
+NOTIFY_UNIT="lucciola-move-notify.service"
+
+say() { echo "$*"; logger -t lucciola-move-to-own-image -- "$*" 2>/dev/null || true; }
+
+# Container image reference -> registry/repository:tag (or @digest); empty
+# for anything that is not a plain registry image on the signed or the
+# unverified transport.
+image_of() {
+  local r="$1"
+  case "$r" in
+    ostree-unverified-registry:*) r="${r#ostree-unverified-registry:}" ;;
+    ostree-unverified-image:docker://*|ostree-image-signed:docker://*) r="${r#*:docker://}" ;;
+    ostree-unverified-image:registry:*|ostree-image-signed:registry:*) r="${r#*:registry:}" ;;
+    *) r="" ;;
+  esac
+  printf '%s' "$r"
+}
+
+if [[ -e "$OPTOUT" ]]; then
+  say "$OPTOUT exists: staying on $SOURCE"
+  exit 0
+fi
+
+# Only a tag of Lucciola's repository: the signature scope covers that
+# repository and nothing else.
+tag=""
+case "$TARGET" in "$REPO":*) tag="${TARGET#"$REPO":}" ;; esac
+if [[ ! "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  say "target $TARGET is not a tag of $REPO: refusing to move"
+  exit 1
+fi
+
+# Deployments in rpm-ostree's order: pending ones (staged, or the default for
+# the next boot) come before the booted one, rollbacks after it.
+booted=""; pending=(); rollback=()
+while IFS=$'\t' read -r kind ref; do
+  case "$kind" in
+    booted) booted="$ref" ;;
+    pending) pending+=("$ref") ;;
+    rollback) rollback+=("$ref") ;;
+  esac
+done < <(rpm-ostree status --json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["deployments"]
+b = next((i for i, x in enumerate(d) if x.get("booted")), None)
+if b is not None:
+    for i, x in enumerate(d):
+        kind = "booted" if i == b else ("pending" if i < b else "rollback")
+        print(kind + "\t" + (x.get("container-image-reference") or ""))
+' 2>/dev/null)
+
+if [[ "$(image_of "$booted")" != "$SOURCE" ]]; then
+  say "following ${booted:-no container image}, not $SOURCE: nothing to do"
+  exit 0
+fi
+
+for p in ${pending[@]+"${pending[@]}"}; do
+  case "$(image_of "$p")" in
+    "$REPO":*|"$REPO"@*) say "Lucciola's own image is already pending ($p): it applies at the next restart"; exit 0 ;;
+    "$SOURCE") ;;   # an update of margine:lucciola (uupd, signed-origin): the move replaces it
+    *) say "another switch is pending (${p:-not a container image}): leaving it alone"; exit 0 ;;
+  esac
+done
+
+for r in ${rollback[@]+"${rollback[@]}"}; do
+  case "$(image_of "$r")" in
+    "$REPO":*|"$REPO"@*)
+      say "this install already ran Lucciola's own image ($r) and went back: leaving it; create $OPTOUT to stay on $SOURCE for good"
+      exit 0 ;;
+  esac
+done
+
+if ! python3 -c "import json,sys; p=json.load(open(sys.argv[1])); r=p['transports']['docker'][sys.argv[2]][0]; sys.exit(0 if r.get('type')=='sigstoreSigned' else 1)" "$POLICY" "$REPO" 2>/dev/null; then
+  say "no signature policy for $REPO in $POLICY: not moving without a signature check"
+  exit 0
+fi
+
+published=""
+for try in 1 2 3; do
+  if timeout 120 skopeo inspect --no-tags "docker://$TARGET" >/dev/null 2>&1; then
+    published=1
+    break
+  fi
+  (( try < 3 )) && sleep 20
+done
+if [[ -z "$published" ]]; then
+  say "$TARGET is not published yet (or the registry did not answer): staying on $SOURCE, next try at the next run"
+  exit 0
+fi
+
+dest="ostree-image-signed:docker://$TARGET"
+say "moving from $booted to $dest (signature verified before anything is staged)"
+if ! rpm-ostree rebase "$dest"; then
+  say "could not move to $dest (signature, network or packages): nothing changed, next try at the next run"
+  exit 1
+fi
+say "Lucciola's own image is staged: it applies at the next restart"
+
+# The notice: started in each logged-in user's own manager, so the stamp it
+# writes lands in that user's state directory. runuser's PAM stack opens no
+# login session. Users that log in later get it from the unit's
+# graphical-session.target link.
+while read -r uid user _; do
+  if [[ ! "$uid" =~ ^[0-9]+$ ]] || (( uid < 1000 )); then continue; fi
+  [[ "$user" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || continue
+  if runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
+       DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+       systemctl --user start --no-block "$NOTIFY_UNIT" >/dev/null 2>&1; then
+    say "notice sent to $user's session"
+  fi
+done < <(loginctl list-users --no-legend --no-pager 2>/dev/null)
+exit 0

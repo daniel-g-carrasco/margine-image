@@ -103,6 +103,33 @@ After the first boot `mok-enroll.service` stages the key;
 next restart wait for you (Enroll MOK, Continue, Yes, password `margine`).
 Turn Secure Boot back on when `ujust margine-secureboot` says so.
 
+## The move to Lucciola's own image
+
+Lucciola now has its own repository and image,
+`ghcr.io/daniel-g-carrasco/lucciola`, signed with the same key and booting
+the same kernel signed with the Margine key. Installs that follow
+`margine:lucciola` move there by themselves once its `:stable` tag is
+published: `lucciola-move-to-own-image.timer` (a few minutes after boot,
+then daily) runs `/usr/libexec/lucciola/move-to-own-image`, which stages
+`ostree-image-signed:docker://ghcr.io/daniel-g-carrasco/lucciola:stable`.
+The signature is checked against the policy Margine ships for that
+repository before anything is staged, and layered packages come along. A
+notice asks for a restart; the switch happens then, like an update. Files,
+settings and apps stay. The boot chain keeps its keys (the same shim, GRUB
+signed by Fedora, the kernel signed with the Margine key), so Secure Boot
+stays on and TPM unlock does not ask for the passphrase.
+
+Nothing happens on `:lucciola-test`, dated tags, digest pins or any other
+image, while another switch is pending, or after going back from Lucciola's
+image with `rpm-ostree rollback` (as long as that deployment is there). To
+stay on `margine:lucciola` for good:
+
+```sh
+sudo mkdir -p /etc/lucciola && sudo touch /etc/lucciola/stay-on-margine
+```
+
+`journalctl -u lucciola-move-to-own-image` shows what each run decided.
+
 ## Logo
 
 `assets/lucciola-logo.svg` (the firefly) and `assets/lucciola-wordmark.svg`

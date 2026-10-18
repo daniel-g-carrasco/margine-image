@@ -217,17 +217,23 @@ fi
 # fell through to the catch-all insecureAcceptAnything: "signed" transports
 # verified nothing.
 check_nonempty "usr/lib/pki/containers/margine.pub" "A.4.trust"
-grep -qs 'use-sigstore-attachments: true' "$ROOTFS/etc/containers/registries.d/margine.yaml" \
-  || { echo "::error::registries.d/margine.yaml missing or without use-sigstore-attachments (A.4.trust)"; fail=1; }
+# lucciola: Lucciola's own repository, same key (2026-10-18). Installs on
+# margine:lucciola rebase there, verified by this scope.
+for repo in margine lucciola; do
+  grep -qs "^  ghcr.io/daniel-g-carrasco/${repo}:" "$ROOTFS/etc/containers/registries.d/${repo}.yaml" \
+    && grep -qs 'use-sigstore-attachments: true' "$ROOTFS/etc/containers/registries.d/${repo}.yaml" \
+    || { echo "::error::registries.d/${repo}.yaml missing or without use-sigstore-attachments (A.4.trust)"; fail=1; }
+done
 if ! python3 - "$ROOTFS/etc/containers/policy.json" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1]))
-r = p["transports"]["docker"]["ghcr.io/daniel-g-carrasco/margine"][0]
-assert r["type"] == "sigstoreSigned" and r["keyPath"] == "/usr/lib/pki/containers/margine.pub"
+for repo in ("margine", "lucciola"):
+    r = p["transports"]["docker"]["ghcr.io/daniel-g-carrasco/" + repo][0]
+    assert r["type"] == "sigstoreSigned" and r["keyPath"] == "/usr/lib/pki/containers/margine.pub"
 assert p["transports"]["docker"].get("ghcr.io/ublue-os"), "base scope lost"
 PY
 then
-  echo "::error::policy.json has no sigstoreSigned scope for ghcr.io/daniel-g-carrasco/margine, or lost the base ones (A.4.trust)"; fail=1
+  echo "::error::policy.json has no sigstoreSigned scope for ghcr.io/daniel-g-carrasco/margine or .../lucciola, or lost the base ones (A.4.trust)"; fail=1
 fi
 test -L "$ROOTFS/usr/lib/systemd/system/multi-user.target.wants/margine-signed-origin.service" \
   || { echo "::error::margine-signed-origin.service is not enabled (A.4.trust)"; fail=1; }

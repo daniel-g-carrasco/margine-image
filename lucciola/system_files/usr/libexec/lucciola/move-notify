@@ -1,0 +1,54 @@
+#!/usr/bin/bash
+# Tell the user that Lucciola moved to its own image and that the next
+# restart switches to it (2026-10-18).
+#
+# lucciola-move-to-own-image.service stages the move as root and starts this
+# unit (lucciola-move-notify.service) in every logged-in user's manager; the
+# unit also runs at every login, for a session that starts while the move is
+# still pending. It speaks only while the booted deployment follows
+# margine:lucciola and a deployment of ghcr.io/daniel-g-carrasco/lucciola is
+# next in line, once per booted deployment, and the stamp is written only
+# after the notification went out, as in Margine's own notifiers.
+set -uo pipefail
+
+MN="${MARGINE_NOTIFY:-/usr/libexec/margine/margine-notify}"
+[[ -x "$MN" ]] || exit 0
+command -v rpm-ostree >/dev/null 2>&1 || exit 0
+
+# booted checksum, pending checksum, booted reference, pending reference
+info="$(rpm-ostree status --json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["deployments"]
+b = next((i for i, x in enumerate(d) if x.get("booted")), None)
+if not b:   # no booted deployment, or nothing pending before it
+    sys.exit(1)
+ref = lambda x: x.get("container-image-reference") or "-"
+print(d[b].get("checksum") or "-", d[0].get("checksum") or "-", ref(d[b]), ref(d[0]), sep="\t")
+' 2>/dev/null)" || exit 0
+IFS=$'\t' read -r booted_sum pending_sum booted_ref pending_ref <<<"$info"
+
+case "$booted_ref" in
+  ostree-*:ghcr.io/daniel-g-carrasco/margine:lucciola|ostree-*://ghcr.io/daniel-g-carrasco/margine:lucciola) ;;
+  *) exit 0 ;;
+esac
+case "$pending_ref" in
+  ostree-*ghcr.io/daniel-g-carrasco/lucciola[:@]*) ;;
+  *) exit 0 ;;
+esac
+
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}"
+STAMP="$STATE/lucciola/move-notified"
+[[ "$(cat "$STAMP" 2>/dev/null)" == "$booted_sum" ]] && exit 0
+mkdir -p "$STATE/lucciola"
+
+if "$MN" -u normal \
+     "Lucciola moved to its own image" \
+     "Restart whenever it suits you to switch to it. Your files, settings and apps stay as they are."; then
+  printf '%s\n' "$booted_sum" > "$STAMP"
+  # Margine's staged-update notice would follow with "Update ready" for the
+  # same deployment, naming it Margine: mark it as seen (its stamp, see
+  # /usr/libexec/margine/staged-update-notify). A later update of the staged
+  # image still gets its own notice.
+  mkdir -p "$STATE/margine" && printf '%s\n' "$pending_sum" > "$STATE/margine/staged-seen"
+fi
+exit 0

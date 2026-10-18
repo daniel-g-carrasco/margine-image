@@ -213,9 +213,24 @@ if missing:
 PY
 # lucciola-keep-awake is a symlink from system_files: -x follows it, so a
 # dangling one fails here.
-for f in /usr/libexec/lucciola/{session-start,lock,bar-widths,color-calibration,keep-awake} /usr/bin/lucciola-keep-awake; do
+for f in /usr/libexec/lucciola/{session-start,lock,bar-widths,color-calibration,keep-awake,move-to-own-image,move-notify} /usr/bin/lucciola-keep-awake; do
   [[ -x "$f" ]] || { echo "ERROR: $f missing or not executable" >&2; exit 1; }
 done
+# The move to Lucciola's own image: the timer and the login notice are
+# enabled by links from system_files (-e follows them: a dangling one fails).
+for l in /usr/lib/systemd/system/timers.target.wants/lucciola-move-to-own-image.timer \
+         /usr/lib/systemd/user/graphical-session.target.wants/lucciola-move-notify.service; do
+  [[ -L "$l" && -e "$l" ]] || { echo "ERROR: $l is not an enablement link to a unit" >&2; exit 1; }
+done
+# The move verifies Lucciola's signature through the base's policy scope
+# (Margine's 16-image-trust). Not fatal: a base from before that scope (the
+# :stable a pull request builds on) gets a mover that waits, by its own check.
+if python3 -c 'import json, sys; r = json.load(open(sys.argv[1]))["transports"]["docker"][sys.argv[2]][0]; sys.exit(r["type"] != "sigstoreSigned")' \
+     /etc/containers/policy.json ghcr.io/daniel-g-carrasco/lucciola 2>/dev/null; then
+  log "move to Lucciola's own image: signature scope for ghcr.io/daniel-g-carrasco/lucciola present"
+else
+  log "WARNING: the base has no signature scope for ghcr.io/daniel-g-carrasco/lucciola: the move waits for a base that has one"
+fi
 # The Python helpers must at least parse (ast, so no __pycache__ in /usr).
 for f in /usr/libexec/lucciola/{bar-widths,color-calibration}; do
   python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])' "$f"

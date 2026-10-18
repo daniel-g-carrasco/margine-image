@@ -17,8 +17,9 @@
 # same tests. Don't "simplify" back to notify-send or hints.
 #
 # Usage: margine-notify [-u low|normal|critical] [-i ICON] [-d DESKTOP_ID]
-#                       SUMMARY BODY
-# Defaults: -u normal, -i margine-logo, app name "Margine".
+#                       [-a APP_NAME] SUMMARY BODY
+# Defaults: -u normal, -i margine-logo, -a "Margine" (the sender the
+# notification shows; a product built on Margine passes its own name).
 # Exit: non-zero when no notification daemon answered (callers use this
 # to retry at the next tick instead of burning their once-only stamps).
 set -euo pipefail
@@ -26,7 +27,8 @@ set -euo pipefail
 URGENCY=1
 ICON="margine-logo"
 DESKTOP_ID=""
-while getopts "u:i:d:" opt; do
+APP_NAME="Margine"
+while getopts "u:i:d:a:" opt; do
   case "$opt" in
     u) case "$OPTARG" in
          low) URGENCY=0 ;;
@@ -36,11 +38,12 @@ while getopts "u:i:d:" opt; do
        esac ;;
     i) ICON="$OPTARG" ;;
     d) DESKTOP_ID="$OPTARG" ;;
+    a) APP_NAME="$OPTARG" ;;
     *) exit 2 ;;
   esac
 done
 shift $((OPTIND - 1))
-SUMMARY="${1:?usage: margine-notify [-u urgency] [-i icon] [-d desktop-id] SUMMARY BODY}"
+SUMMARY="${1:?usage: margine-notify [-u urgency] [-i icon] [-d desktop-id] [-a app-name] SUMMARY BODY}"
 BODY="${2:-}"
 
 # ICON/DESKTOP_ID land inside GVariant text; they are controlled values
@@ -49,6 +52,9 @@ BODY="${2:-}"
 case "${ICON}${DESKTOP_ID}" in
   *"'"*) echo "margine-notify: quotes not allowed in icon/desktop id" >&2; exit 2 ;;
 esac
+# The app name is a plain word or two; gdbus parses the argument as GVariant
+# text, so keep it to letters, digits and spaces.
+[[ "$APP_NAME" =~ ^[A-Za-z0-9\ ]+$ ]] || { echo "margine-notify: bad app name '$APP_NAME'" >&2; exit 2; }
 
 HINTS="{'image-path': <'${ICON}'>, 'urgency': <byte ${URGENCY}>"
 [[ -n "$DESKTOP_ID" ]] && HINTS+=", 'desktop-entry': <'${DESKTOP_ID}'>"
@@ -59,4 +65,4 @@ exec gdbus call --session \
   --dest org.freedesktop.Notifications \
   --object-path /org/freedesktop/Notifications \
   --method org.freedesktop.Notifications.Notify -- \
-  "Margine" 0 "$ICON" "$SUMMARY" "$BODY" "[]" "$HINTS" "-1" >/dev/null
+  "$APP_NAME" 0 "$ICON" "$SUMMARY" "$BODY" "[]" "$HINTS" "-1" >/dev/null

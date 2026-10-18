@@ -41,7 +41,7 @@ STAMP="$STATE/lucciola/move-notified"
 [[ "$(cat "$STAMP" 2>/dev/null)" == "$booted_sum" ]] && exit 0
 mkdir -p "$STATE/lucciola"
 
-if "$MN" -u normal \
+if "$MN" -u normal -a Lucciola \
      "Lucciola moved to its own image" \
      "Restart whenever it suits you to switch to it. Your files, settings and apps stay as they are."; then
   printf '%s\n' "$booted_sum" > "$STAMP"

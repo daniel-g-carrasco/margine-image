@@ -54,10 +54,11 @@ start = ["workspaces", "active_window"]
 center = ["clock"]
 # No control-centre button: Mod+N opens that panel, and the notifications
 # button sits next to where it was (2026-10-11).
-end = ["tray", "privacy", "network", "bluetooth", "keep-awake", "volume", "battery", "notifications"]
+end = ["tray", "spola", "privacy", "network", "bluetooth", "keep-awake", "volume", "battery", "notifications"]
 
-# keep-awake is Lucciola's Keep Awake plugin indicator (27-keep-awake.toml):
-# shown only while Keep Awake is on or scheduled.
+# spola and keep-awake are plugin indicators (27-plugins.toml): Spola's shows
+# the Koofr sync and is there only when Spola is installed; Keep Awake's only
+# while Keep Awake is on or scheduled.
 
 [widget.workspaces]
 style = "minimal"

@@ -84,7 +84,7 @@ EXT_DIR=/usr/share/gnome-shell/extensions
 # fullscreen windows (oliwebd/o-tiling#89). Every Margine patch below
 # still applies cleanly; the session-modes one stays until the upstream
 # fix has been proven on real lock/unlock cycles.
-OTILING_VERSION="v2.12.01"
+OTILING_VERSION="v2.13.00"
 OTILING_URL="https://github.com/oliwebd/o-tiling/releases/download/${OTILING_VERSION}/o-tiling@oliwebd.github.com-${OTILING_VERSION}.zip"
 OTILING_SHA256="4bc13ee298ac8be6b3ff22e961b1f0948998bb10f1ddae5c3dead45aff4875a0"
 

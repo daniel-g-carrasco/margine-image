@@ -346,7 +346,7 @@ jobs:
 
       - name: Install cosign (signature gate)
         if: success() && steps.boot.outputs.passed == 'true'
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
 
       # The image must carry a valid signature in the classic format, the
       # one devices verify (containers/image reads `sha256-<digest>.sig`,

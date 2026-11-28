@@ -29,7 +29,7 @@
 #   buildah build --build-arg BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:45
 #
 # (build.yml: workflow_dispatch with base_image publishes :trial only.)
-ARG BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:44
+ARG BASE_IMAGE=ghcr.io/ublue-os/silverblue-main:45@sha256:ceb417559010d62385d8f8774434765713189cc7ea58832ee642d991e5cfce01
 
 # ----- Build context: scripts that should NOT end up in the final image -----
 FROM scratch AS ctx
